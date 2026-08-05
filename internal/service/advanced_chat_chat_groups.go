@@ -20,7 +20,7 @@ const (
 	chatGroupSenderUser      = "user"
 	chatGroupSenderAgent     = "agent"
 	chatGroupMaxMessageDepth = 8
-	chatGroupIgnoreMarker    = "[IGNORE]"
+	chatGroupPostToolName    = "send_group_message"
 )
 
 type AdvancedChatChatGroup struct {
@@ -42,6 +42,7 @@ type AdvancedChatChatGroupMember struct {
 	SessionID string    `gorm:"size:80;index" json:"session_id,omitempty"`
 	RunID     string    `gorm:"size:80;index" json:"run_id,omitempty"`
 	Status    string    `gorm:"size:20;index;not null;default:'idle'" json:"status"`
+	WorkDepth int       `gorm:"not null;default:0" json:"-"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -56,6 +57,7 @@ type AdvancedChatChatGroupMessage struct {
 	Content          string    `gorm:"type:text;not null" json:"content"`
 	MentionMemberIDs string    `gorm:"type:text;not null;default:'[]'" json:"-"`
 	Depth            int       `gorm:"not null;default:0" json:"-"`
+	SourceRunID      string    `gorm:"size:80;index" json:"-"`
 	CreatedAt        time.Time `json:"created_at"`
 	Mentions         []string  `gorm:"-" json:"mention_member_ids"`
 }
@@ -69,6 +71,75 @@ type chatGroupInput struct {
 type chatGroupMessageInput struct {
 	Content          string   `json:"content"`
 	MentionMemberIDs []string `json:"mention_member_ids"`
+}
+
+func init() {
+	RegisterAdvancedChatRuntimeExtensionHook(chatGroupRuntimeExtension)
+	RegisterAdvancedChatToolHandler(chatGroupPostToolName, handleChatGroupPostTool)
+}
+
+func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeContext) (AdvancedChatRuntimeExtension, error) {
+	if input.Mode == advancedChatModeChat || strings.TrimSpace(input.SessionID) == "" {
+		return AdvancedChatRuntimeExtension{}, nil
+	}
+	var member AdvancedChatChatGroupMember
+	if err := model.DB.Where("session_id = ? AND user_id = ?", input.SessionID, input.UserID).First(&member).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return AdvancedChatRuntimeExtension{}, nil
+		}
+		return AdvancedChatRuntimeExtension{}, err
+	}
+	return AdvancedChatRuntimeExtension{
+		SystemPrompt: "Group messaging rule: your normal assistant text is private work output and is never posted to the group. If and only if you have a useful message for the group, call send_group_message once with the concise message. Do not call it for internal reasoning, progress narration, acknowledgements, or irrelevant work. If the group message does not concern you, do not call the tool.",
+		Tools: []ChatExecutorTool{{
+			Name:        chatGroupPostToolName,
+			Description: "Post one deliberate message to the current chat group. This is the only way your output becomes visible in the group and notifies other assistants.",
+			Schema: map[string]interface{}{
+				"type":     "object",
+				"required": []string{"content"},
+				"properties": map[string]interface{}{
+					"content": map[string]interface{}{"type": "string", "description": "Concise, complete group message worth notifying other assistants about."},
+				},
+			},
+		}},
+	}, nil
+}
+
+func handleChatGroupPostTool(_ context.Context, input AdvancedChatToolCallInput) (string, error) {
+	content := truncateSessionTaskText(stringFromMap(input.Arguments, "content"), 20000)
+	if content == "" {
+		return "", errors.New("group message content is required")
+	}
+	var member AdvancedChatChatGroupMember
+	if err := model.DB.Where("session_id = ? AND user_id = ?", input.SessionID, input.UserID).First(&member).Error; err != nil {
+		return "", errors.New("this session is not attached to a chat group")
+	}
+	var existing int64
+	if err := model.DB.Model(&AdvancedChatChatGroupMessage{}).Where("source_run_id = ? AND user_id = ?", input.RunID, input.UserID).Count(&existing).Error; err != nil {
+		return "", err
+	}
+	if existing > 0 {
+		return "", errors.New("this work run has already posted its group message")
+	}
+	message := AdvancedChatChatGroupMessage{
+		ID:               newAdvancedChatID("acgmmsg"),
+		GroupID:          member.GroupID,
+		UserID:           input.UserID,
+		SenderType:       chatGroupSenderAgent,
+		SenderID:         member.ID,
+		SenderName:       member.AgentName,
+		Content:          content,
+		MentionMemberIDs: "[]",
+		Depth:            member.WorkDepth + 1,
+		SourceRunID:      input.RunID,
+	}
+	if err := model.DB.Create(&message).Error; err != nil {
+		return "", err
+	}
+	_ = model.DB.Model(&AdvancedChatChatGroup{}).Where("id = ? AND user_id = ?", member.GroupID, input.UserID).Update("updated_at", time.Now()).Error
+	go dispatchChatGroupMessage(input.UserID, member.GroupID, message)
+	encoded, _ := json.Marshal(gin.H{"posted": true, "message_id": message.ID})
+	return string(encoded), nil
 }
 
 func (api *advancedChatAPI) listChatGroups(c *gin.Context) {
@@ -313,7 +384,7 @@ func dispatchChatGroupMessage(userID uint, groupID string, message AdvancedChatC
 			}
 			_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", member.ID, userID).Updates(map[string]interface{}{"status": chatGroupMemberIdle, "run_id": ""}).Error
 		}
-		claim := model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ? AND status = ?", member.ID, userID, chatGroupMemberIdle).Update("status", chatGroupMemberWorking)
+		claim := model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ? AND status = ?", member.ID, userID, chatGroupMemberIdle).Updates(map[string]interface{}{"status": chatGroupMemberWorking, "work_depth": message.Depth})
 		if claim.Error == nil && claim.RowsAffected == 1 {
 			go runChatGroupMember(userID, groupID, member.ID, message)
 		}
@@ -338,11 +409,12 @@ func runChatGroupMember(userID uint, groupID string, memberID string, trigger Ad
 	for index := len(history) - 1; index >= 0; index-- {
 		lines = append(lines, fmt.Sprintf("%s: %s", history[index].SenderName, history[index].Content))
 	}
-	instruction := fmt.Sprintf("You are %s in the persistent chat group %q. Here is the recent group transcript:\n\n%s\n\nA new message was just sent by %s. Decide whether it concerns you. If it does not, respond with exactly %s. If it does, handle it now using your tools when useful, then write a concise response for the group. You have one work thread; finish this response before accepting normal new messages.", member.AgentName, group.Name, strings.Join(lines, "\n"), trigger.SenderName, chatGroupIgnoreMarker)
+	instruction := fmt.Sprintf("You are %s in the persistent chat group %q. Here is the recent group transcript:\n\n%s\n\nA new message was just sent by %s. Decide whether it concerns you. If it does, handle it using your tools when useful. Your normal response is private execution output. Only call send_group_message if you have one useful, concise result worth posting to the group. If it is irrelevant, finish without calling that tool. You have one work thread; finish this work before accepting normal new messages.", member.AgentName, group.Name, strings.Join(lines, "\n"), trigger.SenderName)
 	sessionID := member.SessionID
 	if sessionID == "" {
 		sessionID = newAdvancedChatID("acg")
 	}
+	_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", member.ID, userID).Updates(map[string]interface{}{"session_id": sessionID, "work_depth": trigger.Depth}).Error
 	messages := []advancedChatCompletionMessage{{ID: newAdvancedChatID("acm"), Role: "user", Content: instruction, Parts: normalizeAdvancedChatContentParts(nil, instruction)}}
 	agent, err := loadAdvancedChatAgent(userID, member.AgentID)
 	if err != nil || agent == nil {
@@ -359,23 +431,6 @@ func runChatGroupMember(userID uint, groupID string, memberID string, trigger Ad
 	}
 	_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", member.ID, userID).Updates(map[string]interface{}{"session_id": sessionID, "run_id": run.ID, "status": chatGroupMemberWorking}).Error
 	runAdvancedChatAssistantCompletion(run.ID, userID, prepared)
-	var runRow AdvancedChatRun
-	if model.DB.Where("id = ? AND user_id = ?", run.ID, userID).First(&runRow).Error != nil || runRow.Status != advancedChatRunStatusCompleted {
-		return
-	}
-	var answer AdvancedChatMessage
-	if model.DB.Where("id = ? AND user_id = ?", runRow.AssistantMessageID, userID).First(&answer).Error != nil {
-		return
-	}
-	content := strings.TrimSpace(answer.Content)
-	if content == "" || strings.EqualFold(content, chatGroupIgnoreMarker) {
-		return
-	}
-	message := AdvancedChatChatGroupMessage{ID: newAdvancedChatID("acgmmsg"), GroupID: groupID, UserID: userID, SenderType: chatGroupSenderAgent, SenderID: member.ID, SenderName: member.AgentName, Content: content, MentionMemberIDs: "[]", Depth: trigger.Depth + 1}
-	if model.DB.Create(&message).Error == nil {
-		_ = model.DB.Model(&AdvancedChatChatGroup{}).Where("id = ?", groupID).Update("updated_at", time.Now()).Error
-		dispatchChatGroupMessage(userID, groupID, message)
-	}
 }
 
 func (api *advancedChatAPI) getChatGroupMemberActivity(c *gin.Context) {
