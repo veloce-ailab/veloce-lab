@@ -4,7 +4,7 @@ import type { ChangeEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNo
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, Database, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListTodo, Loader2, Menu, MessageCircleQuestion, MessageSquare, MessageSquarePlus, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListTodo, Loader2, Menu, MessageCircleQuestion, MessageSquarePlus, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
 import api, { apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
 import { ConnectorTerminalWindow, type ConnectorTerminalCopy } from "@/components/chat/ConnectorTerminalWindow"
@@ -619,6 +619,7 @@ export default function Chat() {
   const [selectedWorkAgentID, setSelectedWorkAgentID] = useState("")
   const [isSessionsSidebarOpen, setIsSessionsSidebarOpen] = useState(false)
   const [isDesktopSessionsSidebarVisible, setIsDesktopSessionsSidebarVisible] = useState(true)
+  const [desktopSessionsSidebarHost, setDesktopSessionsSidebarHost] = useState<HTMLElement | null>(null)
   const [sessionSearch, setSessionSearch] = useState("")
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>(readSessionFolders)
   const [sessionFolderAssignments, setSessionFolderAssignments] = useState<Record<string, string>>(readSessionFolderAssignments)
@@ -693,6 +694,10 @@ export default function Chat() {
   const [sharedSessionID, setSharedSessionID] = useState("")
   const [sharedSessionPoolID, setSharedSessionPoolID] = useState("")
   const [loadedSharedSession, setLoadedSharedSession] = useState<ChatSession | null>(null)
+
+  useEffect(() => {
+    setDesktopSessionsSidebarHost(document.getElementById("chat-sessions-sidebar-slot"))
+  }, [])
 
   const { data: catalog = [] } = useQuery<UpstreamChannelCatalog[]>({
     queryKey: ["catalog"],
@@ -3403,7 +3408,7 @@ export default function Chat() {
 
   const sessionsSidebar = (
     <aside
-      className="flex h-full w-60 max-w-[85vw] flex-col border-r border-border bg-card text-foreground"
+      className="flex h-full w-full max-w-[85vw] flex-col bg-card text-foreground"
       onContextMenu={(event) => {
         if (event.defaultPrevented) {
           return
@@ -3413,18 +3418,6 @@ export default function Chat() {
         setSessionFolderContextMenu({ x: event.clientX, y: event.clientY })
       }}
     >
-      <nav className="shrink-0 space-y-1 border-b border-border p-3">
-        {[
-          { to: "/chat", label: language === "zh" ? "聊天" : "Chat", icon: MessageSquare },
-          { to: "/settings/channels", label: language === "zh" ? "上游渠道" : "Upstream channels", icon: Database },
-          { to: "/settings/system", label: language === "zh" ? "系统设置" : "System settings", icon: Settings },
-        ].map(({ to, label, icon: Icon }) => (
-          <Link key={to} to={to} className={cn("flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium", to === "/chat" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
-            <Icon size={17} />
-            <span>{label}</span>
-          </Link>
-        ))}
-      </nav>
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/80 px-3">
         <div className="truncate text-xs font-semibold uppercase text-muted-foreground">{copy.sessions}</div>
         <div className="flex items-center gap-1">
@@ -3585,7 +3578,7 @@ export default function Chat() {
     </aside>
   )
   const sessionsSidebarPortal =
-    typeof document === "undefined"
+    typeof document === "undefined" || !isSessionsSidebarOpen
       ? null
       : createPortal(
           <div className={cn("fixed inset-x-0 bottom-0 z-40 transition-opacity duration-200 xl:hidden", isDesktop ? "top-[6.25rem]" : "top-16", isSessionsSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSessionsSidebarOpen}>
@@ -3599,6 +3592,9 @@ export default function Chat() {
           </div>,
           document.body
         )
+  const desktopSessionsSidebarPortal = desktopSessionsSidebarHost
+    ? createPortal(sessionsSidebar, desktopSessionsSidebarHost)
+    : null
   const messageSelectionContextMenuPortal = messageSelectionMenu && typeof document !== "undefined" && (() => {
     const labels = language === "zh"
       ? { copy: "复制", quote: "引用", search: "搜索" }
@@ -3662,6 +3658,7 @@ export default function Chat() {
   return (
     <div className={cn("flex min-w-0", isAdvanced && "h-full min-h-0")}>
       {sessionsSidebarPortal}
+      {desktopSessionsSidebarPortal}
       {messageSelectionContextMenuPortal}
       {terminalWindow && (
         <ConnectorTerminalWindow
@@ -3674,9 +3671,6 @@ export default function Chat() {
           onClose={() => setTerminalWindow(null)}
         />
       )}
-      <div className="relative z-10 hidden h-full shrink-0 lg:flex">
-        {sessionsSidebar}
-      </div>
       <Dialog open={Boolean(renamingSession)} onOpenChange={(open) => { if (!open) setRenamingSession(null) }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{copy.customTitlePrompt}</DialogTitle></DialogHeader>
