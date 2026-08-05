@@ -41,11 +41,6 @@ export default function DesktopDashboard() {
           <PageTransition transitionKey={location.pathname} className="page-shell-transition">
             <Routes>
               <Route index element={<SystemManagement section="general" />} />
-              <Route path="theme" element={<SystemManagement section="theme" />} />
-              <Route path="auth" element={<SystemManagement section="auth" />} />
-              <Route path="content" element={<SystemManagement section="content" />} />
-              <Route path="operations" element={<SystemManagement section="operations" />} />
-              <Route path="ops" element={<SystemManagement section="sysops" />} />
               <Route path="advanced-chat" element={<SystemManagement section="advancedChat" />} />
               <Route path="channels" element={<Channels />} />
               <Route path="models" element={<Models />} />

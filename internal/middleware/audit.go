@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/veloce-ailab/veloce/internal/model"
 	"github.com/veloce-ailab/veloce/internal/service"
-	"github.com/gin-gonic/gin"
 )
 
 func AuditMiddleware() gin.HandlerFunc {
@@ -33,21 +33,12 @@ func AuditMiddleware() gin.HandlerFunc {
 				userID = &id
 			}
 		}
-		var apiKeyID *uint
-		if value, exists := c.Get("api_key"); exists {
-			if apiKey, ok := value.(*model.APIKey); ok && apiKey != nil && apiKey.ID != 0 {
-				id := apiKey.ID
-				apiKeyID = &id
-			}
-		}
-
 		statusCode := c.Writer.Status()
 		service.RecordAuditLog(service.AuditLogInput{
 			LogType:    service.AuditLogTypeForRequest(c.Request.Method, path),
 			Action:     service.AuditActionForRequest(c.Request.Method, path, statusCode),
 			Resource:   auditResource(c.Request.Method, path),
 			UserID:     userID,
-			APIKeyID:   apiKeyID,
 			Method:     c.Request.Method,
 			Path:       path,
 			Query:      redactedRawQuery(c.Request.URL.RawQuery),

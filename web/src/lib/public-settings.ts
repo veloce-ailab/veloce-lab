@@ -49,7 +49,6 @@ export interface PublicSettings {
   sidebar_usage_enabled: boolean
   sidebar_wallet_enabled: boolean
   sidebar_data_board_enabled: boolean
-  sidebar_api_keys_enabled: boolean
   sidebar_chat_enabled: boolean
   sidebar_images_enabled: boolean
   sidebar_settings_enabled: boolean
@@ -153,7 +152,6 @@ export const defaultPublicSettings: PublicSettings = {
   sidebar_usage_enabled: true,
   sidebar_wallet_enabled: true,
   sidebar_data_board_enabled: true,
-  sidebar_api_keys_enabled: true,
   sidebar_chat_enabled: true,
   sidebar_images_enabled: true,
   sidebar_settings_enabled: true,

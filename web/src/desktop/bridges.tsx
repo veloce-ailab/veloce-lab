@@ -39,7 +39,7 @@ export function DesktopNavigationBridge() {
     const receiveNavigation = (event: MessageEvent) => {
       const data = event.data
       if (!data || typeof data !== "object") return
-      if (data.type === "veloce-desktop-navigate" && (data.path === "/settings" || data.path === "/settings/wallet")) navigate(data.path)
+      if (data.type === "veloce-desktop-navigate" && data.path === "/settings") navigate(data.path)
       if (data.type === "veloce-desktop-logout") {
         clearAuthToken()
         navigate("/login", { replace: true })

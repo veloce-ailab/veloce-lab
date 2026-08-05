@@ -14,12 +14,6 @@ import { withPublicSettingsDefaults } from "@/lib/public-settings"
 import { passkeyCredentialToJSON, passkeySupported, preparePasskeyCreationOptions } from "@/lib/passkey"
 import { resetOnboardingGuide } from "@/components/onboarding/SetupGuides"
 
-interface Group {
-  id: number
-  name: string
-  multiplier: string | number
-}
-
 interface CurrentUser {
   id: number
   username: string
@@ -27,9 +21,6 @@ interface CurrentUser {
   phone?: string | null
   oidc_sub?: string | null
   avatar_url?: string
-  balance: string | number
-  group?: Group
-  groups?: Array<{ group?: Group; expires_at?: string | null }>
   is_admin: boolean
 }
 
@@ -378,8 +369,6 @@ export default function Settings({ section = "profile" }: { section?: SettingsSe
                   <Field label={t("common.email")} value={user?.email || "-"} />
                   {publicSettings.sms_enabled && <Field label={copy.phone} value={user?.phone || copy.notBound} />}
                   <Field label={copy.oidcAccount} value={user?.oidc_sub ? copy.bound : copy.notBound} />
-                  <Field label={t("common.group")} value={groupNames(user)} />
-                  <Field label={t("common.balance")} value={`${publicSettings.payment_currency_display_name}${user?.balance || 0}`} />
                   <Field label={t("common.role")} value={user?.is_admin ? t("common.admin") : t("common.user")} />
                 </>
               )}
@@ -673,17 +662,6 @@ function apiErrorMessage(error: unknown, fallback: string) {
     }
   }
   return error instanceof Error ? error.message : fallback
-}
-
-function groupNames(user?: CurrentUser) {
-  const names = (user?.groups || [])
-    .filter((membership) => !membership.expires_at || new Date(membership.expires_at).getTime() > Date.now())
-    .map((membership) => membership.group?.name)
-    .filter((name): name is string => Boolean(name))
-  if (names.length > 0) {
-    return names.join(", ")
-  }
-  return user?.group?.name || "-"
 }
 
 function Field({ label, value }: { label: string; value: string }) {

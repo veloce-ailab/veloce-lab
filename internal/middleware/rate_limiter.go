@@ -84,11 +84,6 @@ func (limiter *systemRateLimiter) cleanupLocked(now time.Time) {
 }
 
 func rateLimitKey(c *gin.Context) string {
-	if value, exists := c.Get("api_key"); exists {
-		if apiKey, ok := value.(*model.APIKey); ok && apiKey != nil && apiKey.ID != 0 {
-			return "api_key:" + strconv.FormatUint(uint64(apiKey.ID), 10)
-		}
-	}
 	if value, exists := c.Get("user"); exists {
 		if user, ok := value.(*model.User); ok && user != nil && user.ID != 0 {
 			return "user:" + strconv.FormatUint(uint64(user.ID), 10)

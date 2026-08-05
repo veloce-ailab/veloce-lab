@@ -65,55 +65,23 @@ func InitDB() {
 	err = DB.AutoMigrate(
 		&User{},
 		&UserAvatar{},
-		&APIKey{},
 		&EmailVerificationCode{},
 		&PhoneVerificationCode{},
 		&OIDCBindRequest{},
 		&WebAuthnChallenge{},
 		&PasskeyCredential{},
-		&CheckInRecord{},
-		&PaymentOrder{},
-		&WalletTransaction{},
-		&WalletLimitUsage{},
 		&Group{},
 		&UserGroupMembership{},
-		&ChannelGroupMultiplier{},
-		&ModelGroupMultiplier{},
-		&ReferralCommissionLog{},
 		&UserChannel{},
-		&UserChannelGroupAccess{},
-		&UserChannelUserAccess{},
 		&Channel{},
 		&Model{},
 		&ModelConfig{},
-		&StatusMonitor{},
-		&Announcement{},
 		&SystemSetting{},
-		&ClusterNode{},
 		&VideoTask{},
 		&Plugin{},
 		&UserPluginState{},
 		&UserPluginConfig{},
 		&PluginKV{},
-		&Ticket{},
-		&TicketMessage{},
-		&PersonalCompany{},
-		&CompanyCharterRevision{},
-		&PersonalCompanyEmployee{},
-		&CompanyRoleTemplate{},
-		&CompanyEmployeeVersion{},
-		&CompanyCapabilityEvidence{},
-		&CompanyRecruitmentPlan{},
-		&CompanyObjective{},
-		&CompanyWorkItem{},
-		&CompanyWorkAttempt{},
-		&CompanyArtifact{},
-		&CompanyHandoffPackage{},
-		&CompanyApprovalRequest{},
-		&CompanyBudgetLedger{},
-		&CompanyAuditEvent{},
-		&CompanySignal{},
-		&CompanyOutboxEvent{},
 	)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)
@@ -125,50 +93,6 @@ func InitDB() {
 			"price_sync_cron":    "0 * * * *",
 		}).Error; err != nil {
 		log.Fatalf("failed to initialize channel price sync settings: %v", err)
-	}
-	// Studio operations are independently scoped by owner and Studio. Older
-	// PersonalCompany schemas used a single-column owner uniqueness constraint.
-	if DB.Migrator().HasIndex(&PersonalCompany{}, "idx_personal_companies_owner_user_id") {
-		if err := DB.Migrator().DropIndex(&PersonalCompany{}, "idx_personal_companies_owner_user_id"); err != nil {
-			log.Printf("failed to replace legacy personal company owner index: %v", err)
-		}
-	}
-	enterpriseModels := []interface{}{
-		&Organization{},
-		&Department{},
-		&Workspace{},
-		&OrganizationMember{},
-		&WorkspaceMember{},
-		&Permission{},
-		&Role{},
-		&RolePermission{},
-		&RoleBinding{},
-		&DepartmentRoleBinding{},
-		&EnterpriseTask{},
-		&EnterpriseTaskAssignment{},
-		&EnterpriseTaskDepartment{},
-		&DepartmentMember{},
-		&EnterpriseSharedPool{},
-		&EnterpriseSharedSession{},
-		&EnterpriseSharedFile{},
-		&EnterpriseDevice{},
-		&EnterpriseDeviceAssignment{},
-		&QuotaAccount{},
-		&QuotaLedger{},
-	}
-	// A number of enterprise references use composite keys to keep every
-	// relation inside its organization. PostgreSQL requires the referenced
-	// unique index to exist before it accepts a self-referential foreign key,
-	// while AutoMigrate otherwise attempts both in one pass. SQLite rebuilds
-	// tables when adding foreign keys, so it must retain the normal one-pass
-	// migration behavior that creates those constraints inline.
-	if DB.Dialector.Name() != "sqlite" {
-		if err := autoMigrateWithoutForeignKeys(DB, enterpriseModels...); err != nil {
-			log.Fatalf("failed to prepare enterprise database models: %v", err)
-		}
-	}
-	if err := DB.AutoMigrate(enterpriseModels...); err != nil {
-		log.Fatalf("failed to migrate enterprise database models: %v", err)
 	}
 	if !hadCachedInputPrice {
 		if err := DB.Model(&Model{}).
@@ -194,23 +118,6 @@ func InitDB() {
 
 	// Initial data
 	initData()
-	if err := InitLogDB(); err != nil {
-		log.Fatalf("failed to initialize log database: %v", err)
-	}
-	if EnterpriseModeEnabledWithDB(DB) {
-		if err := EnsureEnterpriseTenantForExistingUsers(DB); err != nil {
-			log.Fatalf("failed to initialize enterprise tenant: %v", err)
-		}
-	}
-}
-
-func autoMigrateWithoutForeignKeys(db *gorm.DB, models ...interface{}) error {
-	original := db.Config.DisableForeignKeyConstraintWhenMigrating
-	db.Config.DisableForeignKeyConstraintWhenMigrating = true
-	defer func() {
-		db.Config.DisableForeignKeyConstraintWhenMigrating = original
-	}()
-	return db.AutoMigrate(models...)
 }
 
 func databaseDialector() (gorm.Dialector, bool, error) {
