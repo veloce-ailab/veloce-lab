@@ -5,3 +5,7 @@ package service
 func IsPrimaryNode() bool {
 	return true
 }
+
+func CurrentNodeName() string {
+	return "primary"
+}

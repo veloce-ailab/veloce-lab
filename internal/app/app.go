@@ -92,7 +92,6 @@ func Run() error {
 
 	// APIs
 	channelAPI := &api.ChannelAPI{SyncService: syncService}
-	userChannelAPI := &api.UserChannelAPI{}
 	modelAPI := &api.ModelAPI{SyncService: syncService}
 	userAPI := &api.UserAPI{AuthService: authService}
 	systemAPI := &api.SystemAPI{}
@@ -103,7 +102,14 @@ func Run() error {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 	r.GET("/api/public/settings", systemAPI.PublicSettings)
-	r.GET("/api/public/models", modelAPI.PublicCatalog)
+	r.GET("/api/community/categories", proxyCommunityAPI)
+	r.GET("/api/community/characters", proxyCommunityAPI)
+	r.GET("/api/community/characters/:id", proxyCommunityAPI)
+	r.GET("/api/community/knowledge-bases", proxyCommunityAPI)
+	r.GET("/api/community/knowledge-bases/:id", proxyCommunityAPI)
+	r.GET("/api/community/knowledge-bases/:id/content", proxyCommunityAPI)
+	r.GET("/api/community/skills", proxyCommunityAPI)
+	r.GET("/api/community/skills/:id", proxyCommunityAPI)
 	r.GET("/api/avatars/:id", userAPI.GetAvatar)
 	r.GET("/api/setup/status", func(c *gin.Context) {
 		required, err := authService.InitialSetupRequired()
@@ -701,25 +707,14 @@ func Run() error {
 		admin.POST("/channels/sync", channelAPI.Sync)
 
 		// Global models and upstream channel model configs
-		admin.GET("/models", modelAPI.List)
-		admin.POST("/models", modelAPI.Create)
 		admin.POST("/models/sync", modelAPI.Sync)
 		admin.POST("/models/sync/preview", modelAPI.PreviewSync)
 		admin.POST("/models/sync/preview/browser", modelAPI.PreviewSyncFromBrowser)
 		admin.POST("/models/sync/apply", modelAPI.ApplySync)
-		admin.PUT("/models/:id", modelAPI.Update)
-		admin.DELETE("/models/:id", modelAPI.Delete)
 		admin.PUT("/channel-models/:id", modelAPI.UpdateChannelModel)
 		admin.DELETE("/channel-models/:id", modelAPI.DeleteChannelModel)
 
 		// User-facing channels
-		admin.GET("/user-channels", userChannelAPI.List)
-		admin.POST("/user-channels", userChannelAPI.Create)
-		admin.PUT("/user-channels/:id", userChannelAPI.Update)
-		admin.DELETE("/user-channels/:id", userChannelAPI.Delete)
-
-		// Groups
-
 		// Users
 		// User administration is omitted: this build owns exactly one user.
 
@@ -738,7 +733,7 @@ func Run() error {
 	{
 		userGroup.GET("/me", userAPI.GetMe)
 		userGroup.POST("/avatar", userAPI.UploadAvatar)
-		userGroup.GET("/catalog", userChannelAPI.Catalog)
+		userGroup.GET("/catalog", channelAPI.Catalog)
 		userGroup.GET("/passkeys", passkeyAPI.List)
 		userGroup.POST("/passkeys/register/options", passkeyAPI.BeginRegistration)
 		userGroup.POST("/passkeys/register", passkeyAPI.CompleteRegistration)

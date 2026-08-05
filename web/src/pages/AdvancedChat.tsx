@@ -17,6 +17,7 @@ import MessageChannels from "./MessageChannelsWorkspace"
 import AdvancedChatDeliveries from "./AdvancedChatDeliveries"
 import AdvancedChatScheduledTasks from "./AdvancedChatScheduledTasks"
 import AgentGroupsPage from "./AgentGroupsPage"
+import Community from "./Community"
 import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { AnnouncementButton } from "@/components/AnnouncementButton"
@@ -180,6 +181,10 @@ export default function AdvancedChat() {
                   <Chat />
                 ) : (
                   <Routes>
+                    <Route path="community" element={<Community />} />
+                    <Route path="community/knowledge-bases/:knowledgeBaseID" element={<Community />} />
+                    <Route path="community/skills/:skillID" element={<Community />} />
+                    <Route path="community/:id" element={<Community />} />
                     <Route path="agents" element={<Agents />} />
                     <Route path="agents/:id" element={<AgentEditor />} />
                     <Route path="skills" element={<Skills />} />
@@ -195,15 +200,6 @@ export default function AdvancedChat() {
                     <Route path="files" element={<AdvancedChatFiles />} />
                     <Route path="knowledge" element={<KnowledgeBases />} />
                     <Route path="memories" element={<AdvancedChatMemories />} />
-                    {isDesktopTarget() && user?.is_admin && <Route path="admin/general" element={<Navigate to="/dashboard" replace />} />}
-                    {isDesktopTarget() && user?.is_admin && <Route path="admin/theme" element={<Navigate to="/dashboard/theme" replace />} />}
-                    {isDesktopTarget() && user?.is_admin && <Route path="admin/auth" element={<Navigate to="/dashboard/auth" replace />} />}
-                    {isDesktopTarget() && user?.is_admin && <Route path="admin/content" element={<Navigate to="/dashboard/content" replace />} />}
-                    {isDesktopTarget() && user?.is_admin && <Route path="admin/operations" element={<Navigate to="/dashboard/operations" replace />} />}
-                    {isDesktopTarget() && user?.is_admin && <Route path="admin/advanced-chat" element={<Navigate to="/dashboard/advanced-chat" replace />} />}
-                    {isDesktopTarget() && user?.is_admin && <Route path="admin-channels" element={<Navigate to="/dashboard/channels" replace />} />}
-                    {isDesktopTarget() && user?.is_admin && <Route path="admin-models" element={<Navigate to="/dashboard/models" replace />} />}
-
                     <Route path="*" element={<Navigate to="/chat" replace />} />
                   </Routes>
                 )}
@@ -224,6 +220,7 @@ export default function AdvancedChat() {
 function desktopPageTitle(pathname: string, language: string) {
   const zh = language === "zh"
   if (pathname === "/chat" || pathname.startsWith("/chat/session/")) return zh ? "聊天" : "Chat"
+  if (pathname === "/chat/community" || pathname.startsWith("/chat/community/")) return zh ? "社区" : "Community"
   if (pathname === "/chat/files") return zh ? "文件库" : "Files"
   if (pathname === "/chat/knowledge") return zh ? "知识库" : "Knowledge bases"
   if (pathname === "/chat/memories") return zh ? "记忆" : "Memory"
@@ -277,9 +274,10 @@ function AdvancedChatSidebar({
     active: location.pathname === "/chat" || location.pathname.startsWith("/chat/session/"),
   }
   const directItems: AdvancedChatSidebarItem[] = [
+    { href: "/chat/community", label: language === "zh" ? "社区" : language === "ja" ? "コミュニティ" : "Community", icon: Users, active: location.pathname === "/chat/community" || location.pathname.startsWith("/chat/community/") },
     { href: "/chat/files", label: filesLabel, icon: FileText, active: location.pathname === "/chat/files" },
     { href: "/chat/knowledge", label: knowledgeLabel, icon: Database, active: location.pathname === "/chat/knowledge" },
-    ...(user?.is_admin ? [{ href: "/admin/channels", label: language === "zh" ? "系统管理" : "System Management", icon: SlidersHorizontal, active: location.pathname.startsWith("/admin") }] : []),
+    ...(user?.is_admin ? [{ href: "/settings/channels", label: language === "zh" ? "账户设置" : "Account Settings", icon: SlidersHorizontal, active: location.pathname.startsWith("/settings") }] : []),
   ]
   const groups: AdvancedChatSidebarGroup[] = [
     {

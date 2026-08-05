@@ -1,11 +1,10 @@
-import { Boxes, Database, MessageSquare, Settings } from "lucide-react"
+import { Database, MessageSquare, Settings } from "lucide-react"
 import { NavLink } from "react-router-dom"
 import { cn } from "@/lib/utils"
 
 const items = [
   { to: "/chat", label: "聊天", icon: MessageSquare },
   { to: "/admin/channels", label: "上游渠道", icon: Database },
-  { to: "/admin/models", label: "模型管理", icon: Boxes },
   { to: "/admin/system", label: "系统设置", icon: Settings },
 ]
 

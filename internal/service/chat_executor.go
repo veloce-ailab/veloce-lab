@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -48,8 +47,8 @@ type ChatExecutorTool struct {
 }
 
 // ChatExecutorRequest is one server-side, billed completion turn against a model.
-// UserChannelID, when non-zero, pins the request to a single user-facing channel
-// (渠道) exactly like an API key bound to that channel would.
+// UserChannelID is retained in the internal request shape for database
+// compatibility. It now contains the selected upstream channel ID.
 type ChatExecutorRequest struct {
 	Context         context.Context
 	ModelName       string
@@ -107,9 +106,7 @@ func withChatExecutorChannel(err *ChatExecutorError, channel model.Channel, mode
 		return err
 	}
 	err.ChannelID = channel.ID
-	if channel.UserChannelID != nil {
-		err.UserChannelID = *channel.UserChannelID
-	}
+	err.UserChannelID = channel.ID
 	err.ModelName = strings.TrimSpace(modelName)
 	err.UpstreamModelName = strings.TrimSpace(upstreamModelName)
 	err.UpstreamURL = strings.TrimSpace(upstreamURL)
@@ -143,10 +140,6 @@ func ExecuteServerChatCompletion(c *gin.Context, user *model.User, req ChatExecu
 	if channel.ID == 0 {
 		return nil, newChatExecutorError(http.StatusServiceUnavailable, "No enabled model configuration for this model")
 	}
-	if !allowUserChannelRequest(c, user.ID, &channel.UserChannel) {
-		return nil, withChatExecutorChannel(newChatExecutorError(http.StatusTooManyRequests, "User channel rate limit exceeded"), channel, modelName, "", "")
-	}
-
 	protocol := channelProtocol(channel.Type)
 
 	if err := ValidateConfiguredHTTPURL(channel.BaseURL); err != nil {
@@ -265,21 +258,15 @@ func upstreamErrorDetail(body []byte) string {
 
 var serverChatProxyService = NewProxyService()
 
-func serverChatCandidates(user *model.User, modelName string, userChannelID uint) ([]model.ModelConfig, error) {
+func serverChatCandidates(_ *model.User, modelName string, channelID uint) ([]model.ModelConfig, error) {
 	var candidates []model.ModelConfig
 	query := model.DB.
-		Preload("Channel.UserChannel").
 		Preload("Model").
 		Joins("JOIN channels ON channels.id = model_configs.channel_id").
 		Joins("JOIN models ON models.id = model_configs.model_id").
-		Joins("JOIN user_channels ON user_channels.id = channels.user_channel_id").
-		Where("channels.enabled = ? AND model_configs.enabled = ? AND models.enabled = ? AND models.model_name = ? AND user_channels.enabled = ?", true, true, true, modelName, true)
-	if userChannelID != 0 {
-		query = query.Where("channels.user_channel_id = ?", userChannelID)
-	}
-	query, err := filterUserChannelGroupAccess(query, user)
-	if err != nil {
-		return nil, err
+		Where("channels.enabled = ? AND model_configs.enabled = ? AND models.enabled = ? AND models.model_name = ?", true, true, true, modelName)
+	if channelID != 0 {
+		query = query.Where("channels.id = ?", channelID)
 	}
 	if err := query.Order("channels.priority DESC, channels.weight DESC, channels.id ASC").Find(&candidates).Error; err != nil {
 		return nil, err

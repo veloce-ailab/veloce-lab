@@ -1,9 +1,8 @@
-import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Download, Edit, Eye, ListTree, Plus, Power, SlidersHorizontal, Trash } from "lucide-react"
+import { Download, Edit, ListTree, Plus, Power, Trash } from "lucide-react"
 import type { AxiosError } from "axios"
 import api from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
@@ -31,43 +30,8 @@ import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
 import { formatCurrency, useCurrencyDisplayName } from "@/lib/currency"
 
-interface UserChannel {
-  id: number
-  name: string
-  description: string
-  multiplier: string | number
-  routing_algorithm: string
-  enabled: boolean
-  rate_limit_enabled: boolean
-  rate_limit_requests_per_minute: number
-  rate_limit_burst: number
-  allowed_groups?: Array<{ id: number; group_id: number; group?: Group }>
-  allowed_users?: Array<{ id: number; user_id: number; user?: AdminUserOption }>
-}
-
-interface AdminUserOption {
-  id: number
-  username: string
-  email: string
-}
-
-interface Group {
-  id: number
-  name: string
-  multiplier: string | number
-}
-
-interface GroupMultiplier {
-  id?: number
-  group_id: number
-  group?: Group
-  multiplier: string | number
-}
-
 interface UpstreamChannel {
   id: number
-  user_channel_id?: number | null
-  user_channel?: UserChannel
   name: string
   type: string
   base_url: string
@@ -76,9 +40,6 @@ interface UpstreamChannel {
   priority: number
   weight: number
   enabled: boolean
-  price_sync_enabled: boolean
-  price_sync_cron: string
-  group_multipliers?: GroupMultiplier[]
 }
 
 interface PluginUpstreamType {
@@ -122,7 +83,6 @@ interface ChannelModelConfig {
   provider: string
   provider_icon_url: string
   enabled: boolean
-  group_multipliers?: GroupMultiplier[]
 }
 
 interface SyncResult {
@@ -167,21 +127,12 @@ interface UsageStats {
 }
 
 interface ChannelUsageResponse {
-  user_channels: UserChannelUsage[]
   upstream_channels: UpstreamChannelUsage[]
-}
-
-interface UserChannelUsage extends UsageStats {
-  id: number
-  name: string
-  routing_algorithm: string
 }
 
 interface UpstreamChannelUsage extends UsageStats {
   id: number
   name: string
-  user_channel_id?: number | null
-  user_channel_name: string
 }
 
 export default function Channels() {
@@ -190,19 +141,8 @@ export default function Channels() {
   const copy = language === "zh" ? zhChannelCopy : enChannelCopy
   const queryClient = useQueryClient()
   const { success, error } = useToast()
-  const [editingUserChannel, setEditingUserChannel] = useState<Partial<UserChannel> | null>(null)
-  const [editingVisibility, setEditingVisibility] = useState<UserChannel | null>(null)
   const [editingUpstream, setEditingUpstream] = useState<Partial<UpstreamChannel> | null>(null)
-  const [editingMultipliers, setEditingMultipliers] = useState<UpstreamChannel | null>(null)
   const [modelChannel, setModelChannel] = useState<UpstreamChannel | null>(null)
-
-  const { data: userChannels = [], isLoading: isUserChannelsLoading } = useQuery<UserChannel[]>({
-    queryKey: ["admin-user-channels"],
-    queryFn: async () => {
-      const res = await api.get("/user-channels")
-      return Array.isArray(res.data) ? res.data : []
-    },
-  })
 
   const { data: upstreamChannels = [], isLoading: isUpstreamsLoading } = useQuery<UpstreamChannel[]>({
     queryKey: ["admin-upstream-channels"],
@@ -212,27 +152,6 @@ export default function Channels() {
     },
   })
 
-  const { data: groups = [] } = useQuery<Group[]>({
-    queryKey: ["groups"],
-    queryFn: async () => {
-      const res = await api.get("/groups")
-      return Array.isArray(res.data) ? res.data : []
-    },
-  })
-
-  const { data: adminUsers = [] } = useQuery<AdminUserOption[]>({
-    queryKey: ["admin-users-options"],
-    queryFn: async () => {
-      const res = await api.get("/users")
-      return Array.isArray(res.data)
-        ? res.data.map((item: { id?: number; username?: string; email?: string }) => ({
-            id: Number(item.id || 0),
-            username: String(item.username || ""),
-            email: String(item.email || ""),
-          })).filter((item: AdminUserOption) => item.id > 0)
-        : []
-    },
-  })
 
   const { data: pluginTypes = [] } = useQuery<ChannelTypeConfig[]>({
     queryKey: ["admin-plugin-upstream-types"],
@@ -261,47 +180,6 @@ export default function Channels() {
     },
   })
 
-  const saveUserChannel = useMutation({
-    mutationFn: async (channel: Partial<UserChannel>) => {
-      const payload = userChannelPayload(channel)
-      return channel.id
-        ? (await api.put(`/user-channels/${channel.id}`, payload)).data
-        : (await api.post("/user-channels", payload)).data
-    },
-    onSuccess: () => {
-      success(t("admin.saved"))
-      setEditingUserChannel(null)
-      queryClient.invalidateQueries({ queryKey: ["admin-user-channels"] })
-      queryClient.invalidateQueries({ queryKey: ["admin-channel-usage"] })
-      queryClient.invalidateQueries({ queryKey: ["catalog"] })
-    },
-    onError: () => error(t("admin.saveFailed")),
-  })
-
-  const saveUserChannelVisibility = useMutation({
-    mutationFn: async ({ channelID, groupIDs, userIDs }: { channelID: number; groupIDs: number[]; userIDs: number[] }) => {
-      await api.put(`/user-channels/${channelID}/allowed-groups`, { group_ids: groupIDs })
-      await api.put(`/user-channels/${channelID}/allowed-users`, { user_ids: userIDs })
-    },
-    onSuccess: () => {
-      success(t("admin.saved"))
-      setEditingVisibility(null)
-      queryClient.invalidateQueries({ queryKey: ["admin-user-channels"] })
-      queryClient.invalidateQueries({ queryKey: ["catalog"] })
-    },
-    onError: () => error(t("admin.saveFailed")),
-  })
-
-  const deleteUserChannel = useMutation({
-    mutationFn: async (id: number) => api.delete(`/user-channels/${id}`),
-    onSuccess: () => {
-      success(t("admin.deleted"))
-      queryClient.invalidateQueries({ queryKey: ["admin-user-channels"] })
-      queryClient.invalidateQueries({ queryKey: ["admin-channel-usage"] })
-      queryClient.invalidateQueries({ queryKey: ["catalog"] })
-    },
-    onError: () => error(t("admin.deleteFailed")),
-  })
 
   const saveUpstream = useMutation({
     mutationFn: async (channel: Partial<UpstreamChannel>) => {
@@ -348,21 +226,6 @@ export default function Channels() {
     onError: () => error(t("admin.saveFailed")),
   })
 
-  const saveGroupMultipliers = useMutation({
-    mutationFn: async ({ channelID, multipliers }: { channelID: number; multipliers: GroupMultiplier[] }) => {
-      const res = await api.put(`/channels/${channelID}/group-multipliers`, multipliers.map((item) => ({
-        group_id: item.group_id,
-        multiplier: Number(item.multiplier || 0),
-      })))
-      return res.data
-    },
-    onSuccess: () => {
-      success(copy.groupMultipliersSaved)
-      setEditingMultipliers(null)
-      queryClient.invalidateQueries({ queryKey: ["admin-upstream-channels"] })
-    },
-    onError: () => error(copy.groupMultipliersSaveFailed),
-  })
 
   return (
     <div className="space-y-6">
@@ -376,86 +239,8 @@ export default function Channels() {
       <PageTitleSlot />
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>{t("admin.userChannels")}</CardTitle>
-          <Button className="gap-2" onClick={() => setEditingUserChannel(emptyUserChannel())}>
-            <Plus size={16} />
-            {t("admin.addUserChannel")}
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("channels.name")}</TableHead>
-                <TableHead>{t("admin.description")}</TableHead>
-                <TableHead>{t("channels.multiplier")}</TableHead>
-                <TableHead>{copy.routingAlgorithm}</TableHead>
-                <TableHead>{copy.rateLimit}</TableHead>
-                <TableHead>{copy.requests}</TableHead>
-                <TableHead>{copy.tokens}</TableHead>
-                <TableHead>{copy.cost}</TableHead>
-                <TableHead>{t("channels.status")}</TableHead>
-                <TableHead className="text-right">{t("common.actions")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isUserChannelsLoading ? (
-                <EmptyRow colSpan={10} text={t("common.loading")} />
-              ) : userChannels.length === 0 ? (
-                <EmptyRow colSpan={10} text={t("admin.noUserChannels")} />
-              ) : (
-                userChannels.map((channel) => (
-                  <TableRow key={channel.id}>
-                    <TableCell className="font-medium">
-                      <div>{channel.name}</div>
-                      {((channel.allowed_groups?.length || 0) > 0 || (channel.allowed_users?.length || 0) > 0) && (
-                        <div className="mt-0.5 text-xs text-muted-foreground">
-                          {copy.visibilityRestricted
-                            .replace("{groups}", String(channel.allowed_groups?.length || 0))
-                            .replace("{users}", String(channel.allowed_users?.length || 0))}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>{channel.description || "-"}</TableCell>
-                    <TableCell>{channel.multiplier || 1}</TableCell>
-                    <TableCell>{routingAlgorithmLabel(channel.routing_algorithm, copy)}</TableCell>
-                    <TableCell>{channel.rate_limit_enabled ? copy.rateLimitValue.replace("{rpm}", String(channel.rate_limit_requests_per_minute || 0)).replace("{burst}", String(channel.rate_limit_burst || 0)) : copy.rateLimitDisabled}</TableCell>
-                    <TableCell>{formatInteger(usageForUserChannel(channelUsage, channel.id).request_count)}</TableCell>
-                    <TableCell>{formatInteger(usageForUserChannel(channelUsage, channel.id).total_tokens)}</TableCell>
-                    <TableCell>{formatCost(usageForUserChannel(channelUsage, channel.id).total_cost, currency)}</TableCell>
-                    <TableCell>
-                      <StatusBadge enabled={channel.enabled} />
-                    </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="icon" onClick={() => setEditingUserChannel(channel)} title={t("common.edit")}>
-                        <Edit size={14} />
-                      </Button>
-                      <Button variant="outline" size="icon" onClick={() => setEditingVisibility(channel)} title={copy.channelVisibility}>
-                        <Eye size={14} />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="text-red-500 hover:text-red-600"
-                        onClick={() => deleteUserChannel.mutate(channel.id)}
-                        title={t("common.delete")}
-                      >
-                        <Trash size={14} />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <PageInlineSlot slotKey="primary" />
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>{t("admin.upstreamChannels")}</CardTitle>
-          <Button className="gap-2" onClick={() => setEditingUpstream(emptyUpstream(userChannels[0]?.id))}>
+          <Button className="gap-2" onClick={() => setEditingUpstream(emptyUpstream())}>
             <Plus size={16} />
             {t("admin.addUpstream")}
           </Button>
@@ -465,7 +250,6 @@ export default function Channels() {
             <TableHeader>
               <TableRow>
                 <TableHead>{t("channels.name")}</TableHead>
-                <TableHead>{t("admin.userChannel")}</TableHead>
                 <TableHead>{t("channels.type")}</TableHead>
                 <TableHead>{t("admin.baseURL")}</TableHead>
                 <TableHead>{t("channels.priority")}</TableHead>
@@ -479,14 +263,13 @@ export default function Channels() {
             </TableHeader>
             <TableBody>
               {isUpstreamsLoading ? (
-                <EmptyRow colSpan={11} text={t("common.loading")} />
+                <EmptyRow colSpan={10} text={t("common.loading")} />
               ) : upstreamChannels.length === 0 ? (
-                <EmptyRow colSpan={11} text={t("channels.noChannels")} />
+                <EmptyRow colSpan={10} text={t("channels.noChannels")} />
               ) : (
                 upstreamChannels.map((channel) => (
                   <TableRow key={channel.id}>
                     <TableCell className="font-medium">{channel.name}</TableCell>
-                    <TableCell>{channel.user_channel?.name || userChannelName(userChannels, channel.user_channel_id)}</TableCell>
                     <TableCell>{channel.type}</TableCell>
                     <TableCell className="max-w-[220px] truncate">{channel.base_url}</TableCell>
                     <TableCell>{channel.priority}</TableCell>
@@ -500,9 +283,6 @@ export default function Channels() {
                     <TableCell className="text-right space-x-2">
                       <Button variant="outline" size="icon" onClick={() => setModelChannel(channel)} title={copy.modelConfigs}>
                         <ListTree size={14} />
-                      </Button>
-                      <Button variant="outline" size="icon" onClick={() => setEditingMultipliers(channel)} title={copy.groupMultipliers}>
-                        <SlidersHorizontal size={14} />
                       </Button>
                       <Button variant="outline" size="icon" onClick={() => toggleUpstream.mutate(channel)} title={channel.enabled ? t("common.disabled") : t("common.enabled")}>
                         <Power size={14} />
@@ -529,235 +309,33 @@ export default function Channels() {
       </Card>
 
       <PageInlineSlot slotKey="secondary" />
-      <UserChannelDialog
-        channel={editingUserChannel}
-        onClose={() => setEditingUserChannel(null)}
-        onSave={(channel) => saveUserChannel.mutate(channel)}
-      />
-      <UserChannelVisibilityDialog
-        channel={editingVisibility}
-        groups={groups}
-        users={adminUsers}
-        onClose={() => setEditingVisibility(null)}
-        onSave={(groupIDs, userIDs) => {
-          if (editingVisibility) {
-            saveUserChannelVisibility.mutate({ channelID: editingVisibility.id, groupIDs, userIDs })
-          }
-        }}
-      />
       <UpstreamDialog
         channel={editingUpstream}
-        userChannels={userChannels}
 		providerTypes={availableProviderTypes}
         onClose={() => setEditingUpstream(null)}
         onSave={(channel) => saveUpstream.mutate(channel)}
       />
       <UpstreamModelConfigDialog
         channel={modelChannel}
-        groups={groups}
         onClose={() => setModelChannel(null)}
-      />
-      <GroupMultiplierDialog
-        title={copy.groupMultipliers}
-        subject={editingMultipliers?.name || ""}
-        groups={groups}
-        multipliers={editingMultipliers?.group_multipliers || []}
-        open={Boolean(editingMultipliers)}
-        onClose={() => setEditingMultipliers(null)}
-        onSave={(multipliers) => {
-          if (editingMultipliers) {
-            saveGroupMultipliers.mutate({ channelID: editingMultipliers.id, multipliers })
-          }
-        }}
       />
     </div>
   )
 }
 
-function UserChannelDialog({
-  channel,
-  onClose,
-  onSave,
-}: {
-  channel: Partial<UserChannel> | null
-  onClose: () => void
-  onSave: (channel: Partial<UserChannel>) => void
-}) {
-  const { language, t } = useI18n()
-  const copy = language === "zh" ? zhChannelCopy : enChannelCopy
-  const [draft, setDraft] = useState<Partial<UserChannel>>(emptyUserChannel())
-
-  useEffect(() => {
-    setDraft(channel || emptyUserChannel())
-  }, [channel])
-
-  return (
-    <Dialog open={Boolean(channel)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{channel?.id ? t("admin.editUserChannel") : t("admin.addUserChannel")}</DialogTitle>
-          <DialogDescription>{t("admin.userChannelsHint")}</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <FieldLabel label={t("channels.name")}>
-            <Input value={draft.name || ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={t("channels.name")} />
-          </FieldLabel>
-          <FieldLabel label={t("admin.description")}>
-            <Input
-              value={draft.description || ""}
-              onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-              placeholder={t("admin.description")}
-            />
-          </FieldLabel>
-          <FieldLabel label={t("channels.multiplier")}>
-            <Input
-              type="number"
-              value={String(draft.multiplier ?? 1)}
-              onChange={(e) => setDraft({ ...draft, multiplier: Number(e.target.value) })}
-              placeholder={t("channels.multiplier")}
-            />
-          </FieldLabel>
-          <FieldLabel label={copy.routingAlgorithm}>
-            <Select value={String((draft.routing_algorithm || "priority") || "__shadcn_empty__")} onValueChange={(value) => setDraft({ ...draft, routing_algorithm: (value === "__shadcn_empty__" ? "" : value) })}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
-              {routingAlgorithmOptions(copy).map((item) => (
-                <SelectItem key={item.value} value={String(item.value)}>{item.label}</SelectItem>
-              ))}
-            </SelectContent></Select>
-          </FieldLabel>
-          <div className="space-y-3 rounded-md border p-3">
-            <label className="flex items-center gap-2 text-sm">
-              <Switch checked={Boolean(draft.rate_limit_enabled)} onCheckedChange={(checked) => setDraft({ ...draft, rate_limit_enabled: checked })} />
-              <span className="font-medium">{copy.enableRateLimit}</span>
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FieldLabel label={copy.requestsPerMinute}>
-                <Input type="number" min="1" max="1000000" disabled={!draft.rate_limit_enabled} value={String(draft.rate_limit_requests_per_minute ?? 60)} onChange={(e) => setDraft({ ...draft, rate_limit_requests_per_minute: Number(e.target.value) })} />
-              </FieldLabel>
-              <FieldLabel label={copy.rateLimitBurst}>
-                <Input type="number" min="0" max="1000000" disabled={!draft.rate_limit_enabled} value={String(draft.rate_limit_burst ?? 0)} onChange={(e) => setDraft({ ...draft, rate_limit_burst: Number(e.target.value) })} />
-              </FieldLabel>
-            </div>
-            <p className="text-xs text-muted-foreground">{copy.rateLimitHint}</p>
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <Switch checked={Boolean(draft.enabled)} onCheckedChange={(checked) => setDraft({ ...draft, enabled: checked })} />
-            {t("common.enabled")}
-          </label>
-          {Boolean(channel?.id) && <p className="text-xs text-muted-foreground">{copy.visibilityMovedHint}</p>}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
-          <Button onClick={() => onSave(draft)}>{t("admin.save")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function UserChannelVisibilityDialog({
-  channel,
-  groups,
-  users,
-  onClose,
-  onSave,
-}: {
-  channel: UserChannel | null
-  groups: Group[]
-  users: AdminUserOption[]
-  onClose: () => void
-  onSave: (groupIDs: number[], userIDs: number[]) => void
-}) {
-  const { language, t } = useI18n()
-  const copy = language === "zh" ? zhChannelCopy : enChannelCopy
-  const [allowedGroupIDs, setAllowedGroupIDs] = useState<number[]>([])
-  const [allowedUserIDs, setAllowedUserIDs] = useState<number[]>([])
-  const [userFilter, setUserFilter] = useState("")
-
-  useEffect(() => {
-    setAllowedGroupIDs((channel?.allowed_groups || []).map((item) => item.group_id).filter(Boolean))
-    setAllowedUserIDs((channel?.allowed_users || []).map((item) => item.user_id).filter(Boolean))
-    setUserFilter("")
-  }, [channel])
-
-  const toggleID = (list: number[], id: number) => (list.includes(id) ? list.filter((item) => item !== id) : [...list, id])
-  const filteredUsers = users.filter((user) => {
-    const keyword = userFilter.trim().toLowerCase()
-    if (!keyword) return true
-    return user.username.toLowerCase().includes(keyword) || user.email.toLowerCase().includes(keyword)
-  })
-
-  return (
-    <Dialog open={Boolean(channel)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{copy.channelVisibility}{channel ? ` - ${channel.name}` : ""}</DialogTitle>
-          <DialogDescription>{copy.channelVisibilityHint}</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">{copy.visibleGroups}</div>
-            {groups.length === 0 ? (
-              <div className="text-xs text-muted-foreground">{copy.noGroupsAvailable}</div>
-            ) : (
-              <div className="flex max-h-28 flex-wrap gap-x-4 gap-y-1 overflow-y-auto">
-                {groups.map((group) => (
-                  <label key={group.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={allowedGroupIDs.includes(group.id)}
-                      onCheckedChange={() => setAllowedGroupIDs((list) => toggleID(list, group.id))}
-                    />
-                    {group.name}
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">{copy.visibleUsers}</div>
-            <Input value={userFilter} placeholder={copy.filterUsersPlaceholder} onChange={(event) => setUserFilter(event.target.value)} />
-            <div className="max-h-36 space-y-1 overflow-y-auto">
-              {filteredUsers.length === 0 ? (
-                <div className="text-xs text-muted-foreground">{copy.noUsersMatched}</div>
-              ) : (
-                filteredUsers.map((user) => (
-                  <label key={user.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={allowedUserIDs.includes(user.id)}
-                      onCheckedChange={() => setAllowedUserIDs((list) => toggleID(list, user.id))}
-                    />
-                    <span className="min-w-0 truncate">{user.username}</span>
-                    <span className="min-w-0 truncate text-xs text-muted-foreground">{user.email}</span>
-                  </label>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
-          <Button onClick={() => onSave(allowedGroupIDs, allowedUserIDs)}>{t("admin.save")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 function UpstreamDialog({
   channel,
-  userChannels,
 	providerTypes,
   onClose,
   onSave,
 }: {
   channel: Partial<UpstreamChannel> | null
-  userChannels: UserChannel[]
 	providerTypes: ChannelTypeConfig[]
   onClose: () => void
   onSave: (channel: Partial<UpstreamChannel>) => void
 }) {
-  const { language, t } = useI18n()
-  const copy = language === "zh" ? zhChannelCopy : enChannelCopy
-  const [draft, setDraft] = useState<Partial<UpstreamChannel>>(emptyUpstream(userChannels[0]?.id))
+  const { t } = useI18n()
+  const [draft, setDraft] = useState<Partial<UpstreamChannel>>(emptyUpstream())
   const selectedType = draft.type || "completion"
 	const selectedTypeConfig = channelTypeConfig(selectedType, providerTypes)
 	const pluginID = selectedTypeConfig.pluginID || ""
@@ -770,8 +348,8 @@ function UpstreamDialog({
 	const pluginConfig = parsePluginUpstreamConfig(draft.plugin_config)
 
   useEffect(() => {
-    setDraft(channel || emptyUpstream(userChannels[0]?.id))
-  }, [channel, userChannels])
+    setDraft(channel || emptyUpstream())
+  }, [channel])
 
   const updateType = (type: string) => {
 		const nextConfig = channelTypeConfig(type, providerTypes)
@@ -837,14 +415,6 @@ function UpstreamDialog({
             {selectedTypeConfig.apiKeyHelp && <p className="text-xs text-muted-foreground">{selectedTypeConfig.apiKeyHelp}</p>}
 		  </FieldLabel>
 		  {pluginFields.map((field) => <PluginUpstreamConfigControl key={field.name} field={field} value={pluginConfig[field.name]} settings={pluginSettings?.config} onChange={(value) => updatePluginConfig(field.name, value)} />)}
-          <FieldLabel label={t("admin.userChannel")}>
-            <Select value={String((draft.user_channel_id || "") || "__shadcn_empty__")} onValueChange={(value) => setDraft({ ...draft, user_channel_id: Number((value === "__shadcn_empty__" ? "" : value)) || null })}><SelectTrigger className="h-10 rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
-              <SelectItem value="__shadcn_empty__">{t("admin.selectUserChannel")}</SelectItem>
-              {userChannels.map((item) => (
-                <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>
-              ))}
-            </SelectContent></Select>
-          </FieldLabel>
           <FieldLabel label={t("channels.priority")}>
             <Input
               type="number"
@@ -861,24 +431,6 @@ function UpstreamDialog({
               placeholder={t("admin.weight")}
             />
           </FieldLabel>
-          <div className="space-y-3 rounded-md border p-3 md:col-span-2">
-		  <label className="flex items-center gap-2 text-sm">
-              <Switch
-                checked={draft.price_sync_enabled ?? true}
-                onCheckedChange={(checked) => setDraft({ ...draft, price_sync_enabled: checked })}
-              />
-              <span className="font-medium">{copy.priceSyncEnabled}</span>
-            </label>
-            <FieldLabel label={copy.priceSyncCron}>
-              <Input
-                value={draft.price_sync_cron || "0 * * * *"}
-                disabled={draft.price_sync_enabled === false}
-                onChange={(e) => setDraft({ ...draft, price_sync_cron: e.target.value })}
-                placeholder="0 * * * *"
-              />
-            </FieldLabel>
-            <p className="text-xs text-muted-foreground">{copy.priceSyncCronHint}</p>
-          </div>
           <label className="flex items-center gap-2 text-sm">
             <Switch checked={Boolean(draft.enabled)} onCheckedChange={(checked) => setDraft({ ...draft, enabled: checked })} />
             {t("common.enabled")}
@@ -896,11 +448,9 @@ function UpstreamDialog({
 
 function UpstreamModelConfigDialog({
   channel,
-  groups,
   onClose,
 }: {
   channel: UpstreamChannel | null
-  groups: Group[]
   onClose: () => void
 }) {
   const { language, t } = useI18n()
@@ -908,7 +458,6 @@ function UpstreamModelConfigDialog({
   const { success, error, info } = useToast()
   const queryClient = useQueryClient()
   const [editingModel, setEditingModel] = useState<Partial<ChannelModelConfig> | null>(null)
-  const [editingModelMultipliers, setEditingModelMultipliers] = useState<ChannelModelConfig | null>(null)
   const [syncFormat, setSyncFormat] = useState("openai_models")
   const [customSyncPath, setCustomSyncPath] = useState("")
   const [syncPreview, setSyncPreview] = useState<SyncPreview | null>(null)
@@ -959,22 +508,6 @@ function UpstreamModelConfigDialog({
       invalidate()
     },
     onError: () => error(t("admin.deleteFailed")),
-  })
-
-  const saveModelMultipliers = useMutation({
-    mutationFn: async ({ modelID, multipliers }: { modelID: number; multipliers: GroupMultiplier[] }) => {
-      const res = await api.put(`/channel-models/${modelID}/group-multipliers`, multipliers.map((item) => ({
-        group_id: item.group_id,
-        multiplier: Number(item.multiplier || 0),
-      })))
-      return res.data
-    },
-    onSuccess: () => {
-      success(copy.groupMultipliersSaved)
-      setEditingModelMultipliers(null)
-      invalidate()
-    },
-    onError: () => error(copy.groupMultipliersSaveFailed),
   })
 
   const previewSync = useMutation({
@@ -1155,9 +688,6 @@ function UpstreamModelConfigDialog({
                       </TableCell>
                       <TableCell><StatusBadge enabled={item.enabled} /></TableCell>
                       <TableCell className="space-x-2 text-right">
-                        <Button variant="outline" size="icon" onClick={() => setEditingModelMultipliers(item)} title={copy.groupMultipliers}>
-                          <SlidersHorizontal size={14} />
-                        </Button>
                         <Button variant="outline" size="icon" onClick={() => setEditingModel(item)} title={t("common.edit")}>
                           <Edit size={14} />
                         </Button>
@@ -1185,19 +715,6 @@ function UpstreamModelConfigDialog({
           model={editingModel}
           onClose={() => setEditingModel(null)}
           onSave={(model) => saveModel.mutate(model)}
-        />
-        <GroupMultiplierDialog
-          title={copy.groupMultipliers}
-          subject={editingModelMultipliers?.model_name || ""}
-          groups={groups}
-          multipliers={editingModelMultipliers?.group_multipliers || []}
-          open={Boolean(editingModelMultipliers)}
-          onClose={() => setEditingModelMultipliers(null)}
-          onSave={(multipliers) => {
-            if (editingModelMultipliers) {
-              saveModelMultipliers.mutate({ modelID: editingModelMultipliers.id, multipliers })
-            }
-          }}
         />
         <SyncPreviewDialog
           preview={syncPreview}
@@ -1459,87 +976,6 @@ function BrowserSyncFallbackDialog({
   )
 }
 
-function GroupMultiplierDialog({
-  title,
-  subject,
-  groups,
-  multipliers,
-  open,
-  onClose,
-  onSave,
-}: {
-  title: string
-  subject: string
-  groups: Group[]
-  multipliers: GroupMultiplier[]
-  open: boolean
-  onClose: () => void
-  onSave: (multipliers: GroupMultiplier[]) => void
-}) {
-  const { language, t } = useI18n()
-  const copy = language === "zh" ? zhChannelCopy : enChannelCopy
-  const [draft, setDraft] = useState<GroupMultiplier[]>([])
-
-  useEffect(() => {
-    const byGroup = new Map(multipliers.map((item) => [item.group_id, item]))
-    setDraft(groups.map((group) => ({
-      group_id: group.id,
-      group,
-      multiplier: byGroup.get(group.id)?.multiplier ?? "",
-    })))
-  }, [groups, multipliers, open])
-
-  const updateMultiplier = (groupID: number, multiplier: string) => {
-    setDraft((current) => current.map((item) => (item.group_id === groupID ? { ...item, multiplier } : item)))
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{subject}</DialogDescription>
-        </DialogHeader>
-        <div className="max-h-[55vh] overflow-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{copy.group}</TableHead>
-                <TableHead>{copy.overrideMultiplier}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {draft.length === 0 ? (
-                <EmptyRow colSpan={2} text={copy.noGroups} />
-              ) : (
-                draft.map((item) => (
-                  <TableRow key={item.group_id}>
-                    <TableCell>{item.group?.name || item.group_id}</TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.0001"
-                        value={String(item.multiplier ?? "")}
-                        placeholder={copy.keepInherited}
-                        onChange={(event) => updateMultiplier(item.group_id, event.target.value)}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
-          <Button onClick={() => onSave(draft.filter((item) => Number(item.multiplier || 0) > 0))}>{t("admin.save")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 function StatusBadge({ enabled }: { enabled: boolean }) {
   const { t } = useI18n()
   return (
@@ -1637,26 +1073,8 @@ function pluginUpstreamConfigOptions(field: PluginUpstreamConfigField, settings:
   })
 }
 
-function emptyUserChannel(): Partial<UserChannel> {
-  return { name: "", description: "", multiplier: 1, routing_algorithm: "priority", enabled: true, rate_limit_enabled: false, rate_limit_requests_per_minute: 60, rate_limit_burst: 0 }
-}
-
-function userChannelPayload(channel: Partial<UserChannel>) {
+function emptyUpstream(): Partial<UpstreamChannel> {
   return {
-    name: channel.name || "",
-    description: channel.description || "",
-    multiplier: Number(channel.multiplier ?? 1),
-    routing_algorithm: channel.routing_algorithm || "priority",
-    enabled: channel.enabled ?? true,
-    rate_limit_enabled: channel.rate_limit_enabled ?? false,
-    rate_limit_requests_per_minute: Number(channel.rate_limit_requests_per_minute ?? 60),
-    rate_limit_burst: Number(channel.rate_limit_burst ?? 0),
-  }
-}
-
-function emptyUpstream(userChannelID?: number): Partial<UpstreamChannel> {
-  return {
-    user_channel_id: userChannelID || null,
     name: "",
     type: "completion",
     base_url: "",
@@ -1665,14 +1083,11 @@ function emptyUpstream(userChannelID?: number): Partial<UpstreamChannel> {
     priority: 1,
     weight: 1,
     enabled: true,
-    price_sync_enabled: true,
-    price_sync_cron: "0 * * * *",
   }
 }
 
 function upstreamPayload(channel: Partial<UpstreamChannel>) {
   return {
-    user_channel_id: channel.user_channel_id || null,
     name: channel.name || "",
     type: channel.type || "completion",
     base_url: channel.base_url || "",
@@ -1681,13 +1096,7 @@ function upstreamPayload(channel: Partial<UpstreamChannel>) {
     priority: Number(channel.priority ?? 1),
     weight: Number(channel.weight ?? 1),
     enabled: channel.enabled ?? true,
-    price_sync_enabled: channel.price_sync_enabled ?? true,
-    price_sync_cron: channel.price_sync_cron || "0 * * * *",
   }
-}
-
-function userChannelName(userChannels: UserChannel[], id?: number | null) {
-  return userChannels.find((item) => item.id === id)?.name || "-"
 }
 
 function emptyChannelModel(channelID?: number): Partial<ChannelModelConfig> {
@@ -1787,13 +1196,12 @@ function shouldIncludeChannelToken(_path: string) {
 }
 
 function emptyChannelUsage(): ChannelUsageResponse {
-  return { user_channels: [], upstream_channels: [] }
+  return { upstream_channels: [] }
 }
 
 function normalizeChannelUsageResponse(value: unknown): ChannelUsageResponse {
   const item = isRecord(value) ? value : {}
   return {
-    user_channels: Array.isArray(item.user_channels) ? item.user_channels.map(normalizeUserChannelUsage) : [],
     upstream_channels: Array.isArray(item.upstream_channels) ? item.upstream_channels.map(normalizeUpstreamChannelUsage) : [],
   }
 }
@@ -1808,29 +1216,13 @@ function normalizeUsage(value: Record<string, unknown>): UsageStats {
   }
 }
 
-function normalizeUserChannelUsage(value: unknown): UserChannelUsage {
-  const item = isRecord(value) ? value : {}
-  return {
-    id: Number(item.id || 0),
-    name: typeof item.name === "string" ? item.name : "",
-    routing_algorithm: typeof item.routing_algorithm === "string" ? item.routing_algorithm : "priority",
-    ...normalizeUsage(item),
-  }
-}
-
 function normalizeUpstreamChannelUsage(value: unknown): UpstreamChannelUsage {
   const item = isRecord(value) ? value : {}
   return {
     id: Number(item.id || 0),
     name: typeof item.name === "string" ? item.name : "",
-    user_channel_id: typeof item.user_channel_id === "number" ? item.user_channel_id : null,
-    user_channel_name: typeof item.user_channel_name === "string" ? item.user_channel_name : "",
     ...normalizeUsage(item),
   }
-}
-
-function usageForUserChannel(usage: ChannelUsageResponse, id: number): UsageStats {
-  return usage.user_channels.find((item) => item.id === id) || zeroUsage()
 }
 
 function usageForUpstreamChannel(usage: ChannelUsageResponse, id: number): UsageStats {
@@ -1839,18 +1231,6 @@ function usageForUpstreamChannel(usage: ChannelUsageResponse, id: number): Usage
 
 function zeroUsage(): UsageStats {
   return { request_count: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, total_cost: 0 }
-}
-
-function routingAlgorithmOptions(copy: typeof zhChannelCopy) {
-  return [
-    { value: "priority", label: copy.routingPriority },
-    { value: "round_robin", label: copy.routingRoundRobin },
-    { value: "weighted_round_robin", label: copy.routingWeightedRoundRobin },
-  ]
-}
-
-function routingAlgorithmLabel(value: string, copy: typeof zhChannelCopy) {
-  return routingAlgorithmOptions(copy).find((item) => item.value === value)?.label || copy.routingPriority
 }
 
 function formatInteger(value: number) {

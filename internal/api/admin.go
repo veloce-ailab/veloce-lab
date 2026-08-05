@@ -335,7 +335,6 @@ type systemSettingsResponse struct {
 	RedisPasswordSet                     bool   `json:"redis_password_set"`
 	RedisDatabase                        string `json:"redis_database"`
 	RedisTLSEnabled                      bool   `json:"redis_tls_enabled"`
-	MultiNodeEnabled                     bool   `json:"multi_node_enabled"`
 	NodeAddressMode                      string `json:"node_address_mode"`
 	NodeAddresses                        string `json:"node_addresses"`
 	CurrentNodeName                      string `json:"current_node_name"`
@@ -520,7 +519,6 @@ type systemSettingsInput struct {
 	RedisPasswordClear                   *bool   `json:"redis_password_clear"`
 	RedisDatabase                        *string `json:"redis_database"`
 	RedisTLSEnabled                      *bool   `json:"redis_tls_enabled"`
-	MultiNodeEnabled                     *bool   `json:"multi_node_enabled"`
 	NodeAddressMode                      *string `json:"node_address_mode"`
 	NodeAddresses                        *string `json:"node_addresses"`
 }
@@ -1192,15 +1190,6 @@ func (api *SystemAPI) UpdateSettings(c *gin.Context) {
 		}
 	}
 
-	// Enabling multi-node mode without NODE_NAME would make this node fail to
-	// start, so it is rejected while the admin can still fix the environment.
-	if input.MultiNodeEnabled != nil {
-		if err := RejectMultiNodeWithoutName(*input.MultiNodeEnabled); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-	}
-
 	boolSettings := map[string]*bool{
 		"top_nav_enabled":                          input.TopNavEnabled,
 		"sidebar_dashboard_enabled":                input.SidebarDashboardEnabled,
@@ -1245,7 +1234,6 @@ func (api *SystemAPI) UpdateSettings(c *gin.Context) {
 		"auto_update_enabled":                      input.AutoUpdateEnabled,
 		"redis_enabled":                            input.RedisEnabled,
 		"redis_tls_enabled":                        input.RedisTLSEnabled,
-		"multi_node_enabled":                       input.MultiNodeEnabled,
 	}
 	if input.RedisPasswordClear != nil && *input.RedisPasswordClear {
 		if err := model.SetSystemSetting("redis_password", ""); err != nil {
@@ -1453,7 +1441,6 @@ func currentAdminSystemSettings() systemSettingsResponse {
 	settings.RedisPasswordSet = settingString("redis_password", "") != ""
 	settings.RedisDatabase = settingString("redis_database", "0")
 	settings.RedisTLSEnabled = settingBool("redis_tls_enabled", false)
-	settings.MultiNodeEnabled = settingBool("multi_node_enabled", false)
 	settings.NodeAddressMode = settingString("node_address_mode", "single")
 	settings.NodeAddresses = settingString("node_addresses", "")
 	settings.CurrentNodeName = service.CurrentNodeName()
@@ -3869,11 +3856,9 @@ func hydrateModelConfigResponse(config *model.ModelConfig) {
 // UserChannelAPI handles user-facing logical channels.
 type UserChannelAPI struct{}
 
-type userChannelCatalogItem struct {
+type channelCatalogItem struct {
 	ID                  uint                                `json:"id"`
 	Name                string                              `json:"name"`
-	Description         string                              `json:"description"`
-	Multiplier          decimal.Decimal                     `json:"multiplier"`
 	Enabled             bool                                `json:"enabled"`
 	Models              []string                            `json:"models"`
 	ModelIcons          map[string]string                   `json:"model_icons"`
@@ -4059,49 +4044,32 @@ func uniquePositiveUintIDs(values []uint) []uint {
 	return result
 }
 
-func (api *UserChannelAPI) Catalog(c *gin.Context) {
-	query := model.DB.
-		Preload("Channels", "enabled = ?", true).
-		Preload("Channels.Models", "enabled = ?", true).
-		Preload("Channels.Models.Model", "enabled = ?", true).
-		Where("enabled = ?", true)
-	// Hide channels the current user is not allowed to select, matching the
-	// access rules enforced by the proxy at request time.
-	if user, ok := currentUser(c); ok {
-		filtered, err := service.FilterUserChannelsForUser(query, user)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load user channel catalog"})
-			return
-		}
-		query = filtered
-	}
-	var channels []model.UserChannel
-	if err := query.
+func (api *ChannelAPI) Catalog(c *gin.Context) {
+	var channels []model.Channel
+	if err := model.DB.
+		Preload("Models", "enabled = ?", true).
+		Preload("Models.Model", "enabled = ?", true).
+		Where("enabled = ?", true).
 		Order("name ASC").
 		Find(&channels).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load user channel catalog"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load upstream channel catalog"})
 		return
 	}
 
-	response := make([]userChannelCatalogItem, 0, len(channels))
+	response := make([]channelCatalogItem, 0, len(channels))
 	for _, channel := range channels {
 		modelSet := map[string]struct{}{}
 		modelIcons := map[string]string{}
 		videoBillingConfigs := map[string]model.VideoBillingConfig{}
-		for _, upstream := range channel.Channels {
-			for _, modelConfig := range upstream.Models {
-				modelName := strings.TrimSpace(modelConfig.Model.ModelName)
-				if modelName != "" {
-					modelSet[modelName] = struct{}{}
-					if iconURL := strings.TrimSpace(modelConfig.Model.ProviderIconURL); iconURL != "" {
-						modelIcons[modelName] = iconURL
-					}
-					if modelConfig.Model.QuotaType == model.QuotaTypeVideoResolutionDuration {
-						videoBillingConfigs[modelName] = model.MultiplyVideoBillingConfig(
-							modelConfig.Model.VideoBillingConfig,
-							channel.Multiplier,
-						)
-					}
+		for _, modelConfig := range channel.Models {
+			modelName := strings.TrimSpace(modelConfig.Model.ModelName)
+			if modelName != "" {
+				modelSet[modelName] = struct{}{}
+				if iconURL := strings.TrimSpace(modelConfig.Model.ProviderIconURL); iconURL != "" {
+					modelIcons[modelName] = iconURL
+				}
+				if modelConfig.Model.QuotaType == model.QuotaTypeVideoResolutionDuration {
+					videoBillingConfigs[modelName] = modelConfig.Model.VideoBillingConfig
 				}
 			}
 		}
@@ -4110,11 +4078,9 @@ func (api *UserChannelAPI) Catalog(c *gin.Context) {
 			models = append(models, modelName)
 		}
 		sort.Strings(models)
-		response = append(response, userChannelCatalogItem{
+		response = append(response, channelCatalogItem{
 			ID:                  channel.ID,
 			Name:                channel.Name,
-			Description:         channel.Description,
-			Multiplier:          channel.Multiplier,
 			Enabled:             channel.Enabled,
 			Models:              models,
 			ModelIcons:          modelIcons,

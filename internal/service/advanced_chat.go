@@ -342,6 +342,8 @@ func registerAdvancedChatUserRoutes(group *gin.RouterGroup) {
 	group.DELETE("/advanced-chat/files/:id", api.deleteFile)
 	group.GET("/advanced-chat/knowledge-bases", api.listKnowledgeBases)
 	group.POST("/advanced-chat/knowledge-bases", api.createKnowledgeBase)
+	group.POST("/advanced-chat/community/knowledge-bases/:id/import", api.importCommunityKnowledgeBase)
+	group.POST("/advanced-chat/community/skills/:id/import", api.importCommunitySkill)
 	group.PUT("/advanced-chat/knowledge-bases/:id", api.updateKnowledgeBase)
 	group.DELETE("/advanced-chat/knowledge-bases/:id", api.deleteKnowledgeBase)
 	group.GET("/advanced-chat/knowledge-bases/:id/documents", api.listKnowledgeDocuments)
