@@ -37,6 +37,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      allowedHosts: ["mynas.fireguo.com"],
       proxy: {
         '/api': {
           target: 'http://localhost:12789',
