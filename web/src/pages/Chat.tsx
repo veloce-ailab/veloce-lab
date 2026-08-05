@@ -543,8 +543,8 @@ const defaultAdvancedChatSettings: AdvancedChatSettings = {
   file_storage_enabled: true,
   file_storage_total_mb: 100,
   file_storage_used_bytes: 0,
-  file_storage_auto_save_images_enabled: false,
-  file_storage_auto_save_videos_enabled: false,
+  file_storage_auto_save_images_enabled: true,
+  file_storage_auto_save_videos_enabled: true,
   mcp_servers: [],
   builtin_mcp_servers: [],
   custom_mcp_servers: [],
@@ -6488,8 +6488,8 @@ function normalizeAdvancedChatSettings(value: unknown): AdvancedChatSettings {
     file_storage_enabled: item.file_storage_enabled !== false,
     file_storage_total_mb: Number(item.file_storage_total_mb || defaultAdvancedChatSettings.file_storage_total_mb),
     file_storage_used_bytes: Number(item.file_storage_used_bytes || 0),
-    file_storage_auto_save_images_enabled: item.file_storage_auto_save_images_enabled === true,
-    file_storage_auto_save_videos_enabled: item.file_storage_auto_save_videos_enabled === true,
+    file_storage_auto_save_images_enabled: item.file_storage_auto_save_images_enabled !== false,
+    file_storage_auto_save_videos_enabled: item.file_storage_auto_save_videos_enabled !== false,
     mcp_servers: Array.isArray(item.mcp_servers) ? item.mcp_servers.map(normalizeMCPServer) : mergeMCPServers(builtin, custom),
     builtin_mcp_servers: builtin,
     custom_mcp_servers: custom,
@@ -6671,10 +6671,6 @@ function normalizeWorkspaceSkill(value: unknown): WorkspaceSkill | null {
 }
 
 function validateAttachment(file: File, settings: AdvancedChatSettings, copy: ChatCopy) {
-  const maxBytes = Math.max(1, Number(settings.attachment_max_mb) || 1) * 1024 * 1024
-  if (file.size > maxBytes) {
-    return copy.attachmentTooLarge.replace("{file}", file.name).replace("{size}", String(settings.attachment_max_mb))
-  }
   const type = attachmentFileType(file)
   if (!mimeAllowed(type, settings.attachment_allowed_types)) {
     return copy.attachmentTypeBlocked.replace("{file}", file.name).replace("{type}", type)

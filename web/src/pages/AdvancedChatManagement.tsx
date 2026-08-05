@@ -56,8 +56,8 @@ const defaultAdvancedChatSettings: AdvancedChatSettings = {
   attachment_allowed_types: ["text/plain", "text/markdown", "application/json", "text/csv", "image/png", "image/jpeg", "application/pdf"],
   file_storage_enabled: true,
   file_storage_total_mb: 100,
-  file_storage_auto_save_images_enabled: false,
-  file_storage_auto_save_videos_enabled: false,
+  file_storage_auto_save_images_enabled: true,
+  file_storage_auto_save_videos_enabled: true,
   builtin_mcp_servers: [],
   assistant_mode_enabled: true,
   assistant_run_timeout_seconds: 1800,
@@ -71,7 +71,7 @@ const defaultAdvancedChatSettings: AdvancedChatSettings = {
   assistant_connector_web_search_enabled: true,
   assistant_connector_static_site_enabled: true,
   scheduled_tasks_enabled: true,
-  message_channel_enabled: false,
+  message_channel_enabled: true,
   message_delivery_enabled: true,
   delivery_system_smtp_enabled: true,
 }
@@ -265,27 +265,7 @@ export default function AdvancedChatManagement({ mode = "attachments" }: { mode?
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-[240px_240px_minmax(0,1fr)]">
-                  <label className="space-y-2 text-sm">
-                    <span className="font-medium">单个附件大小上限 MB</span>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={form.attachment_max_mb}
-                      onChange={(event) => setForm((current) => ({ ...current, attachment_max_mb: Number(event.target.value) || 1 }))}
-                    />
-                  </label>
-                  <label className="space-y-2 text-sm">
-                    <span className="font-medium">每用户总容量 MB</span>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={102400}
-                      value={form.file_storage_total_mb}
-                      onChange={(event) => setForm((current) => ({ ...current, file_storage_total_mb: Number(event.target.value) || 1 }))}
-                    />
-                  </label>
+                <div className="grid gap-4">
                   <label className="space-y-2 text-sm">
                     <span className="font-medium">允许的附件类型</span>
                     <textarea
@@ -570,8 +550,8 @@ function normalizeAdvancedChatSettings(value: unknown): AdvancedChatSettings {
       : defaultAdvancedChatSettings.attachment_allowed_types,
     file_storage_enabled: item.file_storage_enabled !== false,
     file_storage_total_mb: Number(item.file_storage_total_mb || defaultAdvancedChatSettings.file_storage_total_mb),
-    file_storage_auto_save_images_enabled: item.file_storage_auto_save_images_enabled === true,
-    file_storage_auto_save_videos_enabled: item.file_storage_auto_save_videos_enabled === true,
+    file_storage_auto_save_images_enabled: item.file_storage_auto_save_images_enabled !== false,
+    file_storage_auto_save_videos_enabled: item.file_storage_auto_save_videos_enabled !== false,
     builtin_mcp_servers: Array.isArray(item.builtin_mcp_servers) ? item.builtin_mcp_servers.map(normalizeMCPServer) : [],
     assistant_mode_enabled: item.assistant_mode_enabled !== false,
     assistant_run_timeout_seconds: Number(item.assistant_run_timeout_seconds || defaultAdvancedChatSettings.assistant_run_timeout_seconds),
@@ -585,7 +565,7 @@ function normalizeAdvancedChatSettings(value: unknown): AdvancedChatSettings {
     assistant_connector_web_search_enabled: item.assistant_connector_web_search_enabled !== false,
     assistant_connector_static_site_enabled: item.assistant_connector_static_site_enabled !== false,
     scheduled_tasks_enabled: item.scheduled_tasks_enabled !== false,
-    message_channel_enabled: item.message_channel_enabled === true,
+    message_channel_enabled: item.message_channel_enabled !== false,
     message_delivery_enabled: item.message_delivery_enabled !== false,
     delivery_system_smtp_enabled: item.delivery_system_smtp_enabled !== false,
   }

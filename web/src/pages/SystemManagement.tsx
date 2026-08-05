@@ -21,7 +21,7 @@ interface SystemSettings {
 const defaults: SystemSettings = {
   site_name: "Veloce",
   icon_url: "",
-  message_channel_enabled: false,
+  message_channel_enabled: true,
 }
 
 export default function SystemManagement({ section = "general" }: { section?: SystemSection }) {

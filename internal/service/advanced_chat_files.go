@@ -22,9 +22,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gin-gonic/gin"
 	"github.com/veloce-ailab/veloce/internal/config"
 	"github.com/veloce-ailab/veloce/internal/model"
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -140,27 +140,17 @@ func (api *advancedChatAPI) uploadFile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "File is required"})
 		return
 	}
-	maxBytes := int64(advancedChatAttachmentMaxMB()) * 1024 * 1024
-	if fileHeader.Size > maxBytes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "File is too large"})
-		return
-	}
 	source, err := fileHeader.Open()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to open file"})
 		return
 	}
 	defer source.Close()
-	data, err := io.ReadAll(io.LimitReader(source, maxBytes+1))
+	data, err := io.ReadAll(source)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read file"})
 		return
 	}
-	if int64(len(data)) > maxBytes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "File is too large"})
-		return
-	}
-
 	contentType := fileHeader.Header.Get("Content-Type")
 	file, status, message, err := storeAdvancedChatFile(user.ID, advancedChatFileStoreInput{
 		Name:               fileHeader.Filename,
@@ -273,10 +263,6 @@ func storeAdvancedChatFile(userID uint, input advancedChatFileStoreInput) (Advan
 		return AdvancedChatFile{}, http.StatusBadRequest, "File type is not allowed", errors.New("file type blocked")
 	}
 	size := int64(len(input.Data))
-	storageLimit := advancedChatFileStorageTotalBytes()
-	if size > storageLimit {
-		return AdvancedChatFile{}, http.StatusRequestEntityTooLarge, "File exceeds storage quota", errAdvancedChatFileInsufficient
-	}
 
 	id := newAdvancedChatID("acf")
 	source := strings.TrimSpace(input.Source)
@@ -323,23 +309,6 @@ func storeAdvancedChatFile(userID uint, input advancedChatFileStoreInput) (Advan
 			return err
 		}
 
-		var used int64
-		if err := tx.Model(&AdvancedChatFile{}).
-			Where("user_id = ?", userID).
-			Select("COALESCE(SUM(size), 0)").
-			Scan(&used).Error; err != nil {
-			return err
-		}
-		var packageUsed int64
-		if err := tx.Model(&AdvancedChatSkillPackage{}).
-			Where("user_id = ?", userID).
-			Select("COALESCE(SUM(size), 0)").
-			Scan(&packageUsed).Error; err != nil {
-			return err
-		}
-		if used+packageUsed+size > storageLimit {
-			return errAdvancedChatFileInsufficient
-		}
 		return tx.Create(&file).Error
 	})
 	if err != nil {
@@ -497,14 +466,14 @@ func advancedChatFileStorageAutoSaveImagesEnabled() bool {
 	if !advancedChatPremiumFeaturesAvailable() {
 		return false
 	}
-	return advancedChatSettingBool(advancedChatFileStorageAutoSaveImagesEnabledKey, false)
+	return advancedChatSettingBool(advancedChatFileStorageAutoSaveImagesEnabledKey, true)
 }
 
 func advancedChatFileStorageAutoSaveVideosEnabled() bool {
 	if !advancedChatPremiumFeaturesAvailable() {
 		return false
 	}
-	return advancedChatSettingBool(advancedChatFileStorageAutoSaveVideosEnabledKey, false)
+	return advancedChatSettingBool(advancedChatFileStorageAutoSaveVideosEnabledKey, true)
 }
 
 func advancedChatFileStorageTotalMB() int {
@@ -519,7 +488,7 @@ func advancedChatFileStorageTotalMB() int {
 }
 
 func advancedChatFileStorageTotalBytes() int64 {
-	return int64(advancedChatFileStorageTotalMB()) * 1024 * 1024
+	return 0
 }
 
 func advancedChatStorageRoot() string {
@@ -659,11 +628,7 @@ func advancedChatFileStorageUsedBytesWithDB(db *gorm.DB, userID uint) (int64, er
 }
 
 func advancedChatFileStorageRemainingBytes(userID uint) int64 {
-	remaining := advancedChatFileStorageTotalBytes() - advancedChatFileStorageUsedBytes(userID)
-	if remaining < 0 {
-		return 0
-	}
-	return remaining
+	return int64(^uint64(0) >> 1)
 }
 
 func AdvancedChatFileStorageUsedBytes(userID uint) int64 {
@@ -872,10 +837,6 @@ func downloadGeneratedAdvancedChatFile(ctx context.Context, userID uint, rawURL 
 	if err := ValidateOutboundHTTPURL(rawURL, CurrentURLGuardOptions()); err != nil {
 		return nil, "", "", err
 	}
-	remaining := advancedChatFileStorageRemainingBytes(userID)
-	if remaining <= 0 {
-		return nil, "", "", errAdvancedChatFileInsufficient
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, "", "", err
@@ -888,12 +849,9 @@ func downloadGeneratedAdvancedChatFile(ctx context.Context, userID uint, rawURL 
 	if resp.StatusCode >= http.StatusBadRequest {
 		return nil, "", "", fmt.Errorf("download failed with HTTP %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, remaining+1))
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, "", "", err
-	}
-	if int64(len(data)) > remaining {
-		return nil, "", "", errAdvancedChatFileInsufficient
 	}
 	if mimeType == "" {
 		mimeType = resp.Header.Get("Content-Type")

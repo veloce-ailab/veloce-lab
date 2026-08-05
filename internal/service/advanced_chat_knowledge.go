@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/veloce-ailab/veloce/internal/model"
 	"github.com/gin-gonic/gin"
+	"github.com/veloce-ailab/veloce/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -248,20 +248,15 @@ func (api *advancedChatAPI) uploadKnowledgeDocument(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "File is required"})
 		return
 	}
-	maxBytes := int64(advancedChatAttachmentMaxMB()) * 1024 * 1024
-	if fileHeader.Size > maxBytes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "File is too large"})
-		return
-	}
 	source, err := fileHeader.Open()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to open file"})
 		return
 	}
 	defer source.Close()
-	data, err := io.ReadAll(io.LimitReader(source, maxBytes+1))
-	if err != nil || int64(len(data)) > maxBytes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "File is too large or could not be read"})
+	data, err := io.ReadAll(source)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File could not be read"})
 		return
 	}
 

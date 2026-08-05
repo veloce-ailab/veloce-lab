@@ -160,7 +160,7 @@ export const defaultPublicSettings: PublicSettings = {
   sidebar_channels_enabled: true,
   sidebar_models_enabled: true,
   sidebar_users_enabled: true,
-  message_channel_enabled: false,
+  message_channel_enabled: true,
   referral_enabled: false,
   referral_commission_rate: "0",
   group_multiplier_mode: "min",
