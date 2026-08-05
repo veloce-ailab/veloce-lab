@@ -4,7 +4,7 @@ import type { ChangeEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNo
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListTodo, Loader2, Menu, MessageCircleQuestion, MessageSquarePlus, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
 import api, { apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
 import { ConnectorTerminalWindow, type ConnectorTerminalCopy } from "@/components/chat/ConnectorTerminalWindow"
@@ -617,7 +617,7 @@ export default function Chat() {
   const [isConfigOpen, setIsConfigOpen] = useState(false)
   const [isAgentWorkOpen, setIsAgentWorkOpen] = useState(false)
   const [selectedWorkAgentID, setSelectedWorkAgentID] = useState("")
-  const [isSessionsSidebarOpen, setIsSessionsSidebarOpen] = useState(false)
+  const [, setIsSessionsSidebarOpen] = useState(false)
   const [isDesktopSessionsSidebarVisible, setIsDesktopSessionsSidebarVisible] = useState(true)
   const [desktopSessionsSidebarHost, setDesktopSessionsSidebarHost] = useState<HTMLElement | null>(null)
   const [sessionSearch, setSessionSearch] = useState("")
@@ -696,7 +696,11 @@ export default function Chat() {
   const [loadedSharedSession, setLoadedSharedSession] = useState<ChatSession | null>(null)
 
   useEffect(() => {
-    setDesktopSessionsSidebarHost(document.getElementById("chat-sessions-sidebar-slot"))
+    const media = window.matchMedia("(min-width: 1024px)")
+    const updateHost = () => setDesktopSessionsSidebarHost(document.getElementById(media.matches ? "chat-sessions-sidebar-slot-desktop" : "chat-sessions-sidebar-slot-mobile"))
+    updateHost()
+    media.addEventListener("change", updateHost)
+    return () => media.removeEventListener("change", updateHost)
   }, [])
 
   const { data: catalog = [] } = useQuery<UpstreamChannelCatalog[]>({
@@ -3431,9 +3435,6 @@ export default function Chat() {
           >
             <FolderPlus size={16} />
           </Button>
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 xl:hidden" onClick={() => setIsSessionsSidebarOpen(false)} aria-label={copy.closeSessions}>
-            <X size={16} />
-          </Button>
         </div>
       </div>
       <div className="border-b border-border/80 p-2.5">
@@ -3577,21 +3578,6 @@ export default function Chat() {
       </div>
     </aside>
   )
-  const sessionsSidebarPortal =
-    typeof document === "undefined" || !isSessionsSidebarOpen
-      ? null
-      : createPortal(
-          <div className={cn("fixed inset-x-0 bottom-0 z-40 transition-opacity duration-200 xl:hidden", isDesktop ? "top-[6.25rem]" : "top-16", isSessionsSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSessionsSidebarOpen}>
-              <button
-                type="button"
-                className="absolute inset-0 bg-black/35 backdrop-blur-sm transition-opacity duration-200"
-                aria-label={copy.closeSessions}
-                onClick={() => setIsSessionsSidebarOpen(false)}
-              />
-          <div className={cn("relative z-50 h-full w-60 max-w-[85vw] transition-transform duration-200 ease-out", isSessionsSidebarOpen ? "translate-x-0" : "-translate-x-full")}>{sessionsSidebar}</div>
-          </div>,
-          document.body
-        )
   const desktopSessionsSidebarPortal = desktopSessionsSidebarHost
     ? createPortal(sessionsSidebar, desktopSessionsSidebarHost)
     : null
@@ -3657,7 +3643,6 @@ export default function Chat() {
 
   return (
     <div className={cn("flex min-w-0", isAdvanced && "h-full min-h-0")}>
-      {sessionsSidebarPortal}
       {desktopSessionsSidebarPortal}
       {messageSelectionContextMenuPortal}
       {terminalWindow && (
@@ -3683,22 +3668,10 @@ export default function Chat() {
       </Dialog>
       <div className={cn(
         "min-w-0 flex-1 transition-[filter] duration-200",
-        isSessionsSidebarOpen && "max-xl:blur-sm",
         isAdvanced ? "flex min-h-0 flex-col overflow-hidden bg-background p-4 sm:p-6 xl:relative xl:z-10 xl:p-0" : "space-y-5"
       )}>
       <div className="sticky top-0 z-30 -mx-4 flex min-h-10 justify-end bg-transparent px-4 py-0 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:mx-0">
         <div className="relative flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-9 w-9 border-border bg-background xl:hidden"
-            onClick={() => setIsSessionsSidebarOpen((open) => !open)}
-            aria-label={isSessionsSidebarOpen ? copy.closeSessions : copy.openSessions}
-            aria-expanded={isSessionsSidebarOpen}
-            title={isSessionsSidebarOpen ? copy.closeSessions : copy.openSessions}
-          >
-            <Menu size={16} />
-          </Button>
           {isAdvanced && <ChatSetupGuide />}
           {isAdvanced && canOpenWorkspaceInVSCode && (
             <Button

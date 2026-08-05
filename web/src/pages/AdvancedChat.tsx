@@ -153,7 +153,7 @@ export default function AdvancedChat() {
 
       <div className={cn("flex min-h-0 flex-1", isChatRoute && "bg-background")}>
         <div className="hidden lg:block lg:h-full lg:shrink-0">
-          <AdvancedChatSidebar className={isChatRoute ? "border-r-0 bg-background" : undefined} publicSettings={publicSettings} user={user} />
+          <AdvancedChatSidebar className={isChatRoute ? "border-r-0 bg-background" : undefined} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot-desktop" />
         </div>
 
         <div className={cn("fixed inset-0 z-40 transition-opacity duration-200 lg:hidden", isDesktop ? "top-0" : "top-16", isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSidebarOpen}>
@@ -164,7 +164,7 @@ export default function AdvancedChat() {
               onClick={() => setIsSidebarOpen(false)}
             />
             <div className={cn("relative z-50 h-full w-64 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")}>
-              <AdvancedChatSidebar className={cn("w-full", isChatRoute && "border-r-0 bg-background")} publicSettings={publicSettings} user={user} onNavigate={() => setIsSidebarOpen(false)} />
+              <AdvancedChatSidebar className={cn("w-full", isChatRoute && "border-r-0 bg-background")} publicSettings={publicSettings} user={user} onNavigate={() => setIsSidebarOpen(false)} sessionSlotID="chat-sessions-sidebar-slot-mobile" />
             </div>
         </div>
 
@@ -249,11 +249,13 @@ function AdvancedChatSidebar({
   publicSettings,
   user,
   onNavigate,
+  sessionSlotID,
 }: {
   className?: string
   publicSettings: PublicSettings
   user?: CurrentUser
   onNavigate?: () => void
+  sessionSlotID?: string
 }) {
   const location = useLocation()
   const { language, t } = useI18n()
@@ -353,8 +355,8 @@ function AdvancedChatSidebar({
 
   return (
     <aside className={cn("flex h-full w-56 flex-col border-r bg-card", className)}>
-      <nav className={cn("relative min-h-0 overflow-hidden px-4 py-4", homeItem.active ? "h-[18rem] shrink-0" : "flex-1")}>
-        <div className={cn("h-full overflow-y-auto transition-transform duration-200 ease-out", showingGroup && "-translate-x-full")}>
+      <nav className={cn("relative min-h-0 overflow-hidden px-4 py-4", homeItem.active ? "shrink-0" : "flex-1")}>
+        <div className={cn("overflow-y-auto transition-transform duration-200 ease-out", homeItem.active ? "max-h-64" : "h-full", showingGroup && "-translate-x-full")}>
           <div className="flex flex-col gap-1">
             {renderSidebarLink(homeItem)}
             {directItems.map((item) => renderSidebarLink(item))}
@@ -402,7 +404,7 @@ function AdvancedChatSidebar({
           )}
         </div>
       </nav>
-      {homeItem.active && <div id="chat-sessions-sidebar-slot" className="min-h-0 flex-1 border-t border-border" />}
+      {homeItem.active && <div id={sessionSlotID} className="min-h-0 flex-1 overflow-hidden border-t border-border" />}
     </aside>
   )
 }
