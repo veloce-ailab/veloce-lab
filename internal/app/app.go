@@ -908,7 +908,9 @@ const maxRequestBodyBytes int64 = 128 << 20
 
 func requestBodyLimit(maxBytes int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request.Body != nil {
+		path := c.Request.URL.Path
+		unlimitedFileUpload := c.Request.Method == http.MethodPost && (path == "/api/user/advanced-chat/files" || strings.Contains(path, "/advanced-chat/knowledge-bases/") && strings.HasSuffix(path, "/documents"))
+		if c.Request.Body != nil && !unlimitedFileUpload {
 			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
 		}
 		c.Next()

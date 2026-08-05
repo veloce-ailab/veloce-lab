@@ -1580,7 +1580,7 @@ func currentChatPageMode() string {
 }
 
 func currentMessageChannelEnabled() bool {
-	return service.CurrentEdition() == "premium" && settingBool("message_channel_enabled", false)
+	return service.CurrentEdition() == "premium" && settingBool("message_channel_enabled", true)
 }
 
 func currentAuthAgreementMode() string {

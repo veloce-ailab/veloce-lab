@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/veloce-ailab/veloce/internal/model"
 	communityservice "github.com/veloce-ailab/veloce/internal/service"
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -232,7 +232,7 @@ func RegisterPublicRoutes(group *gin.RouterGroup) {
 }
 
 func Enabled() bool {
-	return settingBool(settingMessageChannelEnabled, false)
+	return settingBool(settingMessageChannelEnabled, true)
 }
 
 func (api *API) getAdminSettings(c *gin.Context) {

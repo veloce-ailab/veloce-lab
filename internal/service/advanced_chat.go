@@ -1278,7 +1278,7 @@ func advancedChatMessageChannelEnabled() bool {
 	if !advancedChatPremiumFeaturesAvailable() {
 		return false
 	}
-	return advancedChatSettingBool(advancedChatMessageChannelEnabledKey, false)
+	return advancedChatSettingBool(advancedChatMessageChannelEnabledKey, true)
 }
 
 func advancedChatMessageDeliveryEnabled() bool {

@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Download, FileText, Folder, HardDrive, RefreshCw, Trash2, Upload } from "lucide-react"
+import { ArrowLeft, Download, FileText, Folder, RefreshCw, Trash2, Upload } from "lucide-react"
 import api from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -97,12 +97,6 @@ export default function AdvancedChatFiles() {
   })
   const isSharedPoolView = enterpriseMode && Boolean(selectedPoolID)
   const visibleFiles = isSharedPoolView ? sharedFiles : filesQuery.data?.files || []
-
-  const usage = useMemo(() => {
-    const used = filesQuery.data?.used_bytes ?? settings?.file_storage_used_bytes ?? 0
-    const total = filesQuery.data?.total_bytes ?? Math.max(0, Number(settings?.file_storage_total_mb || 0)) * 1024 * 1024
-    return { used, total, percent: total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0 }
-  }, [filesQuery.data?.total_bytes, filesQuery.data?.used_bytes, settings?.file_storage_total_mb, settings?.file_storage_used_bytes])
 
   const uploadFiles = async (files: FileList | null) => {
     if (!files?.length || isUploading) {
@@ -209,24 +203,6 @@ export default function AdvancedChatFiles() {
         </Card>
       ) : (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <HardDrive size={18} />
-                {copy.storage}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="h-2 overflow-hidden rounded-full bg-muted">
-                <div className="h-full bg-primary transition-all" style={{ width: `${usage.percent}%` }} />
-              </div>
-              <div className="flex flex-col gap-1 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-                <span>{formatBytes(usage.used)} / {formatBytes(usage.total)}</span>
-                <span>{usage.percent}%</span>
-              </div>
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <CardTitle className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2">{isSharedPoolView && <Folder size={18} className={sharedPools.find((pool) => String(pool.id) === selectedPoolID)?.scope_type === "task" ? "text-teal-600" : "text-amber-600"} />}{isSharedPoolView ? sharedPoolLabel(sharedPools.find((pool) => String(pool.id) === selectedPoolID) || { id: 0, scope_type: "", name: copy.files }, language) : copy.files}</span>{isSharedPoolView && <Button size="sm" variant="outline" onClick={closePool}><ArrowLeft className="mr-1 h-4 w-4" />{language === "zh" ? "返回文件根目录" : "Back to file root"}</Button>}</CardTitle>
