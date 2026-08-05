@@ -621,6 +621,7 @@ export default function Chat() {
   const [isDesktopSessionsSidebarVisible, setIsDesktopSessionsSidebarVisible] = useState(true)
   const [desktopSessionsSidebarHost, setDesktopSessionsSidebarHost] = useState<HTMLElement | null>(null)
   const [sessionSearch, setSessionSearch] = useState("")
+  const [visibleSessionCount, setVisibleSessionCount] = useState(20)
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>(readSessionFolders)
   const [sessionFolderAssignments, setSessionFolderAssignments] = useState<Record<string, string>>(readSessionFolderAssignments)
   const [isSessionFolderDialogOpen, setIsSessionFolderDialogOpen] = useState(false)
@@ -702,7 +703,6 @@ export default function Chat() {
     media.addEventListener("change", updateHost)
     return () => media.removeEventListener("change", updateHost)
   }, [])
-
   const { data: catalog = [] } = useQuery<UpstreamChannelCatalog[]>({
     queryKey: ["catalog"],
     queryFn: async () => {
@@ -849,19 +849,47 @@ export default function Chat() {
   }, [displaySessions, isAdvanced, sessionFolderAssignments])
   const normalizedSessionSearch = sessionSearch.trim().toLowerCase()
   const searchedSessions = useMemo(
-    () => displaySessions.filter((session) => (session.title || copy.untitledSession).toLowerCase().includes(normalizedSessionSearch)),
+    () => displaySessions
+      .filter((session) => (session.title || copy.untitledSession).toLowerCase().includes(normalizedSessionSearch))
+      .sort((a, b) => Date.parse(b.updated_at || b.created_at) - Date.parse(a.updated_at || a.created_at)),
     [copy.untitledSession, displaySessions, normalizedSessionSearch]
   )
-  const ungroupedSessions = useMemo(
-    () => searchedSessions.filter((session) => !resolvedSessionFolderAssignments[session.id]),
-    [resolvedSessionFolderAssignments, searchedSessions]
-  )
-  const folderSessionGroups = useMemo(
-    () => sessionFolders
-      .map((folder) => ({ folder, sessions: searchedSessions.filter((session) => resolvedSessionFolderAssignments[session.id] === folder.id) }))
-      .filter((group) => group.sessions.length > 0 || !normalizedSessionSearch),
-    [normalizedSessionSearch, resolvedSessionFolderAssignments, searchedSessions, sessionFolders]
-  )
+  const visibleSessionGroups = useMemo(() => {
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const yesterdayStart = todayStart - 24 * 60 * 60 * 1000
+    const sevenDaysStart = todayStart - 7 * 24 * 60 * 60 * 1000
+    const groups = new Map<string, { label: string; sessions: ChatSession[] }>()
+
+    searchedSessions.slice(0, visibleSessionCount).forEach((session) => {
+      const timestamp = Date.parse(session.updated_at || session.created_at)
+      const date = Number.isFinite(timestamp) ? new Date(timestamp) : new Date(0)
+      let key: string
+      let label: string
+      if (timestamp >= todayStart) {
+        key = "today"
+        label = language === "zh" ? "今天" : "Today"
+      } else if (timestamp >= yesterdayStart) {
+        key = "yesterday"
+        label = language === "zh" ? "昨天" : "Yesterday"
+      } else if (timestamp >= sevenDaysStart) {
+        key = "previous-seven-days"
+        label = language === "zh" ? "过去 7 天" : "Previous 7 Days"
+      } else {
+        key = `${date.getFullYear()}-${date.getMonth()}`
+        label = language === "zh"
+          ? `${date.getFullYear() === now.getFullYear() ? "" : `${date.getFullYear()}年`}${date.getMonth() + 1}月`
+          : date.toLocaleDateString("en-US", { month: "long", year: date.getFullYear() === now.getFullYear() ? undefined : "numeric" })
+      }
+      const group = groups.get(key)
+      if (group) {
+        group.sessions.push(session)
+      } else {
+        groups.set(key, { label, sessions: [session] })
+      }
+    })
+    return Array.from(groups.values())
+  }, [language, searchedSessions, visibleSessionCount])
   const currentSessionRaw = activeSession || (isAdvanced && routeSessionID ? undefined : draftSession)
   const currentSession = currentSessionRaw ? normalizeRuntimeSession(currentSessionRaw) : undefined
   const isSharedSession = Boolean(currentSession?.id && currentSession.id === sharedSessionID && sharedSessionPoolID)
@@ -3447,7 +3475,10 @@ export default function Chat() {
           <input
             className="h-8 w-full rounded-md border border-border bg-background py-1 pl-9 pr-3 text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus:border-ring"
             value={sessionSearch}
-            onChange={(event) => setSessionSearch(event.target.value)}
+            onChange={(event) => {
+              setSessionSearch(event.target.value)
+              setVisibleSessionCount(20)
+            }}
             placeholder={sessionSidebarCopy.search}
             aria-label={sessionSidebarCopy.search}
           />
@@ -3471,34 +3502,21 @@ export default function Chat() {
             })}
           </div>
         )}
-        {folderSessionGroups.map(({ folder, sessions: groupedSessions }) => (
-          <div key={folder.id} className="pb-2">
-            <button
-              type="button"
-              className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-muted-foreground hover:bg-muted"
-              onClick={() => setCollapsedSessionFolderIDs((current) => {
-                const next = new Set(current)
-                if (next.has(folder.id)) {
-                  next.delete(folder.id)
-                } else {
-                  next.add(folder.id)
-                }
-                return next
-              })}
-            >
-              <ChevronRight size={14} className={cn("shrink-0 transition-transform", (normalizedSessionSearch || !collapsedSessionFolderIDs.has(folder.id)) && "rotate-90")} />
-              <Folder size={14} className="shrink-0 text-primary" />
-              <span className="truncate">{folder.name}</span>
-            </button>
-            <Button size="sm" variant="ghost" className="ml-7 h-7 text-xs" onClick={() => createNewSession({ folderID: folder.id })}><MessageSquarePlus className="mr-1 h-3.5 w-3.5" />{language === "zh" ? "在此新建会话" : "New session here"}</Button>
-            {(normalizedSessionSearch || !collapsedSessionFolderIDs.has(folder.id)) && groupedSessions.map(sessionSidebarItem)}
+        {visibleSessionGroups.map((group) => (
+          <div key={group.label} className="pb-2">
+            <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">{group.label}</div>
+            {group.sessions.map(sessionSidebarItem)}
           </div>
         ))}
-        {ungroupedSessions.length > 0 && (
-          <div className="pb-2">
-            {sessionFolders.length > 0 && <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">{sessionSidebarCopy.uncategorized}</div>}
-            {ungroupedSessions.map(sessionSidebarItem)}
-          </div>
+        {visibleSessionCount < searchedSessions.length && (
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-9 w-full text-xs text-muted-foreground"
+            onClick={() => setVisibleSessionCount((count) => count + 20)}
+          >
+            {language === "zh" ? "继续加载" : "Load more"}
+          </Button>
         )}
         {searchedSessions.length === 0 && <div className="px-3 py-10 text-center text-sm text-muted-foreground">{sessionSidebarCopy.noSessions}</div>}
         {sessionMenu && typeof document !== "undefined" && (() => {
