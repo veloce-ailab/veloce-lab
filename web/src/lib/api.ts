@@ -210,8 +210,8 @@ let demoChatGroups = [{
   description: "方案助理与评审助理协作处理产品工作",
   updated_at: demoNow,
   members: [
-    { id: "demo-member-planner", agent_id: "planner", agent_name: "方案助理", status: "idle" },
-    { id: "demo-member-reviewer", agent_id: "reviewer", agent_name: "评审助理", status: "working", run_id: "demo-group-run" },
+    { id: "demo-member-planner", agent_id: "planner", agent_name: "方案助理", model_name: "gpt-5.4", user_channel_id: 1, connector_device_id: "demo-device", status: "idle" },
+    { id: "demo-member-reviewer", agent_id: "reviewer", agent_name: "评审助理", model_name: "claude-sonnet-4-6", user_channel_id: 1, connector_device_id: "", status: "working", run_id: "demo-group-run" },
   ],
 }];
 let demoChatGroupMessages: Array<{ id: string; sender_type: string; sender_id?: string; sender_name: string; content: string; mention_member_ids: string[]; created_at: string }> = [
@@ -255,7 +255,8 @@ const demoAdapter: AxiosAdapter = async (config) => {
     const payload = demoPayload(config);
     const id = `demo-group-${Date.now()}`;
     const agentIDs = Array.isArray(payload.agent_ids) ? payload.agent_ids.map(String) : [];
-    const group = { id, name: String(payload.name || "New group"), description: String(payload.description || ""), updated_at: new Date().toISOString(), members: demoAgents.filter((agent) => agentIDs.includes(agent.id)).map((agent) => ({ id: `demo-member-${agent.id}-${Date.now()}`, agent_id: agent.id, agent_name: agent.name, status: "idle" })) };
+    const memberConfigs = Array.isArray(payload.member_configs) ? payload.member_configs as Array<Record<string, unknown>> : [];
+    const group = { id, name: String(payload.name || "New group"), description: String(payload.description || ""), updated_at: new Date().toISOString(), members: demoAgents.filter((agent) => agentIDs.includes(agent.id)).map((agent) => { const config = memberConfigs.find((item) => String(item.agent_id) === agent.id); return { id: `demo-member-${agent.id}-${Date.now()}`, agent_id: agent.id, agent_name: agent.name, model_name: String(config?.model_name || agent.default_model), user_channel_id: Number(config?.user_channel_id || 0), connector_device_id: String(config?.connector_device_id || ""), status: "idle" }; }) };
     demoChatGroups = [group, ...demoChatGroups];
     return demoResponse(config, group, 201);
   }
@@ -268,7 +269,8 @@ const demoAdapter: AxiosAdapter = async (config) => {
       current.name = String(payload.name || current.name);
       current.description = String(payload.description || "");
       const agentIDs = Array.isArray(payload.agent_ids) ? payload.agent_ids.map(String) : current.members.map((member) => member.agent_id);
-      current.members = demoAgents.filter((agent) => agentIDs.includes(agent.id)).map((agent) => current.members.find((member) => member.agent_id === agent.id) || ({ id: `demo-member-${agent.id}-${Date.now()}`, agent_id: agent.id, agent_name: agent.name, status: "idle" as const }));
+      const memberConfigs = Array.isArray(payload.member_configs) ? payload.member_configs as Array<Record<string, unknown>> : [];
+      current.members = demoAgents.filter((agent) => agentIDs.includes(agent.id)).map((agent) => { const existing = current.members.find((member) => member.agent_id === agent.id); const config = memberConfigs.find((item) => String(item.agent_id) === agent.id); return { ...(existing || { id: `demo-member-${agent.id}-${Date.now()}`, agent_id: agent.id, agent_name: agent.name, status: "idle" as const }), model_name: String(config?.model_name || agent.default_model), user_channel_id: Number(config?.user_channel_id || 0), connector_device_id: String(config?.connector_device_id || "") }; });
       current.updated_at = new Date().toISOString();
     }
     return demoResponse(config, current || {});

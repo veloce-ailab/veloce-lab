@@ -11,8 +11,11 @@ import { Input } from "@/components/ui/input"
 import { useToast } from "@/components/ui/toast"
 import { useConfirmDialog } from "@/components/ui/confirm-dialog"
 
-interface Agent { id: string; name: string }
-interface GroupMember { id: string; agent_id: string; agent_name: string; status: "idle" | "working"; run_id?: string; updated_at?: string }
+interface Agent { id: string; name: string; default_model?: string; user_channel_id?: number }
+interface GroupMember { id: string; agent_id: string; agent_name: string; model_name?: string; user_channel_id?: number; connector_device_id?: string; status: "idle" | "working"; run_id?: string; updated_at?: string }
+interface UpstreamChannel { id: number; name: string; models: string[] }
+interface ConnectorDevice { id: string; name: string; hostname?: string; online?: boolean }
+interface MemberConfig { agent_id: string; model_name: string; user_channel_id: number; connector_device_id: string }
 interface ChatGroup { id: string; name: string; description: string; members: GroupMember[]; updated_at?: string }
 interface GroupMessage { id: string; sender_type: "user" | "agent"; sender_id?: string; sender_name: string; content: string; mention_member_ids: string[]; created_at: string }
 interface GroupDetail { group: ChatGroup; messages: GroupMessage[] }
@@ -37,6 +40,7 @@ export default function ChatGroups() {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [agentIDs, setAgentIDs] = useState<string[]>([])
+  const [memberConfigs, setMemberConfigs] = useState<Record<string, MemberConfig>>({})
   const [activeMember, setActiveMember] = useState<GroupMember | null>(null)
   const [activePrivateConversation, setActivePrivateConversation] = useState<PrivateConversation | null>(null)
   const [isSending, setIsSending] = useState(false)
@@ -45,6 +49,7 @@ export default function ChatGroups() {
   const [settingsName, setSettingsName] = useState("")
   const [settingsDescription, setSettingsDescription] = useState("")
   const [settingsAgentIDs, setSettingsAgentIDs] = useState<string[]>([])
+  const [settingsMemberConfigs, setSettingsMemberConfigs] = useState<Record<string, MemberConfig>>({})
   const [isSavingSettings, setIsSavingSettings] = useState(false)
 
   const { data: groups = [], isFetching } = useQuery<ChatGroup[]>({
@@ -61,6 +66,15 @@ export default function ChatGroups() {
       const data = (await api.get("/user/advanced-chat/agents")).data
       return Array.isArray(data) ? data : []
     },
+  })
+  const { data: catalog = [] } = useQuery<UpstreamChannel[]>({
+    queryKey: ["catalog"],
+    queryFn: async () => { const data = (await api.get("/user/catalog")).data; return Array.isArray(data) ? data : [] },
+  })
+  const { data: devices = [] } = useQuery<ConnectorDevice[]>({
+    queryKey: ["advanced-chat-devices"],
+    refetchInterval: 5000,
+    queryFn: async () => { const data = (await api.get("/user/advanced-chat/devices")).data; return Array.isArray(data) ? data : [] },
   })
   const { data: detail } = useQuery<GroupDetail>({
     queryKey: ["advanced-chat-chat-group", groupID],
@@ -83,11 +97,12 @@ export default function ChatGroups() {
   const createGroup = async () => {
     if (!name.trim() || agentIDs.length === 0) return
     try {
-      const response = await api.post("/user/advanced-chat/chat-groups", { name: name.trim(), description: description.trim(), agent_ids: agentIDs })
+      const response = await api.post("/user/advanced-chat/chat-groups", { name: name.trim(), description: description.trim(), agent_ids: agentIDs, member_configs: agentIDs.map((id) => memberConfigs[id] || defaultMemberConfig(agents.find((agent) => agent.id === id))) })
       setIsCreateOpen(false)
       setName("")
       setDescription("")
       setAgentIDs([])
+      setMemberConfigs({})
       await queryClient.invalidateQueries({ queryKey: groupsKey })
       navigate(`/chat/groups/${encodeURIComponent(String(response.data.id))}`)
       success(zh ? "群组已创建" : "Group created")
@@ -111,6 +126,7 @@ export default function ChatGroups() {
     setSettingsName(group.name)
     setSettingsDescription(group.description)
     setSettingsAgentIDs(group.members.map((member) => member.agent_id))
+    setSettingsMemberConfigs(Object.fromEntries(group.members.map((member) => [member.agent_id, { agent_id: member.agent_id, model_name: member.model_name || agents.find((agent) => agent.id === member.agent_id)?.default_model || "", user_channel_id: member.user_channel_id || agents.find((agent) => agent.id === member.agent_id)?.user_channel_id || 0, connector_device_id: member.connector_device_id || "" }])))
     setIsSettingsOpen(true)
   }
 
@@ -118,7 +134,7 @@ export default function ChatGroups() {
     if (!detail || !settingsName.trim() || settingsAgentIDs.length === 0 || isSavingSettings) return
     setIsSavingSettings(true)
     try {
-      await api.put(`/user/advanced-chat/chat-groups/${encodeURIComponent(detail.group.id)}`, { name: settingsName.trim(), description: settingsDescription.trim(), agent_ids: settingsAgentIDs })
+      await api.put(`/user/advanced-chat/chat-groups/${encodeURIComponent(detail.group.id)}`, { name: settingsName.trim(), description: settingsDescription.trim(), agent_ids: settingsAgentIDs, member_configs: settingsAgentIDs.map((id) => settingsMemberConfigs[id] || defaultMemberConfig(agents.find((agent) => agent.id === id))) })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: groupsKey }),
         queryClient.invalidateQueries({ queryKey: ["advanced-chat-chat-group", detail.group.id] }),
@@ -150,7 +166,7 @@ export default function ChatGroups() {
 
   const createDialog = (
     <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader><DialogTitle>{zh ? "新建聊天群组" : "New chat group"}</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={zh ? "群组名称" : "Group name"} />
@@ -160,13 +176,14 @@ export default function ChatGroups() {
             <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border p-2">
               {agents.map((agent) => (
                 <label key={agent.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 hover:bg-muted">
-                  <input type="checkbox" checked={agentIDs.includes(agent.id)} onChange={() => setAgentIDs((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id])} />
+                  <input type="checkbox" checked={agentIDs.includes(agent.id)} onChange={() => { setAgentIDs((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id]); setMemberConfigs((current) => current[agent.id] ? current : { ...current, [agent.id]: defaultMemberConfig(agent) }) }} />
                   <Bot size={15} />
                   <span className="text-sm">{agent.name}</span>
                 </label>
               ))}
             </div>
           </div>
+          <MemberConfigFields agentIDs={agentIDs} agents={agents} catalog={catalog} devices={devices} configs={memberConfigs} onChange={setMemberConfigs} zh={zh} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setIsCreateOpen(false)}>{zh ? "取消" : "Cancel"}</Button>
@@ -178,7 +195,7 @@ export default function ChatGroups() {
 
   const settingsDialog = detail && (
     <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader><DialogTitle>{zh ? "群组设置" : "Group settings"}</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5"><label className="text-sm font-medium">{zh ? "群组名称" : "Group name"}</label><Input value={settingsName} onChange={(event) => setSettingsName(event.target.value)} /></div>
@@ -186,9 +203,10 @@ export default function ChatGroups() {
           <div>
             <div className="mb-2 text-sm font-medium">{zh ? "群组成员" : "Members"}</div>
             <div className="max-h-52 space-y-1 overflow-y-auto rounded-md border p-2">
-              {agents.map((agent) => <label key={agent.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 hover:bg-muted"><input type="checkbox" checked={settingsAgentIDs.includes(agent.id)} onChange={() => setSettingsAgentIDs((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id])} /><Bot size={15} /><span className="text-sm">{agent.name}</span></label>)}
+              {agents.map((agent) => <label key={agent.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 hover:bg-muted"><input type="checkbox" checked={settingsAgentIDs.includes(agent.id)} onChange={() => { setSettingsAgentIDs((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id]); setSettingsMemberConfigs((current) => current[agent.id] ? current : { ...current, [agent.id]: defaultMemberConfig(agent) }) }} /><Bot size={15} /><span className="text-sm">{agent.name}</span></label>)}
             </div>
           </div>
+          <MemberConfigFields agentIDs={settingsAgentIDs} agents={agents} catalog={catalog} devices={devices} configs={settingsMemberConfigs} onChange={setSettingsMemberConfigs} zh={zh} />
           <div className="border-t pt-4"><Button variant="outline" className="gap-2 text-destructive hover:text-destructive" onClick={() => { setIsSettingsOpen(false); void deleteGroup(detail.group) }}><Trash2 size={15} />{zh ? "删除群组" : "Delete group"}</Button></div>
         </div>
         <DialogFooter><Button variant="outline" onClick={() => setIsSettingsOpen(false)}>{zh ? "取消" : "Cancel"}</Button><Button disabled={!settingsName.trim() || settingsAgentIDs.length === 0 || isSavingSettings} onClick={saveGroupSettings}>{isSavingSettings ? (zh ? "保存中..." : "Saving...") : (zh ? "保存" : "Save")}</Button></DialogFooter>
@@ -305,6 +323,35 @@ function GroupSidebar({ className, members, mentions, privateConversations, zh, 
       </div>
     </aside>
   )
+}
+
+function MemberConfigFields({ agentIDs, agents, catalog, devices, configs, onChange, zh }: { agentIDs: string[]; agents: Agent[]; catalog: UpstreamChannel[]; devices: ConnectorDevice[]; configs: Record<string, MemberConfig>; onChange: (value: Record<string, MemberConfig>) => void; zh: boolean }) {
+  if (agentIDs.length === 0) return null
+  return (
+    <div className="space-y-2 border-t pt-4">
+      <div className="text-sm font-medium">{zh ? "助理运行环境" : "Assistant runtime"}</div>
+      {agentIDs.map((agentID) => {
+        const agent = agents.find((item) => item.id === agentID)
+        if (!agent) return null
+        const config = configs[agentID] || defaultMemberConfig(agent)
+        const selectedChannel = catalog.find((channel) => channel.id === config.user_channel_id && channel.models.includes(config.model_name))
+        const selectedModelValue = selectedChannel ? JSON.stringify([selectedChannel.id, config.model_name]) : "current"
+        return (
+          <div key={agentID} className="rounded-md border p-3">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium"><Bot size={15} />{agent.name}</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="space-y-1"><span className="text-xs text-muted-foreground">{zh ? "上级渠道 / 模型" : "Upstream / model"}</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={selectedModelValue} onChange={(event) => { if (event.target.value === "current") return; const [channelID, modelName] = JSON.parse(event.target.value) as [number, string]; onChange({ ...configs, [agentID]: { ...config, user_channel_id: channelID, model_name: modelName } }) }}>{!selectedChannel && config.model_name && <option value="current">{config.model_name}</option>}{catalog.flatMap((channel) => channel.models.map((model) => <option key={`${channel.id}-${model}`} value={JSON.stringify([channel.id, model])}>{channel.name} / {model}</option>))}</select></label>
+              <label className="space-y-1"><span className="text-xs text-muted-foreground">{zh ? "设备" : "Device"}</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={config.connector_device_id} onChange={(event) => onChange({ ...configs, [agentID]: { ...config, connector_device_id: event.target.value } })}><option value="">{zh ? "无设备环境" : "No device"}</option>{devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.hostname ? ` · ${device.hostname}` : ""}{device.online === false ? (zh ? "（离线）" : " (offline)") : ""}</option>)}</select></label>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function defaultMemberConfig(agent?: Agent): MemberConfig {
+  return { agent_id: agent?.id || "", model_name: agent?.default_model || "", user_channel_id: agent?.user_channel_id || 0, connector_device_id: "" }
 }
 
 function PrivateConversationDialog({ groupID, conversation, onClose, zh }: { groupID: string; conversation: PrivateConversation; onClose: () => void; zh: boolean }) {
