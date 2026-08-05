@@ -21,7 +21,6 @@ import ChatGroups from "./ChatGroups"
 import Community from "./Community"
 import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
-import { AnnouncementButton } from "@/components/AnnouncementButton"
 import { Button } from "@/components/ui/button"
 import { PageTransition } from "@/components/layout/PageTransition"
 import api, { apiURL, isDesktopTarget } from "@/lib/api"
@@ -134,8 +133,7 @@ export default function AdvancedChat() {
             <Menu size={18} />
           </Button>
           <Link to="/" className="flex min-w-0 items-center gap-2">
-            {publicSettings.icon_url && <img src={publicSettings.icon_url} alt="" className="h-7 w-7 shrink-0 rounded object-cover" />}
-            <span className="truncate text-sm font-semibold">{publicSettings.site_name}</span>
+            <span className="truncate text-sm font-semibold">Veloce</span>
           </Link>
         </div>
         <div className="flex min-w-0 items-center gap-3">
@@ -148,7 +146,6 @@ export default function AdvancedChat() {
           )}
           <ThemeSwitcher />
           <LanguageSwitcher compact />
-          <AnnouncementButton />
           <UserAvatar user={user} />
         </div>
       </header>}
@@ -171,11 +168,6 @@ export default function AdvancedChat() {
         </div>
 
         <main className={cn("flex min-h-0 flex-1 flex-col transition-[filter] duration-200", isChatRoute ? "overflow-hidden" : "overflow-y-auto", isSidebarOpen && "max-lg:blur-sm")}>
-          {!isChatRoute && publicSettings.announcement && (
-            <div className="border-b bg-muted/50 px-4 py-3 text-sm sm:px-6 lg:px-8">
-              <div className="mx-auto max-w-6xl whitespace-pre-wrap">{publicSettings.announcement}</div>
-            </div>
-          )}
           <div className={cn("w-full flex-1", isChatRoute ? "min-h-0" : "mx-auto max-w-6xl p-4 sm:p-6 lg:p-8")}>
             <PageTransition transitionKey={transitionKey} className={cn("page-shell-transition", isChatRoute && "h-full min-h-0")}>
               <div className={cn(isChatRoute ? "h-full" : "space-y-6")}>

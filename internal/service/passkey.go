@@ -110,7 +110,7 @@ func (s *AuthService) BeginPasskeyRegistration(user *model.User, rpName, rpID, o
 	return PasskeyOptions{PublicKey: map[string]interface{}{
 		"challenge": challenge,
 		"rp": map[string]interface{}{
-			"name": firstNonEmpty(strings.TrimSpace(rpName), "flai"),
+			"name": firstNonEmpty(strings.TrimSpace(rpName), "Veloce"),
 			"id":   rpID,
 		},
 		"user": map[string]interface{}{

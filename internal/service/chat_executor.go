@@ -261,6 +261,7 @@ var serverChatProxyService = NewProxyService()
 func serverChatCandidates(_ *model.User, modelName string, channelID uint) ([]model.ModelConfig, error) {
 	var candidates []model.ModelConfig
 	query := model.DB.
+		Preload("Channel.UserChannel").
 		Preload("Model").
 		Joins("JOIN channels ON channels.id = model_configs.channel_id").
 		Joins("JOIN models ON models.id = model_configs.model_id").

@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bot, Paperclip, Save, Server } from "lucide-react"
 import AdvancedChatManagement from "./AdvancedChatManagement"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -13,14 +12,10 @@ import api from "@/lib/api"
 type SystemSection = "general" | "advancedChat"
 
 interface SystemSettings {
-  site_name: string
-  icon_url: string
   message_channel_enabled: boolean
 }
 
 const defaults: SystemSettings = {
-  site_name: "Veloce",
-  icon_url: "",
   message_channel_enabled: true,
 }
 
@@ -69,12 +64,6 @@ function GeneralSettings() {
       </div>
 
       <section className="grid gap-5 border-t pt-6">
-        <Field label="站点名称">
-          <Input value={form.site_name} onChange={(event) => setForm({ ...form, site_name: event.target.value })} />
-        </Field>
-        <Field label="站点图标 URL">
-          <Input value={form.icon_url} placeholder="https://example.com/icon.png" onChange={(event) => setForm({ ...form, icon_url: event.target.value })} />
-        </Field>
         <Toggle label="启用消息通道" checked={form.message_channel_enabled} onChange={(checked) => setForm({ ...form, message_channel_enabled: checked })} />
       </section>
     </div>
@@ -100,10 +89,6 @@ function AdvancedChatSettings() {
       </Tabs>
     </div>
   )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="grid max-w-2xl gap-2"><Label>{label}</Label>{children}</div>
 }
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {

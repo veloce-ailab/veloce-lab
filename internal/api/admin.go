@@ -170,7 +170,6 @@ type systemSettingsResponse struct {
 	PrivacyPolicyURL                     string `json:"privacy_policy_url"`
 	TermsURL                             string `json:"terms_url"`
 	AuthAgreementMode                    string `json:"auth_agreement_mode"`
-	Announcement                         string `json:"announcement"`
 	TopNavEnabled                        bool   `json:"top_nav_enabled"`
 	TopNavItems                          string `json:"top_nav_items"`
 	PageLayouts                          string `json:"page_layouts"`
@@ -353,7 +352,6 @@ type systemSettingsInput struct {
 	PrivacyPolicyURL                     *string `json:"privacy_policy_url"`
 	TermsURL                             *string `json:"terms_url"`
 	AuthAgreementMode                    *string `json:"auth_agreement_mode"`
-	Announcement                         *string `json:"announcement"`
 	TopNavEnabled                        *bool   `json:"top_nav_enabled"`
 	TopNavItems                          *string `json:"top_nav_items"`
 	PageLayouts                          *string `json:"page_layouts"`
@@ -1001,21 +999,6 @@ func (api *SystemAPI) UpdateSettings(c *gin.Context) {
 		oauthProvidersValue = &preserved
 	}
 
-	if input.SiteName != nil {
-		siteName := strings.TrimSpace(*input.SiteName)
-		if siteName == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Site name is required"})
-			return
-		}
-		if len([]rune(siteName)) > 80 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Site name is too long"})
-			return
-		}
-		if err := model.SetSystemSetting("site_name", siteName); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update system settings"})
-			return
-		}
-	}
 	if input.SystemMode != nil {
 		previousSystemMode := service.CurrentSystemMode()
 		if err := model.SetSystemSetting("system_mode", systemMode); err != nil {
@@ -1033,7 +1016,6 @@ func (api *SystemAPI) UpdateSettings(c *gin.Context) {
 
 	stringSettings := map[string]*string{
 		"base_url":                                 input.BaseURL,
-		"icon_url":                                 input.IconURL,
 		"footer_text":                              input.FooterText,
 		"about_html":                               input.AboutHTML,
 		"home_iframe_url":                          input.HomeIframeURL,
@@ -1041,7 +1023,6 @@ func (api *SystemAPI) UpdateSettings(c *gin.Context) {
 		"terms":                                    input.Terms,
 		"privacy_policy_url":                       input.PrivacyPolicyURL,
 		"terms_url":                                input.TermsURL,
-		"announcement":                             input.Announcement,
 		"top_nav_items":                            input.TopNavItems,
 		"page_layouts":                             input.PageLayouts,
 		"theme_light_background":                   input.ThemeLightBackground,
@@ -1272,9 +1253,9 @@ func currentPublicSystemSettings() systemSettingsResponse {
 		Edition:                              service.CurrentEdition(),
 		SystemMode:                           service.CurrentSystemMode(),
 		EnterpriseFeaturesEnabled:            service.EnterpriseFeaturesEnabled(),
-		SiteName:                             settingString("site_name", "flai"),
+		SiteName:                             "Veloce",
 		BaseURL:                              settingString("base_url", ""),
-		IconURL:                              settingString("icon_url", ""),
+		IconURL:                              "",
 		FooterText:                           settingString("footer_text", ""),
 		AboutHTML:                            settingString("about_html", ""),
 		HomeIframeURL:                        settingString("home_iframe_url", ""),
@@ -1283,7 +1264,6 @@ func currentPublicSystemSettings() systemSettingsResponse {
 		PrivacyPolicyURL:                     settingString("privacy_policy_url", ""),
 		TermsURL:                             settingString("terms_url", ""),
 		AuthAgreementMode:                    currentAuthAgreementMode(),
-		Announcement:                         settingString("announcement", ""),
 		TopNavEnabled:                        settingBool("top_nav_enabled", false),
 		TopNavItems:                          settingString("top_nav_items", ""),
 		PageLayouts:                          settingString("page_layouts", "{}"),
@@ -1580,7 +1560,7 @@ func currentChatPageMode() string {
 }
 
 func currentMessageChannelEnabled() bool {
-	return service.CurrentEdition() == "premium" && settingBool("message_channel_enabled", true)
+	return settingBool("message_channel_enabled", true)
 }
 
 func currentAuthAgreementMode() string {
@@ -1661,115 +1641,6 @@ func settingBool(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
-}
-
-// AnnouncementAPI handles user-facing announcements.
-type AnnouncementAPI struct{}
-
-type announcementInput struct {
-	Title     string `json:"title"`
-	Content   string `json:"content"`
-	Enabled   *bool  `json:"enabled"`
-	SortOrder int    `json:"sort_order"`
-}
-
-func (api *AnnouncementAPI) PublicList(c *gin.Context) {
-	var announcements []model.Announcement
-	if err := model.DB.Where("enabled = ?", true).
-		Order("sort_order ASC").
-		Order("created_at DESC").
-		Find(&announcements).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list announcements"})
-		return
-	}
-	c.JSON(http.StatusOK, announcements)
-}
-
-func (api *AnnouncementAPI) List(c *gin.Context) {
-	var announcements []model.Announcement
-	if err := model.DB.Order("sort_order ASC").Order("created_at DESC").Find(&announcements).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list announcements"})
-		return
-	}
-	c.JSON(http.StatusOK, announcements)
-}
-
-func (api *AnnouncementAPI) Create(c *gin.Context) {
-	announcement, ok := bindAnnouncementInput(c)
-	if !ok {
-		return
-	}
-	if err := model.DB.Create(&announcement).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create announcement"})
-		return
-	}
-	c.JSON(http.StatusOK, announcement)
-}
-
-func (api *AnnouncementAPI) Update(c *gin.Context) {
-	var announcement model.Announcement
-	if err := model.DB.First(&announcement, c.Param("id")).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Announcement not found"})
-		return
-	}
-	next, ok := bindAnnouncementInput(c)
-	if !ok {
-		return
-	}
-	announcement.Title = next.Title
-	announcement.Content = next.Content
-	announcement.Enabled = next.Enabled
-	announcement.SortOrder = next.SortOrder
-	if err := model.DB.Save(&announcement).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update announcement"})
-		return
-	}
-	c.JSON(http.StatusOK, announcement)
-}
-
-func (api *AnnouncementAPI) Delete(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 0)
-	if err != nil || id == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid announcement id"})
-		return
-	}
-	if err := model.DB.Delete(&model.Announcement{}, uint(id)).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete announcement"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "Announcement deleted"})
-}
-
-func bindAnnouncementInput(c *gin.Context) (model.Announcement, bool) {
-	var input announcementInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return model.Announcement{}, false
-	}
-	title := strings.TrimSpace(input.Title)
-	content := strings.TrimSpace(input.Content)
-	if title == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Announcement title is required"})
-		return model.Announcement{}, false
-	}
-	if len([]rune(title)) > 120 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Announcement title is too long"})
-		return model.Announcement{}, false
-	}
-	if content == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Announcement content is required"})
-		return model.Announcement{}, false
-	}
-	enabled := true
-	if input.Enabled != nil {
-		enabled = *input.Enabled
-	}
-	return model.Announcement{
-		Title:     title,
-		Content:   content,
-		Enabled:   enabled,
-		SortOrder: input.SortOrder,
-	}, true
 }
 
 // StatusMonitorAPI handles public status-monitor configuration and output.

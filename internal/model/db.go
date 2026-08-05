@@ -74,8 +74,10 @@ func InitDB() {
 		&UserGroupMembership{},
 		&UserChannel{},
 		&Channel{},
+		&ChannelGroupMultiplier{},
 		&Model{},
 		&ModelConfig{},
+		&ModelGroupMultiplier{},
 		&SystemSetting{},
 		&VideoTask{},
 		&Plugin{},
@@ -409,7 +411,7 @@ func EnsureDefaultSystemSettings() error {
 		oidcDefault = "true"
 	}
 	defaults := map[string]string{
-		"site_name":                                  "flai",
+		"site_name":                                  "Veloce",
 		"base_url":                                   "",
 		"icon_url":                                   "",
 		"footer_text":                                "",
@@ -420,7 +422,6 @@ func EnsureDefaultSystemSettings() error {
 		"privacy_policy_url":                         "",
 		"terms_url":                                  "",
 		"auth_agreement_mode":                        "notice",
-		"announcement":                               "",
 		"top_nav_enabled":                            "false",
 		"top_nav_items":                              "",
 		"page_layouts":                               "{}",

@@ -73,5 +73,5 @@ export function resolvePostLoginPath() {
   if (stash) {
     return desktopAuthorizePath(stash)
   }
-  return "/dashboard"
+  return "/chat"
 }

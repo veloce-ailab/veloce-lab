@@ -708,7 +708,7 @@ func buildYipayPaymentURL(c *gin.Context, cfg paymentConfig, order model.Payment
 		"return_url":   returnURL,
 		"name":         "Balance recharge " + order.OrderNo,
 		"money":        order.RMBAmount.StringFixed(2),
-		"sitename":     settingString("site_name", "flai"),
+		"sitename":     "Veloce",
 	}
 	params["sign"] = buildYipaySign(params, cfg.Key)
 	params["sign_type"] = "MD5"

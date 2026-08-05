@@ -7,7 +7,6 @@ import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { LanguageSwitcher } from "@/components/LanguageSwitcher"
-import { AnnouncementButton } from "@/components/AnnouncementButton"
 import api, { apiURL } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
@@ -79,11 +78,6 @@ export function Layout() {
               </div>
             </div>
           )}
-          {publicSettings.announcement && (
-            <div className="border-b bg-muted/50 px-4 py-3 text-sm sm:px-6 lg:px-8">
-              <div className="mx-auto max-w-6xl whitespace-pre-wrap">{publicSettings.announcement}</div>
-            </div>
-          )}
           <div className={cn("mx-auto w-full flex-1", isChatWorkspace ? "min-h-0 max-w-none p-0" : "max-w-6xl p-4 sm:p-6 lg:p-8")}>
             <PageTransition className="page-shell-transition">
               <div className={cn(isChatWorkspace ? "h-full min-h-0" : "space-y-6")}>
@@ -141,7 +135,7 @@ export function AppHeader({
         >
           <Menu size={18} />
         </Button>
-        <Brand settings={publicSettings} />
+        <Brand />
       </div>
       <div className="flex min-w-0 items-center gap-3">
         {publicSettings.top_nav_enabled && topNavItems.length > 0 && (
@@ -154,7 +148,6 @@ export function AppHeader({
         {extra}
         <ThemeSwitcher />
         <LanguageSwitcher compact />
-        <AnnouncementButton />
         <UserAvatar user={user} />
       </div>
     </header>
@@ -194,11 +187,10 @@ function avatarInitials(value: string) {
   return trimmed.slice(0, 2).toUpperCase()
 }
 
-function Brand({ settings, className }: { settings: PublicSettings; className?: string }) {
+function Brand({ className }: { className?: string }) {
   return (
     <Link to="/" className={className ? `flex min-w-0 items-center gap-2 ${className}` : "flex min-w-0 items-center gap-2"}>
-      {settings.icon_url && <img src={settings.icon_url} alt="" className="h-7 w-7 shrink-0 rounded object-cover" />}
-      <span className="truncate text-sm font-semibold">{settings.site_name}</span>
+      <span className="truncate text-sm font-semibold">Veloce</span>
     </Link>
   )
 }

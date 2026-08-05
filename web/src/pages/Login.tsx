@@ -277,10 +277,7 @@ function WebLogin() {
       <Card className="w-full max-w-[440px]">
         <CardHeader className="text-center">
           <Link to="/" className="mx-auto block">
-            {publicSettings.icon_url && (
-              <img src={publicSettings.icon_url} alt="" className="mx-auto h-12 w-12 rounded object-cover" />
-            )}
-            <CardTitle className="mt-2 text-3xl font-bold">{publicSettings.site_name}</CardTitle>
+            <CardTitle className="text-3xl font-bold">Veloce</CardTitle>
           </Link>
           <CardDescription>{t("login.description")}</CardDescription>
         </CardHeader>
