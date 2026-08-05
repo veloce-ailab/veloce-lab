@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/toast"
 import { useConfirmDialog } from "@/components/ui/confirm-dialog"
 
@@ -51,6 +52,9 @@ export default function ChatGroups() {
   const [settingsAgentIDs, setSettingsAgentIDs] = useState<string[]>([])
   const [settingsMemberConfigs, setSettingsMemberConfigs] = useState<Record<string, MemberConfig>>({})
   const [isSavingSettings, setIsSavingSettings] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<"basic" | "members">("basic")
+  const [isAddMemberOpen, setIsAddMemberOpen] = useState(false)
+  const [editingMemberAgentID, setEditingMemberAgentID] = useState("")
 
   const { data: groups = [], isFetching } = useQuery<ChatGroup[]>({
     queryKey: groupsKey,
@@ -127,7 +131,27 @@ export default function ChatGroups() {
     setSettingsDescription(group.description)
     setSettingsAgentIDs(group.members.map((member) => member.agent_id))
     setSettingsMemberConfigs(Object.fromEntries(group.members.map((member) => [member.agent_id, { agent_id: member.agent_id, model_name: member.model_name || agents.find((agent) => agent.id === member.agent_id)?.default_model || "", user_channel_id: member.user_channel_id || agents.find((agent) => agent.id === member.agent_id)?.user_channel_id || 0, connector_device_id: member.connector_device_id || "" }])))
+    setSettingsTab("basic")
+    setIsAddMemberOpen(false)
+    setEditingMemberAgentID(group.members[0]?.agent_id || "")
     setIsSettingsOpen(true)
+  }
+
+  const addSettingsMember = (agent: Agent) => {
+    if (settingsAgentIDs.includes(agent.id)) return
+    setSettingsAgentIDs((current) => [...current, agent.id])
+    setSettingsMemberConfigs((current) => ({ ...current, [agent.id]: current[agent.id] || defaultMemberConfig(agent) }))
+    setEditingMemberAgentID(agent.id)
+    setIsAddMemberOpen(false)
+  }
+
+  const removeSettingsMember = (agentID: string) => {
+    setSettingsAgentIDs((current) => current.filter((id) => id !== agentID))
+    setSettingsMemberConfigs((current) => {
+      const { [agentID]: _removed, ...remaining } = current
+      return remaining
+    })
+    setEditingMemberAgentID((current) => current === agentID ? settingsAgentIDs.find((id) => id !== agentID) || "" : current)
   }
 
   const saveGroupSettings = async () => {
@@ -197,19 +221,49 @@ export default function ChatGroups() {
     <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
       <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader><DialogTitle>{zh ? "群组设置" : "Group settings"}</DialogTitle></DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5"><label className="text-sm font-medium">{zh ? "群组名称" : "Group name"}</label><Input value={settingsName} onChange={(event) => setSettingsName(event.target.value)} /></div>
-          <div className="space-y-1.5"><label className="text-sm font-medium">{zh ? "群组描述" : "Description"}</label><textarea value={settingsDescription} onChange={(event) => setSettingsDescription(event.target.value)} className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" /></div>
-          <div>
-            <div className="mb-2 text-sm font-medium">{zh ? "群组成员" : "Members"}</div>
-            <div className="max-h-52 space-y-1 overflow-y-auto rounded-md border p-2">
-              {agents.map((agent) => <label key={agent.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 hover:bg-muted"><input type="checkbox" checked={settingsAgentIDs.includes(agent.id)} onChange={() => { setSettingsAgentIDs((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id]); setSettingsMemberConfigs((current) => current[agent.id] ? current : { ...current, [agent.id]: defaultMemberConfig(agent) }) }} /><Bot size={15} /><span className="text-sm">{agent.name}</span></label>)}
+        <Tabs value={settingsTab} onValueChange={(value) => setSettingsTab(value as "basic" | "members")}>
+          <TabsList className="w-full">
+            <TabsTrigger value="basic">{zh ? "基础信息" : "Basic"}</TabsTrigger>
+            <TabsTrigger value="members">{zh ? "成员信息" : "Members"}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="basic" className="space-y-4 pt-2">
+            <div className="space-y-1.5"><label className="text-sm font-medium">{zh ? "群组名称" : "Group name"}</label><Input value={settingsName} onChange={(event) => setSettingsName(event.target.value)} /></div>
+            <div className="space-y-1.5"><label className="text-sm font-medium">{zh ? "群组描述" : "Description"}</label><textarea value={settingsDescription} onChange={(event) => setSettingsDescription(event.target.value)} className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" /></div>
+            <div className="border-t pt-4"><Button variant="outline" className="gap-2 text-destructive hover:text-destructive" onClick={() => { setIsSettingsOpen(false); void deleteGroup(detail.group) }}><Trash2 size={15} />{zh ? "删除群组" : "Delete group"}</Button></div>
+          </TabsContent>
+          <TabsContent value="members" className="space-y-3 pt-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-medium">{zh ? "群组成员" : "Members"}</span>
+              <Button size="sm" className="gap-1.5" onClick={() => setIsAddMemberOpen(true)}><Plus size={15} />{zh ? "添加成员" : "Add member"}</Button>
             </div>
-          </div>
-          <MemberConfigFields agentIDs={settingsAgentIDs} agents={agents} catalog={catalog} devices={devices} configs={settingsMemberConfigs} onChange={setSettingsMemberConfigs} zh={zh} />
-          <div className="border-t pt-4"><Button variant="outline" className="gap-2 text-destructive hover:text-destructive" onClick={() => { setIsSettingsOpen(false); void deleteGroup(detail.group) }}><Trash2 size={15} />{zh ? "删除群组" : "Delete group"}</Button></div>
-        </div>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+              <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border p-1.5">
+                {settingsAgentIDs.map((agentID) => {
+                  const agent = agents.find((item) => item.id === agentID)
+                  if (!agent) return null
+                  return <button key={agentID} type="button" className={cn("flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm", editingMemberAgentID === agentID ? "bg-muted font-medium" : "hover:bg-muted")} onClick={() => setEditingMemberAgentID(agentID)}><Bot size={15} className="shrink-0" /><span className="truncate">{agent.name}</span></button>
+                })}
+                {settingsAgentIDs.length === 0 && <div className="px-2 py-6 text-center text-xs text-muted-foreground">{zh ? "尚未添加成员" : "No members added"}</div>}
+              </div>
+              {(() => {
+                const agent = agents.find((item) => item.id === editingMemberAgentID)
+                if (!agent || !settingsAgentIDs.includes(agent.id)) return <div className="flex min-h-40 items-center justify-center rounded-md border border-dashed px-4 text-center text-sm text-muted-foreground">{zh ? "选择一个成员以更改模型或移除成员" : "Select a member to change its model or remove it"}</div>
+                const config = settingsMemberConfigs[agent.id] || defaultMemberConfig(agent)
+                return <div className="rounded-md border p-3"><div className="mb-3 flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-2 text-sm font-medium"><Bot size={15} /><span className="truncate">{agent.name}</span></span><Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-destructive hover:text-destructive" onClick={() => removeSettingsMember(agent.id)}><Trash2 size={14} />{zh ? "移除" : "Remove"}</Button></div><MemberConfigEditor agentID={agent.id} config={config} catalog={catalog} devices={devices} onChange={(nextConfig) => setSettingsMemberConfigs((current) => ({ ...current, [agent.id]: nextConfig }))} zh={zh} /></div>
+              })()}
+            </div>
+          </TabsContent>
+        </Tabs>
         <DialogFooter><Button variant="outline" onClick={() => setIsSettingsOpen(false)}>{zh ? "取消" : "Cancel"}</Button><Button disabled={!settingsName.trim() || settingsAgentIDs.length === 0 || isSavingSettings} onClick={saveGroupSettings}>{isSavingSettings ? (zh ? "保存中..." : "Saving...") : (zh ? "保存" : "Save")}</Button></DialogFooter>
+        <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader><DialogTitle>{zh ? "添加成员" : "Add member"}</DialogTitle></DialogHeader>
+            <div className="max-h-72 space-y-1 overflow-y-auto rounded-md border p-1.5">
+              {agents.filter((agent) => !settingsAgentIDs.includes(agent.id)).map((agent) => <button key={agent.id} type="button" className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-muted" onClick={() => addSettingsMember(agent)}><Bot size={15} /><span className="truncate">{agent.name}</span></button>)}
+              {agents.every((agent) => settingsAgentIDs.includes(agent.id)) && <div className="px-2 py-8 text-center text-sm text-muted-foreground">{zh ? "所有助理均已添加" : "All assistants are already added"}</div>}
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   )
@@ -334,18 +388,24 @@ function MemberConfigFields({ agentIDs, agents, catalog, devices, configs, onCha
         const agent = agents.find((item) => item.id === agentID)
         if (!agent) return null
         const config = configs[agentID] || defaultMemberConfig(agent)
-        const selectedChannel = catalog.find((channel) => channel.id === config.user_channel_id && channel.models.includes(config.model_name))
-        const selectedModelValue = selectedChannel ? JSON.stringify([selectedChannel.id, config.model_name]) : "current"
         return (
           <div key={agentID} className="rounded-md border p-3">
             <div className="mb-2 flex items-center gap-2 text-sm font-medium"><Bot size={15} />{agent.name}</div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="space-y-1"><span className="text-xs text-muted-foreground">{zh ? "上级渠道 / 模型" : "Upstream / model"}</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={selectedModelValue} onChange={(event) => { if (event.target.value === "current") return; const [channelID, modelName] = JSON.parse(event.target.value) as [number, string]; onChange({ ...configs, [agentID]: { ...config, user_channel_id: channelID, model_name: modelName } }) }}>{!selectedChannel && config.model_name && <option value="current">{config.model_name}</option>}{catalog.flatMap((channel) => channel.models.map((model) => <option key={`${channel.id}-${model}`} value={JSON.stringify([channel.id, model])}>{channel.name} / {model}</option>))}</select></label>
-              <label className="space-y-1"><span className="text-xs text-muted-foreground">{zh ? "设备" : "Device"}</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={config.connector_device_id} onChange={(event) => onChange({ ...configs, [agentID]: { ...config, connector_device_id: event.target.value } })}><option value="">{zh ? "无设备环境" : "No device"}</option>{devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.hostname ? ` · ${device.hostname}` : ""}{device.online === false ? (zh ? "（离线）" : " (offline)") : ""}</option>)}</select></label>
-            </div>
+            <MemberConfigEditor agentID={agentID} config={config} catalog={catalog} devices={devices} onChange={(nextConfig) => onChange({ ...configs, [agentID]: nextConfig })} zh={zh} />
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function MemberConfigEditor({ agentID, config, catalog, devices, onChange, zh }: { agentID: string; config: MemberConfig; catalog: UpstreamChannel[]; devices: ConnectorDevice[]; onChange: (value: MemberConfig) => void; zh: boolean }) {
+  const selectedChannel = catalog.find((channel) => channel.id === config.user_channel_id && channel.models.includes(config.model_name))
+  const selectedModelValue = selectedChannel ? JSON.stringify([selectedChannel.id, config.model_name]) : "current"
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <label className="space-y-1"><span className="text-xs text-muted-foreground">{zh ? "上级渠道 / 模型" : "Upstream / model"}</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={selectedModelValue} onChange={(event) => { if (event.target.value === "current") return; const [channelID, modelName] = JSON.parse(event.target.value) as [number, string]; onChange({ ...config, agent_id: agentID, user_channel_id: channelID, model_name: modelName }) }}>{!selectedChannel && config.model_name && <option value="current">{config.model_name}</option>}{catalog.flatMap((channel) => channel.models.map((model) => <option key={`${channel.id}-${model}`} value={JSON.stringify([channel.id, model])}>{channel.name} / {model}</option>))}</select></label>
+      <label className="space-y-1"><span className="text-xs text-muted-foreground">{zh ? "设备" : "Device"}</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={config.connector_device_id} onChange={(event) => onChange({ ...config, agent_id: agentID, connector_device_id: event.target.value })}><option value="">{zh ? "无设备环境" : "No device"}</option>{devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.hostname ? ` · ${device.hostname}` : ""}{device.online === false ? (zh ? "（离线）" : " (offline)") : ""}</option>)}</select></label>
     </div>
   )
 }

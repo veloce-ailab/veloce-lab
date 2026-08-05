@@ -10,19 +10,19 @@ const items = [
 
 export function Sidebar({ className, onNavigate }: { className?: string; onNavigate?: () => void }) {
   return (
-    <aside className={cn("flex h-full w-60 flex-col border-r bg-card p-3", className)}>
-      <nav className="space-y-1">
+    <aside className={cn("flex h-full w-60 flex-col border-r bg-card p-2", className)}>
+      <nav className="space-y-0.5">
         {items.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
             onClick={onNavigate}
             className={({ isActive }) => cn(
-              "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
+              "flex h-6 items-center gap-2 rounded-md px-2 text-xs font-medium transition-colors",
               isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
-            <Icon size={18} />
+            <Icon size={15} />
             <span>{label}</span>
           </NavLink>
         ))}
