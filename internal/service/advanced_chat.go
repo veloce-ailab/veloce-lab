@@ -303,6 +303,8 @@ func initAdvancedChatFeatures() error {
 		&AdvancedChatChatGroup{},
 		&AdvancedChatChatGroupMember{},
 		&AdvancedChatChatGroupMessage{},
+		&AdvancedChatPrivateConversation{},
+		&AdvancedChatPrivateMessage{},
 	)
 	if err == nil {
 		ensureAdvancedChatKnowledgePostgresVectorColumn()
@@ -413,6 +415,8 @@ func registerAdvancedChatUserRoutes(group *gin.RouterGroup) {
 	group.PUT("/advanced-chat/chat-groups/:id", api.updateChatGroup)
 	group.DELETE("/advanced-chat/chat-groups/:id", api.deleteChatGroup)
 	group.POST("/advanced-chat/chat-groups/:id/messages", api.createChatGroupMessage)
+	group.GET("/advanced-chat/chat-groups/:id/private-conversations", api.listPrivateConversations)
+	group.GET("/advanced-chat/chat-groups/:id/private-conversations/:conversation_id", api.getPrivateConversation)
 	group.GET("/advanced-chat/chat-groups/:id/members/:member_id/activity", api.getChatGroupMemberActivity)
 }
 

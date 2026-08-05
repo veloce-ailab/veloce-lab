@@ -30,5 +30,7 @@ func init() {
 		&AdvancedChatChatGroup{},
 		&AdvancedChatChatGroupMember{},
 		&AdvancedChatChatGroupMessage{},
+		&AdvancedChatPrivateConversation{},
+		&AdvancedChatPrivateMessage{},
 	)
 }

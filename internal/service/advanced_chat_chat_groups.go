@@ -21,6 +21,8 @@ const (
 	chatGroupSenderAgent     = "agent"
 	chatGroupMaxMessageDepth = 8
 	chatGroupPostToolName    = "send_group_message"
+	chatPrivatePostToolName  = "send_private_message"
+	chatMessageMaxWait       = 300
 )
 
 type AdvancedChatChatGroup struct {
@@ -62,6 +64,34 @@ type AdvancedChatChatGroupMessage struct {
 	Mentions         []string  `gorm:"-" json:"mention_member_ids"`
 }
 
+type AdvancedChatPrivateConversation struct {
+	ID            string    `gorm:"primaryKey;size:80" json:"id"`
+	GroupID       string    `gorm:"uniqueIndex:idx_chat_private_pair;size:80;not null" json:"group_id"`
+	UserID        uint      `gorm:"index;not null" json:"-"`
+	MemberAID     string    `gorm:"uniqueIndex:idx_chat_private_pair;size:80;not null" json:"member_a_id"`
+	MemberBID     string    `gorm:"uniqueIndex:idx_chat_private_pair;size:80;not null" json:"member_b_id"`
+	MemberAName   string    `gorm:"size:100;not null" json:"member_a_name"`
+	MemberBName   string    `gorm:"size:100;not null" json:"member_b_name"`
+	LastMessageAt time.Time `gorm:"index" json:"last_message_at"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	LastMessage   string    `gorm:"-" json:"last_message,omitempty"`
+}
+
+type AdvancedChatPrivateMessage struct {
+	ID                string     `gorm:"primaryKey;size:80" json:"id"`
+	ConversationID    string     `gorm:"index;size:80;not null" json:"conversation_id"`
+	GroupID           string     `gorm:"index;size:80;not null" json:"group_id"`
+	UserID            uint       `gorm:"index;not null" json:"-"`
+	SenderMemberID    string     `gorm:"index;size:80;not null" json:"sender_member_id"`
+	SenderName        string     `gorm:"size:100;not null" json:"sender_name"`
+	RecipientMemberID string     `gorm:"index;size:80;not null" json:"recipient_member_id"`
+	Content           string     `gorm:"type:text;not null" json:"content"`
+	SourceRunID       string     `gorm:"size:80;index" json:"-"`
+	DeliveredAt       *time.Time `gorm:"index" json:"-"`
+	CreatedAt         time.Time  `json:"created_at"`
+}
+
 type chatGroupInput struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
@@ -76,6 +106,7 @@ type chatGroupMessageInput struct {
 func init() {
 	RegisterAdvancedChatRuntimeExtensionHook(chatGroupRuntimeExtension)
 	RegisterAdvancedChatToolHandler(chatGroupPostToolName, handleChatGroupPostTool)
+	RegisterAdvancedChatToolHandler(chatPrivatePostToolName, handleChatPrivatePostTool)
 }
 
 func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeContext) (AdvancedChatRuntimeExtension, error) {
@@ -89,8 +120,18 @@ func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeConte
 		}
 		return AdvancedChatRuntimeExtension{}, err
 	}
+	var members []AdvancedChatChatGroupMember
+	if err := model.DB.Where("group_id = ? AND user_id = ?", member.GroupID, input.UserID).Order("created_at ASC").Find(&members).Error; err != nil {
+		return AdvancedChatRuntimeExtension{}, err
+	}
+	directory := make([]string, 0, len(members))
+	for _, item := range members {
+		if item.ID != member.ID {
+			directory = append(directory, fmt.Sprintf("- %s: %s", item.AgentName, item.ID))
+		}
+	}
 	return AdvancedChatRuntimeExtension{
-		SystemPrompt: "Group messaging rule: your normal assistant text is private work output and is never posted to the group. If and only if you have a useful message for the group, call send_group_message once with the concise message. Do not call it for internal reasoning, progress narration, acknowledgements, or irrelevant work. If the group message does not concern you, do not call the tool.",
+		SystemPrompt: "Messaging rule: normal assistant text is private work output. Use send_group_message only for one useful public group message. Use send_private_message for a message visible only to one other assistant in this group. Both tools can wait for replies; wait_forever ends this run until a later message wakes you. Do not publish internal reasoning, progress narration, acknowledgements, or irrelevant work.\n\nPrivate-message targets in this isolated group:\n" + strings.Join(directory, "\n"),
 		Tools: []ChatExecutorTool{{
 			Name:        chatGroupPostToolName,
 			Description: "Post one deliberate message to the current chat group. This is the only way your output becomes visible in the group and notifies other assistants.",
@@ -98,14 +139,31 @@ func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeConte
 				"type":     "object",
 				"required": []string{"content"},
 				"properties": map[string]interface{}{
-					"content": map[string]interface{}{"type": "string", "description": "Concise, complete group message worth notifying other assistants about."},
+					"content":      map[string]interface{}{"type": "string", "description": "Concise, complete group message worth notifying other assistants about."},
+					"wait_seconds": map[string]interface{}{"type": "integer", "minimum": 0, "maximum": chatMessageMaxWait, "description": "Wait this many seconds for a reply before continuing. Zero continues immediately."},
+					"wait_forever": map[string]interface{}{"type": "boolean", "description": "End this run after sending and wait until a later event wakes you."},
+				},
+			},
+		}, {
+			Name:        chatPrivatePostToolName,
+			Description: "Send a private message to one assistant in the current group. Only the two assistants and the user can see this group-scoped conversation.",
+			Schema: map[string]interface{}{
+				"type": "object", "required": []string{"target_member_id", "content"},
+				"properties": map[string]interface{}{
+					"target_member_id": map[string]interface{}{"type": "string", "description": "Target group member ID."},
+					"content":          map[string]interface{}{"type": "string", "description": "Private message content."},
+					"wait_seconds":     map[string]interface{}{"type": "integer", "minimum": 0, "maximum": chatMessageMaxWait, "description": "Wait this many seconds for a private reply before continuing. Zero continues immediately."},
+					"wait_forever":     map[string]interface{}{"type": "boolean", "description": "End this run after sending and wait until a later event wakes you."},
 				},
 			},
 		}},
 	}, nil
 }
 
-func handleChatGroupPostTool(_ context.Context, input AdvancedChatToolCallInput) (string, error) {
+func handleChatGroupPostTool(ctx context.Context, input AdvancedChatToolCallInput) (string, error) {
+	if _, _, err := messageWaitOptions(input.Arguments); err != nil {
+		return "", err
+	}
 	content := truncateSessionTaskText(stringFromMap(input.Arguments, "content"), 20000)
 	if content == "" {
 		return "", errors.New("group message content is required")
@@ -138,8 +196,147 @@ func handleChatGroupPostTool(_ context.Context, input AdvancedChatToolCallInput)
 	}
 	_ = model.DB.Model(&AdvancedChatChatGroup{}).Where("id = ? AND user_id = ?", member.GroupID, input.UserID).Update("updated_at", time.Now()).Error
 	go dispatchChatGroupMessage(input.UserID, member.GroupID, message)
-	encoded, _ := json.Marshal(gin.H{"posted": true, "message_id": message.ID})
+	replies, err := waitForGroupReplies(ctx, input.UserID, member, message.CreatedAt, input.Arguments)
+	if err != nil {
+		return "", err
+	}
+	stopRunAfterMessageWait(input)
+	encoded, _ := json.Marshal(gin.H{"posted": true, "message_id": message.ID, "replies": replies})
 	return string(encoded), nil
+}
+
+func handleChatPrivatePostTool(ctx context.Context, input AdvancedChatToolCallInput) (string, error) {
+	if _, _, err := messageWaitOptions(input.Arguments); err != nil {
+		return "", err
+	}
+	content := truncateSessionTaskText(stringFromMap(input.Arguments, "content"), 20000)
+	if content == "" {
+		return "", errors.New("private message content is required")
+	}
+	var sender, recipient AdvancedChatChatGroupMember
+	if err := model.DB.Where("session_id = ? AND user_id = ?", input.SessionID, input.UserID).First(&sender).Error; err != nil {
+		return "", errors.New("this session is not attached to a chat group")
+	}
+	targetID := strings.TrimSpace(stringFromMap(input.Arguments, "target_member_id"))
+	if targetID == "" || targetID == sender.ID {
+		return "", errors.New("select another assistant in this group")
+	}
+	if err := model.DB.Where("id = ? AND group_id = ? AND user_id = ?", targetID, sender.GroupID, input.UserID).First(&recipient).Error; err != nil {
+		return "", errors.New("target assistant was not found in this group")
+	}
+	conversation, err := findOrCreatePrivateConversation(input.UserID, sender, recipient)
+	if err != nil {
+		return "", err
+	}
+	message := AdvancedChatPrivateMessage{ID: newAdvancedChatID("acpm"), ConversationID: conversation.ID, GroupID: sender.GroupID, UserID: input.UserID, SenderMemberID: sender.ID, SenderName: sender.AgentName, RecipientMemberID: recipient.ID, Content: content, SourceRunID: input.RunID}
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&message).Error; err != nil {
+			return err
+		}
+		return tx.Model(&AdvancedChatPrivateConversation{}).Where("id = ? AND user_id = ?", conversation.ID, input.UserID).Updates(map[string]interface{}{"last_message_at": message.CreatedAt, "updated_at": message.CreatedAt}).Error
+	}); err != nil {
+		return "", err
+	}
+	go dispatchPrivateMessage(input.UserID, message)
+	replies, err := waitForPrivateReplies(ctx, input.UserID, conversation.ID, recipient.ID, sender.ID, message.CreatedAt, input.Arguments)
+	if err != nil {
+		return "", err
+	}
+	stopRunAfterMessageWait(input)
+	encoded, _ := json.Marshal(gin.H{"sent": true, "conversation_id": conversation.ID, "message_id": message.ID, "replies": replies})
+	return string(encoded), nil
+}
+
+func messageWaitOptions(arguments map[string]interface{}) (int, bool, error) {
+	wait := 0
+	switch value := arguments["wait_seconds"].(type) {
+	case float64:
+		wait = int(value)
+	case int:
+		wait = value
+	case json.Number:
+		parsed, _ := value.Int64()
+		wait = int(parsed)
+	}
+	forever, _ := arguments["wait_forever"].(bool)
+	if wait < 0 || wait > chatMessageMaxWait {
+		return 0, false, fmt.Errorf("wait_seconds must be between 0 and %d", chatMessageMaxWait)
+	}
+	if forever && wait > 0 {
+		return 0, false, errors.New("wait_forever cannot be combined with wait_seconds")
+	}
+	return wait, forever, nil
+}
+
+func stopRunAfterMessageWait(input AdvancedChatToolCallInput) {
+	_, forever, err := messageWaitOptions(input.Arguments)
+	if err == nil && forever {
+		_, _, _, _ = stopAdvancedChatRun(input.RunID, input.UserID)
+	}
+}
+
+func waitForGroupReplies(ctx context.Context, userID uint, member AdvancedChatChatGroupMember, after time.Time, arguments map[string]interface{}) ([]AdvancedChatChatGroupMessage, error) {
+	wait, _, err := messageWaitOptions(arguments)
+	if err != nil || wait == 0 {
+		return nil, err
+	}
+	deadline := time.NewTimer(time.Duration(wait) * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(400 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline.C:
+			return []AdvancedChatChatGroupMessage{}, nil
+		case <-ticker.C:
+			var replies []AdvancedChatChatGroupMessage
+			err := model.DB.Where("group_id = ? AND user_id = ? AND sender_type = ? AND sender_id <> ? AND created_at > ?", member.GroupID, userID, chatGroupSenderAgent, member.ID, after).Order("created_at ASC").Find(&replies).Error
+			if err != nil {
+				return nil, err
+			}
+			if len(replies) > 0 {
+				return replies, nil
+			}
+		}
+	}
+}
+
+func waitForPrivateReplies(ctx context.Context, userID uint, conversationID, senderID, recipientID string, after time.Time, arguments map[string]interface{}) ([]AdvancedChatPrivateMessage, error) {
+	wait, _, err := messageWaitOptions(arguments)
+	if err != nil || wait == 0 {
+		return nil, err
+	}
+	deadline := time.NewTimer(time.Duration(wait) * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(400 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline.C:
+			return []AdvancedChatPrivateMessage{}, nil
+		case <-ticker.C:
+			var replies []AdvancedChatPrivateMessage
+			err := model.DB.Where("conversation_id = ? AND user_id = ? AND sender_member_id = ? AND recipient_member_id = ? AND created_at > ?", conversationID, userID, senderID, recipientID, after).Order("created_at ASC").Find(&replies).Error
+			if err != nil {
+				return nil, err
+			}
+			if len(replies) > 0 {
+				ids := make([]string, 0, len(replies))
+				for _, reply := range replies {
+					ids = append(ids, reply.ID)
+				}
+				now := time.Now()
+				if err := model.DB.Model(&AdvancedChatPrivateMessage{}).Where("id IN ? AND user_id = ? AND delivered_at IS NULL", ids, userID).Update("delivered_at", &now).Error; err != nil {
+					return nil, err
+				}
+				return replies, nil
+			}
+		}
+	}
 }
 
 func (api *advancedChatAPI) listChatGroups(c *gin.Context) {
@@ -216,6 +413,12 @@ func (api *advancedChatAPI) updateChatGroup(c *gin.Context) {
 		if err := tx.Model(&existing).Updates(map[string]interface{}{"name": group.Name, "description": group.Description}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("group_id = ? AND user_id = ?", existing.ID, user.ID).Delete(&AdvancedChatPrivateMessage{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("group_id = ? AND user_id = ?", existing.ID, user.ID).Delete(&AdvancedChatPrivateConversation{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("group_id = ? AND user_id = ?", existing.ID, user.ID).Delete(&AdvancedChatChatGroupMember{}).Error; err != nil {
 			return err
 		}
@@ -280,6 +483,75 @@ func loadChatGroup(userID uint, groupID string) (AdvancedChatChatGroup, []Advanc
 	return group, messages, nil
 }
 
+func findOrCreatePrivateConversation(userID uint, first, second AdvancedChatChatGroupMember) (AdvancedChatPrivateConversation, error) {
+	if first.GroupID != second.GroupID {
+		return AdvancedChatPrivateConversation{}, errors.New("private conversations cannot cross chat groups")
+	}
+	a, b := first, second
+	if a.ID > b.ID {
+		a, b = b, a
+	}
+	var conversation AdvancedChatPrivateConversation
+	err := model.DB.Where("group_id = ? AND user_id = ? AND member_a_id = ? AND member_b_id = ?", a.GroupID, userID, a.ID, b.ID).First(&conversation).Error
+	if err == nil {
+		return conversation, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return conversation, err
+	}
+	conversation = AdvancedChatPrivateConversation{ID: newAdvancedChatID("acpc"), GroupID: a.GroupID, UserID: userID, MemberAID: a.ID, MemberBID: b.ID, MemberAName: a.AgentName, MemberBName: b.AgentName, LastMessageAt: time.Now()}
+	if err := model.DB.Create(&conversation).Error; err != nil {
+		if lookup := model.DB.Where("group_id = ? AND user_id = ? AND member_a_id = ? AND member_b_id = ?", a.GroupID, userID, a.ID, b.ID).First(&conversation).Error; lookup == nil {
+			return conversation, nil
+		}
+		return conversation, err
+	}
+	return conversation, nil
+}
+
+func (api *advancedChatAPI) listPrivateConversations(c *gin.Context) {
+	user, ok := currentAdvancedChatUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	if _, _, err := loadChatGroup(user.ID, c.Param("id")); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Chat group not found"})
+		return
+	}
+	var conversations []AdvancedChatPrivateConversation
+	if err := model.DB.Where("group_id = ? AND user_id = ?", c.Param("id"), user.ID).Order("last_message_at DESC").Find(&conversations).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list private conversations"})
+		return
+	}
+	for index := range conversations {
+		var message AdvancedChatPrivateMessage
+		if model.DB.Where("conversation_id = ? AND user_id = ?", conversations[index].ID, user.ID).Order("created_at DESC").First(&message).Error == nil {
+			conversations[index].LastMessage = message.Content
+		}
+	}
+	c.JSON(http.StatusOK, conversations)
+}
+
+func (api *advancedChatAPI) getPrivateConversation(c *gin.Context) {
+	user, ok := currentAdvancedChatUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	var conversation AdvancedChatPrivateConversation
+	if err := model.DB.Where("id = ? AND group_id = ? AND user_id = ?", c.Param("conversation_id"), c.Param("id"), user.ID).First(&conversation).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Private conversation not found"})
+		return
+	}
+	var messages []AdvancedChatPrivateMessage
+	if err := model.DB.Where("conversation_id = ? AND group_id = ? AND user_id = ?", conversation.ID, conversation.GroupID, user.ID).Order("created_at ASC").Limit(500).Find(&messages).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load private conversation"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"conversation": conversation, "messages": messages})
+}
+
 func (api *advancedChatAPI) deleteChatGroup(c *gin.Context) {
 	user, ok := currentAdvancedChatUser(c)
 	if !ok {
@@ -297,6 +569,12 @@ func (api *advancedChatAPI) deleteChatGroup(c *gin.Context) {
 		}
 	}
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("group_id = ? AND user_id = ?", group.ID, user.ID).Delete(&AdvancedChatPrivateMessage{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("group_id = ? AND user_id = ?", group.ID, user.ID).Delete(&AdvancedChatPrivateConversation{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("group_id = ? AND user_id = ?", group.ID, user.ID).Delete(&AdvancedChatChatGroupMessage{}).Error; err != nil {
 			return err
 		}
@@ -391,6 +669,27 @@ func dispatchChatGroupMessage(userID uint, groupID string, message AdvancedChatC
 	}
 }
 
+func dispatchPrivateMessage(userID uint, message AdvancedChatPrivateMessage) {
+	claim := model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND group_id = ? AND user_id = ? AND status = ?", message.RecipientMemberID, message.GroupID, userID, chatGroupMemberIdle).Updates(map[string]interface{}{"status": chatGroupMemberWorking, "work_depth": 0})
+	if claim.Error != nil || claim.RowsAffected != 1 {
+		return
+	}
+	now := time.Now()
+	updated := model.DB.Model(&AdvancedChatPrivateMessage{}).Where("id = ? AND user_id = ? AND delivered_at IS NULL", message.ID, userID).Update("delivered_at", &now)
+	if updated.Error != nil || updated.RowsAffected != 1 {
+		_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", message.RecipientMemberID, userID).Updates(map[string]interface{}{"status": chatGroupMemberIdle, "run_id": ""}).Error
+		return
+	}
+	go runPrivateChatMember(userID, message)
+}
+
+func dispatchNextPrivateMessage(userID uint, groupID, memberID string) {
+	var message AdvancedChatPrivateMessage
+	if model.DB.Where("group_id = ? AND user_id = ? AND recipient_member_id = ? AND delivered_at IS NULL", groupID, userID, memberID).Order("created_at ASC").First(&message).Error == nil {
+		dispatchPrivateMessage(userID, message)
+	}
+}
+
 func runChatGroupMember(userID uint, groupID string, memberID string, trigger AdvancedChatChatGroupMessage) {
 	var member AdvancedChatChatGroupMember
 	if err := model.DB.Where("id = ? AND group_id = ? AND user_id = ?", memberID, groupID, userID).First(&member).Error; err != nil {
@@ -398,6 +697,7 @@ func runChatGroupMember(userID uint, groupID string, memberID string, trigger Ad
 	}
 	defer func() {
 		_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", memberID, userID).Updates(map[string]interface{}{"status": chatGroupMemberIdle, "run_id": ""}).Error
+		dispatchNextPrivateMessage(userID, groupID, memberID)
 	}()
 	var group AdvancedChatChatGroup
 	if model.DB.Where("id = ? AND user_id = ?", groupID, userID).First(&group).Error != nil {
@@ -415,6 +715,57 @@ func runChatGroupMember(userID uint, groupID string, memberID string, trigger Ad
 		sessionID = newAdvancedChatID("acg")
 	}
 	_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", member.ID, userID).Updates(map[string]interface{}{"session_id": sessionID, "work_depth": trigger.Depth}).Error
+	messages := []advancedChatCompletionMessage{{ID: newAdvancedChatID("acm"), Role: "user", Content: instruction, Parts: normalizeAdvancedChatContentParts(nil, instruction)}}
+	agent, err := loadAdvancedChatAgent(userID, member.AgentID)
+	if err != nil || agent == nil {
+		return
+	}
+	input := advancedChatCompletionInput{SessionID: sessionID, Title: group.Name + " / " + member.AgentName, Mode: advancedChatModeAssistant, AgentID: member.AgentID, ModelName: agent.DefaultModel, UserChannelID: agent.UserChannelID, Messages: messages, AutoCompressContext: true}
+	prepared, _, _, err := prepareAdvancedChatAssistantRun(context.Background(), userID, input, messages, agent.DefaultModel)
+	if err != nil {
+		return
+	}
+	_, run, _, _, err := createAdvancedChatAssistantRun(userID, prepared)
+	if err != nil {
+		return
+	}
+	_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", member.ID, userID).Updates(map[string]interface{}{"session_id": sessionID, "run_id": run.ID, "status": chatGroupMemberWorking}).Error
+	runAdvancedChatAssistantCompletion(run.ID, userID, prepared)
+}
+
+func runPrivateChatMember(userID uint, trigger AdvancedChatPrivateMessage) {
+	var member AdvancedChatChatGroupMember
+	if err := model.DB.Where("id = ? AND group_id = ? AND user_id = ?", trigger.RecipientMemberID, trigger.GroupID, userID).First(&member).Error; err != nil {
+		return
+	}
+	defer func() {
+		_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", member.ID, userID).Updates(map[string]interface{}{"status": chatGroupMemberIdle, "run_id": ""}).Error
+		dispatchNextPrivateMessage(userID, trigger.GroupID, member.ID)
+	}()
+	var group AdvancedChatChatGroup
+	if model.DB.Where("id = ? AND user_id = ?", trigger.GroupID, userID).First(&group).Error != nil {
+		return
+	}
+	var conversation AdvancedChatPrivateConversation
+	if model.DB.Where("id = ? AND group_id = ? AND user_id = ?", trigger.ConversationID, trigger.GroupID, userID).First(&conversation).Error != nil {
+		return
+	}
+	var history []AdvancedChatPrivateMessage
+	_ = model.DB.Where("conversation_id = ? AND user_id = ?", conversation.ID, userID).Order("created_at DESC").Limit(40).Find(&history).Error
+	lines := make([]string, 0, len(history))
+	for index := len(history) - 1; index >= 0; index-- {
+		lines = append(lines, fmt.Sprintf("%s: %s", history[index].SenderName, history[index].Content))
+	}
+	otherName := conversation.MemberAName
+	if conversation.MemberAID == member.ID {
+		otherName = conversation.MemberBName
+	}
+	instruction := fmt.Sprintf("You are %s in the isolated chat group %q. This is a private conversation with %s; no other assistant can see it. Recent private transcript:\n\n%s\n\n%s just sent you a private message. Handle it as needed. Your normal output remains private execution output. Reply only through send_private_message with target_member_id %q. Do not use send_group_message unless you separately intend to publish something to the whole group.", member.AgentName, group.Name, otherName, strings.Join(lines, "\n"), trigger.SenderName, trigger.SenderMemberID)
+	sessionID := member.SessionID
+	if sessionID == "" {
+		sessionID = newAdvancedChatID("acg")
+	}
+	_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", member.ID, userID).Update("session_id", sessionID).Error
 	messages := []advancedChatCompletionMessage{{ID: newAdvancedChatID("acm"), Role: "user", Content: instruction, Parts: normalizeAdvancedChatContentParts(nil, instruction)}}
 	agent, err := loadAdvancedChatAgent(userID, member.AgentID)
 	if err != nil || agent == nil {

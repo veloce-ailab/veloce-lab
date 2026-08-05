@@ -626,7 +626,6 @@ export default function Chat() {
   const [sessionFolderAssignments, setSessionFolderAssignments] = useState<Record<string, string>>(readSessionFolderAssignments)
   const [isSessionFolderDialogOpen, setIsSessionFolderDialogOpen] = useState(false)
   const [newSessionFolderName, setNewSessionFolderName] = useState("")
-  const [collapsedSessionFolderIDs, setCollapsedSessionFolderIDs] = useState<Set<string>>(() => new Set())
   const [configTab, setConfigTab] = useState<SessionConfigTab>("basic")
   const [pendingAgentID, setPendingAgentID] = useState("")
   const [sessionCapabilityPicker, setSessionCapabilityPicker] = useState<SessionCapabilityPicker>(null)
@@ -841,12 +840,6 @@ export default function Chat() {
     [sessions, activeSessionID, loadedSharedSession]
   )
   const displaySessions = useMemo(() => sessions.map(normalizeRuntimeSession), [sessions])
-  const resolvedSessionFolderAssignments = useMemo(() => {
-    if (!isAdvanced) {
-      return sessionFolderAssignments
-    }
-    return Object.fromEntries(displaySessions.flatMap((session) => session.folder_id ? [[session.id, session.folder_id]] : []))
-  }, [displaySessions, isAdvanced, sessionFolderAssignments])
   const normalizedSessionSearch = sessionSearch.trim().toLowerCase()
   const searchedSessions = useMemo(
     () => displaySessions
