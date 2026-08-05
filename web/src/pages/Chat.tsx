@@ -3412,7 +3412,7 @@ export default function Chat() {
 
   const sessionsSidebar = (
     <aside
-      className="flex h-full w-full max-w-[85vw] flex-col bg-card text-foreground"
+      className="flex w-full min-w-0 max-w-full flex-col overflow-x-hidden bg-card text-foreground"
       onContextMenu={(event) => {
         if (event.defaultPrevented) {
           return
@@ -3453,7 +3453,7 @@ export default function Chat() {
           />
         </label>
       </div>
-      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
+      <div className="space-y-0.5 p-2">
         {isAdvanced && enterpriseMode && sharedPools.length > 0 && (
           <div className="pb-3">
             <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">{language === "zh" ? "任务与部门会话" : "Task and department sessions"}</div>
