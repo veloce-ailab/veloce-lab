@@ -116,12 +116,8 @@ func withChatExecutorChannel(err *ChatExecutorError, channel model.Channel, mode
 	return err
 }
 
-// ExecuteServerChatCompletion runs one billed chat-completion turn for a user
-// directly against a channel, without going through the public /v1 HTTP endpoint
-// or a user token. It selects a channel for (model, userChannel) using the same
-// routing the proxy uses, translates server-side tools into the selected provider
-// protocol, bills the user via the shared usage-charge path, and returns the
-// assistant message plus any tool calls.
+// ExecuteServerChatCompletion runs one chat-completion turn directly against an
+// upstream channel selected for the requested model.
 func ExecuteServerChatCompletion(c *gin.Context, user *model.User, req ChatExecutorRequest) (*ChatExecutorResult, error) {
 	if user == nil {
 		return nil, newChatExecutorError(http.StatusUnauthorized, "Unauthorized")
@@ -129,13 +125,6 @@ func ExecuteServerChatCompletion(c *gin.Context, user *model.User, req ChatExecu
 	modelName := strings.TrimSpace(strings.TrimPrefix(req.ModelName, "models/"))
 	if modelName == "" {
 		return nil, newChatExecutorError(http.StatusBadRequest, "Model not specified")
-	}
-	allowedByDepartment, err := DepartmentModelAllowed(user.ID, modelName)
-	if err != nil {
-		return nil, newChatExecutorError(http.StatusInternalServerError, "Failed to evaluate department model policy")
-	}
-	if !allowedByDepartment {
-		return nil, newChatExecutorError(http.StatusForbidden, "Department policy does not allow this model")
 	}
 	// This distribution is single-user and does not meter chat against a wallet.
 	req.ChargeBalance = false

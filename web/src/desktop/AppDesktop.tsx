@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Activity, Check, CreditCard, FolderOpen, Globe2, HardDrive, LogOut, PanelTop, Plus, Server, Settings, UserCircle } from "lucide-react"
+import { Activity, Check, FolderOpen, Globe2, HardDrive, LogOut, PanelTop, Plus, Server, Settings, UserCircle } from "lucide-react"
 import Login from "@/pages/Login"
 import Setup from "@/pages/Setup"
 import AdvancedChat from "@/pages/AdvancedChat"
@@ -122,7 +122,7 @@ function DesktopTitleBar({
   onMoveTab: (tabID: string, targetTabID: string) => void
   onDetachTab: (tabID: string, screenX: number, screenY: number) => void
   onUpdateTabServer: (tabID: string, serverURL: string) => void
-  onNavigateActive: (path: "/settings" | "/settings/wallet") => void
+  onNavigateActive: (path: "/settings") => void
   onLogout: () => void
 }) {
   const { language } = useI18n()
@@ -361,7 +361,6 @@ function DesktopTitleBar({
 
   const accountLabel = user?.username || user?.email || copy.anonymous
   const accountInitial = accountLabel.trim().slice(0, 1).toUpperCase() || "U"
-  const balance = userStats?.balance ?? user?.balance ?? 0
   const storageUsed = Math.max(0, Number(storageSettings?.file_storage_used_bytes || 0))
   const storageTotal = Math.max(0, Number(storageSettings?.file_storage_total_mb || 0)) * 1024 * 1024
   const storagePercent = storageTotal > 0 ? Math.min(100, Math.round((storageUsed / storageTotal) * 100)) : 0
@@ -634,10 +633,6 @@ function DesktopTitleBar({
                 </div>
               </div>
               <div className="mt-3 space-y-3 border-t pt-3 text-xs">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">{language === "zh" ? "余额" : "Balance"}</span>
-                  <span className="font-medium">{formatDesktopBalance(balance)}</span>
-                </div>
                 <div>
                   <div className="mb-1.5 flex items-center justify-between gap-3">
                     <span className="flex items-center gap-1.5 text-muted-foreground"><HardDrive size={13} />{copy.storage}</span>
@@ -648,11 +643,7 @@ function DesktopTitleBar({
                   </div>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button size="sm" className="h-8 gap-1.5" onClick={() => { setIsAccountOpen(false); onNavigateActive("/settings/wallet") }}>
-                  <CreditCard size={14} />
-                  {copy.recharge}
-                </Button>
+              <div className="mt-3">
                 <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => { setIsAccountOpen(false); onNavigateActive("/settings") }}>
                   <Settings size={14} />
                   {copy.settings}
@@ -940,11 +931,6 @@ function DesktopRoutes() {
   }
 
   return <DesktopSingleWindow />
-}
-
-function formatDesktopBalance(value: string | number) {
-  const amount = Number(value)
-  return Number.isFinite(amount) ? amount.toLocaleString(undefined, { maximumFractionDigits: 4 }) : String(value || 0)
 }
 
 function formatDesktopBytes(value: number) {

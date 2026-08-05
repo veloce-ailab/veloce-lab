@@ -27,15 +27,6 @@ interface UserChannelCatalog {
   models: string[]
 }
 
-interface APIKey {
-  id: number
-  name: string
-  api_key: string
-  key_prefix: string
-  allowed_models: string[]
-  enabled: boolean
-}
-
 interface ChatToolCall {
   id: string
   round?: number
@@ -512,8 +503,6 @@ interface EnterprisePoolDevice {
   external_device_id: string
 }
 
-type ChatEndpoint = "chat" | "responses" | "claude" | "gemini"
-type ChatMode = "basic" | "advanced"
 type ChatRunMode = "chat" | "assistant" | "agent_group"
 type ConnectorApprovalMode = "manual" | "full_access" | "assistant"
 type SessionConfigTab = "basic" | "advanced" | "agent" | "agent_group" | "skills" | "knowledge" | "mcp" | "device"
@@ -522,16 +511,10 @@ type AttachmentTarget = "composer" | "editor"
 type ComposerControlMenu = "" | "mode" | "model" | "device" | "workspace" | "agent" | "agent_group" | "approval"
 type WorkspacePickerTarget = "session" | "pending"
 
-interface ChatProps {
-  variant?: ChatMode
-}
-
 interface ChatStoreKeys {
   sessions: string
   selectedSession: string
   model: string
-  endpoint: string
-  apiKey: string
   userChannel: string
 }
 
@@ -544,8 +527,6 @@ const sessionsStoreKey = "windypear.chat.sessions.v1"
 const legacyMessagesStoreKey = "windypear.chat.messages.v1"
 const selectedSessionStoreKey = "windypear.chat.selected_session.v1"
 const modelStoreKey = "windypear.chat.model.v1"
-const endpointStoreKey = "windypear.chat.endpoint.v1"
-const apiKeyStoreKey = "windypear.chat.api_key_id.v1"
 const selectedAgentStoreKey = "windypear.advanced_chat.selected_agent.v1"
 const recentAgentStoreKey = "windypear.advanced_chat.recent_agents.v1"
 const sessionFoldersStorageKey = "windypear.chat.session_folders.v1"
@@ -583,29 +564,17 @@ const defaultAdvancedChatSettings: AdvancedChatSettings = {
   connector_approval_agent_id: "",
 }
 
-const chatStoreKeys: Record<ChatMode, ChatStoreKeys> = {
-  basic: {
-    sessions: sessionsStoreKey,
-    selectedSession: selectedSessionStoreKey,
-    model: modelStoreKey,
-    endpoint: endpointStoreKey,
-    apiKey: apiKeyStoreKey,
-    userChannel: "windypear.chat.user_channel_id.v1",
-  },
-  advanced: {
+const chatStoreKeys: ChatStoreKeys = {
     sessions: "windypear.advanced_chat.sessions.v1",
     selectedSession: "windypear.advanced_chat.selected_session.v1",
     model: "windypear.advanced_chat.model.v1",
-    endpoint: "windypear.advanced_chat.endpoint.v1",
-    apiKey: "windypear.advanced_chat.api_key_id.v1",
     userChannel: "windypear.advanced_chat.user_channel_id.v1",
-  },
 }
 
-export default function Chat({ variant = "basic" }: ChatProps) {
-  const isAdvanced = variant === "advanced"
+export default function Chat() {
+  const isAdvanced = true
   const isDesktop = isDesktopTarget()
-  const storeKeys = chatStoreKeys[variant]
+  const storeKeys = chatStoreKeys
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const location = useLocation()
@@ -637,8 +606,6 @@ export default function Chat({ variant = "basic" }: ChatProps) {
     }
   }
   const [modelName, setModelName] = useState(() => localStorage.getItem(storeKeys.model) || "")
-  const [endpointMode, setEndpointMode] = useState<ChatEndpoint>(() => readStoredEndpoint(storeKeys.endpoint))
-  const [selectedAPIKeyID, setSelectedAPIKeyID] = useState(() => Number(localStorage.getItem(storeKeys.apiKey) || 0))
   const [selectedUserChannelID, setSelectedUserChannelID] = useState(() => Number(localStorage.getItem(storeKeys.userChannel) || 0))
   const [selectedAgentID, setSelectedAgentID] = useState(() => (isAdvanced ? localStorage.getItem(selectedAgentStoreKey) || "" : ""))
   const [recentAgentIDs, setRecentAgentIDs] = useState(() => (isAdvanced ? readRecentAgentIDs() : []))
@@ -728,15 +695,6 @@ export default function Chat({ variant = "basic" }: ChatProps) {
     queryFn: async () => {
       const res = await api.get("/user/catalog")
       return Array.isArray(res.data) ? res.data.map(normalizeCatalogItem) : []
-    },
-  })
-
-  const { data: apiKeys = [] } = useQuery<APIKey[]>({
-    queryKey: ["api-keys", "chat"],
-    enabled: !isAdvanced,
-    queryFn: async () => {
-      const res = await api.get("/user/api-keys")
-      return Array.isArray(res.data) ? res.data.map(normalizeAPIKey) : []
     },
   })
 
@@ -865,11 +823,6 @@ export default function Chat({ variant = "basic" }: ChatProps) {
   })
 
   const modelOptions = useMemo(() => uniqueModels(catalog), [catalog])
-  const selectableAPIKeys = useMemo(() => apiKeys.filter((key) => key.enabled && key.api_key), [apiKeys])
-  const selectedAPIKey = useMemo(
-    () => selectableAPIKeys.find((key) => key.id === selectedAPIKeyID) || selectableAPIKeys[0],
-    [selectableAPIKeys, selectedAPIKeyID]
-  )
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionID) || (loadedSharedSession?.id === activeSessionID ? loadedSharedSession : undefined),
     [sessions, activeSessionID, loadedSharedSession]
@@ -1516,20 +1469,6 @@ export default function Chat({ variant = "basic" }: ChatProps) {
   }, [modelName, storeKeys.model])
 
   useEffect(() => {
-    localStorage.setItem(storeKeys.endpoint, endpointMode)
-  }, [endpointMode, storeKeys.endpoint])
-
-  useEffect(() => {
-    if (!selectedAPIKey && selectedAPIKeyID !== 0) {
-      setSelectedAPIKeyID(0)
-      return
-    }
-    if (!selectedAPIKeyID && selectedAPIKey) {
-      setSelectedAPIKeyID(selectedAPIKey.id)
-    }
-  }, [selectedAPIKey, selectedAPIKeyID])
-
-  useEffect(() => {
     if (!isAdvanced) {
       return
     }
@@ -1541,12 +1480,6 @@ export default function Chat({ variant = "basic" }: ChatProps) {
       setSelectedUserChannelID(selectedUserChannel.id)
     }
   }, [isAdvanced, selectedUserChannel, selectedUserChannelID])
-
-  useEffect(() => {
-    if (selectedAPIKeyID) {
-      localStorage.setItem(storeKeys.apiKey, String(selectedAPIKeyID))
-    }
-  }, [selectedAPIKeyID, storeKeys.apiKey])
 
   useEffect(() => {
     if (isAdvanced && selectedUserChannelID) {
@@ -2428,7 +2361,6 @@ export default function Chat({ variant = "basic" }: ChatProps) {
   const sendMessageWithContent = async (rawText: string | null) => {
     const content = (rawText ?? prompt).trim()
     const activeAttachments = rawText == null ? attachments : []
-    const rawKey = selectedAPIKey?.api_key.trim() || ""
     const session = currentSession
     const resolvedModel = activeModelName.trim()
     if (!session) {
@@ -2498,10 +2430,6 @@ export default function Chat({ variant = "basic" }: ChatProps) {
         error(copy.assistantWorkspaceToolsDisabled)
         return
       }
-    }
-    if (!isAdvanced && !rawKey) {
-      error(copy.keyRequired)
-      return
     }
     if (!content && activeAttachments.length === 0) {
       return
@@ -2784,28 +2712,6 @@ export default function Chat({ variant = "basic" }: ChatProps) {
         return
       }
 
-      let answer = ""
-      const systemPrompt = ""
-      const requestMessages = session.auto_compress_context ? compressClientChatMessages(nextMessages) : nextMessages
-      const request = chatRequest(endpointMode, resolvedModel, rawKey, requestMessages, systemPrompt)
-      const response = await fetch(apiURL(request.url), {
-        method: "POST",
-        headers: request.headers,
-        body: JSON.stringify(request.body),
-      })
-      const text = await response.text()
-      let payload: any = null
-      try {
-        payload = text ? JSON.parse(text) : null
-      } catch {
-        payload = null
-      }
-      if (!response.ok) {
-        throw new Error(payload?.error || payload?.message || text || `HTTP ${response.status}`)
-      }
-      answer = responseTextFromPayload(payload)
-      const assistantMessage = createMessage("assistant", answer || copy.emptyResponse)
-      updateSession(session.id, (current) => ({ ...current, messages: [...current.messages, assistantMessage] }))
     } catch (err) {
       error(apiErrorMessage(err, err instanceof Error ? err.message : copy.sendFailed))
     } finally {
@@ -3403,38 +3309,6 @@ export default function Chat({ variant = "basic" }: ChatProps) {
     setAttachmentMenuTarget("")
     setComposerControlMenu("")
   }
-
-  const basicConfig = (
-    <Card>
-      <CardHeader>
-        <CardTitle>{copy.config}</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_220px_minmax(0,1fr)]">
-        <Select value={String((selectedAPIKey?.id || "") || "__shadcn_empty__")} onValueChange={(value) => setSelectedAPIKeyID(Number((value === "__shadcn_empty__" ? "" : value)) || 0)}><SelectTrigger className="h-10 rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
-          <SelectItem value="__shadcn_empty__">{selectableAPIKeys.length ? copy.selectKey : copy.noKeys}</SelectItem>
-          {selectableAPIKeys.map((key) => (
-            <SelectItem key={key.id} value={String(key.id)}>
-              {key.name || key.key_prefix}
-            </SelectItem>
-          ))}
-        </SelectContent></Select>
-        <Select value={String((endpointMode) || "__shadcn_empty__")} onValueChange={(value) => setEndpointMode(normalizeEndpoint((value === "__shadcn_empty__" ? "" : value)))}><SelectTrigger className="h-10 rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
-          <SelectItem value="chat">{copy.chatCompletions}</SelectItem>
-          <SelectItem value="responses">{copy.responsesAPI}</SelectItem>
-          <SelectItem value="claude">{copy.claudeMessages}</SelectItem>
-          <SelectItem value="gemini">{copy.geminiGenerate}</SelectItem>
-        </SelectContent></Select>
-        <Select value={String((modelName) || "__shadcn_empty__")} onValueChange={(value) => setModelName((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="h-10 rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
-          <SelectItem value="__shadcn_empty__">{copy.selectModel}</SelectItem>
-          {modelSelectOptions.map((model) => (
-            <SelectItem key={model} value={String(model)}>
-              {model}
-            </SelectItem>
-          ))}
-        </SelectContent></Select>
-      </CardContent>
-    </Card>
-  )
 
   const sessionSidebarItem = (session: ChatSession) => {
     const activePersonalSession = session.id === activeSession?.id && !isSharedSession
@@ -4111,8 +3985,6 @@ export default function Chat({ variant = "basic" }: ChatProps) {
 
       <PageTitleSlot />
       <div className={cn(isAdvanced ? "flex min-h-0 flex-1 flex-col" : "space-y-4")}>
-        {!isAdvanced && basicConfig}
-
         <div className={cn(isAdvanced ? "flex min-h-0 flex-1 flex-col" : "rounded-lg border bg-card text-card-foreground shadow-sm")}>
             <div className={cn(isAdvanced ? (isActiveRunRunning && activeRun ? "shrink-0 pb-2" : "sr-only") : "flex flex-col space-y-1.5 p-6")}>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -6556,82 +6428,6 @@ function readLegacyMessages(): ChatMessage[] {
   }
 }
 
-function readStoredEndpoint(storeKey = endpointStoreKey): ChatEndpoint {
-  return normalizeEndpoint(localStorage.getItem(storeKey) || "chat")
-}
-
-function normalizeEndpoint(value: string): ChatEndpoint {
-  if (value === "responses" || value === "claude" || value === "gemini") {
-    return value
-  }
-  return "chat"
-}
-
-function chatRequest(endpoint: ChatEndpoint, modelName: string, apiKey: string, messages: ChatMessage[], systemPrompt: string) {
-  const headers: Record<string, string> = { "Content-Type": "application/json" }
-  if (endpoint === "gemini") {
-    return {
-      url: `/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      headers,
-      body: chatRequestPayload(endpoint, modelName, messages, systemPrompt),
-    }
-  }
-  if (endpoint === "claude") {
-    headers["x-api-key"] = apiKey
-    return {
-      url: "/v1/messages",
-      headers,
-      body: chatRequestPayload(endpoint, modelName, messages, systemPrompt),
-    }
-  }
-  headers.Authorization = `Bearer ${apiKey}`
-  return {
-    url: endpoint === "responses" ? "/v1/responses" : "/v1/chat/completions",
-    headers,
-    body: chatRequestPayload(endpoint, modelName, messages, systemPrompt),
-  }
-}
-
-function chatRequestPayload(endpoint: ChatEndpoint, modelName: string, messages: ChatMessage[], systemPrompt: string) {
-  const prompt = systemPrompt.trim()
-  if (endpoint === "responses") {
-    return {
-      model: modelName,
-      input: [
-        ...(prompt ? [{ role: "system", content: prompt }] : []),
-        ...messages.map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
-      ],
-    }
-  }
-  if (endpoint === "claude") {
-    return {
-      model: modelName,
-      max_tokens: 1024,
-      ...(prompt ? { system: prompt } : {}),
-      messages: messages.map((message) => ({ role: message.role, content: message.content })),
-    }
-  }
-  if (endpoint === "gemini") {
-    return {
-      ...(prompt ? { systemInstruction: { parts: [{ text: prompt }] } } : {}),
-      contents: messages.map((message) => ({
-        role: message.role === "assistant" ? "model" : "user",
-        parts: [{ text: message.content }],
-      })),
-    }
-  }
-  return {
-    model: modelName,
-    messages: [
-      ...(prompt ? [{ role: "system", content: prompt }] : []),
-      ...messages.map((message) => ({ role: message.role, content: message.content })),
-    ],
-  }
-}
-
 async function responseErrorMessage(response: Response) {
   const text = await response.text().catch(() => "")
   try {
@@ -6728,66 +6524,6 @@ function streamStatusText(payload: any, copy: ChatCopy) {
     return copy.streamThinking
   }
   return message ? copy.streamThinking : ""
-}
-
-function responseTextFromPayload(payload: any): string {
-  const chatText = payload?.choices?.[0]?.message?.content || payload?.choices?.[0]?.text
-  if (typeof chatText === "string") {
-    return chatText
-  }
-  if (typeof payload?.output_text === "string") {
-    return payload.output_text
-  }
-  if (Array.isArray(payload?.content)) {
-    const claudeText = payload.content
-      .map((item: any) => (isRecord(item) && typeof item.text === "string" ? item.text : ""))
-      .filter(Boolean)
-      .join("\n")
-      .trim()
-    if (claudeText) {
-      return claudeText
-    }
-  }
-  if (Array.isArray(payload?.candidates)) {
-    const geminiText = payload.candidates
-      .flatMap((candidate: any) => {
-        const parts = isRecord(candidate?.content) && Array.isArray(candidate.content.parts) ? candidate.content.parts : []
-        return parts.map((part: any) => (isRecord(part) && typeof part.text === "string" ? part.text : ""))
-      })
-      .filter(Boolean)
-      .join("\n")
-      .trim()
-    if (geminiText) {
-      return geminiText
-    }
-  }
-
-  const texts: string[] = []
-  const output = Array.isArray(payload?.output) ? payload.output : []
-  for (const item of output) {
-    if (!isRecord(item)) {
-      continue
-    }
-    if (typeof item.text === "string") {
-      texts.push(item.text)
-    }
-    if (typeof item.content === "string") {
-      texts.push(item.content)
-    }
-    if (Array.isArray(item.content)) {
-      for (const content of item.content) {
-        if (!isRecord(content)) {
-          continue
-        }
-        if (typeof content.text === "string") {
-          texts.push(content.text)
-        } else if (typeof content.output_text === "string") {
-          texts.push(content.output_text)
-        }
-      }
-    }
-  }
-  return texts.join("\n").trim()
 }
 
 function normalizeAdvancedChatSettings(value: unknown): AdvancedChatSettings {
@@ -7184,20 +6920,6 @@ function normalizeStoredFileContent(value: unknown): StoredFileContent {
     binary: item.binary === true,
     truncated: item.truncated === true,
   }
-}
-
-const clientContextCompressionChars = 48000
-
-function compressClientChatMessages(messages: ChatMessage[]) {
-  const total = messages.reduce((sum, message) => sum + Array.from(message.content).length, 0)
-  if (total <= clientContextCompressionChars || messages.length <= 8) return messages
-  const recent = messages.slice(-12)
-  const summary = messages.slice(0, -12).map((message) => {
-    const content = message.content.replace(/\s+/g, " ").trim()
-    const excerpt = Array.from(content).slice(0, 240).join("")
-    return content ? `${message.role}: ${excerpt}${Array.from(content).length > 240 ? "..." : ""}` : ""
-  }).filter(Boolean).join("\n")
-  return [createMessage("assistant", `[Earlier conversation compressed for context]\n${summary}`), ...recent]
 }
 
 function normalizeSharedPool(value: unknown): EnterpriseSharedPool | null {
@@ -8089,20 +7811,6 @@ function normalizeCatalogItem(value: unknown): UserChannelCatalog {
     id: Number(item.id || 0),
     name: typeof item.name === "string" ? item.name : "",
     models: Array.isArray(item.models) ? item.models.filter((model): model is string => typeof model === "string") : [],
-  }
-}
-
-function normalizeAPIKey(value: unknown): APIKey {
-  const item = isRecord(value) ? value : {}
-  return {
-    id: Number(item.id || 0),
-    name: typeof item.name === "string" ? item.name : "",
-    api_key: typeof item.api_key === "string" ? item.api_key : "",
-    key_prefix: typeof item.key_prefix === "string" ? item.key_prefix : "",
-    allowed_models: Array.isArray(item.allowed_models)
-      ? item.allowed_models.filter((model): model is string => typeof model === "string")
-      : [],
-    enabled: Boolean(item.enabled),
   }
 }
 

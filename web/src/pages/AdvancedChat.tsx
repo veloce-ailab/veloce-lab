@@ -1,4 +1,4 @@
-import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, Globe2, Home, Laptop, Menu, MessageSquare, Palette, Send, SlidersHorizontal, Sparkles, UserCircle, Users, Video } from "lucide-react"
+import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, Globe2, Home, Laptop, Menu, MessageSquare, Send, SlidersHorizontal, Sparkles, UserCircle, Users } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
@@ -11,15 +11,12 @@ import AdvancedChatMCP from "./AdvancedChatMCP"
 import AdvancedChatFiles from "./AdvancedChatFiles"
 import KnowledgeBases from "./KnowledgeBases"
 import AdvancedChatMemories from "./AdvancedChatMemories"
-import Images from "./Images"
-import Videos from "./Videos"
 import AdvancedChatDevices, { AdvancedChatDeviceDetail } from "./AdvancedChatDevices"
 import AdvancedChatSites from "./AdvancedChatSites"
 import MessageChannels from "./MessageChannelsWorkspace"
 import AdvancedChatDeliveries from "./AdvancedChatDeliveries"
 import AdvancedChatScheduledTasks from "./AdvancedChatScheduledTasks"
 import AgentGroupsPage from "./AgentGroupsPage"
-import Community from "./Community"
 import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { AnnouncementButton } from "@/components/AnnouncementButton"
@@ -180,15 +177,11 @@ export default function AdvancedChat() {
             <PageTransition transitionKey={transitionKey} className={cn("page-shell-transition", isChatRoute && "h-full min-h-0")}>
               <div className={cn(isChatRoute ? "h-full" : "space-y-6")}>
                 {isChatRoute ? (
-                  <Chat variant="advanced" />
+                  <Chat />
                 ) : (
                   <Routes>
                     <Route path="agents" element={<Agents />} />
                     <Route path="agents/:id" element={<AgentEditor />} />
-                    <Route path="community" element={<Community />} />
-                    <Route path="community/knowledge-bases/:knowledgeBaseID" element={<Community />} />
-                    <Route path="community/skills/:skillID" element={<Community />} />
-                    <Route path="community/:id" element={<Community />} />
                     <Route path="skills" element={<Skills />} />
                     <Route path="skills/:id" element={<Skills />} />
                     <Route path="mcp" element={<AdvancedChatMCP />} />
@@ -199,8 +192,6 @@ export default function AdvancedChat() {
                     {publicSettings.message_channel_enabled && <Route path="channels/*" element={<MessageChannels />} />}
                     <Route path="deliveries" element={<AdvancedChatDeliveries />} />
                     <Route path="scheduled-tasks" element={<AdvancedChatScheduledTasks />} />
-                    <Route path="images" element={<Images />} />
-                    <Route path="videos" element={<Videos />} />
                     <Route path="files" element={<AdvancedChatFiles />} />
                     <Route path="knowledge" element={<KnowledgeBases />} />
                     <Route path="memories" element={<AdvancedChatMemories />} />
@@ -233,9 +224,6 @@ export default function AdvancedChat() {
 function desktopPageTitle(pathname: string, language: string) {
   const zh = language === "zh"
   if (pathname === "/chat" || pathname.startsWith("/chat/session/")) return zh ? "聊天" : "Chat"
-  if (pathname === "/chat/community" || pathname.startsWith("/chat/community/")) return zh ? "社区" : "Community"
-  if (pathname === "/chat/images") return zh ? "图像" : "Images"
-  if (pathname === "/chat/videos") return zh ? "视频" : "Videos"
   if (pathname === "/chat/files") return zh ? "文件库" : "Files"
   if (pathname === "/chat/knowledge") return zh ? "知识库" : "Knowledge bases"
   if (pathname === "/chat/memories") return zh ? "记忆" : "Memory"
@@ -280,7 +268,6 @@ function AdvancedChatSidebar({
   const scheduledTasksLabel = language === "zh" ? "计划任务" : "Scheduled Tasks"
   const agentGroupsLabel = language === "zh" ? "工作室" : "Agent Studios"
   const sitesLabel = language === "zh" ? "站点" : language === "ja" ? "サイト" : "Sites"
-  const creationLabel = language === "zh" ? "创作" : language === "ja" ? "作成" : "Create"
   const workflowLabel = language === "zh" ? "工作流" : language === "ja" ? "ワークフロー" : "Workflows"
   const agentLabel = language === "zh" ? "代理" : language === "ja" ? "エージェント" : "Agents"
   const homeItem: AdvancedChatSidebarItem = {
@@ -290,20 +277,11 @@ function AdvancedChatSidebar({
     active: location.pathname === "/chat" || location.pathname.startsWith("/chat/session/"),
   }
   const directItems: AdvancedChatSidebarItem[] = [
-    ...(publicSettings.community_enabled !== false ? [{ href: "/chat/community", label: language === "zh" ? "社区" : language === "ja" ? "コミュニティ" : "Community", icon: Users, active: location.pathname === "/chat/community" || location.pathname.startsWith("/chat/community/") }] : []),
     { href: "/chat/files", label: filesLabel, icon: FileText, active: location.pathname === "/chat/files" },
     { href: "/chat/knowledge", label: knowledgeLabel, icon: Database, active: location.pathname === "/chat/knowledge" },
     ...(user?.is_admin ? [{ href: "/admin/channels", label: language === "zh" ? "系统管理" : "System Management", icon: SlidersHorizontal, active: location.pathname.startsWith("/admin") }] : []),
   ]
   const groups: AdvancedChatSidebarGroup[] = [
-    {
-      id: "creation",
-      label: creationLabel,
-      items: [
-        { href: "/chat/images", label: t("nav.images"), icon: Palette, active: location.pathname === "/chat/images" },
-        { href: "/chat/videos", label: t("nav.videos"), icon: Video, active: location.pathname === "/chat/videos" },
-      ],
-    },
     {
       id: "workflow",
       label: workflowLabel,

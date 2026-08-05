@@ -73,18 +73,10 @@ func Run() error {
 	if err != nil {
 		return err
 	}
-	proxyService := service.NewProxyService()
 	syncService := service.NewSyncService()
-	statusService := service.NewStatusService()
-	reliabilityService := service.NewReliabilityService()
-	logCleanupService := service.NewLogCleanupService()
-	rateLimiter := middleware.NewRateLimiter()
 
 	// Register recurring jobs with the unified scheduler and start its loop.
 	syncService.StartSyncLoop()
-	statusService.Start()
-	reliabilityService.Start()
-	logCleanupService.Start()
 	service.StartScheduler()
 
 	// Initialize Gin
@@ -104,11 +96,7 @@ func Run() error {
 	modelAPI := &api.ModelAPI{SyncService: syncService}
 	userAPI := &api.UserAPI{AuthService: authService}
 	systemAPI := &api.SystemAPI{}
-	statusMonitorAPI := &api.StatusMonitorAPI{StatusService: statusService}
-	announcementAPI := &api.AnnouncementAPI{}
 	passkeyAPI := &api.PasskeyAPI{AuthService: authService}
-	enterpriseAPI := &api.EnterpriseAPI{}
-	schedulerAPI := &api.SchedulerAPI{}
 
 	// Public routes
 	r.GET("/health", func(c *gin.Context) {
@@ -116,16 +104,6 @@ func Run() error {
 	})
 	r.GET("/api/public/settings", systemAPI.PublicSettings)
 	r.GET("/api/public/models", modelAPI.PublicCatalog)
-	r.GET("/api/public/status", statusMonitorAPI.PublicStatus)
-	r.GET("/api/public/announcements", announcementAPI.PublicList)
-	r.GET("/api/community/categories", proxyCommunityAPI)
-	r.GET("/api/community/characters", proxyCommunityAPI)
-	r.GET("/api/community/characters/:id", proxyCommunityAPI)
-	r.GET("/api/community/knowledge-bases", proxyCommunityAPI)
-	r.GET("/api/community/knowledge-bases/:id", proxyCommunityAPI)
-	r.GET("/api/community/knowledge-bases/:id/content", proxyCommunityAPI)
-	r.GET("/api/community/skills", proxyCommunityAPI)
-	r.GET("/api/community/skills/:id", proxyCommunityAPI)
 	r.GET("/api/avatars/:id", userAPI.GetAvatar)
 	r.GET("/api/setup/status", func(c *gin.Context) {
 		required, err := authService.InitialSetupRequired()
@@ -703,60 +681,6 @@ func Run() error {
 			})
 	}
 
-	// AI Gateway routes (Proxy)
-	rootGateway := r.Group("")
-	rootGateway.Use(middleware.ExternalAPIMiddleware(), middleware.AuthMiddleware(authService), rateLimiter.Middleware())
-	{
-		rootGateway.GET("/balance", proxyService.HandleTokenBalance)
-		rootGateway.GET("/user/balance", proxyService.HandleUserBalance)
-	}
-
-	gateway := r.Group("/v1")
-	gateway.Use(middleware.ExternalAPIMiddleware(), middleware.AuthMiddleware(authService), rateLimiter.Middleware(), service.UpstreamFailureLogMiddleware())
-	{
-		gateway.GET("/models", proxyService.ListModels)
-		gateway.GET("/balance", proxyService.HandleTokenBalance)
-		gateway.GET("/user/balance", proxyService.HandleUserBalance)
-		gateway.GET("/tasks/:id", proxyService.HandleUnifiedTaskStatus)
-		gateway.POST("/uploads/images", proxyService.HandleUploadImage)
-		gateway.POST("/audio/speech", proxyService.HandleAudioSpeech)
-		gateway.POST("/audio/transcriptions", proxyService.HandleAudioTranscription)
-		gateway.POST("/moderations", proxyService.HandleModeration)
-		gateway.POST("/chat/completions", proxyService.HandleRequest)
-		gateway.POST("/completions", proxyService.HandleRequest)
-		gateway.POST("/responses", proxyService.HandleRequest)
-		gateway.POST("/responses/compact", proxyService.HandleRequest)
-		gateway.POST("/images/generations", proxyService.HandleImageGenerationCompatible)
-		gateway.GET("/images/generations/:id", proxyService.HandleImageGenerationTaskStatus)
-		gateway.POST("/images/edits", proxyService.HandleImageEdit)
-		gateway.POST("/videos/generations", proxyService.HandleVideoGenerationCompatible)
-		gateway.GET("/videos/generations/:id", proxyService.HandleUnifiedTaskStatus)
-		gateway.POST("/videos/:id/remix", proxyService.HandleVideoRemix)
-		gateway.POST("/seedance2/private-avatar", proxyService.HandleSeedancePrivateAvatar)
-		gateway.POST("/video/generations", proxyService.HandleVideoTaskCreate)
-		gateway.GET("/video/generations/:id", proxyService.HandleVideoTaskStatus)
-		gateway.POST("/videos/image2video", proxyService.HandleVideoTaskCreate)
-		gateway.GET("/videos/image2video/:id", proxyService.HandleVideoTaskStatus)
-		gateway.POST("/video/tasks", proxyService.HandleVideoTaskCreate)
-		gateway.GET("/video/tasks/:id", proxyService.HandleVideoTaskStatus)
-		gateway.POST("/videos/tasks", proxyService.HandleVideoTaskCreate)
-		gateway.GET("/videos/tasks/:id", proxyService.HandleVideoTaskStatus)
-		gateway.POST("/midjourney/generations", proxyService.HandleMidjourneyCreate)
-		gateway.POST("/midjourney/generations/imagine", proxyService.HandleMidjourneyCreate)
-		for _, action := range []string{"blend", "describe", "edits", "high-variation", "inpaint", "low-variation", "modal", "pan", "reroll", "upscale", "variation", "video", "zoom", "remix"} {
-			gateway.POST("/midjourney/generations/"+action, proxyService.HandleMidjourneyCreate)
-		}
-		gateway.GET("/midjourney/:id", proxyService.HandleMidjourneyStatus)
-		gateway.POST("/messages", proxyService.HandleClaudeMessages)
-		gateway.POST("/models/:modelAction", proxyService.HandleGeminiGenerateContent)
-	}
-
-	geminiGateway := r.Group("/v1beta")
-	geminiGateway.Use(middleware.ExternalAPIMiddleware(), middleware.AuthMiddleware(authService), rateLimiter.Middleware(), service.UpstreamFailureLogMiddleware())
-	{
-		geminiGateway.POST("/models/:modelAction", proxyService.HandleGeminiGenerateContent)
-	}
-
 	// Admin/Dashboard APIs
 	admin := r.Group("/api")
 	admin.Use(middleware.AuthMiddleware(authService), middleware.AdminMiddleware())
@@ -766,22 +690,6 @@ func Run() error {
 		admin.PUT("/settings", systemAPI.UpdateSettings)
 		admin.POST("/settings/export", systemAPI.ExportConfiguration)
 		admin.POST("/settings/import", systemAPI.ImportConfiguration)
-		admin.GET("/scheduled-jobs", schedulerAPI.List)
-		admin.GET("/scheduled-jobs/runs", schedulerAPI.Runs)
-		admin.POST("/scheduled-jobs/:name/run", schedulerAPI.Trigger)
-		admin.GET("/updates", systemAPI.GetAutoUpdateStatus)
-		admin.POST("/updates/check", systemAPI.CheckForUpdate)
-		admin.POST("/updates/apply", systemAPI.StartAutoUpdate)
-		admin.POST("/restart", systemAPI.Restart)
-		admin.GET("/status-monitors", statusMonitorAPI.List)
-		admin.POST("/status-monitors", statusMonitorAPI.Create)
-		admin.PUT("/status-monitors/:id", statusMonitorAPI.Update)
-		admin.DELETE("/status-monitors/:id", statusMonitorAPI.Delete)
-		admin.POST("/status-monitors/:id/check", statusMonitorAPI.CheckNow)
-		admin.GET("/announcements", announcementAPI.List)
-		admin.POST("/announcements", announcementAPI.Create)
-		admin.PUT("/announcements/:id", announcementAPI.Update)
-		admin.DELETE("/announcements/:id", announcementAPI.Delete)
 
 		// Channels
 		admin.GET("/channels", channelAPI.List)
@@ -808,8 +716,6 @@ func Run() error {
 		admin.GET("/user-channels", userChannelAPI.List)
 		admin.POST("/user-channels", userChannelAPI.Create)
 		admin.PUT("/user-channels/:id", userChannelAPI.Update)
-		admin.PUT("/user-channels/:id/allowed-groups", userChannelAPI.SetAllowedGroups)
-		admin.PUT("/user-channels/:id/allowed-users", userChannelAPI.SetAllowedUsers)
 		admin.DELETE("/user-channels/:id", userChannelAPI.Delete)
 
 		// Groups
@@ -818,23 +724,17 @@ func Run() error {
 		// User administration is omitted: this build owns exactly one user.
 
 		// Stats
-		service.RegisterCommunityAdvancedChatAdminRoutes(admin)
 		messagechannel.RegisterAdminRoutes(admin)
 		service.ApplyAdminRouteHooks(admin)
 	}
 
-	adminTickets := r.Group("/api/admin")
-	adminTickets.Use(middleware.AuthMiddleware(authService), middleware.AdminMiddleware())
-	service.RegisterTicketAdminRoutes(adminTickets)
-
 	// User Self APIs
 	publicAPI := r.Group("/api")
-	service.RegisterCommunityAdvancedChatPublicRoutes(publicAPI)
 	messagechannel.RegisterPublicRoutes(publicAPI)
 	service.ApplyPublicAPIRouteHooks(publicAPI)
 
 	userGroup := r.Group("/api/user")
-	userGroup.Use(middleware.AuthMiddleware(authService), middleware.TenantContextMiddleware())
+	userGroup.Use(middleware.AuthMiddleware(authService))
 	{
 		userGroup.GET("/me", userAPI.GetMe)
 		userGroup.POST("/avatar", userAPI.UploadAvatar)
@@ -912,82 +812,6 @@ func Run() error {
 				})
 				c.JSON(http.StatusOK, gin.H{"code": code, "expires_in": 300})
 			})
-		userGroup.GET("/api-keys", userAPI.ListAPIKeys)
-		userGroup.POST("/api-keys", userAPI.CreateAPIKey)
-		userGroup.PUT("/api-keys/:id", userAPI.UpdateAPIKey)
-		userGroup.POST("/api-keys/:id/rotate", userAPI.RotateAPIKey)
-		userGroup.POST("/api-keys/:id/reset-usage", userAPI.ResetAPIKeyUsage)
-		userGroup.DELETE("/api-keys/:id", userAPI.DeleteAPIKey)
-		userGroup.POST("/api-key/rotate", userAPI.RotateAPIKey)
-		if false { // Enterprise APIs are not part of this single-user build.
-			userGroup.GET("/enterprise/organization", enterpriseAPI.GetOrganization)
-			userGroup.PUT("/enterprise/organization", middleware.PermissionMiddleware("organization.manage"), enterpriseAPI.UpdateOrganization)
-			userGroup.GET("/enterprise/portal", enterpriseAPI.GetPortal)
-			userGroup.PUT("/enterprise/portal", middleware.PermissionMiddleware("organization.manage"), enterpriseAPI.UpdatePortal)
-			userGroup.PUT("/enterprise/portal/layout", middleware.PermissionMiddleware("organization.manage"), enterpriseAPI.UpdatePortalLayout)
-			userGroup.GET("/enterprise/workspaces", enterpriseAPI.ListWorkspaces)
-			userGroup.POST("/enterprise/context", enterpriseAPI.SelectContext)
-			userGroup.GET("/enterprise/permissions/preview", enterpriseAPI.PreviewPermissions)
-			userGroup.GET("/enterprise/permissions", middleware.PermissionMiddleware("role.read"), enterpriseAPI.ListPermissions)
-			userGroup.GET("/enterprise/members", middleware.PermissionMiddleware("member.read"), enterpriseAPI.ListMembers)
-			userGroup.POST("/enterprise/members", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.CreateMember)
-			userGroup.PATCH("/enterprise/members/:user_id", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.UpdateMember)
-			userGroup.DELETE("/enterprise/members/:user_id", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.DeleteMember)
-			userGroup.GET("/enterprise/members/:user_id/departments", middleware.PermissionMiddleware("member.read"), enterpriseAPI.ListMemberDepartments)
-			userGroup.PUT("/enterprise/members/:user_id/departments", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.ReplaceMemberDepartments)
-			userGroup.GET("/enterprise/departments", middleware.PermissionMiddleware("member.read"), enterpriseAPI.ListDepartments)
-			userGroup.POST("/enterprise/departments", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.CreateDepartment)
-			userGroup.PUT("/enterprise/departments/:id", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.UpdateDepartment)
-			userGroup.DELETE("/enterprise/departments/:id", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.DeleteDepartment)
-			userGroup.GET("/enterprise/departments/:id/roles", middleware.PermissionMiddleware("role.read"), enterpriseAPI.ListDepartmentRoles)
-			userGroup.PUT("/enterprise/departments/:id/roles", middleware.PermissionMiddleware("role.manage"), enterpriseAPI.ReplaceDepartmentRoles)
-			userGroup.GET("/enterprise/roles", middleware.PermissionMiddleware("role.read"), enterpriseAPI.ListRoles)
-			userGroup.POST("/enterprise/roles", middleware.PermissionMiddleware("role.manage"), enterpriseAPI.CreateRole)
-			userGroup.PUT("/enterprise/roles/:id", middleware.PermissionMiddleware("role.manage"), enterpriseAPI.UpdateRole)
-			userGroup.GET("/enterprise/role-bindings", middleware.PermissionMiddleware("role.read"), enterpriseAPI.ListRoleBindings)
-			userGroup.POST("/enterprise/role-bindings", middleware.PermissionMiddleware("role.manage"), enterpriseAPI.CreateRoleBinding)
-			userGroup.DELETE("/enterprise/role-bindings/:id", middleware.PermissionMiddleware("role.manage"), enterpriseAPI.DeleteRoleBinding)
-			userGroup.GET("/enterprise/tasks", enterpriseAPI.ListTasks)
-			userGroup.POST("/enterprise/tasks", enterpriseAPI.CreateTask)
-			userGroup.PATCH("/enterprise/tasks/:id/status", enterpriseAPI.UpdateTaskStatus)
-			userGroup.GET("/enterprise/tasks/:id", enterpriseAPI.GetTaskDetail)
-			userGroup.GET("/enterprise/managed-tasks", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.ListManagedTasks)
-			userGroup.GET("/enterprise/managed-tasks/:id", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.GetManagedTaskDetail)
-			userGroup.POST("/enterprise/managed-tasks/:id/participants", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.AddTaskParticipant)
-			userGroup.DELETE("/enterprise/managed-tasks/:id/participants/:user_id", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.DeleteTaskParticipant)
-			userGroup.POST("/enterprise/managed-tasks/:id/departments", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.AddTaskDepartment)
-			userGroup.DELETE("/enterprise/managed-tasks/:id/departments/:department_id", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.DeleteTaskDepartment)
-			userGroup.GET("/enterprise/shared-pools", enterpriseAPI.ListSharedPools)
-			userGroup.POST("/enterprise/shared-pools", middleware.PermissionMiddleware("member.manage"), enterpriseAPI.CreateSharedPool)
-			userGroup.GET("/enterprise/shared-pools/:id/sessions", enterpriseAPI.ListSharedPoolSessions)
-			userGroup.POST("/enterprise/shared-pools/:id/sessions/new", enterpriseAPI.CreateSharedPoolSession)
-			userGroup.GET("/enterprise/shared-pools/:id/devices", enterpriseAPI.ListSharedPoolDevices)
-			userGroup.GET("/enterprise/shared-pools/:id/sessions/:session_id", enterpriseAPI.GetSharedPoolSession)
-			userGroup.POST("/enterprise/shared-pools/:id/sessions/:session_id/messages", enterpriseAPI.AppendSharedPoolSessionMessage)
-			userGroup.POST("/enterprise/shared-pools/:id/sessions", enterpriseAPI.ShareSessionToPool)
-			userGroup.GET("/enterprise/shared-pools/:id/files", enterpriseAPI.ListSharedPoolFiles)
-			userGroup.GET("/enterprise/shared-pools/:id/files/:file_id/content", enterpriseAPI.GetSharedPoolFileContent)
-			userGroup.GET("/enterprise/shared-pools/:id/files/:file_id/download", enterpriseAPI.DownloadSharedPoolFile)
-			userGroup.POST("/enterprise/shared-pools/:id/files", enterpriseAPI.ShareFileToPool)
-			userGroup.GET("/enterprise/devices", middleware.PermissionMiddleware("tool.manage"), enterpriseAPI.ListDevices)
-			userGroup.POST("/enterprise/devices/connector-command", middleware.PermissionMiddleware("tool.manage"), enterpriseAPI.CreateConnectorCommand)
-			userGroup.POST("/enterprise/devices/:id/connector-command", middleware.PermissionMiddleware("tool.manage"), enterpriseAPI.RotateConnectorCommand)
-			userGroup.POST("/enterprise/devices", middleware.PermissionMiddleware("tool.manage"), enterpriseAPI.CreateDevice)
-			userGroup.PUT("/enterprise/devices/:id", middleware.PermissionMiddleware("tool.manage"), enterpriseAPI.UpdateDevice)
-			userGroup.DELETE("/enterprise/devices/:id", middleware.PermissionMiddleware("tool.manage"), enterpriseAPI.DeleteDevice)
-			userGroup.GET("/enterprise/device-assignments", middleware.PermissionMiddleware("tool.manage"), enterpriseAPI.ListDeviceAssignments)
-			userGroup.POST("/enterprise/device-assignments", middleware.PermissionMiddleware("tool.manage"), enterpriseAPI.AssignDevice)
-			userGroup.POST("/enterprise/device-assignments/:id/revoke", middleware.PermissionMiddleware("tool.manage"), enterpriseAPI.RevokeDeviceAssignment)
-			userGroup.GET("/enterprise/quota-accounts", middleware.PermissionMiddleware("cost.read"), enterpriseAPI.ListQuotaAccounts)
-			userGroup.POST("/enterprise/quota-accounts", middleware.PermissionMiddleware("cost.manage"), enterpriseAPI.CreateQuotaAccount)
-			userGroup.POST("/enterprise/quota-allocations", middleware.PermissionMiddleware("cost.pool_fund"), enterpriseAPI.AllocateQuota)
-			userGroup.POST("/enterprise/pools/personal-budget", enterpriseAPI.FundPoolFromPersonalBalance)
-			userGroup.POST("/enterprise/pools/organization-budget", middleware.PermissionMiddleware("cost.pool_fund"), enterpriseAPI.FundPoolFromOrganizationBudget)
-			userGroup.POST("/enterprise/pools/organization-budget/reclaim", middleware.PermissionMiddleware("cost.pool_reclaim"), enterpriseAPI.ReclaimPoolToOrganizationBudget)
-			userGroup.POST("/enterprise/user-budgets", middleware.PermissionMiddleware("cost.user_grant"), enterpriseAPI.GrantOrganizationBudgetToUser)
-			userGroup.GET("/enterprise/quota-ledger", middleware.PermissionMiddleware("cost.read"), enterpriseAPI.ListQuotaLedger)
-		}
-		service.RegisterCommunityAdvancedChatUserRoutes(userGroup)
 		messagechannel.RegisterUserRoutes(userGroup)
 		service.ApplyUserRouteHooks(userGroup)
 	}
