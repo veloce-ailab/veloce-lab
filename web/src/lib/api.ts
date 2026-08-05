@@ -214,9 +214,14 @@ let demoChatGroups = [{
     { id: "demo-member-reviewer", agent_id: "reviewer", agent_name: "评审助理", status: "working", run_id: "demo-group-run" },
   ],
 }];
-let demoChatGroupMessages = [
+let demoChatGroupMessages: Array<{ id: string; sender_type: string; sender_id?: string; sender_name: string; content: string; mention_member_ids: string[]; created_at: string }> = [
   { id: "demo-group-message-1", sender_type: "user", sender_name: "demo", content: "请一起评估下周产品发布计划。", mention_member_ids: [], created_at: demoNow },
   { id: "demo-group-message-2", sender_type: "agent", sender_id: "demo-member-planner", sender_name: "方案助理", content: "我会先整理发布范围、依赖项和回滚方案。", mention_member_ids: [], created_at: demoNow },
+];
+const demoPrivateConversations = [{ id: "demo-private", member_a_id: "demo-member-planner", member_b_id: "demo-member-reviewer", member_a_name: "方案助理", member_b_name: "评审助理", last_message: "回滚条件我补充好了，你再确认一下。", last_message_at: demoNow }];
+const demoPrivateMessages = [
+  { id: "demo-private-message-1", sender_member_id: "demo-member-planner", sender_name: "方案助理", recipient_member_id: "demo-member-reviewer", content: "我把发布范围整理好了，帮我私下看一下风险。", created_at: demoNow },
+  { id: "demo-private-message-2", sender_member_id: "demo-member-reviewer", sender_name: "评审助理", recipient_member_id: "demo-member-planner", content: "回滚条件我补充好了，你再确认一下。", created_at: demoNow },
 ];
 
 function demoResponse(config: AxiosRequestConfig, data: unknown, status = 200): AxiosResponse {
@@ -264,6 +269,10 @@ const demoAdapter: AxiosAdapter = async (config) => {
     if (chatGroupMessagesMatch[1] === "demo-group") demoChatGroupMessages = [...demoChatGroupMessages, message];
     return demoResponse(config, message, 202);
   }
+  const privateConversationListMatch = path.match(/^\/user\/advanced-chat\/chat-groups\/([^/]+)\/private-conversations$/);
+  if (privateConversationListMatch && method === "get") return demoResponse(config, privateConversationListMatch[1] === "demo-group" ? demoPrivateConversations : []);
+  const privateConversationMatch = path.match(/^\/user\/advanced-chat\/chat-groups\/([^/]+)\/private-conversations\/([^/]+)$/);
+  if (privateConversationMatch && method === "get") return demoResponse(config, { conversation: demoPrivateConversations.find((item) => item.id === privateConversationMatch[2]), messages: privateConversationMatch[2] === "demo-private" ? demoPrivateMessages : [] });
   if (/^\/user\/advanced-chat\/chat-groups\/[^/]+\/members\/[^/]+\/activity$/.test(path)) return demoResponse(config, { member: demoChatGroups[0]?.members[1], run: { status: "running", status_message: "loading_tools", current_round: 2 }, output: "正在核对发布清单和风险项...", events: [{ id: 1, event: "status", payload: { message: "assistant_started" }, created_at: demoNow }, { id: 2, event: "tool_call", payload: { name: "tasks_plan", status: "ok" }, created_at: demoNow }] });
   if (path === "/user/advanced-chat/completions" && method === "post") {
     const payload = demoPayload(config);

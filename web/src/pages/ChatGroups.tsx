@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Bot, Plus, Send, Trash2, Users, X } from "lucide-react"
+import { ArrowLeft, Bot, MessageCircle, Plus, Send, Trash2, Users, X } from "lucide-react"
 import api from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -17,6 +17,9 @@ interface ChatGroup { id: string; name: string; description: string; members: Gr
 interface GroupMessage { id: string; sender_type: "user" | "agent"; sender_id?: string; sender_name: string; content: string; mention_member_ids: string[]; created_at: string }
 interface GroupDetail { group: ChatGroup; messages: GroupMessage[] }
 interface MemberActivity { member: GroupMember; run?: { status?: string; status_message?: string; current_round?: number; error_message?: string; updated_at?: string }; events: { id: number; event: string; payload: Record<string, unknown>; created_at: string }[]; output: string }
+interface PrivateConversation { id: string; member_a_id: string; member_b_id: string; member_a_name: string; member_b_name: string; last_message: string; last_message_at: string }
+interface PrivateMessage { id: string; sender_member_id: string; sender_name: string; recipient_member_id: string; content: string; created_at: string }
+interface PrivateConversationDetail { conversation: PrivateConversation; messages: PrivateMessage[] }
 
 const groupsKey = ["advanced-chat-chat-groups"] as const
 
@@ -35,6 +38,7 @@ export default function ChatGroups() {
   const [description, setDescription] = useState("")
   const [agentIDs, setAgentIDs] = useState<string[]>([])
   const [activeMember, setActiveMember] = useState<GroupMember | null>(null)
+  const [activePrivateConversation, setActivePrivateConversation] = useState<PrivateConversation | null>(null)
   const [isSending, setIsSending] = useState(false)
 
   const { data: groups = [], isFetching } = useQuery<ChatGroup[]>({
@@ -59,6 +63,15 @@ export default function ChatGroups() {
     queryFn: async () => (await api.get(`/user/advanced-chat/chat-groups/${encodeURIComponent(groupID)}`)).data,
   })
   const members = detail?.group.members || []
+	const { data: privateConversations = [] } = useQuery<PrivateConversation[]>({
+		queryKey: ["chat-group-private-conversations", groupID],
+		enabled: Boolean(groupID),
+		refetchInterval: 1500,
+		queryFn: async () => {
+			const data = (await api.get(`/user/advanced-chat/chat-groups/${encodeURIComponent(groupID)}/private-conversations`)).data
+			return Array.isArray(data) ? data : []
+		},
+	})
   const mentionedMembers = useMemo(() => members.filter((member) => mentions.includes(member.id)), [members, mentions])
 
   const createGroup = async () => {
@@ -200,7 +213,7 @@ export default function ChatGroups() {
         ) : <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">{zh ? "加载群组..." : "Loading group..."}</div>}
       </section>
 
-      <aside className="hidden w-64 shrink-0 border-l bg-card lg:block">
+      <aside className="hidden w-72 shrink-0 overflow-y-auto border-l bg-card lg:block">
         <div className="flex h-14 items-center border-b px-4 text-sm font-semibold">{zh ? "群组成员" : "Members"}</div>
         <div className="space-y-1 p-2">
           {members.map((member) => (
@@ -211,10 +224,46 @@ export default function ChatGroups() {
             </div>
           ))}
         </div>
+		<div className="mt-2 border-t">
+			<div className="flex h-11 items-center px-4 text-sm font-semibold">{zh ? "助理私聊" : "Assistant chats"}</div>
+			<div className="space-y-1 px-2 pb-3">
+				{privateConversations.map((conversation) => (
+					<button key={conversation.id} type="button" className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-muted" onClick={() => setActivePrivateConversation(conversation)}>
+						<MessageCircle size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
+						<span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{conversation.member_a_name} · {conversation.member_b_name}</span><span className="mt-0.5 block truncate text-xs text-muted-foreground">{conversation.last_message}</span></span>
+					</button>
+				))}
+				{privateConversations.length === 0 && <div className="px-2 py-5 text-center text-xs text-muted-foreground">{zh ? "暂无助理私聊" : "No private chats"}</div>}
+			</div>
+		</div>
       </aside>
       {activeMember && detail && <MemberActivityDialog groupID={detail.group.id} member={activeMember} onClose={() => setActiveMember(null)} zh={zh} />}
+	  {activePrivateConversation && detail && <PrivateConversationDialog groupID={detail.group.id} conversation={activePrivateConversation} onClose={() => setActivePrivateConversation(null)} zh={zh} />}
     </div>
   )
+}
+
+function PrivateConversationDialog({ groupID, conversation, onClose, zh }: { groupID: string; conversation: PrivateConversation; onClose: () => void; zh: boolean }) {
+	const { data } = useQuery<PrivateConversationDetail>({
+		queryKey: ["chat-group-private-conversation", groupID, conversation.id],
+		refetchInterval: 1200,
+		queryFn: async () => (await api.get(`/user/advanced-chat/chat-groups/${encodeURIComponent(groupID)}/private-conversations/${encodeURIComponent(conversation.id)}`)).data,
+	})
+	return (
+		<Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+			<DialogContent className="max-h-[85vh] max-w-xl overflow-hidden">
+				<DialogHeader><DialogTitle>{conversation.member_a_name} · {conversation.member_b_name}</DialogTitle></DialogHeader>
+				<div className="max-h-[65vh] min-h-80 space-y-3 overflow-y-auto rounded-md border p-3">
+					{data?.messages.map((message) => {
+						const fromA = message.sender_member_id === conversation.member_a_id
+						return <div key={message.id} className={cn("flex", !fromA && "justify-end")}><div className="max-w-[82%]"><div className={cn("mb-1 text-xs text-muted-foreground", !fromA && "text-right")}>{message.sender_name} · {formatTime(message.created_at)}</div><div className={cn("whitespace-pre-wrap rounded-md px-3 py-2 text-sm", fromA ? "border bg-background" : "bg-primary text-primary-foreground")}>{message.content}</div></div></div>
+					})}
+					{data?.messages.length === 0 && <div className="py-16 text-center text-sm text-muted-foreground">{zh ? "暂无消息" : "No messages"}</div>}
+				</div>
+				<div className="text-xs text-muted-foreground">{zh ? "私聊绑定当前群组，仅双方助理与用户可见。" : "This conversation belongs to this group and is visible only to both assistants and the user."}</div>
+			</DialogContent>
+		</Dialog>
+	)
 }
 
 function MemberActivityDialog({ groupID, member, onClose, zh }: { groupID: string; member: GroupMember; onClose: () => void; zh: boolean }) {
