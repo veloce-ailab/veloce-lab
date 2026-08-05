@@ -20,12 +20,29 @@ import (
 )
 
 const (
-	advancedChatRunStatusQueued    = "queued"
-	advancedChatRunStatusRunning   = "running"
-	advancedChatRunStatusCompleted = "completed"
-	advancedChatRunStatusFailed    = "failed"
-	advancedChatRunStatusCancelled = "cancelled"
+	advancedChatRunStatusQueued       = "queued"
+	advancedChatRunStatusRunning      = "running"
+	advancedChatRunStatusCompleted    = "completed"
+	advancedChatRunStatusFailed       = "failed"
+	advancedChatRunStatusCancelled    = "cancelled"
+	advancedChatGeneratedFileToolName = "report_generated_file"
 )
+
+func advancedChatGeneratedFileTool() ChatExecutorTool {
+	return ChatExecutorTool{
+		Name:        advancedChatGeneratedFileToolName,
+		Description: "Register a file you generated so it appears in the session file list. Call this after the file has actually been created. This tool records metadata only and does not create the file.",
+		Schema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path":        map[string]interface{}{"type": "string", "description": "File path in the selected workspace or environment."},
+				"name":        map[string]interface{}{"type": "string", "description": "Optional display name."},
+				"description": map[string]interface{}{"type": "string", "description": "Short explanation of the file and its purpose."},
+			},
+			"required": []string{"path", "description"},
+		},
+	}
+}
 
 type advancedChatRunEventState struct {
 	mutex               sync.Mutex
@@ -2001,6 +2018,9 @@ func executePreparedAdvancedChatCompletion(ctx context.Context, user *model.User
 		}
 	}
 	tools := []ChatExecutorTool{}
+	if prepared.mode != advancedChatModeChat {
+		tools = append(tools, advancedChatGeneratedFileTool())
+	}
 	mcpTools := []ChatExecutorTool{}
 	bindings := map[string]mcpToolBinding{}
 	studioRole := advancedChatAgentStudioRole(prepared)
@@ -2097,6 +2117,11 @@ func executePreparedAdvancedChatCompletion(ctx context.Context, user *model.User
 		}
 	}
 	tools = filterAdvancedChatToolsByDisabledGroups(tools, disabledToolGroups)
+	if prepared.mode == advancedChatModeChat {
+		tools = nil
+		bindings = map[string]mcpToolBinding{}
+		connectorBindings = map[string]advancedChatConnectorToolBinding{}
+	}
 	if groupPrompt := advancedChatAgentGroupChatSystemPrompt(prepared.agentGroup, prepared.groupAgent); groupPrompt != "" {
 		if strings.TrimSpace(systemPrompt) == "" {
 			systemPrompt = groupPrompt
@@ -2246,6 +2271,7 @@ func executePreparedAdvancedChatCompletion(ctx context.Context, user *model.User
 			resumeExists := toolCall.Name == advancedChatAgentStudioResumeToolName && studioRoleActive
 			activateSkillExists := toolCall.Name == advancedChatActivateSkillToolName && hasSkillCatalog
 			readSkillResourceExists := toolCall.Name == advancedChatReadSkillResourceToolName && hasSkillCatalog
+			generatedFileExists := prepared.mode != advancedChatModeChat && toolCall.Name == advancedChatGeneratedFileToolName
 			extensionExists := extensionToolNames[toolCall.Name] && AdvancedChatToolHandlerExists(toolCall.Name) &&
 				!advancedChatToolGroupDisabled(disabledToolGroups, advancedChatToolGroupForTool(toolCall.Name))
 			detail := advancedChatCompletionToolCall{ID: toolCall.ID, Round: round + 1, Name: toolCall.Name, Status: "running"}
@@ -2285,6 +2311,9 @@ func executePreparedAdvancedChatCompletion(ctx context.Context, user *model.User
 			} else if readSkillResourceExists {
 				detail.Server = "skills"
 				detail.Tool = advancedChatReadSkillResourceToolName
+			} else if generatedFileExists {
+				detail.Server = "assistant"
+				detail.Tool = advancedChatGeneratedFileToolName
 			} else if extensionExists {
 				detail.Server = "agent chat"
 				detail.Tool = toolCall.Name
@@ -2370,6 +2399,20 @@ func executePreparedAdvancedChatCompletion(ctx context.Context, user *model.User
 						detail.Status = "ok"
 						toolResultText = toolResult
 					}
+				}
+			} else if generatedFileExists {
+				detail.Server = "assistant"
+				detail.Tool = advancedChatGeneratedFileToolName
+				path, _ := arguments["path"].(string)
+				path = strings.TrimSpace(path)
+				if argumentsErr != nil || path == "" {
+					detail.Status = "invalid_arguments"
+					toolResultText = "A generated file path is required."
+				} else {
+					detail.Status = "ok"
+					payload := map[string]interface{}{"path": path, "registered": true}
+					encoded, _ := json.Marshal(payload)
+					toolResultText = string(encoded)
 				}
 			} else if extensionExists {
 				detail.Server = "agent chat"
