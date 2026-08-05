@@ -51,6 +51,37 @@ func TestExecuteServerChatCompletionSkipsBalanceCheckInPersonalMode(t *testing.T
 	}
 }
 
+func TestServerChatCandidatesPreloadSelectedChannel(t *testing.T) {
+	setupChatExecutorBalanceTestDB(t, SystemModePersonal)
+
+	channel := model.Channel{
+		Name:       "upstream",
+		Type:       "openai",
+		BaseURL:    "https://api.example.com",
+		APIKey:     "test-key",
+		Multiplier: decimal.NewFromInt(1),
+		Enabled:    true,
+	}
+	if err := model.DB.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	globalModel := model.Model{ModelName: "test-model", Enabled: true}
+	if err := model.DB.Create(&globalModel).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := model.DB.Create(&model.ModelConfig{ChannelID: channel.ID, ModelID: globalModel.ID, Enabled: true}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	candidates, err := serverChatCandidates(nil, "test-model", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].Channel.ID != channel.ID {
+		t.Fatalf("unexpected server chat candidates: %+v", candidates)
+	}
+}
+
 func TestExecuteServerChatCompletionKeepsBalanceCheckInOperationMode(t *testing.T) {
 	setupChatExecutorBalanceTestDB(t, SystemModeOperation)
 	user := &model.User{ID: 1, Balance: decimal.Zero}

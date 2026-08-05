@@ -4,7 +4,7 @@ import type { ChangeEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNo
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
 import api, { apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
 import { ConnectorTerminalWindow, type ConnectorTerminalCopy } from "@/components/chat/ConnectorTerminalWindow"
@@ -621,6 +621,7 @@ export default function Chat() {
   const [isDesktopSessionsSidebarVisible, setIsDesktopSessionsSidebarVisible] = useState(true)
   const [desktopSessionsSidebarHost, setDesktopSessionsSidebarHost] = useState<HTMLElement | null>(null)
   const [sessionSearch, setSessionSearch] = useState("")
+	const [isSessionSearchOpen, setIsSessionSearchOpen] = useState(false)
   const [visibleSessionCount, setVisibleSessionCount] = useState(20)
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>(readSessionFolders)
   const [sessionFolderAssignments, setSessionFolderAssignments] = useState<Record<string, string>>(readSessionFolderAssignments)
@@ -640,7 +641,7 @@ export default function Chat() {
   const [workspacePickerTarget, setWorkspacePickerTarget] = useState<WorkspacePickerTarget>("session")
   const [isTaskChangesOpen, setIsTaskChangesOpen] = useState(false)
   const [selectedTaskChangePath, setSelectedTaskChangePath] = useState("")
-  const [isGitPanelOpen, setIsGitPanelOpen] = useState(false)
+  const [environmentSidebarHost, setEnvironmentSidebarHost] = useState<HTMLDivElement | null>(null)
   const [isEnvironmentDevicePickerOpen, setIsEnvironmentDevicePickerOpen] = useState(false)
   const [isEnvironmentWorkspacePickerOpen, setIsEnvironmentWorkspacePickerOpen] = useState(false)
   const [gitCompareBranch, setGitCompareBranch] = useState("")
@@ -1164,7 +1165,7 @@ export default function Chat() {
   const canInspectGitWorkspace = isAdvanced && activeRunMode !== "chat" && Boolean(currentConnectorDeviceID && currentSession?.connector_workspace_path)
   const gitStatusQuery = useQuery<WorkspaceGitStatus>({
     queryKey: ["advanced-chat-workspace-git-status", currentConnectorDeviceID, currentSession?.connector_workspace_path || "", gitCompareBranch],
-    enabled: isGitPanelOpen && canInspectGitWorkspace,
+    enabled: canInspectGitWorkspace,
     queryFn: async () => {
       const res = await api.get("/user/advanced-chat/workspace/git/status", {
         params: {
@@ -3344,8 +3345,8 @@ export default function Chat() {
     return <div
       key={session.id}
       className={cn(
-        "group relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-transparent px-2 py-1.5 transition-colors",
-        activePersonalSession ? "border-primary/40 bg-primary/15 shadow-sm before:absolute before:bottom-2 before:left-0 before:top-2 before:w-0.5 before:rounded-r before:bg-primary" : "hover:bg-muted"
+        "group relative grid min-h-6 grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-transparent px-1.5 py-0.5 transition-colors",
+        activePersonalSession ? "border-primary/40 bg-primary/15 shadow-sm before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-r before:bg-primary" : "hover:bg-muted"
       )}
       onContextMenu={(event) => {
         if (session.id === sharedSessionID) {
@@ -3357,13 +3358,13 @@ export default function Chat() {
       }}
     >
       <button type="button" className="min-w-0 text-left" onClick={() => selectSession(session.id)}>
-        <div className="flex min-w-0 items-center gap-2">
-          {isRunActive(session.latest_run) && <RefreshCw size={14} className="shrink-0 animate-spin text-primary" aria-label={language === "zh" ? "任务运行中" : "Task running"} />}
-          <div className={cn("truncate text-sm font-medium", activePersonalSession ? "text-primary" : "text-foreground")}>{session.title || copy.untitledSession}</div>
+        <div className="flex min-w-0 items-center gap-1.5">
+          {isRunActive(session.latest_run) && <RefreshCw size={12} className="shrink-0 animate-spin text-primary" aria-label={language === "zh" ? "任务运行中" : "Task running"} />}
+          <div className={cn("truncate text-xs font-medium", activePersonalSession ? "text-primary" : "text-foreground")}>{session.title || copy.untitledSession}</div>
         </div>
       </button>
-      {session.id !== sharedSessionID && <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100" onClick={() => deleteSession(session.id)} title={copy.deleteSession}>
-        <Trash2 size={15} />
+      {session.id !== sharedSessionID && <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100" onClick={() => deleteSession(session.id)} title={copy.deleteSession}>
+        <Trash2 size={13} />
       </Button>}
     </div>
   }
@@ -3446,6 +3447,16 @@ export default function Chat() {
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/80 px-3">
         <div className="truncate text-xs font-semibold uppercase text-muted-foreground">{copy.sessions}</div>
         <div className="flex items-center gap-1">
+			<Button
+				variant="ghost"
+				size="icon"
+				className="h-8 w-8"
+				onClick={() => setIsSessionSearchOpen(true)}
+				aria-label={sessionSidebarCopy.search}
+				title={sessionSidebarCopy.search}
+			>
+				<Search size={16} />
+			</Button>
           <Button
             variant="ghost"
             size="icon"
@@ -3463,19 +3474,6 @@ export default function Chat() {
           <MessageSquarePlus size={16} />
           {copy.newSession}
         </Button>
-        <label className="relative mt-2 block">
-          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70" />
-          <input
-            className="h-8 w-full rounded-md border border-border bg-background py-1 pl-9 pr-3 text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus:border-ring"
-            value={sessionSearch}
-            onChange={(event) => {
-              setSessionSearch(event.target.value)
-              setVisibleSessionCount(20)
-            }}
-            placeholder={sessionSidebarCopy.search}
-            aria-label={sessionSidebarCopy.search}
-          />
-        </label>
       </div>
       <div className="space-y-0.5 p-2">
         {isAdvanced && enterpriseMode && sharedPools.length > 0 && (
@@ -3484,13 +3482,13 @@ export default function Chat() {
             {sharedPools.map((pool) => {
               const expanded = String(pool.id) === selectedSharedPoolID
               return <div key={pool.id} className="pb-1">
-                <button type="button" className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-muted-foreground hover:bg-muted" onClick={() => setSelectedSharedPoolID(expanded ? "" : String(pool.id))}>
+                <button type="button" className="flex h-6 w-full items-center gap-1.5 rounded px-1.5 text-left text-xs font-medium text-muted-foreground hover:bg-muted" onClick={() => setSelectedSharedPoolID(expanded ? "" : String(pool.id))}>
                   <ChevronRight size={14} className={cn("shrink-0 transition-transform", expanded && "rotate-90")} />
                   <Folder size={14} className="shrink-0 text-primary" />
                   <span className="truncate">{sharedPoolLabel(pool, language)}</span>
                 </button>
                 {expanded && <Button size="sm" variant="ghost" className="ml-7 h-7 text-xs" onClick={() => createNewSession({ poolID: String(pool.id) })}><MessageSquarePlus className="mr-1 h-3.5 w-3.5" />{language === "zh" ? "在此新建会话" : "New session here"}</Button>}
-                {expanded && (sharedPoolSessions.length === 0 ? <div className="px-8 py-2 text-xs text-muted-foreground">{language === "zh" ? "池内暂无会话" : "No shared sessions in this pool"}</div> : sharedPoolSessions.map((session) => <button key={session.id} type="button" className={cn("flex w-full items-center gap-2 rounded-md py-2 pl-8 pr-3 text-left hover:bg-muted", session.id === activeSession?.id && isSharedSession && "bg-primary/10 text-primary")} disabled={loadingSharedSessionID === session.id} onClick={() => void selectSharedPoolSession(session.id)}><FileText size={14} className="shrink-0" /><span className="truncate text-sm font-medium">{session.title || copy.untitledSession}</span></button>))}
+                {expanded && (sharedPoolSessions.length === 0 ? <div className="px-8 py-2 text-xs text-muted-foreground">{language === "zh" ? "池内暂无会话" : "No shared sessions in this pool"}</div> : sharedPoolSessions.map((session) => <button key={session.id} type="button" className={cn("flex h-6 w-full items-center gap-1.5 rounded-md py-0 pl-8 pr-2 text-left hover:bg-muted", session.id === activeSession?.id && isSharedSession && "bg-primary/10 text-primary")} disabled={loadingSharedSessionID === session.id} onClick={() => void selectSharedPoolSession(session.id)}><FileText size={12} className="shrink-0" /><span className="truncate text-xs font-medium">{session.title || copy.untitledSession}</span></button>))}
               </div>
             })}
           </div>
@@ -3701,25 +3699,8 @@ export default function Chat() {
               <Settings size={16} />
             </Button>
           )}
-          {isAdvanced && activeRunMode !== "chat" && (
-            <>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-9 w-9 border-border bg-background"
-                onClick={() => {
-                  setIsGitPanelOpen((open) => !open)
-                  setIsEnvironmentDevicePickerOpen(false)
-                  setIsEnvironmentWorkspacePickerOpen(false)
-                }}
-                aria-label={gitCopy.environment}
-                aria-expanded={isGitPanelOpen}
-                title={gitCopy.environment}
-              >
-                <MoreHorizontal size={18} />
-              </Button>
-              {isGitPanelOpen && (
-                <div className="absolute right-0 top-full z-40 mt-2 w-[22rem] max-w-[calc(100vw-2rem)] rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-lg">
+          {environmentSidebarHost && createPortal(
+                <div className="w-full rounded-md border border-border bg-card p-3 text-card-foreground shadow-sm">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
                       <GitBranch size={16} className="shrink-0 text-muted-foreground" />
@@ -3873,7 +3854,6 @@ export default function Chat() {
                       if (!currentConnectorDevice) {
                         return
                       }
-                      setIsGitPanelOpen(false)
                       setTerminalWindow({
                         deviceID: currentConnectorDevice.id,
                         deviceName: currentConnectorDevice.name,
@@ -3967,9 +3947,8 @@ export default function Chat() {
                       )}
                     </div>
                   )}
-                </div>
-              )}
-            </>
+                </div>,
+            environmentSidebarHost
           )}
           {activeRunMode !== "chat" && <Button
             variant="outline"
@@ -4286,6 +4265,54 @@ export default function Chat() {
           copy={taskChangeCopy}
         />
       )}
+      <Dialog
+        open={isSessionSearchOpen}
+        onOpenChange={(open) => {
+          setIsSessionSearchOpen(open)
+          if (!open) {
+            setSessionSearch("")
+            setVisibleSessionCount(20)
+          }
+        }}
+      >
+        <DialogContent className="max-h-[75vh] max-w-lg overflow-hidden p-0">
+          <DialogHeader className="border-b px-5 py-4 pr-12">
+            <DialogTitle>{sessionSidebarCopy.search}</DialogTitle>
+          </DialogHeader>
+          <div className="p-4">
+            <label className="relative block">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                autoFocus
+                className="h-10 w-full rounded-md border border-border bg-background py-1 pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
+                value={sessionSearch}
+                onChange={(event) => setSessionSearch(event.target.value)}
+                placeholder={sessionSidebarCopy.search}
+                aria-label={sessionSidebarCopy.search}
+              />
+            </label>
+            <div className="mt-3 max-h-[48vh] overflow-y-auto rounded-md border p-1">
+              {searchedSessions.length === 0 ? (
+                <div className="px-3 py-10 text-center text-sm text-muted-foreground">{sessionSidebarCopy.noSessions}</div>
+              ) : searchedSessions.map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  className="flex min-h-10 w-full items-center rounded px-2 text-left hover:bg-muted"
+                  onClick={() => {
+                    selectSession(session.id)
+                    setIsSessionSearchOpen(false)
+                    setSessionSearch("")
+                    setVisibleSessionCount(20)
+                  }}
+                >
+                  <span className="truncate text-sm font-medium">{session.title || copy.untitledSession}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={isSessionFolderDialogOpen}
         onOpenChange={(open) => {
@@ -5038,14 +5065,7 @@ export default function Chat() {
           "hidden h-full shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-muted/20 p-3 transition-[width,opacity,padding] duration-200 xl:flex",
           isDesktopSessionsSidebarVisible ? "w-72 opacity-100" : "w-0 overflow-hidden border-l-0 p-0 opacity-0 pointer-events-none"
         )}>
-          <section className="shrink-0 rounded-md border border-border bg-card p-3 shadow-sm">
-            <div className="flex items-center gap-2 text-sm font-semibold"><Monitor size={16} />{gitCopy.environment}</div>
-            <div className="mt-3 space-y-2 text-xs">
-              <div className="flex items-start justify-between gap-3"><span className="text-muted-foreground">{gitCopy.executionEnvironment}</span><span className="max-w-40 truncate text-right font-medium">{currentConnectorDevice?.name || gitCopy.noDevice}</span></div>
-              <div className="flex items-start justify-between gap-3"><span className="shrink-0 text-muted-foreground">{gitCopy.runDirectory}</span><span className="min-w-0 truncate text-right font-mono">{currentSession?.connector_workspace_path || gitCopy.noWorkspacePath}</span></div>
-              {currentConnectorDevice && <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">{language === "zh" ? "状态" : "Status"}</span><span className={currentConnectorDevice.online ? "text-emerald-600" : "text-muted-foreground"}>{currentConnectorDevice.online ? copy.deviceOnline : copy.deviceOffline}</span></div>}
-            </div>
-          </section>
+          <div ref={setEnvironmentSidebarHost} className="shrink-0" />
           <section className="min-h-0 rounded-md border border-border bg-card shadow-sm">
             <div className="flex h-11 items-center justify-between border-b px-3">
               <div className="flex items-center gap-2 text-sm font-semibold"><FileText size={16} />{language === "zh" ? "生成的文件" : "Generated files"}</div>

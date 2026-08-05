@@ -5,7 +5,6 @@ go 1.26.3
 replace github.com/veloce-ailab/veloce-web => ./web
 
 require (
-	github.com/veloce-ailab/veloce-web v0.0.0
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
@@ -19,6 +18,7 @@ require (
 	github.com/shopspring/decimal v1.4.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/tetratelabs/wazero v1.12.0
+	github.com/veloce-ailab/veloce-web v0.0.0
 	golang.org/x/crypto v0.48.0
 	golang.org/x/oauth2 v0.36.0
 	gorm.io/driver/mysql v1.6.0

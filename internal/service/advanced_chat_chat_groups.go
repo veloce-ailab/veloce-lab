@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,14 +16,19 @@ import (
 )
 
 const (
-	chatGroupMemberIdle      = "idle"
-	chatGroupMemberWorking   = "working"
-	chatGroupSenderUser      = "user"
-	chatGroupSenderAgent     = "agent"
-	chatGroupMaxMessageDepth = 8
-	chatGroupPostToolName    = "send_group_message"
-	chatPrivatePostToolName  = "send_private_message"
-	chatMessageMaxWait       = 300
+	chatGroupMemberIdle        = "idle"
+	chatGroupMemberWorking     = "working"
+	chatGroupSenderUser        = "user"
+	chatGroupSenderAgent       = "agent"
+	chatGroupMaxMessageDepth   = 8
+	chatGroupPostToolName      = "send_group_message"
+	chatPrivatePostToolName    = "send_private_message"
+	chatGroupHistoryToolName   = "read_group_history"
+	chatPrivateHistoryToolName = "read_private_history"
+	chatHistorySearchToolName  = "search_group_history"
+	chatMessageMaxWait         = 300
+	chatHistoryDefaultLimit    = 20
+	chatHistoryMaxLimit        = 50
 )
 
 type AdvancedChatChatGroup struct {
@@ -118,6 +124,9 @@ func init() {
 	RegisterAdvancedChatRuntimeExtensionHook(chatGroupRuntimeExtension)
 	RegisterAdvancedChatToolHandler(chatGroupPostToolName, handleChatGroupPostTool)
 	RegisterAdvancedChatToolHandler(chatPrivatePostToolName, handleChatPrivatePostTool)
+	RegisterAdvancedChatToolHandler(chatGroupHistoryToolName, handleChatGroupHistoryTool)
+	RegisterAdvancedChatToolHandler(chatPrivateHistoryToolName, handleChatPrivateHistoryTool)
+	RegisterAdvancedChatToolHandler(chatHistorySearchToolName, handleChatHistorySearchTool)
 }
 
 func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeContext) (AdvancedChatRuntimeExtension, error) {
@@ -142,7 +151,7 @@ func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeConte
 		}
 	}
 	return AdvancedChatRuntimeExtension{
-		SystemPrompt: "Messaging rule: normal assistant text is private work output. Use send_group_message only for one useful public group message. Use send_private_message for a message visible only to one other assistant in this group. Both tools can wait for replies; wait_forever ends this run until a later message wakes you. Do not publish internal reasoning, progress narration, acknowledgements, or irrelevant work.\n\nPrivate-message targets in this isolated group:\n" + strings.Join(directory, "\n"),
+		SystemPrompt: "Messaging rule: normal assistant text is private work output. Use send_group_message only for one useful public group message. Use send_private_message for a message visible only to one other assistant in this group. Use read_group_history to inspect recent public messages, read_private_history to inspect your private conversation with one other assistant, and search_group_history to find relevant public or private messages. History results are newest first. Both message tools can wait for replies; wait_forever ends this run until a later message wakes you. Do not publish internal reasoning, progress narration, acknowledgements, or irrelevant work.\n\nPrivate-message targets in this isolated group:\n" + strings.Join(directory, "\n"),
 		Tools: []ChatExecutorTool{{
 			Name:        chatGroupPostToolName,
 			Description: "Post one deliberate message to the current chat group. This is the only way your output becomes visible in the group and notifies other assistants.",
@@ -167,8 +176,208 @@ func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeConte
 					"wait_forever":     map[string]interface{}{"type": "boolean", "description": "End this run after sending and wait until a later event wakes you."},
 				},
 			},
+		}, {
+			Name:        chatGroupHistoryToolName,
+			Description: "Read recent public messages in the current group, newest first.",
+			Schema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"limit": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": chatHistoryMaxLimit, "description": "Number of messages to return; defaults to 20."},
+				},
+			},
+		}, {
+			Name:        chatPrivateHistoryToolName,
+			Description: "Read the private conversation between you and one other assistant in this group, newest first.",
+			Schema: map[string]interface{}{
+				"type":     "object",
+				"required": []string{"target_member_id"},
+				"properties": map[string]interface{}{
+					"target_member_id": map[string]interface{}{"type": "string", "description": "The other assistant's group member ID."},
+					"limit":            map[string]interface{}{"type": "integer", "minimum": 1, "maximum": chatHistoryMaxLimit, "description": "Number of messages to return; defaults to 20."},
+				},
+			},
+		}, {
+			Name:        chatHistorySearchToolName,
+			Description: "Search public group messages and your own private conversations in this group. Results are newest first.",
+			Schema: map[string]interface{}{
+				"type":     "object",
+				"required": []string{"query"},
+				"properties": map[string]interface{}{
+					"query":            map[string]interface{}{"type": "string", "description": "Text to find in message content."},
+					"scope":            map[string]interface{}{"type": "string", "enum": []string{"all", "group", "private"}, "description": "Defaults to all."},
+					"target_member_id": map[string]interface{}{"type": "string", "description": "Optionally limit private results to one other assistant."},
+					"limit":            map[string]interface{}{"type": "integer", "minimum": 1, "maximum": chatHistoryMaxLimit, "description": "Number of messages to return; defaults to 20."},
+				},
+			},
 		}},
 	}, nil
+}
+
+func loadChatGroupMemberForTool(input AdvancedChatToolCallInput) (AdvancedChatChatGroupMember, error) {
+	if strings.TrimSpace(input.SessionID) == "" {
+		return AdvancedChatChatGroupMember{}, errors.New("chat history is only available from a group assistant session")
+	}
+	var member AdvancedChatChatGroupMember
+	if err := model.DB.Where("session_id = ? AND user_id = ?", input.SessionID, input.UserID).First(&member).Error; err != nil {
+		return AdvancedChatChatGroupMember{}, errors.New("this session is not attached to a chat group")
+	}
+	return member, nil
+}
+
+func chatHistoryLimit(arguments map[string]interface{}) (int, error) {
+	limit := chatHistoryDefaultLimit
+	if raw, ok := arguments["limit"]; ok {
+		switch value := raw.(type) {
+		case float64:
+			if value != float64(int(value)) {
+				return 0, errors.New("limit must be an integer")
+			}
+			limit = int(value)
+		case int:
+			limit = value
+		case json.Number:
+			parsed, err := value.Int64()
+			if err != nil {
+				return 0, errors.New("limit must be an integer")
+			}
+			limit = int(parsed)
+		default:
+			return 0, errors.New("limit must be an integer")
+		}
+	}
+	if limit < 1 || limit > chatHistoryMaxLimit {
+		return 0, fmt.Errorf("limit must be between 1 and %d", chatHistoryMaxLimit)
+	}
+	return limit, nil
+}
+
+func handleChatGroupHistoryTool(_ context.Context, input AdvancedChatToolCallInput) (string, error) {
+	member, err := loadChatGroupMemberForTool(input)
+	if err != nil {
+		return "", err
+	}
+	limit, err := chatHistoryLimit(input.Arguments)
+	if err != nil {
+		return "", err
+	}
+	var messages []AdvancedChatChatGroupMessage
+	if err := model.DB.Where("group_id = ? AND user_id = ?", member.GroupID, input.UserID).Order("created_at DESC").Limit(limit).Find(&messages).Error; err != nil {
+		return "", err
+	}
+	encoded, err := json.Marshal(gin.H{"scope": "group", "group_id": member.GroupID, "order": "newest_first", "messages": messages})
+	return string(encoded), err
+}
+
+func handleChatPrivateHistoryTool(_ context.Context, input AdvancedChatToolCallInput) (string, error) {
+	member, err := loadChatGroupMemberForTool(input)
+	if err != nil {
+		return "", err
+	}
+	limit, err := chatHistoryLimit(input.Arguments)
+	if err != nil {
+		return "", err
+	}
+	targetID := strings.TrimSpace(stringFromMap(input.Arguments, "target_member_id"))
+	if targetID == "" || targetID == member.ID {
+		return "", errors.New("select another assistant in this group")
+	}
+	var target AdvancedChatChatGroupMember
+	if err := model.DB.Where("id = ? AND group_id = ? AND user_id = ?", targetID, member.GroupID, input.UserID).First(&target).Error; err != nil {
+		return "", errors.New("target assistant was not found in this group")
+	}
+	a, b := member.ID, target.ID
+	if a > b {
+		a, b = b, a
+	}
+	var conversation AdvancedChatPrivateConversation
+	if err := model.DB.Where("group_id = ? AND user_id = ? AND member_a_id = ? AND member_b_id = ?", member.GroupID, input.UserID, a, b).First(&conversation).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", err
+	}
+	messages := []AdvancedChatPrivateMessage{}
+	if conversation.ID != "" {
+		if err := model.DB.Where("conversation_id = ? AND user_id = ?", conversation.ID, input.UserID).Order("created_at DESC").Limit(limit).Find(&messages).Error; err != nil {
+			return "", err
+		}
+	}
+	encoded, err := json.Marshal(gin.H{"scope": "private", "group_id": member.GroupID, "target_member_id": target.ID, "conversation_id": conversation.ID, "order": "newest_first", "messages": messages})
+	return string(encoded), err
+}
+
+type chatHistorySearchResult struct {
+	Scope             string    `json:"scope"`
+	ConversationID    string    `json:"conversation_id,omitempty"`
+	SenderType        string    `json:"sender_type,omitempty"`
+	SenderID          string    `json:"sender_id,omitempty"`
+	SenderName        string    `json:"sender_name"`
+	RecipientMemberID string    `json:"recipient_member_id,omitempty"`
+	Content           string    `json:"content"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+func handleChatHistorySearchTool(_ context.Context, input AdvancedChatToolCallInput) (string, error) {
+	member, err := loadChatGroupMemberForTool(input)
+	if err != nil {
+		return "", err
+	}
+	query := truncateSessionTaskText(stringFromMap(input.Arguments, "query"), 200)
+	if query == "" {
+		return "", errors.New("search query is required")
+	}
+	limit, err := chatHistoryLimit(input.Arguments)
+	if err != nil {
+		return "", err
+	}
+	scope := strings.ToLower(strings.TrimSpace(stringFromMap(input.Arguments, "scope")))
+	if scope == "" {
+		scope = "all"
+	}
+	if scope != "all" && scope != "group" && scope != "private" {
+		return "", errors.New("scope must be all, group, or private")
+	}
+	targetID := strings.TrimSpace(stringFromMap(input.Arguments, "target_member_id"))
+	if targetID == member.ID {
+		return "", errors.New("select another assistant in this group")
+	}
+	if targetID != "" {
+		var count int64
+		if err := model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND group_id = ? AND user_id = ?", targetID, member.GroupID, input.UserID).Count(&count).Error; err != nil {
+			return "", err
+		}
+		if count == 0 {
+			return "", errors.New("target assistant was not found in this group")
+		}
+	}
+
+	pattern := "%" + strings.ToLower(query) + "%"
+	results := make([]chatHistorySearchResult, 0, limit*2)
+	if scope == "all" || scope == "group" {
+		var messages []AdvancedChatChatGroupMessage
+		if err := model.DB.Where("group_id = ? AND user_id = ? AND LOWER(content) LIKE ?", member.GroupID, input.UserID, pattern).Order("created_at DESC").Limit(limit).Find(&messages).Error; err != nil {
+			return "", err
+		}
+		for _, message := range messages {
+			results = append(results, chatHistorySearchResult{Scope: "group", SenderType: message.SenderType, SenderID: message.SenderID, SenderName: message.SenderName, Content: message.Content, CreatedAt: message.CreatedAt})
+		}
+	}
+	if scope == "all" || scope == "private" {
+		privateQuery := model.DB.Where("group_id = ? AND user_id = ? AND (sender_member_id = ? OR recipient_member_id = ?) AND LOWER(content) LIKE ?", member.GroupID, input.UserID, member.ID, member.ID, pattern)
+		if targetID != "" {
+			privateQuery = privateQuery.Where("(sender_member_id = ? OR recipient_member_id = ?)", targetID, targetID)
+		}
+		var messages []AdvancedChatPrivateMessage
+		if err := privateQuery.Order("created_at DESC").Limit(limit).Find(&messages).Error; err != nil {
+			return "", err
+		}
+		for _, message := range messages {
+			results = append(results, chatHistorySearchResult{Scope: "private", ConversationID: message.ConversationID, SenderID: message.SenderMemberID, SenderName: message.SenderName, RecipientMemberID: message.RecipientMemberID, Content: message.Content, CreatedAt: message.CreatedAt})
+		}
+	}
+	sort.Slice(results, func(i, j int) bool { return results[i].CreatedAt.After(results[j].CreatedAt) })
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	encoded, err := json.Marshal(gin.H{"scope": scope, "group_id": member.GroupID, "order": "newest_first", "results": results})
+	return string(encoded), err
 }
 
 func handleChatGroupPostTool(ctx context.Context, input AdvancedChatToolCallInput) (string, error) {

@@ -95,6 +95,7 @@ func Run() error {
 	modelAPI := &api.ModelAPI{SyncService: syncService}
 	userAPI := &api.UserAPI{AuthService: authService}
 	systemAPI := &api.SystemAPI{}
+	statsAPI := &api.StatsAPI{}
 	passkeyAPI := &api.PasskeyAPI{AuthService: authService}
 
 	// Public routes
@@ -719,6 +720,7 @@ func Run() error {
 		// User administration is omitted: this build owns exactly one user.
 
 		// Stats
+		admin.GET("/channel-usage", statsAPI.GetChannelUsage)
 		messagechannel.RegisterAdminRoutes(admin)
 		service.ApplyAdminRouteHooks(admin)
 	}

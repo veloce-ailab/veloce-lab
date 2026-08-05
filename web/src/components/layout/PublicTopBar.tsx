@@ -9,10 +9,7 @@ export function PublicTopBar({ settings, fixed = false }: { settings: PublicSett
     <header className={fixed ? "fixed inset-x-0 top-0 z-50 border-b bg-background px-4 sm:px-6" : "border-b px-4 sm:px-6"}>
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4">
         <Link to="/" className="flex min-w-0 items-center gap-3">
-          {settings.icon_url && (
-            <img src={settings.icon_url} alt="" className="h-9 w-9 shrink-0 rounded object-cover" />
-          )}
-          <div className="truncate text-lg font-semibold">{settings.site_name}</div>
+          <div className="truncate text-lg font-semibold">Veloce</div>
         </Link>
         {settings.top_nav_enabled && topNavItems.length > 0 && (
           <nav className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3 text-sm text-muted-foreground">

@@ -7,9 +7,9 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/veloce-ailab/veloce/internal/model"
 	"github.com/veloce-ailab/veloce/internal/service"
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -183,7 +183,7 @@ func passkeyResponse(credential model.PasskeyCredential) passkeyCredentialRespon
 }
 
 func passkeyRequestContext(c *gin.Context) (string, string, string, bool) {
-	siteName := settingString("site_name", "flai")
+	siteName := "Veloce"
 	baseURL := strings.TrimSpace(settingString("base_url", ""))
 	if baseURL != "" {
 		parsed, err := url.Parse(baseURL)

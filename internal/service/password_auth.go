@@ -129,16 +129,9 @@ func (s *AuthService) InitialSetupRequired() (bool, error) {
 }
 
 func (s *AuthService) SetupInitialAdmin(input InitialSetupInput) (*model.User, string, error) {
-	siteName := strings.TrimSpace(input.SiteName)
 	username := truncateUsername(strings.TrimSpace(input.Username))
 	email := strings.ToLower(strings.TrimSpace(input.Email))
 
-	if siteName == "" {
-		return nil, "", initialSetupValidationError("site name is required")
-	}
-	if len([]rune(siteName)) > 80 {
-		return nil, "", initialSetupValidationError("site name is too long")
-	}
 	if username == "" {
 		return nil, "", initialSetupValidationError("username is required")
 	}
@@ -218,7 +211,7 @@ func (s *AuthService) SetupInitialAdmin(input InitialSetupInput) (*model.User, s
 		}
 
 		settings := map[string]string{
-			"site_name":                     siteName,
+			"site_name":                     "Veloce",
 			"oidc_enabled":                  "false",
 			"password_login_enabled":        "true",
 			"password_registration_enabled": "true",

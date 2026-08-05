@@ -239,7 +239,7 @@ const demoAdapter: AxiosAdapter = async (config) => {
   const method = (config.method || "get").toLowerCase();
   const path = (config.url || "").replace(/^\/api/, "").split("?")[0];
   if (path === "/setup/status") return demoResponse(config, { required: false });
-  if (path === "/public/settings") return demoResponse(config, { site_name: "Veloce Demo", system_mode: "personal", password_login_enabled: true, password_registration_enabled: false, assistant_mode_enabled: true, file_storage_enabled: true, community_enabled: true, message_channel_enabled: true });
+  if (path === "/public/settings") return demoResponse(config, { site_name: "Veloce", system_mode: "personal", password_login_enabled: true, password_registration_enabled: false, assistant_mode_enabled: true, file_storage_enabled: true, community_enabled: true, message_channel_enabled: true });
   if (path === "/user/me") return demoResponse(config, { id: 1, username: "demo", email: "demo@veloce.local", is_admin: true });
   if (path === "/user/catalog") return demoResponse(config, [{ id: 1, name: "演示上游渠道", models: ["gpt-5.4", "gpt-5.4-mini", "claude-sonnet-4-6"] }]);
   if (path === "/user/advanced-chat/settings") return demoResponse(config, { file_storage_enabled: true, assistant_mode_enabled: true, assistant_mcp_tools_enabled: true, assistant_connector_list_files_enabled: true, assistant_connector_read_file_enabled: true, assistant_connector_write_file_enabled: true, assistant_connector_replace_text_enabled: true, assistant_connector_run_command_enabled: true, assistant_connector_web_search_enabled: true, assistant_connector_static_site_enabled: true, mcp_servers: [], builtin_mcp_servers: [], custom_mcp_servers: [] });

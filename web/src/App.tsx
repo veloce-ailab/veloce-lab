@@ -3,7 +3,7 @@ import { useEffect, useState } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { PageTransition } from "./components/layout/PageTransition"
 import { ToastProvider } from "./components/ui/toast"
-import api from "./lib/api"
+import api, { getAuthToken } from "./lib/api"
 import { I18nProvider, useI18n } from "./lib/i18n"
 import { ThemeProvider } from "./lib/theme"
 import AdvancedChat from "./pages/AdvancedChat"
@@ -47,7 +47,7 @@ function SetupGate({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
-  const [authenticated] = useState(() => Boolean(localStorage.getItem("token")))
+  const [authenticated] = useState(() => Boolean(getAuthToken()))
 
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get("token")
@@ -71,7 +71,8 @@ function App() {
                   <Route path="/chat/*" element={<ProtectedRoute authenticated={authenticated}><AdvancedChat /></ProtectedRoute>} />
                   <Route path="/settings/*" element={<ProtectedRoute authenticated={authenticated}><SettingsWorkspace /></ProtectedRoute>} />
                   <Route path="/admin/*" element={<Navigate to="/settings/channels" replace />} />
-                  <Route path="/" element={<Navigate to="/login" replace />} />
+                  <Route path="/" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
+                  <Route path="/dashboard" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
                   <Route path="*" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
                 </Routes>
               </SetupGate>

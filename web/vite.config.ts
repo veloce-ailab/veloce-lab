@@ -40,19 +40,19 @@ export default defineConfig(({ mode }) => {
       allowedHosts: ["mynas.fireguo.com"],
       proxy: {
         '/api': {
-          target: 'http://localhost:12789',
+          target: 'http://localhost:8080',
           changeOrigin: true,
         },
         '/v1beta': {
-          target: 'http://localhost:12789',
+          target: 'http://localhost:8080',
           changeOrigin: true,
         },
         '/v1': {
-          target: 'http://localhost:12789',
+          target: 'http://localhost:8080',
           changeOrigin: true,
         },
         '/auth': {
-          target: 'http://localhost:12789',
+          target: 'http://localhost:8080',
           changeOrigin: true,
         },
       },

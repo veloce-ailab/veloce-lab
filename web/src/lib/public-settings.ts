@@ -13,7 +13,6 @@ export interface PublicSettings {
   privacy_policy_url: string
   terms_url: string
   auth_agreement_mode: "notice" | "checkbox" | string
-  announcement: string
   top_nav_enabled: boolean
   top_nav_items: string
   page_layouts: string
@@ -105,9 +104,9 @@ export const defaultPublicSettings: PublicSettings = {
   edition: "community",
   system_mode: "operation",
   chat_page_mode: "basic",
-  site_name: "flai",
+  site_name: "Veloce",
   base_url: "",
-  icon_url: "/logo.png",
+  icon_url: "",
   footer_text: "",
   about_html: "",
   home_iframe_url: "",
@@ -116,7 +115,6 @@ export const defaultPublicSettings: PublicSettings = {
   privacy_policy_url: "",
   terms_url: "",
   auth_agreement_mode: "notice",
-  announcement: "",
   top_nav_enabled: false,
   top_nav_items: "",
   page_layouts: "{}",
