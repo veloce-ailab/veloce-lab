@@ -3362,7 +3362,7 @@ func appendAdvancedChatRunEvent(runID string, sessionID string, userID uint, eve
 
 func listAdvancedChatSessionResponses(userID uint) ([]advancedChatSessionResponse, error) {
 	var sessions []AdvancedChatSession
-	if err := model.DB.Where("user_id = ?", userID).Order("updated_at DESC").Limit(100).Find(&sessions).Error; err != nil {
+	if err := model.DB.Where("user_id = ? AND id NOT LIKE ?", userID, "acg_%").Order("updated_at DESC").Limit(100).Find(&sessions).Error; err != nil {
 		return nil, err
 	}
 	result := make([]advancedChatSessionResponse, 0, len(sessions))

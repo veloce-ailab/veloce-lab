@@ -300,6 +300,9 @@ func initAdvancedChatFeatures() error {
 		&AdvancedChatStaticSite{},
 		&AdvancedChatDelivery{},
 		&AdvancedChatScheduledTask{},
+		&AdvancedChatChatGroup{},
+		&AdvancedChatChatGroupMember{},
+		&AdvancedChatChatGroupMessage{},
 	)
 	if err == nil {
 		ensureAdvancedChatKnowledgePostgresVectorColumn()
@@ -404,6 +407,13 @@ func registerAdvancedChatUserRoutes(group *gin.RouterGroup) {
 	group.PUT("/advanced-chat/scheduled-tasks/:id", api.updateScheduledTask)
 	group.DELETE("/advanced-chat/scheduled-tasks/:id", api.deleteScheduledTask)
 	group.POST("/advanced-chat/scheduled-tasks/:id/run", api.runScheduledTask)
+	group.GET("/advanced-chat/chat-groups", api.listChatGroups)
+	group.POST("/advanced-chat/chat-groups", api.createChatGroup)
+	group.GET("/advanced-chat/chat-groups/:id", api.getChatGroup)
+	group.PUT("/advanced-chat/chat-groups/:id", api.updateChatGroup)
+	group.DELETE("/advanced-chat/chat-groups/:id", api.deleteChatGroup)
+	group.POST("/advanced-chat/chat-groups/:id/messages", api.createChatGroupMessage)
+	group.GET("/advanced-chat/chat-groups/:id/members/:member_id/activity", api.getChatGroupMemberActivity)
 }
 
 func (api *advancedChatAPI) getAdminSettings(c *gin.Context) {

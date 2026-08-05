@@ -27,5 +27,8 @@ func init() {
 		&AdvancedChatStaticSite{},
 		&AdvancedChatDelivery{},
 		&AdvancedChatScheduledTask{},
+		&AdvancedChatChatGroup{},
+		&AdvancedChatChatGroupMember{},
+		&AdvancedChatChatGroupMessage{},
 	)
 }

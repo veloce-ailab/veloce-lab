@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,12 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/veloce-ailab/veloce/internal/model"
 	"github.com/gin-gonic/gin"
+	"github.com/veloce-ailab/veloce/internal/model"
 	"gorm.io/gorm"
 )
 
 const (
+	advancedChatCreateTaskToolName   = "create_task"
 	advancedChatTaskScheduleManual   = "manual"
 	advancedChatTaskScheduleOnce     = "once"
 	advancedChatTaskScheduleInterval = "interval"
@@ -104,6 +106,98 @@ func startAdvancedChatScheduledTaskScheduler() {
 			},
 		})
 	})
+}
+
+func init() {
+	RegisterAdvancedChatRuntimeExtensionHook(advancedChatTaskRuntimeExtension)
+	RegisterAdvancedChatToolHandler(advancedChatCreateTaskToolName, handleAdvancedChatCreateTask)
+}
+
+func advancedChatTaskRuntimeExtension(_ context.Context, input AdvancedChatRuntimeContext) (AdvancedChatRuntimeExtension, error) {
+	if input.Mode == advancedChatModeChat || strings.TrimSpace(input.AgentID) == "" || !advancedChatScheduledTasksEnabled() {
+		return AdvancedChatRuntimeExtension{}, nil
+	}
+	return AdvancedChatRuntimeExtension{
+		SystemPrompt: "You can create a persistent task when the user asks you to do work later or repeatedly. Use create_task only after the execution time and instructions are clear. The scheduler will wake this same assistant at the requested time.",
+		Tools: []ChatExecutorTool{{
+			Name:        advancedChatCreateTaskToolName,
+			Description: "Create a task assigned to this assistant. It can wait for manual execution, run once at an RFC3339 time, or repeat at an interval.",
+			Schema: map[string]interface{}{
+				"type":     "object",
+				"required": []string{"name", "message", "schedule_type"},
+				"properties": map[string]interface{}{
+					"name":             map[string]interface{}{"type": "string", "description": "Short task name."},
+					"description":      map[string]interface{}{"type": "string", "description": "Optional task description."},
+					"message":          map[string]interface{}{"type": "string", "description": "Complete instructions to execute when the task wakes the assistant."},
+					"schedule_type":    map[string]interface{}{"type": "string", "enum": []string{"manual", "once", "interval"}},
+					"run_at":           map[string]interface{}{"type": "string", "description": "RFC3339 timestamp, required for once."},
+					"interval_seconds": map[string]interface{}{"type": "integer", "minimum": 60, "description": "Repeat interval, required for interval."},
+				},
+			},
+		}},
+	}, nil
+}
+
+func handleAdvancedChatCreateTask(_ context.Context, input AdvancedChatToolCallInput) (string, error) {
+	name := truncateSessionTaskText(stringFromMap(input.Arguments, "name"), 120)
+	message := truncateSessionTaskText(stringFromMap(input.Arguments, "message"), 20000)
+	if name == "" || message == "" {
+		return "", errors.New("name and message are required")
+	}
+	scheduleType := normalizeAdvancedChatTaskSchedule(stringFromMap(input.Arguments, "schedule_type"))
+	if scheduleType == "" {
+		return "", errors.New("schedule_type must be manual, once, or interval")
+	}
+	var runAt *time.Time
+	if raw := strings.TrimSpace(stringFromMap(input.Arguments, "run_at")); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return "", errors.New("run_at must be an RFC3339 timestamp")
+		}
+		runAt = &parsed
+	}
+	if scheduleType == advancedChatTaskScheduleOnce && runAt == nil {
+		return "", errors.New("run_at is required for a one-time task")
+	}
+	intervalSeconds := advancedChatTaskIntFromMap(input.Arguments, "interval_seconds")
+	if scheduleType == advancedChatTaskScheduleInterval && intervalSeconds < 60 {
+		return "", errors.New("interval_seconds must be at least 60")
+	}
+	task := AdvancedChatScheduledTask{
+		ID:              newAdvancedChatID("act"),
+		UserID:          input.UserID,
+		Name:            name,
+		Description:     truncateSessionTaskText(stringFromMap(input.Arguments, "description"), 2000),
+		AgentID:         strings.TrimSpace(input.AgentID),
+		ScheduleType:    scheduleType,
+		RunAt:           runAt,
+		IntervalSeconds: intervalSeconds,
+		SessionMode:     advancedChatTaskSessionAuto,
+		Message:         message,
+		TimeoutSeconds:  int(advancedChatCompletionTimeout(advancedChatModeAssistant).Seconds()),
+		Enabled:         true,
+		LastStatus:      advancedChatTaskStatusIdle,
+	}
+	task.NextRunAt = nextAdvancedChatTaskRunAt(task, time.Now())
+	if err := model.DB.Create(&task).Error; err != nil {
+		return "", err
+	}
+	encoded, _ := json.Marshal(gin.H{"task": task, "created": true})
+	return string(encoded), nil
+}
+
+func advancedChatTaskIntFromMap(values map[string]interface{}, key string) int {
+	switch value := values[key].(type) {
+	case float64:
+		return int(value)
+	case int:
+		return value
+	case json.Number:
+		parsed, _ := strconv.Atoi(value.String())
+		return parsed
+	default:
+		return 0
+	}
 }
 
 func (api *advancedChatAPI) listScheduledTasks(c *gin.Context) {

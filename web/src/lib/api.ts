@@ -199,6 +199,25 @@ let demoSessions = [
     messages: [{ id: "demo-chat-message", role: "assistant", content: "这是不暴露任何工具的普通聊天模式。", created_at: demoNow }],
   },
 ];
+const demoAgents = [
+  { id: "default", name: "默认助理", prompt: "", default_model: "gpt-5.4", stream: true, knowledge_base_ids: [], created_at: demoNow, updated_at: demoNow },
+  { id: "planner", name: "方案助理", prompt: "", default_model: "gpt-5.4", stream: true, knowledge_base_ids: [], created_at: demoNow, updated_at: demoNow },
+  { id: "reviewer", name: "评审助理", prompt: "", default_model: "claude-sonnet-4-6", stream: true, knowledge_base_ids: [], created_at: demoNow, updated_at: demoNow },
+];
+let demoChatGroups = [{
+  id: "demo-group",
+  name: "产品协作群",
+  description: "方案助理与评审助理协作处理产品工作",
+  updated_at: demoNow,
+  members: [
+    { id: "demo-member-planner", agent_id: "planner", agent_name: "方案助理", status: "idle" },
+    { id: "demo-member-reviewer", agent_id: "reviewer", agent_name: "评审助理", status: "working", run_id: "demo-group-run" },
+  ],
+}];
+let demoChatGroupMessages = [
+  { id: "demo-group-message-1", sender_type: "user", sender_name: "demo", content: "请一起评估下周产品发布计划。", mention_member_ids: [], created_at: demoNow },
+  { id: "demo-group-message-2", sender_type: "agent", sender_id: "demo-member-planner", sender_name: "方案助理", content: "我会先整理发布范围、依赖项和回滚方案。", mention_member_ids: [], created_at: demoNow },
+];
 
 function demoResponse(config: AxiosRequestConfig, data: unknown, status = 200): AxiosResponse {
   return { data, status, statusText: status === 200 ? "OK" : "Accepted", headers: {}, config: config as AxiosResponse["config"] };
@@ -221,11 +240,31 @@ const demoAdapter: AxiosAdapter = async (config) => {
   if (path === "/user/advanced-chat/settings") return demoResponse(config, { file_storage_enabled: true, assistant_mode_enabled: true, assistant_mcp_tools_enabled: true, assistant_connector_list_files_enabled: true, assistant_connector_read_file_enabled: true, assistant_connector_write_file_enabled: true, assistant_connector_replace_text_enabled: true, assistant_connector_run_command_enabled: true, assistant_connector_web_search_enabled: true, assistant_connector_static_site_enabled: true, mcp_servers: [], builtin_mcp_servers: [], custom_mcp_servers: [] });
   if (path === "/user/advanced-chat/sessions" && method === "get") return demoResponse(config, demoSessions);
   if (path === "/user/advanced-chat/sessions/folders") return demoResponse(config, []);
-  if (path === "/user/advanced-chat/agents") return demoResponse(config, [{ id: "default", name: "默认助理", prompt: "", default_model: "gpt-5.4", stream: true, knowledge_base_ids: [], created_at: demoNow, updated_at: demoNow }]);
+  if (path === "/user/advanced-chat/agents") return demoResponse(config, demoAgents);
   if (path === "/user/advanced-chat/devices") return demoResponse(config, [{ id: "demo-device", name: "Demo Workspace", hostname: "demo-runner", os: "linux", arch: "amd64", kind: "cli", status: "online", online: true, last_seen_at: demoNow }]);
   if (path === "/user/advanced-chat/files") return demoResponse(config, { files: [{ id: "demo-library-file", name: "requirements.md", type: "text/markdown", size: 2480, source: "upload", text_available: true, created_at: demoNow, updated_at: demoNow }], used_bytes: 2480, total_bytes: 0, remaining_bytes: 0 });
   if (path === "/user/advanced-chat/knowledge-bases") return demoResponse(config, { knowledge_bases: [{ id: "demo-kb", name: "产品资料", description: "演示知识库", vectorized: true }] });
   if (["/user/advanced-chat/skills", "/user/advanced-chat/agent-groups", "/user/advanced-chat/cloud-sandboxes"].includes(path)) return demoResponse(config, []);
+  if (path === "/user/advanced-chat/chat-groups" && method === "get") return demoResponse(config, demoChatGroups);
+  if (path === "/user/advanced-chat/chat-groups" && method === "post") {
+    const payload = demoPayload(config);
+    const id = `demo-group-${Date.now()}`;
+    const agentIDs = Array.isArray(payload.agent_ids) ? payload.agent_ids.map(String) : [];
+    const group = { id, name: String(payload.name || "New group"), description: String(payload.description || ""), updated_at: new Date().toISOString(), members: demoAgents.filter((agent) => agentIDs.includes(agent.id)).map((agent) => ({ id: `demo-member-${agent.id}-${Date.now()}`, agent_id: agent.id, agent_name: agent.name, status: "idle" })) };
+    demoChatGroups = [group, ...demoChatGroups];
+    return demoResponse(config, group, 201);
+  }
+  const chatGroupMatch = path.match(/^\/user\/advanced-chat\/chat-groups\/([^/]+)$/);
+  if (chatGroupMatch && method === "get") return demoResponse(config, { group: demoChatGroups.find((group) => group.id === chatGroupMatch[1]), messages: chatGroupMatch[1] === "demo-group" ? demoChatGroupMessages : [] });
+  if (chatGroupMatch && method === "delete") { demoChatGroups = demoChatGroups.filter((group) => group.id !== chatGroupMatch[1]); return demoResponse(config, { deleted: true }); }
+  const chatGroupMessagesMatch = path.match(/^\/user\/advanced-chat\/chat-groups\/([^/]+)\/messages$/);
+  if (chatGroupMessagesMatch && method === "post") {
+    const payload = demoPayload(config);
+    const message = { id: `demo-group-message-${Date.now()}`, sender_type: "user", sender_name: "demo", content: String(payload.content || ""), mention_member_ids: Array.isArray(payload.mention_member_ids) ? payload.mention_member_ids.map(String) : [], created_at: new Date().toISOString() };
+    if (chatGroupMessagesMatch[1] === "demo-group") demoChatGroupMessages = [...demoChatGroupMessages, message];
+    return demoResponse(config, message, 202);
+  }
+  if (/^\/user\/advanced-chat\/chat-groups\/[^/]+\/members\/[^/]+\/activity$/.test(path)) return demoResponse(config, { member: demoChatGroups[0]?.members[1], run: { status: "running", status_message: "loading_tools", current_round: 2 }, output: "正在核对发布清单和风险项...", events: [{ id: 1, event: "status", payload: { message: "assistant_started" }, created_at: demoNow }, { id: 2, event: "tool_call", payload: { name: "tasks_plan", status: "ok" }, created_at: demoNow }] });
   if (path === "/user/advanced-chat/completions" && method === "post") {
     const payload = demoPayload(config);
     const sessionID = String(payload.session_id || "demo-assistant-session");
