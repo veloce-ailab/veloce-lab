@@ -1,7 +1,7 @@
 import { Sidebar } from "./Sidebar"
 import { PageTransition } from "./PageTransition"
 import { Menu, UserCircle } from "lucide-react"
-import { Link, Outlet } from "react-router-dom"
+import { Link, Outlet, useLocation } from "react-router-dom"
 import { useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -23,6 +23,8 @@ interface CurrentUser {
 }
 
 export function Layout() {
+  const location = useLocation()
+  const isChatWorkspace = location.pathname === "/chat" || location.pathname.startsWith("/chat/")
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const { language } = useI18n()
   const { data: settings } = useQuery<PublicSettings>({
@@ -50,7 +52,7 @@ export function Layout() {
       />
 
       <div className="flex min-h-0 flex-1">
-        <div className="hidden lg:block lg:h-full lg:shrink-0">
+        <div className={cn("hidden lg:h-full lg:shrink-0", !isChatWorkspace && "lg:block")}>
           <Sidebar />
         </div>
 
@@ -82,9 +84,9 @@ export function Layout() {
               <div className="mx-auto max-w-6xl whitespace-pre-wrap">{publicSettings.announcement}</div>
             </div>
           )}
-          <div className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6 lg:p-8">
+          <div className={cn("mx-auto w-full flex-1", isChatWorkspace ? "min-h-0 max-w-none p-0" : "max-w-6xl p-4 sm:p-6 lg:p-8")}>
             <PageTransition className="page-shell-transition">
-              <div className="space-y-6">
+              <div className={cn(isChatWorkspace ? "h-full min-h-0" : "space-y-6")}>
                 <Outlet />
               </div>
             </PageTransition>

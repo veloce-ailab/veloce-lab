@@ -311,6 +311,9 @@ func (api *advancedChatAPI) completeChat(c *gin.Context) {
 	}
 	tools = append(tools, extension.Tools...)
 	tools = filterAdvancedChatToolsByDisabledGroups(tools, input.DisabledToolGroups)
+	// Plain chat is intentionally model-only. Agent prompts and knowledge may
+	// still shape the answer, but the upstream model receives no callable tools.
+	tools = nil
 	presetMessages := []AdvancedChatAgentPresetMessage{}
 	if agent != nil {
 		presetMessages = agent.Presets

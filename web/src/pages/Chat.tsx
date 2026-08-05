@@ -4,7 +4,7 @@ import type { ChangeEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNo
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListTodo, Loader2, Menu, MessageCircleQuestion, MessageSquarePlus, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, Database, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListTodo, Loader2, Menu, MessageCircleQuestion, MessageSquare, MessageSquarePlus, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
 import api, { apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
 import { ConnectorTerminalWindow, type ConnectorTerminalCopy } from "@/components/chat/ConnectorTerminalWindow"
@@ -37,6 +37,14 @@ interface ChatToolCall {
   arguments?: Record<string, unknown>
   result?: string
 }
+
+interface GeneratedFileEntry {
+  path: string
+  name: string
+  description: string
+}
+
+const GENERATED_FILE_TOOL_NAME = "report_generated_file"
 
 interface ChatContentPart {
   round?: number
@@ -973,6 +981,7 @@ export default function Chat() {
     () => taskChangeSummaryFromToolCalls(taskChangeMessage?.tool_calls?.length ? taskChangeMessage.tool_calls : activeRun?.tool_call_details || []),
     [activeRun?.tool_call_details, taskChangeMessage?.tool_calls]
   )
+  const generatedFiles = useMemo(() => generatedFilesFromMessages(currentMessages), [currentMessages])
   useEffect(() => {
     if (!taskChangeSummary.files.some((file) => file.path === selectedTaskChangePath)) {
       setSelectedTaskChangePath(taskChangeSummary.files[0]?.path || "")
@@ -3305,7 +3314,7 @@ export default function Chat() {
     return <div
       key={session.id}
       className={cn(
-        "group relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-transparent px-3 py-2 transition-colors",
+        "group relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-transparent px-2 py-1.5 transition-colors",
         activePersonalSession ? "border-primary/40 bg-primary/15 shadow-sm before:absolute before:bottom-2 before:left-0 before:top-2 before:w-0.5 before:rounded-r before:bg-primary" : "hover:bg-muted"
       )}
       onContextMenu={(event) => {
@@ -3394,7 +3403,7 @@ export default function Chat() {
 
   const sessionsSidebar = (
     <aside
-      className="flex h-full w-72 max-w-[85vw] flex-col bg-background text-foreground"
+      className="flex h-full w-60 max-w-[85vw] flex-col border-r border-border bg-card text-foreground"
       onContextMenu={(event) => {
         if (event.defaultPrevented) {
           return
@@ -3404,10 +3413,20 @@ export default function Chat() {
         setSessionFolderContextMenu({ x: event.clientX, y: event.clientY })
       }}
     >
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-border/80 px-4">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold">{copy.sessions}</div>
-        </div>
+      <nav className="shrink-0 space-y-1 border-b border-border p-3">
+        {[
+          { to: "/chat", label: language === "zh" ? "聊天" : "Chat", icon: MessageSquare },
+          { to: "/settings/channels", label: language === "zh" ? "上游渠道" : "Upstream channels", icon: Database },
+          { to: "/settings/system", label: language === "zh" ? "系统设置" : "System settings", icon: Settings },
+        ].map(({ to, label, icon: Icon }) => (
+          <Link key={to} to={to} className={cn("flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium", to === "/chat" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
+            <Icon size={17} />
+            <span>{label}</span>
+          </Link>
+        ))}
+      </nav>
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/80 px-3">
+        <div className="truncate text-xs font-semibold uppercase text-muted-foreground">{copy.sessions}</div>
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
@@ -3424,15 +3443,15 @@ export default function Chat() {
           </Button>
         </div>
       </div>
-      <div className="border-b border-border/80 p-3">
-        <Button className="h-10 w-full justify-start gap-2 rounded-md bg-background text-foreground shadow-sm hover:bg-muted" variant="outline" onClick={() => createNewSession()}>
+      <div className="border-b border-border/80 p-2.5">
+        <Button className="h-9 w-full justify-start gap-2 rounded-md bg-background text-foreground shadow-sm hover:bg-muted" variant="outline" onClick={() => createNewSession()}>
           <MessageSquarePlus size={16} />
           {copy.newSession}
         </Button>
-        <label className="relative mt-3 block">
+        <label className="relative mt-2 block">
           <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70" />
           <input
-            className="h-9 w-full rounded-md border border-border bg-background py-1 pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/70 focus:border-ring"
+            className="h-8 w-full rounded-md border border-border bg-background py-1 pl-9 pr-3 text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus:border-ring"
             value={sessionSearch}
             onChange={(event) => setSessionSearch(event.target.value)}
             placeholder={sessionSidebarCopy.search}
@@ -3440,7 +3459,7 @@ export default function Chat() {
           />
         </label>
       </div>
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
         {isAdvanced && enterpriseMode && sharedPools.length > 0 && (
           <div className="pb-3">
             <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">{language === "zh" ? "任务与部门会话" : "Task and department sessions"}</div>
@@ -3576,7 +3595,7 @@ export default function Chat() {
                 aria-label={copy.closeSessions}
                 onClick={() => setIsSessionsSidebarOpen(false)}
               />
-              <div className={cn("relative z-50 ml-auto h-full w-72 max-w-[85vw] transition-transform duration-200 ease-out", isSessionsSidebarOpen ? "translate-x-0" : "translate-x-full")}>{sessionsSidebar}</div>
+          <div className={cn("relative z-50 h-full w-60 max-w-[85vw] transition-transform duration-200 ease-out", isSessionsSidebarOpen ? "translate-x-0" : "-translate-x-full")}>{sessionsSidebar}</div>
           </div>,
           document.body
         )
@@ -3655,6 +3674,9 @@ export default function Chat() {
           onClose={() => setTerminalWindow(null)}
         />
       )}
+      <div className="relative z-10 hidden h-full shrink-0 lg:flex">
+        {sessionsSidebar}
+      </div>
       <Dialog open={Boolean(renamingSession)} onOpenChange={(open) => { if (!open) setRenamingSession(null) }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{copy.customTitlePrompt}</DialogTitle></DialogHeader>
@@ -3668,8 +3690,7 @@ export default function Chat() {
       <div className={cn(
         "min-w-0 flex-1 transition-[filter] duration-200",
         isSessionsSidebarOpen && "max-xl:blur-sm",
-        isAdvanced ? "flex min-h-0 flex-col overflow-hidden p-4 sm:p-6 lg:p-8 xl:relative xl:z-10 xl:mx-auto xl:mb-4 xl:overflow-visible xl:rounded-xl xl:border xl:border-border xl:bg-card xl:p-0" : "space-y-5",
-        isAdvanced && (isDesktopSessionsSidebarVisible ? "xl:max-w-[1180px]" : "xl:max-w-none")
+        isAdvanced ? "flex min-h-0 flex-col overflow-hidden bg-background p-4 sm:p-6 xl:relative xl:z-10 xl:p-0" : "space-y-5"
       )}>
       <div className="sticky top-0 z-30 -mx-4 flex min-h-10 justify-end bg-transparent px-4 py-0 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:mx-0">
         <div className="relative flex items-center gap-2">
@@ -3779,8 +3800,21 @@ export default function Chat() {
                     {isEnvironmentDevicePickerOpen && typeof document !== "undefined" && createPortal(
                       <div className="fixed z-[70] w-72 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-lg" style={floatingMenuStyle(environmentDeviceButtonRef.current)}>
                         <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{gitCopy.selectDevice}</div>
+                        <button
+                          type="button"
+                          className={cn("flex min-h-10 w-full items-center justify-between gap-2 rounded px-2 text-left text-sm hover:bg-muted", !currentConnectorDeviceID && "bg-primary/10 text-primary")}
+                          onClick={() => {
+                            setSessionConnectorDevice("")
+                            setGitCompareBranch("")
+                            setGitActionTaskID("")
+                            setIsEnvironmentDevicePickerOpen(false)
+                          }}
+                        >
+                          <span>{gitCopy.noDevice}</span>
+                          {!currentConnectorDeviceID && <Check size={14} />}
+                        </button>
                         {selectableConnectorDevices.length === 0 ? (
-                          <div className="px-2 py-4 text-center text-sm text-muted-foreground">{copy.noDevices}</div>
+                          <div className="px-2 py-3 text-center text-xs text-muted-foreground">{copy.noDevices}</div>
                         ) : (
                           selectableConnectorDevices.map((device) => {
                             const selected = device.id === currentConnectorDeviceID
@@ -3959,7 +3993,7 @@ export default function Chat() {
               )}
             </>
           )}
-          <Button
+          {activeRunMode !== "chat" && <Button
             variant="outline"
             size="icon"
             className="hidden h-9 w-9 border-border bg-background xl:inline-flex"
@@ -3969,7 +4003,7 @@ export default function Chat() {
             title={isDesktopSessionsSidebarVisible ? copy.closeSessions : copy.openSessions}
           >
             {isDesktopSessionsSidebarVisible ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-          </Button>
+          </Button>}
         </div>
       </div>
 
@@ -5021,12 +5055,38 @@ export default function Chat() {
         </Dialog>
       )}
       </div>
-      <div className={cn(
-        "relative z-0 hidden h-full shrink-0 overflow-hidden transition-[width,opacity] duration-200 ease-out xl:flex",
-        isDesktopSessionsSidebarVisible ? "w-72 opacity-100" : "w-0 pointer-events-none opacity-0"
-      )}>
-        {sessionsSidebar}
-      </div>
+      {activeRunMode !== "chat" && (
+        <aside className={cn(
+          "hidden h-full shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-muted/20 p-3 transition-[width,opacity,padding] duration-200 xl:flex",
+          isDesktopSessionsSidebarVisible ? "w-72 opacity-100" : "w-0 overflow-hidden border-l-0 p-0 opacity-0 pointer-events-none"
+        )}>
+          <section className="shrink-0 rounded-md border border-border bg-card p-3 shadow-sm">
+            <div className="flex items-center gap-2 text-sm font-semibold"><Monitor size={16} />{gitCopy.environment}</div>
+            <div className="mt-3 space-y-2 text-xs">
+              <div className="flex items-start justify-between gap-3"><span className="text-muted-foreground">{gitCopy.executionEnvironment}</span><span className="max-w-40 truncate text-right font-medium">{currentConnectorDevice?.name || gitCopy.noDevice}</span></div>
+              <div className="flex items-start justify-between gap-3"><span className="shrink-0 text-muted-foreground">{gitCopy.runDirectory}</span><span className="min-w-0 truncate text-right font-mono">{currentSession?.connector_workspace_path || gitCopy.noWorkspacePath}</span></div>
+              {currentConnectorDevice && <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">{language === "zh" ? "状态" : "Status"}</span><span className={currentConnectorDevice.online ? "text-emerald-600" : "text-muted-foreground"}>{currentConnectorDevice.online ? copy.deviceOnline : copy.deviceOffline}</span></div>}
+            </div>
+          </section>
+          <section className="min-h-0 rounded-md border border-border bg-card shadow-sm">
+            <div className="flex h-11 items-center justify-between border-b px-3">
+              <div className="flex items-center gap-2 text-sm font-semibold"><FileText size={16} />{language === "zh" ? "生成的文件" : "Generated files"}</div>
+              <span className="text-xs tabular-nums text-muted-foreground">{generatedFiles.length}</span>
+            </div>
+            <div className="max-h-[calc(100vh-20rem)] space-y-1 overflow-y-auto p-2">
+              {generatedFiles.length === 0 ? (
+                <div className="px-3 py-8 text-center text-xs text-muted-foreground">{language === "zh" ? "助理登记的文件会显示在这里" : "Files reported by the assistant appear here"}</div>
+              ) : generatedFiles.map((file) => (
+                <div key={file.path} className="rounded-md px-2 py-2 hover:bg-muted">
+                  <div className="flex items-center gap-2"><FileText size={14} className="shrink-0 text-primary" /><span className="truncate text-sm font-medium" title={file.path}>{file.name}</span></div>
+                  {file.description && <div className="mt-1 line-clamp-2 pl-6 text-xs text-muted-foreground">{file.description}</div>}
+                  <div className="mt-1 truncate pl-6 font-mono text-[11px] text-muted-foreground" title={file.path}>{file.path}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </aside>
+      )}
     </div>
   )
 }
@@ -7804,6 +7864,24 @@ function formatToolArguments(value?: Record<string, unknown>) {
   } catch {
     return String(value)
   }
+}
+
+function generatedFilesFromMessages(messages: ChatMessage[]): GeneratedFileEntry[] {
+  const files = new Map<string, GeneratedFileEntry>()
+  for (const message of messages) {
+    for (const call of message.tool_calls || []) {
+      if (call.name !== GENERATED_FILE_TOOL_NAME || call.status !== "ok") continue
+      const path = stringArgument(call.arguments, "path").trim()
+      if (!path) continue
+      const segments = path.replace(/\\/g, "/").split("/").filter(Boolean)
+      files.set(path, {
+        path,
+        name: stringArgument(call.arguments, "name").trim() || segments.at(-1) || path,
+        description: stringArgument(call.arguments, "description").trim(),
+      })
+    }
+  }
+  return Array.from(files.values()).reverse()
 }
 
 interface ReplacementEntry {
