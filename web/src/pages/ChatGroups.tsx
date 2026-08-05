@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Bot, MessageCircle, Plus, Send, Trash2, Users, X } from "lucide-react"
+import { ArrowLeft, Bot, MessageCircle, PanelRightOpen, Plus, Send, Settings, Trash2, Users, X } from "lucide-react"
 import api from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -40,6 +40,12 @@ export default function ChatGroups() {
   const [activeMember, setActiveMember] = useState<GroupMember | null>(null)
   const [activePrivateConversation, setActivePrivateConversation] = useState<PrivateConversation | null>(null)
   const [isSending, setIsSending] = useState(false)
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [settingsName, setSettingsName] = useState("")
+  const [settingsDescription, setSettingsDescription] = useState("")
+  const [settingsAgentIDs, setSettingsAgentIDs] = useState<string[]>([])
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
 
   const { data: groups = [], isFetching } = useQuery<ChatGroup[]>({
     queryKey: groupsKey,
@@ -101,6 +107,32 @@ export default function ChatGroups() {
     }
   }
 
+  const openGroupSettings = (group: ChatGroup) => {
+    setSettingsName(group.name)
+    setSettingsDescription(group.description)
+    setSettingsAgentIDs(group.members.map((member) => member.agent_id))
+    setIsSettingsOpen(true)
+  }
+
+  const saveGroupSettings = async () => {
+    if (!detail || !settingsName.trim() || settingsAgentIDs.length === 0 || isSavingSettings) return
+    setIsSavingSettings(true)
+    try {
+      await api.put(`/user/advanced-chat/chat-groups/${encodeURIComponent(detail.group.id)}`, { name: settingsName.trim(), description: settingsDescription.trim(), agent_ids: settingsAgentIDs })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: groupsKey }),
+        queryClient.invalidateQueries({ queryKey: ["advanced-chat-chat-group", detail.group.id] }),
+        queryClient.invalidateQueries({ queryKey: ["chat-group-private-conversations", detail.group.id] }),
+      ])
+      setIsSettingsOpen(false)
+      success(zh ? "群组设置已保存" : "Group settings saved")
+    } catch (err) {
+      error(apiError(err, zh ? "保存群组设置失败" : "Failed to save group settings"))
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }
+
   const sendMessage = async () => {
     if (!groupID || !draft.trim() || isSending) return
     setIsSending(true)
@@ -144,6 +176,26 @@ export default function ChatGroups() {
     </Dialog>
   )
 
+  const settingsDialog = detail && (
+    <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{zh ? "群组设置" : "Group settings"}</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5"><label className="text-sm font-medium">{zh ? "群组名称" : "Group name"}</label><Input value={settingsName} onChange={(event) => setSettingsName(event.target.value)} /></div>
+          <div className="space-y-1.5"><label className="text-sm font-medium">{zh ? "群组描述" : "Description"}</label><textarea value={settingsDescription} onChange={(event) => setSettingsDescription(event.target.value)} className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" /></div>
+          <div>
+            <div className="mb-2 text-sm font-medium">{zh ? "群组成员" : "Members"}</div>
+            <div className="max-h-52 space-y-1 overflow-y-auto rounded-md border p-2">
+              {agents.map((agent) => <label key={agent.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 hover:bg-muted"><input type="checkbox" checked={settingsAgentIDs.includes(agent.id)} onChange={() => setSettingsAgentIDs((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id])} /><Bot size={15} /><span className="text-sm">{agent.name}</span></label>)}
+            </div>
+          </div>
+          <div className="border-t pt-4"><Button variant="outline" className="gap-2 text-destructive hover:text-destructive" onClick={() => { setIsSettingsOpen(false); void deleteGroup(detail.group) }}><Trash2 size={15} />{zh ? "删除群组" : "Delete group"}</Button></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => setIsSettingsOpen(false)}>{zh ? "取消" : "Cancel"}</Button><Button disabled={!settingsName.trim() || settingsAgentIDs.length === 0 || isSavingSettings} onClick={saveGroupSettings}>{isSavingSettings ? (zh ? "保存中..." : "Saving...") : (zh ? "保存" : "Save")}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
   if (!groupID) {
     return (
       <div className="space-y-6">
@@ -176,15 +228,17 @@ export default function ChatGroups() {
   return (
     <div className="-m-4 flex min-h-[calc(100vh-7rem)] overflow-hidden border-y sm:-m-6 lg:-m-8">
       {confirmDialog}
+      {settingsDialog}
       <section className="flex min-w-0 flex-1 flex-col bg-background">
         {detail ? (
           <>
             <header className="flex h-14 shrink-0 items-center justify-between border-b px-3">
               <div className="flex min-w-0 items-center gap-2">
+                <Button size="icon" variant="ghost" className="h-8 w-8 lg:hidden" onClick={() => setIsMobileSidebarOpen(true)} title={zh ? "展开群组信息" : "Open group details"}><PanelRightOpen size={17} /></Button>
                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => navigate("/chat/groups")} title={zh ? "返回群组列表" : "Back to groups"}><ArrowLeft size={17} /></Button>
                 <div className="min-w-0"><div className="truncate text-sm font-semibold">{detail.group.name}</div><div className="truncate text-xs text-muted-foreground">{detail.group.description}</div></div>
               </div>
-              <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => deleteGroup(detail.group)} title={zh ? "删除群组" : "Delete group"}><Trash2 size={16} /></Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openGroupSettings(detail.group)} title={zh ? "群组设置" : "Group settings"}><Settings size={16} /></Button>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
               <div className="mx-auto max-w-3xl space-y-4">
@@ -213,33 +267,43 @@ export default function ChatGroups() {
         ) : <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">{zh ? "加载群组..." : "Loading group..."}</div>}
       </section>
 
-      <aside className="hidden w-72 shrink-0 overflow-y-auto border-l bg-card lg:block">
-        <div className="flex h-14 items-center border-b px-4 text-sm font-semibold">{zh ? "群组成员" : "Members"}</div>
-        <div className="space-y-1 p-2">
-          {members.map((member) => (
-            <div key={member.id} className="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
-              <button type="button" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-background" onClick={() => setActiveMember(member)} title={zh ? "查看工作详情" : "View activity"}><Bot size={15} /></button>
-              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setActiveMember(member)}><div className="truncate text-sm font-medium">{member.agent_name}</div><div className={cn("text-xs", member.status === "working" ? "text-primary" : "text-muted-foreground")}>{member.status === "working" ? (zh ? "正在工作" : "Working") : (zh ? "空闲" : "Idle")}</div></button>
-              <Button size="sm" variant={mentions.includes(member.id) ? "secondary" : "ghost"} className="h-7 px-2 text-xs" onClick={() => setMentions((current) => current.includes(member.id) ? current.filter((id) => id !== member.id) : [...current, member.id])}>@</Button>
-            </div>
-          ))}
-        </div>
-		<div className="mt-2 border-t">
-			<div className="flex h-11 items-center px-4 text-sm font-semibold">{zh ? "助理私聊" : "Assistant chats"}</div>
-			<div className="space-y-1 px-2 pb-3">
-				{privateConversations.map((conversation) => (
-					<button key={conversation.id} type="button" className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-muted" onClick={() => setActivePrivateConversation(conversation)}>
-						<MessageCircle size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
-						<span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{conversation.member_a_name} · {conversation.member_b_name}</span><span className="mt-0.5 block truncate text-xs text-muted-foreground">{conversation.last_message}</span></span>
-					</button>
-				))}
-				{privateConversations.length === 0 && <div className="px-2 py-5 text-center text-xs text-muted-foreground">{zh ? "暂无助理私聊" : "No private chats"}</div>}
-			</div>
-		</div>
-      </aside>
+      <GroupSidebar className="hidden w-72 shrink-0 lg:block" members={members} mentions={mentions} privateConversations={privateConversations} zh={zh} onMember={setActiveMember} onMention={(id) => setMentions((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} onPrivateConversation={setActivePrivateConversation} />
+      <div className={cn("fixed inset-0 z-40 lg:hidden", isMobileSidebarOpen ? "pointer-events-auto" : "pointer-events-none")} aria-hidden={!isMobileSidebarOpen}>
+        <button type="button" className={cn("absolute inset-0 bg-black/35 transition-opacity", isMobileSidebarOpen ? "opacity-100" : "opacity-0")} onClick={() => setIsMobileSidebarOpen(false)} aria-label={zh ? "关闭群组信息" : "Close group details"} />
+        <GroupSidebar className={cn("absolute right-0 top-0 h-full w-72 max-w-[85vw] transition-transform duration-200", isMobileSidebarOpen ? "translate-x-0" : "translate-x-full")} members={members} mentions={mentions} privateConversations={privateConversations} zh={zh} onClose={() => setIsMobileSidebarOpen(false)} onMember={(member) => { setIsMobileSidebarOpen(false); setActiveMember(member) }} onMention={(id) => setMentions((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} onPrivateConversation={(conversation) => { setIsMobileSidebarOpen(false); setActivePrivateConversation(conversation) }} />
+      </div>
       {activeMember && detail && <MemberActivityDialog groupID={detail.group.id} member={activeMember} onClose={() => setActiveMember(null)} zh={zh} />}
 	  {activePrivateConversation && detail && <PrivateConversationDialog groupID={detail.group.id} conversation={activePrivateConversation} onClose={() => setActivePrivateConversation(null)} zh={zh} />}
     </div>
+  )
+}
+
+function GroupSidebar({ className, members, mentions, privateConversations, zh, onClose, onMember, onMention, onPrivateConversation }: { className?: string; members: GroupMember[]; mentions: string[]; privateConversations: PrivateConversation[]; zh: boolean; onClose?: () => void; onMember: (member: GroupMember) => void; onMention: (id: string) => void; onPrivateConversation: (conversation: PrivateConversation) => void }) {
+  return (
+    <aside className={cn("overflow-y-auto border-l bg-card", className)}>
+      <div className="flex h-14 items-center justify-between border-b px-4 text-sm font-semibold"><span>{zh ? "群组成员" : "Members"}</span>{onClose && <Button size="icon" variant="ghost" className="h-8 w-8" onClick={onClose} title={zh ? "关闭" : "Close"}><X size={16} /></Button>}</div>
+      <div className="space-y-1 p-2">
+        {members.map((member) => (
+          <div key={member.id} className="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-muted">
+            <button type="button" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-background" onClick={() => onMember(member)} title={zh ? "查看工作详情" : "View activity"}><Bot size={15} /></button>
+            <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onMember(member)}><div className="truncate text-sm font-medium">{member.agent_name}</div><div className={cn("text-xs", member.status === "working" ? "text-primary" : "text-muted-foreground")}>{member.status === "working" ? (zh ? "正在工作" : "Working") : (zh ? "空闲" : "Idle")}</div></button>
+            <Button size="sm" variant={mentions.includes(member.id) ? "secondary" : "ghost"} className="h-7 px-2 text-xs" onClick={() => onMention(member.id)}>@</Button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 border-t">
+        <div className="flex h-11 items-center px-4 text-sm font-semibold">{zh ? "助理私聊" : "Assistant chats"}</div>
+        <div className="space-y-1 px-2 pb-3">
+          {privateConversations.map((conversation) => (
+            <button key={conversation.id} type="button" className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-muted" onClick={() => onPrivateConversation(conversation)}>
+              <MessageCircle size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{conversation.member_a_name} · {conversation.member_b_name}</span><span className="mt-0.5 block truncate text-xs text-muted-foreground">{conversation.last_message}</span></span>
+            </button>
+          ))}
+          {privateConversations.length === 0 && <div className="px-2 py-5 text-center text-xs text-muted-foreground">{zh ? "暂无助理私聊" : "No private chats"}</div>}
+        </div>
+      </div>
+    </aside>
   )
 }
 
