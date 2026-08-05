@@ -261,6 +261,18 @@ const demoAdapter: AxiosAdapter = async (config) => {
   }
   const chatGroupMatch = path.match(/^\/user\/advanced-chat\/chat-groups\/([^/]+)$/);
   if (chatGroupMatch && method === "get") return demoResponse(config, { group: demoChatGroups.find((group) => group.id === chatGroupMatch[1]), messages: chatGroupMatch[1] === "demo-group" ? demoChatGroupMessages : [] });
+  if (chatGroupMatch && method === "put") {
+    const payload = demoPayload(config);
+    const current = demoChatGroups.find((group) => group.id === chatGroupMatch[1]);
+    if (current) {
+      current.name = String(payload.name || current.name);
+      current.description = String(payload.description || "");
+      const agentIDs = Array.isArray(payload.agent_ids) ? payload.agent_ids.map(String) : current.members.map((member) => member.agent_id);
+      current.members = demoAgents.filter((agent) => agentIDs.includes(agent.id)).map((agent) => current.members.find((member) => member.agent_id === agent.id) || ({ id: `demo-member-${agent.id}-${Date.now()}`, agent_id: agent.id, agent_name: agent.name, status: "idle" as const }));
+      current.updated_at = new Date().toISOString();
+    }
+    return demoResponse(config, current || {});
+  }
   if (chatGroupMatch && method === "delete") { demoChatGroups = demoChatGroups.filter((group) => group.id !== chatGroupMatch[1]); return demoResponse(config, { deleted: true }); }
   const chatGroupMessagesMatch = path.match(/^\/user\/advanced-chat\/chat-groups\/([^/]+)\/messages$/);
   if (chatGroupMessagesMatch && method === "post") {

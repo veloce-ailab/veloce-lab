@@ -657,10 +657,9 @@ func dispatchChatGroupMessage(userID uint, groupID string, message AdvancedChatC
 			if !isMentioned {
 				continue
 			}
-			if member.RunID != "" {
-				_, _, _, _ = stopAdvancedChatRun(member.RunID, userID)
+			if !interruptChatGroupMember(userID, &member) {
+				continue
 			}
-			_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", member.ID, userID).Updates(map[string]interface{}{"status": chatGroupMemberIdle, "run_id": ""}).Error
 		}
 		claim := model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ? AND status = ?", member.ID, userID, chatGroupMemberIdle).Updates(map[string]interface{}{"status": chatGroupMemberWorking, "work_depth": message.Depth})
 		if claim.Error == nil && claim.RowsAffected == 1 {
@@ -670,6 +669,15 @@ func dispatchChatGroupMessage(userID uint, groupID string, message AdvancedChatC
 }
 
 func dispatchPrivateMessage(userID uint, message AdvancedChatPrivateMessage) {
+	var member AdvancedChatChatGroupMember
+	if err := model.DB.Where("id = ? AND group_id = ? AND user_id = ?", message.RecipientMemberID, message.GroupID, userID).First(&member).Error; err != nil {
+		return
+	}
+	if member.Status == chatGroupMemberWorking {
+		if !interruptChatGroupMember(userID, &member) {
+			return
+		}
+	}
 	claim := model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND group_id = ? AND user_id = ? AND status = ?", message.RecipientMemberID, message.GroupID, userID, chatGroupMemberIdle).Updates(map[string]interface{}{"status": chatGroupMemberWorking, "work_depth": 0})
 	if claim.Error != nil || claim.RowsAffected != 1 {
 		return
@@ -681,6 +689,24 @@ func dispatchPrivateMessage(userID uint, message AdvancedChatPrivateMessage) {
 		return
 	}
 	go runPrivateChatMember(userID, message)
+}
+
+func interruptChatGroupMember(userID uint, member *AdvancedChatChatGroupMember) bool {
+	for attempt := 0; member.Status == chatGroupMemberWorking && member.RunID == "" && attempt < 80; attempt++ {
+		time.Sleep(25 * time.Millisecond)
+		if model.DB.Where("id = ? AND group_id = ? AND user_id = ?", member.ID, member.GroupID, userID).First(member).Error != nil {
+			return false
+		}
+	}
+	if member.Status != chatGroupMemberWorking {
+		return true
+	}
+	if member.RunID == "" {
+		return false
+	}
+	_, _, _, _ = stopAdvancedChatRun(member.RunID, userID)
+	released := model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND group_id = ? AND user_id = ? AND status = ? AND run_id = ?", member.ID, member.GroupID, userID, chatGroupMemberWorking, member.RunID).Updates(map[string]interface{}{"status": chatGroupMemberIdle, "run_id": ""})
+	return released.Error == nil && released.RowsAffected == 1
 }
 
 func dispatchNextPrivateMessage(userID uint, groupID, memberID string) {
@@ -695,9 +721,18 @@ func runChatGroupMember(userID uint, groupID string, memberID string, trigger Ad
 	if err := model.DB.Where("id = ? AND group_id = ? AND user_id = ?", memberID, groupID, userID).First(&member).Error; err != nil {
 		return
 	}
+	ownedRunID := ""
 	defer func() {
-		_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", memberID, userID).Updates(map[string]interface{}{"status": chatGroupMemberIdle, "run_id": ""}).Error
-		dispatchNextPrivateMessage(userID, groupID, memberID)
+		query := model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ? AND status = ?", memberID, userID, chatGroupMemberWorking)
+		if ownedRunID == "" {
+			query = query.Where("run_id = ?", "")
+		} else {
+			query = query.Where("run_id = ?", ownedRunID)
+		}
+		released := query.Updates(map[string]interface{}{"status": chatGroupMemberIdle, "run_id": ""})
+		if released.Error == nil && released.RowsAffected == 1 {
+			dispatchNextPrivateMessage(userID, groupID, memberID)
+		}
 	}()
 	var group AdvancedChatChatGroup
 	if model.DB.Where("id = ? AND user_id = ?", groupID, userID).First(&group).Error != nil {
@@ -729,6 +764,7 @@ func runChatGroupMember(userID uint, groupID string, memberID string, trigger Ad
 	if err != nil {
 		return
 	}
+	ownedRunID = run.ID
 	_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", member.ID, userID).Updates(map[string]interface{}{"session_id": sessionID, "run_id": run.ID, "status": chatGroupMemberWorking}).Error
 	runAdvancedChatAssistantCompletion(run.ID, userID, prepared)
 }
@@ -738,9 +774,18 @@ func runPrivateChatMember(userID uint, trigger AdvancedChatPrivateMessage) {
 	if err := model.DB.Where("id = ? AND group_id = ? AND user_id = ?", trigger.RecipientMemberID, trigger.GroupID, userID).First(&member).Error; err != nil {
 		return
 	}
+	ownedRunID := ""
 	defer func() {
-		_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", member.ID, userID).Updates(map[string]interface{}{"status": chatGroupMemberIdle, "run_id": ""}).Error
-		dispatchNextPrivateMessage(userID, trigger.GroupID, member.ID)
+		query := model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ? AND status = ?", member.ID, userID, chatGroupMemberWorking)
+		if ownedRunID == "" {
+			query = query.Where("run_id = ?", "")
+		} else {
+			query = query.Where("run_id = ?", ownedRunID)
+		}
+		released := query.Updates(map[string]interface{}{"status": chatGroupMemberIdle, "run_id": ""})
+		if released.Error == nil && released.RowsAffected == 1 {
+			dispatchNextPrivateMessage(userID, trigger.GroupID, member.ID)
+		}
 	}()
 	var group AdvancedChatChatGroup
 	if model.DB.Where("id = ? AND user_id = ?", trigger.GroupID, userID).First(&group).Error != nil {
@@ -780,6 +825,7 @@ func runPrivateChatMember(userID uint, trigger AdvancedChatPrivateMessage) {
 	if err != nil {
 		return
 	}
+	ownedRunID = run.ID
 	_ = model.DB.Model(&AdvancedChatChatGroupMember{}).Where("id = ? AND user_id = ?", member.ID, userID).Updates(map[string]interface{}{"session_id": sessionID, "run_id": run.ID, "status": chatGroupMemberWorking}).Error
 	runAdvancedChatAssistantCompletion(run.ID, userID, prepared)
 }
