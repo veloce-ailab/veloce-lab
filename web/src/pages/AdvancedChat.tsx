@@ -200,6 +200,7 @@ export default function AdvancedChat() {
                     <Route path="deliveries" element={<AdvancedChatDeliveries />} />
                     <Route path="scheduled-tasks" element={<AdvancedChatScheduledTasks />} />
                     <Route path="groups" element={<ChatGroups />} />
+                    <Route path="groups/:groupID" element={<ChatGroups />} />
                     <Route path="files" element={<AdvancedChatFiles />} />
                     <Route path="knowledge" element={<KnowledgeBases />} />
                     <Route path="memories" element={<AdvancedChatMemories />} />
@@ -230,7 +231,7 @@ function desktopPageTitle(pathname: string, language: string) {
   if (pathname.startsWith("/chat/channels")) return zh ? "消息通道" : "Message Channels"
   if (pathname === "/chat/deliveries") return zh ? "结果投递" : "Result Delivery"
   if (pathname === "/chat/scheduled-tasks") return zh ? "任务" : "Tasks"
-  if (pathname === "/chat/groups") return zh ? "聊天群组" : "Chat Groups"
+  if (pathname === "/chat/groups" || pathname.startsWith("/chat/groups/")) return zh ? "聊天群组" : "Chat Groups"
   if (pathname === "/chat/agents" || pathname.startsWith("/chat/agents/")) return zh ? "助理" : "Agents"
   if (pathname === "/chat/skills" || pathname.startsWith("/chat/skills/")) return zh ? "技能" : "Skills"
   if (pathname === "/chat/devices" || pathname.startsWith("/chat/devices/")) return zh ? "设备" : "Devices"
@@ -281,7 +282,7 @@ function AdvancedChatSidebar({
   }
   const directItems: AdvancedChatSidebarItem[] = [
     { href: "/chat/community", label: language === "zh" ? "社区" : language === "ja" ? "コミュニティ" : "Community", icon: Users, active: location.pathname === "/chat/community" || location.pathname.startsWith("/chat/community/") },
-    { href: "/chat/groups", label: language === "zh" ? "聊天群组" : "Chat Groups", icon: MessageSquareText, active: location.pathname === "/chat/groups" },
+    { href: "/chat/groups", label: language === "zh" ? "聊天群组" : "Chat Groups", icon: MessageSquareText, active: location.pathname === "/chat/groups" || location.pathname.startsWith("/chat/groups/") },
     { href: "/chat/files", label: filesLabel, icon: FileText, active: location.pathname === "/chat/files" },
     { href: "/chat/knowledge", label: knowledgeLabel, icon: Database, active: location.pathname === "/chat/knowledge" },
     ...(user?.is_admin ? [{ href: "/settings/channels", label: language === "zh" ? "账户设置" : "Account Settings", icon: SlidersHorizontal, active: location.pathname.startsWith("/settings") }] : []),
