@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
-import { Bot, LogOut, MessageSquare, Shield, UserCircle } from "lucide-react"
+import { Bot, Database, LogOut, MessageSquare, Settings as SettingsIcon, Shield, UserCircle } from "lucide-react"
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useState } from "react"
 import Settings, { type SettingsSection } from "./Settings"
+import Channels from "./Channels"
+import SystemManagement from "./SystemManagement"
 import { AppHeader } from "@/components/layout/Layout"
 import { PageTransition } from "@/components/layout/PageTransition"
 import api, { isDesktopTarget } from "@/lib/api"
@@ -78,6 +80,9 @@ export default function SettingsWorkspace() {
                 <Route path="profile" element={<Settings section="profile" />} />
                 <Route path="assistant" element={<Settings section="assistant" />} />
                 <Route path="security" element={<Settings section="security" />} />
+                <Route path="channels" element={<Channels />} />
+                <Route path="system" element={<SystemManagement section="general" />} />
+                <Route path="advanced-chat" element={<SystemManagement section="advancedChat" />} />
                 <Route path="*" element={<Navigate to="profile" replace />} />
               </Routes>
             </PageTransition>
@@ -100,6 +105,9 @@ function SettingsSidebar({ pathname, copy, onLogout, className, onNavigate }: {
     { href: "/settings/profile", section: "profile", label: copy.account, icon: UserCircle, colorClass: "bg-blue-500/15 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300" },
     { href: "/settings/assistant", section: "assistant", label: copy.assistant, icon: Bot, colorClass: "bg-violet-500/15 text-violet-600 dark:bg-violet-400/15 dark:text-violet-300" },
     { href: "/settings/security", section: "security", label: copy.security, icon: Shield, colorClass: "bg-emerald-500/15 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300" },
+    { href: "/settings/channels", label: copy.channels, icon: Database, colorClass: "bg-cyan-500/15 text-cyan-600 dark:bg-cyan-400/15 dark:text-cyan-300" },
+    { href: "/settings/system", label: copy.system, icon: SettingsIcon, colorClass: "bg-orange-500/15 text-orange-600 dark:bg-orange-400/15 dark:text-orange-300" },
+    { href: "/settings/advanced-chat", label: copy.chatSettings, icon: Bot, colorClass: "bg-purple-500/15 text-purple-600 dark:bg-purple-400/15 dark:text-purple-300" },
   ]
 
   return (
@@ -144,14 +152,17 @@ function SettingsSidebar({ pathname, copy, onLogout, className, onNavigate }: {
 }
 
 function settingsWorkspaceCopy(language: string) {
-  if (language === "zh") return { title: "设置", account: "账户", assistant: "助手", security: "安全", chat: "聊天", signOut: "退出登录", openMenu: "打开设置菜单", closeMenu: "关闭设置菜单" }
-  if (language === "ja") return { title: "設定", account: "アカウント", assistant: "アシスタント", security: "セキュリティ", chat: "チャット", signOut: "ログアウト", openMenu: "設定メニューを開く", closeMenu: "設定メニューを閉じる" }
-  return { title: "Settings", account: "Account", assistant: "Assistant", security: "Security", chat: "Chat", signOut: "Sign out", openMenu: "Open settings menu", closeMenu: "Close settings menu" }
+  if (language === "zh") return { title: "账户设置", account: "账户", assistant: "助手", security: "安全", channels: "上级渠道", system: "系统", chatSettings: "聊天设置", chat: "聊天", signOut: "退出登录", openMenu: "打开设置菜单", closeMenu: "关闭设置菜单" }
+  if (language === "ja") return { title: "アカウント設定", account: "アカウント", assistant: "アシスタント", security: "セキュリティ", channels: "上流チャネル", system: "システム", chatSettings: "チャット設定", chat: "チャット", signOut: "ログアウト", openMenu: "設定メニューを開く", closeMenu: "設定メニューを閉じる" }
+  return { title: "Account Settings", account: "Account", assistant: "Assistant", security: "Security", channels: "Upstream Channels", system: "System", chatSettings: "Chat Settings", chat: "Chat", signOut: "Sign out", openMenu: "Open settings menu", closeMenu: "Close settings menu" }
 }
 
 function desktopSettingsTitle(pathname: string, language: string) {
   const zh = language === "zh"
   if (pathname === "/settings/assistant") return zh ? "助手设置" : "Assistant settings"
   if (pathname === "/settings/security") return zh ? "安全设置" : "Security settings"
+  if (pathname === "/settings/channels") return zh ? "上级渠道" : "Upstream channels"
+  if (pathname === "/settings/system") return zh ? "系统设置" : "System settings"
+  if (pathname === "/settings/advanced-chat") return zh ? "聊天设置" : "Chat settings"
   return zh ? "账户设置" : "Account settings"
 }

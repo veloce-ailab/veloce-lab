@@ -1,19 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
-import { Layout } from "./components/layout/Layout"
 import { PageTransition } from "./components/layout/PageTransition"
 import { ToastProvider } from "./components/ui/toast"
 import api from "./lib/api"
 import { I18nProvider, useI18n } from "./lib/i18n"
 import { ThemeProvider } from "./lib/theme"
 import AdvancedChat from "./pages/AdvancedChat"
-import Channels from "./pages/Channels"
 import Login from "./pages/Login"
-import Models from "./pages/Models"
 import SettingsWorkspace from "./pages/SettingsWorkspace"
 import Setup from "./pages/Setup"
-import SystemManagement from "./pages/SystemManagement"
 
 const queryClient = new QueryClient()
 
@@ -74,14 +70,8 @@ function App() {
                   <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
                   <Route path="/chat/*" element={<ProtectedRoute authenticated={authenticated}><AdvancedChat /></ProtectedRoute>} />
                   <Route path="/settings/*" element={<ProtectedRoute authenticated={authenticated}><SettingsWorkspace /></ProtectedRoute>} />
-                  <Route path="/admin" element={<ProtectedRoute authenticated={authenticated}><Layout /></ProtectedRoute>}>
-                    <Route index element={<Navigate to="channels" replace />} />
-                    <Route path="channels" element={<Channels />} />
-                    <Route path="models" element={<Models />} />
-                    <Route path="system" element={<SystemManagement section="general" />} />
-                    <Route path="advanced-chat" element={<SystemManagement section="advancedChat" />} />
-                  </Route>
-                  <Route path="/" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
+                  <Route path="/admin/*" element={<Navigate to="/settings/channels" replace />} />
+                  <Route path="/" element={<Navigate to="/login" replace />} />
                   <Route path="*" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
                 </Routes>
               </SetupGate>

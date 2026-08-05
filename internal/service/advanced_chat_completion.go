@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/veloce-ailab/veloce/internal/model"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
+	"github.com/veloce-ailab/veloce/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -37,7 +37,8 @@ type advancedChatCompletionInput struct {
 	SessionID                string                          `json:"session_id"`
 	Title                    string                          `json:"title"`
 	ModelName                string                          `json:"model"`
-	UserChannelID            uint                            `json:"user_channel_id"`
+	ChannelID                uint                            `json:"channel_id"`
+	UserChannelID            uint                            `json:"-"`
 	Messages                 []advancedChatCompletionMessage `json:"messages"`
 	Mode                     string                          `json:"mode"`
 	AgentID                  string                          `json:"agent_id"`
@@ -145,6 +146,9 @@ func (api *advancedChatAPI) completeChat(c *gin.Context) {
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if input.ChannelID != 0 {
+		input.UserChannelID = input.ChannelID
 	}
 	if personalCompanyInternalSession(user.ID, input.SessionID) {
 		c.JSON(http.StatusConflict, gin.H{"error": "Internal Studio sessions are immutable"})
@@ -314,7 +318,9 @@ func (api *advancedChatAPI) completeChat(c *gin.Context) {
 	executorMessages := make([]ChatExecutorMessage, 0, len(presetMessages)+len(messages)+maxToolRounds*2)
 	executorMessages = append(executorMessages, advancedChatPresetExecutorMessages(presetMessages)...)
 	modelMessages := messages
-	if input.AutoCompressContext { modelMessages = compressAdvancedChatMessages(modelMessages) }
+	if input.AutoCompressContext {
+		modelMessages = compressAdvancedChatMessages(modelMessages)
+	}
 	for _, message := range modelMessages {
 		executorMessages = append(executorMessages, advancedChatExecutorMessage(user.ID, message))
 	}
@@ -531,15 +537,23 @@ const advancedChatContextCompressionChars = 48000
 
 func compressAdvancedChatMessages(messages []advancedChatCompletionMessage) []advancedChatCompletionMessage {
 	total := 0
-	for _, message := range messages { total += len([]rune(message.Content)) }
-	if total <= advancedChatContextCompressionChars || len(messages) <= 8 { return messages }
+	for _, message := range messages {
+		total += len([]rune(message.Content))
+	}
+	if total <= advancedChatContextCompressionChars || len(messages) <= 8 {
+		return messages
+	}
 	keep := 12
 	dropped := messages[:len(messages)-keep]
 	parts := make([]string, 0, len(dropped))
 	for _, message := range dropped {
 		content := strings.Join(strings.Fields(message.Content), " ")
-		if len([]rune(content)) > 240 { content = string([]rune(content)[:240]) + "..." }
-		if content != "" { parts = append(parts, message.Role+": "+content) }
+		if len([]rune(content)) > 240 {
+			content = string([]rune(content)[:240]) + "..."
+		}
+		if content != "" {
+			parts = append(parts, message.Role+": "+content)
+		}
 	}
 	summary := "[Earlier conversation compressed for context]\n" + strings.Join(parts, "\n")
 	return append([]advancedChatCompletionMessage{{Role: "assistant", Content: summary}}, messages[len(messages)-keep:]...)

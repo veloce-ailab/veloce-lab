@@ -7,7 +7,6 @@ import Login from "@/pages/Login"
 import Setup from "@/pages/Setup"
 import AdvancedChat from "@/pages/AdvancedChat"
 import SettingsWorkspace from "@/pages/SettingsWorkspace"
-import DesktopDashboard from "@/desktop/DesktopDashboard"
 import api, {
   apiURL,
   getAuthToken,
@@ -25,7 +24,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import logoURL from "@/assets/logo.png"
-import type { BuiltinServerStatus, DesktopCurrentUser, DesktopStorageSettings, DesktopTab, DesktopUserStats, SetupStatus } from "@/desktop/types"
+import type { BuiltinServerStatus, DesktopCurrentUser, DesktopStorageSettings, DesktopTab, SetupStatus } from "@/desktop/types"
 import { newDesktopTab, normalizeDesktopTabPath, readActiveDesktopTabID, readDesktopTabs, readServerList, serverAccountKey, writeActiveDesktopTabID, writeDesktopTabs, writeServerList } from "@/desktop/storage"
 import { hasAuthToken } from "@/desktop/auth"
 import { DesktopApprovalDecisionBridge, DesktopConnectorBridge, DesktopNavigationBridge, DesktopTransparency, TokenBridge } from "@/desktop/bridges"
@@ -87,9 +86,7 @@ function DocumentTitle() {
   useEffect(() => {
     const pageTitle = location.pathname.startsWith("/chat")
       ? t("nav.chat")
-      : location.pathname.startsWith("/dashboard")
-        ? language === "zh" ? "系统管理" : "System Management"
-        : location.pathname.startsWith("/settings")
+      : location.pathname.startsWith("/settings")
           ? language === "zh" ? "设置" : "Settings"
           : location.pathname === "/setup"
             ? language === "zh" ? "初始化站点" : "Initial Setup"
@@ -156,16 +153,6 @@ function DesktopTitleBar({
     queryKey: ["desktop-me", currentServer, getAuthToken()],
     queryFn: async () => {
       const res = await api.get("/user/me")
-      return res.data
-    },
-    enabled: Boolean(getAuthToken()),
-    retry: false,
-  })
-
-  const { data: userStats } = useQuery<DesktopUserStats>({
-    queryKey: ["desktop-user-stats", currentServer, getAuthToken()],
-    queryFn: async () => {
-      const res = await api.get("/user/stats")
       return res.data
     },
     enabled: Boolean(getAuthToken()),
@@ -952,11 +939,11 @@ function DesktopPageRoutes({ className }: { className: string }) {
       <div className={className}>
         <SetupGate>
           <Routes>
-            <Route path="/" element={<Navigate to={hasAuthToken() ? "/chat" : "/login"} replace />} />
+            <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
             <Route path="/setup" element={<Setup />} />
             <Route path="/chat/*" element={<ProtectedRoute><AdvancedChat /></ProtectedRoute>} />
-            <Route path="/dashboard/*" element={<ProtectedRoute><DesktopDashboard /></ProtectedRoute>} />
+            <Route path="/dashboard/*" element={<Navigate to="/settings/channels" replace />} />
             <Route path="/settings/*" element={<ProtectedRoute><SettingsWorkspace /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to={hasAuthToken() ? "/chat" : "/login"} replace />} />
           </Routes>

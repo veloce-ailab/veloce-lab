@@ -13,7 +13,7 @@ import type { PublicSettings } from "@/lib/public-settings"
 import { withPublicSettingsDefaults } from "@/lib/public-settings"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -21,7 +21,7 @@ import { PageInlineSlot, PageTitleSlot } from "@/components/layout/PageTitleSlot
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
 
-interface UserChannelCatalog {
+interface UpstreamChannelCatalog {
   id: number
   name: string
   models: string[]
@@ -523,10 +523,6 @@ interface ParsedSSEEvent {
   payload: any
 }
 
-const sessionsStoreKey = "windypear.chat.sessions.v1"
-const legacyMessagesStoreKey = "windypear.chat.messages.v1"
-const selectedSessionStoreKey = "windypear.chat.selected_session.v1"
-const modelStoreKey = "windypear.chat.model.v1"
 const selectedAgentStoreKey = "windypear.advanced_chat.selected_agent.v1"
 const recentAgentStoreKey = "windypear.advanced_chat.recent_agents.v1"
 const sessionFoldersStorageKey = "windypear.chat.session_folders.v1"
@@ -596,7 +592,7 @@ export default function Chat() {
   const taskChangeCopy = useMemo(() => (language === "zh" ? zhTaskChangeCopy : enTaskChangeCopy), [language])
   const sessionSidebarCopy = useMemo(() => (language === "zh" ? zhSessionSidebarCopy : enSessionSidebarCopy), [language])
   const { error, success } = useToast()
-  const [sessions, setSessions] = useState<ChatSession[]>(() => (variant === "advanced" ? [] : readStoredSessions(storeKeys.sessions, true)))
+  const [sessions, setSessions] = useState<ChatSession[]>([])
   const [draftSession, setDraftSession] = useState<ChatSession>(() => createSession())
   const [storedActiveSessionID, setStoredActiveSessionID] = useState(() => localStorage.getItem(storeKeys.selectedSession) || "")
   const activeSessionID = isAdvanced ? routeSessionID : storedActiveSessionID
@@ -690,7 +686,7 @@ export default function Chat() {
   const [sharedSessionPoolID, setSharedSessionPoolID] = useState("")
   const [loadedSharedSession, setLoadedSharedSession] = useState<ChatSession | null>(null)
 
-  const { data: catalog = [] } = useQuery<UserChannelCatalog[]>({
+  const { data: catalog = [] } = useQuery<UpstreamChannelCatalog[]>({
     queryKey: ["catalog"],
     queryFn: async () => {
       const res = await api.get("/user/catalog")
@@ -1033,22 +1029,16 @@ export default function Chat() {
     }
   }, [isDesktop, language, pendingConnectorApprovals])
   const activeModelName = isAdvanced ? currentSession?.model_name || selectedAgent?.default_model || modelName : modelName
+  const selectedUserChannel = useMemo(
+    () => catalog.find((channel) => channel.id === selectedUserChannelID) || catalog[0],
+    [catalog, selectedUserChannelID]
+  )
   const channelModelOptions = useMemo(() => {
-    const channelID = currentSession?.user_channel_id || selectedAgent?.user_channel_id || 0
-    const channel = channelID ? catalog.find((item) => item.id === channelID) : undefined
-    return channel ? channel.models : modelOptions
-  }, [catalog, currentSession?.user_channel_id, modelOptions, selectedAgent?.user_channel_id])
+    return selectedUserChannel ? selectedUserChannel.models : modelOptions
+  }, [modelOptions, selectedUserChannel])
   const modelSelectOptions = useMemo(
     () => activeModelName && !channelModelOptions.includes(activeModelName) ? [activeModelName, ...channelModelOptions] : channelModelOptions,
     [activeModelName, channelModelOptions]
-  )
-  const selectableUserChannels = useMemo(
-    () => catalog.filter((channel) => !activeModelName || channel.models.includes(activeModelName)),
-    [activeModelName, catalog]
-  )
-  const selectedUserChannel = useMemo(
-    () => selectableUserChannels.find((channel) => channel.id === selectedUserChannelID) || selectableUserChannels[0],
-    [selectableUserChannels, selectedUserChannelID]
   )
   const mcpServers = useMemo(() => {
     if (currentAdvancedSettings.mcp_servers.length > 0) {
@@ -2485,7 +2475,7 @@ export default function Chat() {
               session_id: session.id,
               title: nextTitle,
               model: activeRunMode === "agent_group" ? "" : resolvedModel,
-              user_channel_id: selectedUserChannel?.id || 0,
+              channel_id: selectedUserChannel?.id || 0,
               mode: activeRunMode,
               messages: advancedMessagePayload(nextMessages),
               agent_id: activeRunMode === "agent_group" ? "" : session.agent_id || defaultAgentID,
@@ -2530,7 +2520,7 @@ export default function Chat() {
               session_id: session.id,
               title: nextTitle,
               model: resolvedModel,
-              user_channel_id: selectedUserChannel?.id || 0,
+              channel_id: selectedUserChannel?.id || 0,
               mode: activeRunMode,
               messages: advancedMessagePayload(nextMessages),
               agent_id: session.agent_id || defaultAgentID,
@@ -2603,7 +2593,7 @@ export default function Chat() {
               session_id: session.id,
               title: nextTitle,
               model: resolvedModel,
-              user_channel_id: selectedUserChannel?.id || 0,
+              channel_id: selectedUserChannel?.id || 0,
               mode: activeRunMode,
               messages: advancedMessagePayload(nextMessages),
               agent_id: session.agent_id || defaultAgentID,
@@ -4515,13 +4505,16 @@ export default function Chat() {
                     <span className="font-medium">{copy.channel}</span>
                     <Select value={String((selectedUserChannel?.id || "") || "__shadcn_empty__")} onValueChange={(value) => {
                         const nextID = Number((value === "__shadcn_empty__" ? "" : value)) || 0
+                        const nextChannel = catalog.find((channel) => channel.id === nextID)
+                        const nextModel = nextChannel?.models.includes(activeModelName) ? activeModelName : nextChannel?.models[0] || ""
                         setSelectedUserChannelID(nextID)
+                        setModelName(nextModel)
                         if (currentSession) {
-                          updateSession(currentSession.id, (session) => ({ ...session, user_channel_id: nextID || undefined }), { persist: true })
+                          updateSession(currentSession.id, (session) => ({ ...session, user_channel_id: nextID || undefined, model_name: nextModel }), { persist: true })
                         }
                       }}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
-                      <SelectItem value="__shadcn_empty__">{selectableUserChannels.length ? copy.selectChannel : copy.noChannels}</SelectItem>
-                      {selectableUserChannels.map((channel) => (
+                      <SelectItem value="__shadcn_empty__">{catalog.length ? copy.selectChannel : copy.noChannels}</SelectItem>
+                      {catalog.map((channel) => (
                         <SelectItem key={channel.id} value={String(channel.id)}>
                           {channel.name}
                         </SelectItem>
@@ -4846,7 +4839,7 @@ export default function Chat() {
                   ) : false && currentSession?.cloud_sandbox_id ? (
                     <div className="grid grid-cols-[1fr_auto] gap-2 rounded-md border p-3">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{selectedCloudSandbox?.name || currentSession.cloud_sandbox_id}</div>
+                        <div className="truncate text-sm font-medium">{selectedCloudSandbox?.name || currentSession?.cloud_sandbox_id}</div>
                         <div className="mt-1 truncate text-xs text-muted-foreground">{selectedCloudSandbox?.image || copy.cloudSandbox}</div>
                         <div className="mt-1 text-xs text-primary">{copy.cloudSandbox}</div>
                       </div>
@@ -6345,40 +6338,6 @@ function isExternalHref(href: string) {
   return /^(https?:|mailto:)/i.test(href)
 }
 
-function readStoredSessions(storeKey = sessionsStoreKey, includeLegacy = true): ChatSession[] {
-  try {
-    const value = JSON.parse(localStorage.getItem(storeKey) || "[]")
-    const sessions = Array.isArray(value) ? value.map(normalizeSession).filter((session): session is ChatSession => Boolean(session)) : []
-    if (sessions.length > 0) {
-      return sessions
-    }
-  } catch {
-    // Ignore invalid browser storage and fall back to a new session.
-  }
-
-  const legacyMessages = includeLegacy ? readLegacyMessages() : []
-  if (legacyMessages.length > 0) {
-    const now = new Date().toISOString()
-    return [{
-      id: createID(),
-      title: "",
-      messages: legacyMessages,
-      run_mode: "chat",
-      skill_ids: [],
-      mcp_server_ids: [],
-		knowledge_base_ids: [],
-      connector_auto_approve: false,
-      connector_approval_mode: "manual",
-      connector_command_prefixes: [],
-      auto_compress_context: true,
-      disabled_tool_groups: [],
-      created_at: now,
-      updated_at: now,
-    }]
-  }
-  return []
-}
-
 function readRecentAgentIDs() {
   try {
     const value = JSON.parse(localStorage.getItem(recentAgentStoreKey) || "[]")
@@ -6416,15 +6375,6 @@ function readSessionFolderAssignments(): Record<string, string> {
     )
   } catch {
     return {}
-  }
-}
-
-function readLegacyMessages(): ChatMessage[] {
-  try {
-    const value = JSON.parse(localStorage.getItem(legacyMessagesStoreKey) || "[]")
-    return Array.isArray(value) ? value.map(normalizeMessage).filter((message): message is ChatMessage => Boolean(message)) : []
-  } catch {
-    return []
   }
 }
 
@@ -7801,11 +7751,11 @@ function sessionIDFromAdvancedChatPath(pathname: string) {
   }
 }
 
-function uniqueModels(catalog: UserChannelCatalog[]) {
+function uniqueModels(catalog: UpstreamChannelCatalog[]) {
   return Array.from(new Set(catalog.flatMap((channel) => channel.models))).sort()
 }
 
-function normalizeCatalogItem(value: unknown): UserChannelCatalog {
+function normalizeCatalogItem(value: unknown): UpstreamChannelCatalog {
   const item = isRecord(value) ? value : {}
   return {
     id: Number(item.id || 0),

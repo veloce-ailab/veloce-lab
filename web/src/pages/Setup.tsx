@@ -72,7 +72,7 @@ export default function Setup() {
       if (isDesktopTarget()) {
         navigate("/chat", { replace: true })
       } else {
-        window.location.href = "/dashboard"
+        window.location.href = "/chat"
       }
     },
     onError: (err) => error(err instanceof Error ? err.message : copy.failed),
