@@ -1,4 +1,4 @@
-import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, Globe2, Home, Laptop, Menu, MessageSquare, Send, SlidersHorizontal, Sparkles, UserCircle, Users } from "lucide-react"
+import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, Globe2, Home, Laptop, Menu, MessageSquare, MessageSquareText, Send, SlidersHorizontal, Sparkles, UserCircle, Users } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
@@ -17,6 +17,7 @@ import MessageChannels from "./MessageChannelsWorkspace"
 import AdvancedChatDeliveries from "./AdvancedChatDeliveries"
 import AdvancedChatScheduledTasks from "./AdvancedChatScheduledTasks"
 import AgentGroupsPage from "./AgentGroupsPage"
+import ChatGroups from "./ChatGroups"
 import Community from "./Community"
 import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
@@ -55,6 +56,7 @@ const advancedChatSidebarIconTones: Record<string, string> = {
   "/chat/channels": "bg-sky-500/15 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300",
   "/chat/deliveries": "bg-emerald-500/15 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300",
   "/chat/scheduled-tasks": "bg-amber-500/15 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300",
+  "/chat/groups": "bg-cyan-500/15 text-cyan-600 dark:bg-cyan-400/15 dark:text-cyan-300",
   "/chat/agents": "bg-purple-500/15 text-purple-600 dark:bg-purple-400/15 dark:text-purple-300",
   "/chat/memories": "bg-rose-500/15 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300",
   "/chat/skills": "bg-fuchsia-500/15 text-fuchsia-600 dark:bg-fuchsia-400/15 dark:text-fuchsia-300",
@@ -197,6 +199,7 @@ export default function AdvancedChat() {
                     {publicSettings.message_channel_enabled && <Route path="channels/*" element={<MessageChannels />} />}
                     <Route path="deliveries" element={<AdvancedChatDeliveries />} />
                     <Route path="scheduled-tasks" element={<AdvancedChatScheduledTasks />} />
+                    <Route path="groups" element={<ChatGroups />} />
                     <Route path="files" element={<AdvancedChatFiles />} />
                     <Route path="knowledge" element={<KnowledgeBases />} />
                     <Route path="memories" element={<AdvancedChatMemories />} />
@@ -226,7 +229,8 @@ function desktopPageTitle(pathname: string, language: string) {
   if (pathname === "/chat/memories") return zh ? "记忆" : "Memory"
   if (pathname.startsWith("/chat/channels")) return zh ? "消息通道" : "Message Channels"
   if (pathname === "/chat/deliveries") return zh ? "结果投递" : "Result Delivery"
-  if (pathname === "/chat/scheduled-tasks") return zh ? "计划任务" : "Scheduled Tasks"
+  if (pathname === "/chat/scheduled-tasks") return zh ? "任务" : "Tasks"
+  if (pathname === "/chat/groups") return zh ? "聊天群组" : "Chat Groups"
   if (pathname === "/chat/agents" || pathname.startsWith("/chat/agents/")) return zh ? "助理" : "Agents"
   if (pathname === "/chat/skills" || pathname.startsWith("/chat/skills/")) return zh ? "技能" : "Skills"
   if (pathname === "/chat/devices" || pathname.startsWith("/chat/devices/")) return zh ? "设备" : "Devices"
@@ -264,7 +268,7 @@ function AdvancedChatSidebar({
   const memoriesLabel = language === "zh" ? "记忆" : "Memory"
   const messageChannelsLabel = language === "zh" ? "消息通道" : "Message Channels"
   const deliveriesLabel = language === "zh" ? "结果投递" : "Result Delivery"
-  const scheduledTasksLabel = language === "zh" ? "计划任务" : "Scheduled Tasks"
+  const scheduledTasksLabel = language === "zh" ? "任务" : "Tasks"
   const agentGroupsLabel = language === "zh" ? "工作室" : "Agent Studios"
   const sitesLabel = language === "zh" ? "站点" : language === "ja" ? "サイト" : "Sites"
   const workflowLabel = language === "zh" ? "工作流" : language === "ja" ? "ワークフロー" : "Workflows"
@@ -277,6 +281,7 @@ function AdvancedChatSidebar({
   }
   const directItems: AdvancedChatSidebarItem[] = [
     { href: "/chat/community", label: language === "zh" ? "社区" : language === "ja" ? "コミュニティ" : "Community", icon: Users, active: location.pathname === "/chat/community" || location.pathname.startsWith("/chat/community/") },
+    { href: "/chat/groups", label: language === "zh" ? "聊天群组" : "Chat Groups", icon: MessageSquareText, active: location.pathname === "/chat/groups" },
     { href: "/chat/files", label: filesLabel, icon: FileText, active: location.pathname === "/chat/files" },
     { href: "/chat/knowledge", label: knowledgeLabel, icon: Database, active: location.pathname === "/chat/knowledge" },
     ...(user?.is_admin ? [{ href: "/settings/channels", label: language === "zh" ? "账户设置" : "Account Settings", icon: SlidersHorizontal, active: location.pathname.startsWith("/settings") }] : []),
