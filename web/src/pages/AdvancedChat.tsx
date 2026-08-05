@@ -353,7 +353,7 @@ function AdvancedChatSidebar({
 
   return (
     <aside className={cn("flex h-full w-56 flex-col border-r bg-card", className)}>
-      <nav className="relative min-h-0 flex-1 overflow-hidden px-4 py-4">
+      <nav className={cn("relative min-h-0 overflow-hidden px-4 py-4", homeItem.active ? "h-[18rem] shrink-0" : "flex-1")}>
         <div className={cn("h-full overflow-y-auto transition-transform duration-200 ease-out", showingGroup && "-translate-x-full")}>
           <div className="flex flex-col gap-1">
             {renderSidebarLink(homeItem)}
@@ -402,6 +402,7 @@ function AdvancedChatSidebar({
           )}
         </div>
       </nav>
+      {homeItem.active && <div id="chat-sessions-sidebar-slot" className="min-h-0 flex-1 border-t border-border" />}
     </aside>
   )
 }
