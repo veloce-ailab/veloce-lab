@@ -219,13 +219,13 @@ export default function AdvancedChatMemories() {
   }
 
   return (
-    <div className="min-h-[calc(100dvh-10rem)]">
+    <div className="flex h-full min-h-0 flex-col">
       <header className="flex min-h-14 items-center justify-between gap-3 border-b px-4">
         <div className="flex min-w-0 items-center gap-2.5"><Brain size={18} className="shrink-0 text-primary" /><div className="min-w-0"><h1 className="truncate text-sm font-semibold">{copy.title}</h1><p className="hidden truncate text-xs text-muted-foreground sm:block">{copy.subtitle}</p></div></div>
         <div className="flex shrink-0 gap-1.5"><Button size="icon" variant="ghost" disabled={memoriesQuery.isFetching} onClick={() => void memoriesQuery.refetch()} title={copy.refresh}><RefreshCw size={16} className={memoriesQuery.isFetching ? "animate-spin" : ""} /></Button><Button size="sm" className="gap-1.5" onClick={startNew}><Plus size={15} />{copy.newMemory}</Button></div>
       </header>
 
-      <div className="grid min-h-[calc(100dvh-13.5rem)] lg:grid-cols-[220px_280px_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[220px_280px_minmax(0,1fr)]">
         <aside className="border-b bg-muted/20 p-2 lg:border-b-0 lg:border-r">
           <div className="mb-2 px-2 pt-1 text-xs font-medium text-muted-foreground">{copy.memoryTypes}</div>
           <div className="grid grid-cols-2 gap-1 sm:grid-cols-4 lg:grid-cols-1">
@@ -238,14 +238,14 @@ export default function AdvancedChatMemories() {
           <div className="mt-4 hidden rounded-md border bg-background p-3 lg:block"><div className="flex items-center justify-between text-xs text-muted-foreground"><span>{copy.storage}</span><span>{usage.percent}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{ width: `${usage.percent}%` }} /></div><div className="mt-2 text-xs text-muted-foreground">{formatBytes(usage.used)} / {formatBytes(usage.total)}</div></div>
         </aside>
 
-        <section className="min-h-0 border-b lg:border-b-0 lg:border-r">
+        <section className="min-h-0 flex flex-col border-b lg:border-b-0 lg:border-r">
           <div className="flex h-12 items-center justify-between border-b px-3"><div className="min-w-0"><div className="truncate text-sm font-medium">{selectedFilter === "all" ? copy.allMemories : (language === "zh" ? memoryKindMeta[selectedFilter].zh : memoryKindMeta[selectedFilter].en)}</div><div className="text-xs text-muted-foreground">{filteredMemories.length} {copy.items}</div></div><Button size="icon" variant="ghost" className="h-8 w-8" onClick={startNew} title={copy.newMemory}><Plus size={16} /></Button></div>
-          <div className="max-h-[34vh] overflow-y-auto p-2 lg:max-h-none lg:h-[calc(100dvh-16.5rem)]">
+          <div className="min-h-0 max-h-[34vh] flex-1 overflow-y-auto p-2 lg:max-h-none">
             {memoriesQuery.isLoading ? <div className="px-3 py-10 text-center text-sm text-muted-foreground">{copy.loading}</div> : filteredMemories.length === 0 ? <div className="px-3 py-10 text-center text-sm text-muted-foreground">{copy.emptyKind}</div> : <div className="space-y-1">{filteredMemories.map((memory) => <button key={memory.id} type="button" className={cn("w-full rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted", selectedID === memory.id && "bg-primary/10 text-primary")} onClick={() => setSelectedID(memory.id)}><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium">{memory.title || memoryKindLabel(memory.kind, language)}</span><span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", memory.enabled ? "bg-emerald-500" : "bg-muted-foreground/50")} /></div><div className="mt-1 truncate text-xs text-muted-foreground">{memory.scope === "global" ? copy.global : copy.agent}{memory.agent_id ? ` · ${memory.agent_id}` : ""}</div></button>)}</div>}
           </div>
         </section>
 
-        <section className="flex min-h-[460px] min-w-0 flex-col">
+        <section className="flex min-h-0 min-w-0 flex-col">
           {selectedMemory ? <>
             <div className="flex h-12 items-center justify-between gap-3 border-b px-4"><div className="min-w-0"><div className="truncate text-sm font-medium">{draft.title || memoryKindLabel(draft.kind, language)}</div><div className="truncate text-xs text-muted-foreground">{`${formatBytes(selectedMemory.size)} · ${copy.updatedBy} ${selectedMemory.updated_by || "-"}`}</div></div><label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"><Switch checked={draft.enabled} onCheckedChange={(checked) => setDraft((current) => ({ ...current, enabled: checked }))} />{draft.enabled ? copy.enabled : copy.disabled}</label></div>
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">

@@ -53,6 +53,7 @@ export default function SettingsWorkspace() {
   })
   const publicSettings = withPublicSettingsDefaults(settings)
   const copy = settingsWorkspaceCopy(language)
+  const isMemoryRoute = location.pathname === "/settings/memory"
 
   useEffect(() => {
     if (isDesktopTarget()) {
@@ -84,9 +85,9 @@ export default function SettingsWorkspace() {
           <button type="button" className="absolute inset-0 bg-black/35 backdrop-blur-sm transition-opacity duration-200" aria-label={copy.closeMenu} onClick={() => setIsSidebarOpen(false)} />
           <SettingsSidebar className={cn("relative z-50 h-full w-72 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")} pathname={location.pathname} copy={copy} user={user} onLogout={logout} onNavigate={() => setIsSidebarOpen(false)} />
         </div>
-        <main className={cn("min-h-0 flex-1 overflow-y-auto transition-[filter] duration-200", isSidebarOpen && "max-lg:blur-sm")}>
-          <div className="mx-auto w-full max-w-6xl p-4 sm:p-7 lg:p-10">
-            <PageTransition transitionKey={location.pathname} className="page-shell-transition">
+        <main className={cn("min-h-0 flex-1 transition-[filter] duration-200", isMemoryRoute ? "overflow-hidden" : "overflow-y-auto", isSidebarOpen && "max-lg:blur-sm")}>
+          <div className={cn("w-full", isMemoryRoute ? "h-full min-h-0" : "mx-auto max-w-6xl p-4 sm:p-7 lg:p-10")}>
+            <PageTransition transitionKey={location.pathname} className={cn("page-shell-transition", isMemoryRoute && "h-full min-h-0")}>
               <Routes>
                 <Route index element={<Navigate to="statistics" replace />} />
                 <Route path="statistics" element={<SettingsStatistics />} />
