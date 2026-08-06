@@ -3383,7 +3383,7 @@ export default function Chat() {
 
   const sessionsSidebar = (
     <aside
-      className="flex w-full min-w-0 max-w-full flex-col overflow-x-hidden bg-card text-foreground"
+      className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden bg-card text-foreground"
       onContextMenu={(event) => {
         if (event.defaultPrevented) {
           return
@@ -3424,7 +3424,7 @@ export default function Chat() {
           {copy.newSession}
         </Button>
       </div>
-      <div className="space-y-0.5 p-2">
+      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain p-2">
         {isAdvanced && enterpriseMode && sharedPools.length > 0 && (
           <div className="pb-3">
             <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">{language === "zh" ? "任务与部门会话" : "Task and department sessions"}</div>
@@ -3600,7 +3600,7 @@ export default function Chat() {
   })()
 
   return (
-    <div className={cn("flex min-w-0", isAdvanced && "h-full min-h-0")}>
+    <div className={cn("flex min-w-0", isAdvanced && "h-full min-h-0 overflow-hidden")}>
       {desktopSessionsSidebarPortal}
       {messageSelectionContextMenuPortal}
       {terminalWindow && (
@@ -3931,7 +3931,7 @@ export default function Chat() {
               </div>
             </div>
             <div className={cn(isAdvanced ? "relative flex min-h-0 flex-1 flex-col gap-3" : "space-y-4 p-6 pt-0")}>
-              <div ref={messagesViewportRef} className={cn(isAdvanced ? "min-h-0 flex-1 overflow-y-auto" : "min-h-[360px] space-y-3 rounded-md border p-3")} onContextMenu={handleMessageSelectionContextMenu}>
+              <div ref={messagesViewportRef} className={cn(isAdvanced ? "min-h-0 flex-1 overflow-y-auto overscroll-contain" : "min-h-[360px] space-y-3 rounded-md border p-3")} onContextMenu={handleMessageSelectionContextMenu}>
                 <div
                   className={cn(isAdvanced ? "mx-auto w-full max-w-3xl space-y-4 px-2 py-5 pb-36 sm:px-4" : "contents")}
                   style={isAdvanced && composerOverlayHeight > 0 ? { paddingBottom: Math.max(144, composerOverlayHeight + 28) } : undefined}
@@ -5011,7 +5011,7 @@ export default function Chat() {
       </div>
       {activeRunMode !== "chat" && (
         <aside className={cn(
-          "hidden h-full shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-muted/20 p-3 transition-[width,opacity,padding] duration-200 xl:flex",
+          "hidden h-full min-h-0 shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain border-l border-border bg-muted/20 p-3 transition-[width,opacity,padding] duration-200 xl:flex",
           isDesktopSessionsSidebarVisible ? "w-72 opacity-100" : "w-0 overflow-hidden border-l-0 p-0 opacity-0 pointer-events-none"
         )}>
           <div ref={setEnvironmentSidebarHost} className="shrink-0" />

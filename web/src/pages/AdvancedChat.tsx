@@ -352,9 +352,9 @@ function AdvancedChatSidebar({
   )
 
   return (
-    <aside className={cn("flex h-full w-56 flex-col overflow-x-hidden overflow-y-auto border-r bg-card", className)}>
-      <nav className={cn("relative shrink-0", !homeItem.active && "min-h-full")}>
-        <div className={cn("transition-transform duration-200 ease-out", showingGroup && "-translate-x-full")}>
+    <aside className={cn("flex h-full min-h-0 w-56 flex-col overflow-hidden border-r bg-card", className)}>
+      <nav className={cn("relative min-h-0 flex-1 overflow-y-auto overscroll-contain", !homeItem.active && "min-h-full")}>
+        <div className={cn("transition-transform duration-200 ease-out", homeItem.active && "flex min-h-full flex-col", showingGroup && "-translate-x-full")}>
           <div className="flex flex-col gap-1 px-3 py-3">
             {renderSidebarLink(homeItem)}
             {directItems.map((item) => renderSidebarLink(item))}
@@ -380,7 +380,7 @@ function AdvancedChatSidebar({
               )
             })}
           </div>
-          {homeItem.active && <div id={sessionSlotID} className="border-t border-border" />}
+          {homeItem.active && <div id={sessionSlotID} className="min-h-0 flex-1 border-t border-border" />}
         </div>
         <div className={cn("absolute inset-x-0 top-0 px-3 py-3 transition-transform duration-200 ease-out", showingGroup ? "translate-x-0" : "translate-x-full")}>
           {activeGroup && (
