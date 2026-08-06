@@ -479,9 +479,9 @@ function browserToolbarHTML() {
 
 function veloceDataDir() {
   if (process.platform === "win32") {
-    return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Veloce")
+    return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), desktopInternalName)
   }
-  return path.join(os.homedir(), ".veloce")
+  return path.join(os.homedir(), desktopInternalName)
 }
 
 function builtinServerConfigPath() {
