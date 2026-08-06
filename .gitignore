@@ -3,7 +3,6 @@ flai.exe
 flai.exe~
 /dist/
 /docs/
-/app/
 /ref/
 # Desktop Electron app is part of the repository.
 /data/
