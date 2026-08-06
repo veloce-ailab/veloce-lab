@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/toast"
 import api from "@/lib/api"
 
-type SystemSection = "general" | "advancedChat"
+type SystemSection = "general" | "proxy" | "channels" | "storage" | "about" | "advancedChat"
 
 interface SystemSettings {
   message_channel_enabled: boolean
@@ -27,10 +27,10 @@ export default function SystemManagement({ section = "general" }: { section?: Sy
   if (section === "advancedChat") {
     return <AdvancedChatSettings />
   }
-  return <GeneralSettings />
+  return <GeneralSettings section={section} />
 }
 
-function GeneralSettings() {
+function GeneralSettings({ section }: { section: Exclude<SystemSection, "advancedChat"> }) {
   const queryClient = useQueryClient()
   const { success, error } = useToast()
   const [form, setForm] = useState<SystemSettings>(defaults)
@@ -78,14 +78,16 @@ function GeneralSettings() {
     onError: (cause: unknown) => error(apiError(cause)),
   })
 
+  const page = section === "proxy" ? { title: "网络代理", description: "配置群组和模型上游请求使用的网络代理。" } : section === "channels" ? { title: "消息通道", description: "控制外部消息通道和群组消息的处理能力。" } : section === "storage" ? { title: "数据存储", description: "查看使用记录、记忆与会话数据的存储状态。" } : section === "about" ? { title: "软件信息", description: "查看当前服务端和桌面端构建版本。" } : { title: "系统设置", description: "管理网络、消息通道、存储与运行环境。" }
+  const shows = (name: Exclude<SystemSection, "advancedChat" | "general">) => section === "general" || section === name
   return (
     <div className="mx-auto max-w-5xl space-y-7 pb-10">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b pb-6">
-        <div><div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><SlidersHorizontal size={14} />系统 / 设置</div><h1 className="text-3xl font-semibold tracking-tight">系统设置</h1><p className="mt-2 text-sm text-muted-foreground">管理网络、消息通道、存储与运行环境。</p></div>
+        <div><div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><SlidersHorizontal size={14} />系统 / 设置</div><h1 className="text-3xl font-semibold tracking-tight">{page.title}</h1><p className="mt-2 text-sm text-muted-foreground">{page.description}</p></div>
         <Button className="gap-2" disabled={save.isPending || settings.isLoading} onClick={() => save.mutate()}><Save size={16} />保存更改</Button>
       </div>
 
-      <SettingGroup icon={<Globe2 size={18} />} title="网络代理" description="所有模型上游请求使用的全局代理。">
+      {shows("proxy") && <><SettingGroup icon={<Globe2 size={18} />} title="网络代理" description="所有模型上游请求使用的全局代理。">
         <SettingRow title="启用代理" description="开启后通过代理服务器访问外部网络"><Switch checked={proxyEnabled} onCheckedChange={setProxyEnabled} /></SettingRow>
         <div className="space-y-5 border-t px-5 py-5">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="text-sm font-medium">代理类型</div><p className="mt-1 text-xs text-muted-foreground">选择代理服务器支持的协议。</p></div><div className="flex rounded-md border p-1">{(["http", "https", "socks5"] as const).map((type) => <button type="button" key={type} onClick={() => setProxyType(type)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${proxyType === type ? "rounded bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{type.toUpperCase()}</button>)}</div></div>
@@ -96,24 +98,24 @@ function GeneralSettings() {
       <SettingGroup icon={<KeyRound size={18} />} title="代理认证" description="代理服务器需要账号密码时填写。">
         <SettingRow title="需要认证" description="使用代理用户名和密码建立连接"><Switch checked={proxyAuthEnabled} disabled={!proxyEnabled} onCheckedChange={setProxyAuthEnabled} /></SettingRow>
         {proxyAuthEnabled && <div className="grid gap-4 border-t px-5 py-5 sm:grid-cols-2"><Field label="用户名"><Input value={proxyUsername} disabled={!proxyEnabled} onChange={(event) => setProxyUsername(event.target.value)} /></Field><Field label="密码"><Input type="password" value={proxyPassword} disabled={!proxyEnabled} onChange={(event) => setProxyPassword(event.target.value)} /></Field></div>}
-      </SettingGroup>
+      </SettingGroup></>}
 
-      <SettingGroup icon={<Wifi size={18} />} title="消息通道" description="控制外部消息通道和群组消息的处理能力.">
+      {shows("channels") && <SettingGroup icon={<Wifi size={18} />} title="消息通道" description="控制外部消息通道和群组消息的处理能力。">
         <SettingRow title="启用消息通道" description="允许通过已配置的消息平台收发消息"><Switch checked={form.message_channel_enabled} onCheckedChange={(checked) => setForm({ ...form, message_channel_enabled: checked })} /></SettingRow>
-      </SettingGroup>
+      </SettingGroup>}
 
-      <SettingGroup icon={<HardDrive size={18} />} title="数据与存储" description="运行日志、Token 记录和会话数据的保存策略。">
+      {shows("storage") && <SettingGroup icon={<HardDrive size={18} />} title="数据与存储" description="运行日志、Token 记录和会话数据的保存策略。">
         <SettingRow title="Token 使用记录" description="用于统计页面的用量与费用图表"><span className="text-sm text-emerald-600">已启用</span></SettingRow>
         <SettingRow title="记忆模块" description="聊天记忆和助理上下文由系统统一管理"><span className="text-sm text-emerald-600">正常</span></SettingRow>
-      </SettingGroup>
+      </SettingGroup>}
 
-      <SettingGroup icon={<ShieldCheck size={18} />} title="软件信息" description="当前服务端和桌面端构建版本。">
+      {shows("about") && <SettingGroup icon={<ShieldCheck size={18} />} title="软件信息" description="当前服务端和桌面端构建版本。">
         <SettingRow title="后端版本" description="服务端 API 构建版本"><span className="font-mono text-sm">{form.backend_version || "dev"}</span></SettingRow>
         <SettingRow title="Desktop 前端版本" description="Electron 应用内置 Web 前端版本"><span className="font-mono text-sm">{import.meta.env.VITE_APP_VERSION || "0.1.0"}</span></SettingRow>
         <SettingRow title="站点名称" description="产品名称固定为 Veloce"><span className="text-sm text-muted-foreground">Veloce</span></SettingRow>
-      </SettingGroup>
+      </SettingGroup>}
 
-      <div className="flex items-start gap-3 rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground"><Info size={17} className="mt-0.5 shrink-0" /><p>代理配置保存后立即对新的上游请求生效。修改后如仍无法连接，请检查地址、端口和代理协议。</p></div>
+      {shows("proxy") && <div className="flex items-start gap-3 rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground"><Info size={17} className="mt-0.5 shrink-0" /><p>代理配置保存后立即对新的上游请求生效。修改后如仍无法连接，请检查地址、端口和代理协议。</p></div>}
     </div>
   )
 }
