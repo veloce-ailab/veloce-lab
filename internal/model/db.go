@@ -412,6 +412,7 @@ func EnsureDefaultSystemSettings() error {
 	}
 	defaults := map[string]string{
 		"site_name":                                  "Veloce",
+		"http_proxy":                                 "",
 		"base_url":                                   "",
 		"icon_url":                                   "",
 		"footer_text":                                "",

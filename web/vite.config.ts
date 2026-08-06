@@ -20,9 +20,11 @@ const keepDistPlaceholder = (): Plugin => ({
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "")
   const isDesktop = env.VITE_APP_TARGET === "desktop"
+  const packageJSON = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf8")) as { version?: string }
 
   return {
     base: isDesktop ? "./" : "/",
+    define: { "import.meta.env.VITE_APP_VERSION": JSON.stringify(packageJSON.version || "0.0.0") },
     plugins: [tailwindcss(), react(), ...(isDesktop ? [] : [keepDistPlaceholder()])],
     build: {
       // Clean the output directory so stale hashed bundles never accumulate —

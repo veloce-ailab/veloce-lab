@@ -736,6 +736,7 @@ func Run() error {
 		userGroup.GET("/me", userAPI.GetMe)
 		userGroup.POST("/avatar", userAPI.UploadAvatar)
 		userGroup.GET("/catalog", channelAPI.Catalog)
+		userGroup.GET("/usage/statistics", statsAPI.GetUserUsageStatistics)
 		userGroup.GET("/passkeys", passkeyAPI.List)
 		userGroup.POST("/passkeys/register/options", passkeyAPI.BeginRegistration)
 		userGroup.POST("/passkeys/register", passkeyAPI.CompleteRegistration)

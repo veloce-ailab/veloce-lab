@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
-import { Bot, ChevronDown, ChevronRight, Database, Home, LogOut, MessageSquare, Settings as SettingsIcon, Shield, UserCircle } from "lucide-react"
+import { BarChart3, Bot, ChevronDown, ChevronRight, Database, Home, LogOut, MessageSquare, Settings as SettingsIcon, Shield, UserCircle } from "lucide-react"
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useState } from "react"
 import Settings, { type SettingsSection } from "./Settings"
 import Channels from "./Channels"
 import SystemManagement from "./SystemManagement"
+import SettingsStatistics from "./SettingsStatistics"
 import { AppHeader } from "@/components/layout/Layout"
 import { PageTransition } from "@/components/layout/PageTransition"
 import api, { apiURL, isDesktopTarget } from "@/lib/api"
@@ -81,7 +82,8 @@ export default function SettingsWorkspace() {
           <div className="mx-auto w-full max-w-6xl p-4 sm:p-7 lg:p-10">
             <PageTransition transitionKey={location.pathname} className="page-shell-transition">
               <Routes>
-                <Route index element={<Navigate to="profile" replace />} />
+                <Route index element={<Navigate to="statistics" replace />} />
+                <Route path="statistics" element={<SettingsStatistics />} />
                 <Route path="profile" element={<Settings section="profile" />} />
                 <Route path="assistant" element={<Settings section="assistant" />} />
                 <Route path="security" element={<Settings section="security" />} />
@@ -112,6 +114,7 @@ function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate
       id: "general",
       label: copy.general,
       items: [
+        { href: "/settings/statistics", label: copy.statistics, icon: BarChart3 },
         { href: "/settings/profile", section: "profile", label: copy.account, icon: UserCircle },
         { href: "/settings/assistant", section: "assistant", label: copy.assistant, icon: Bot },
         { href: "/settings/security", section: "security", label: copy.security, icon: Shield },
@@ -178,9 +181,9 @@ function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate
 }
 
 function settingsWorkspaceCopy(language: string) {
-  if (language === "zh") return { title: "设置", account: "账户", assistant: "助手", security: "安全", channels: "上级渠道", system: "系统", chatSettings: "聊天设置", general: "通用", chatCategory: "聊天与模型", systemCategory: "系统管理", chat: "聊天", signOut: "退出登录", openMenu: "打开设置菜单", closeMenu: "关闭设置菜单" }
-  if (language === "ja") return { title: "設定", account: "アカウント", assistant: "アシスタント", security: "セキュリティ", channels: "上流チャネル", system: "システム", chatSettings: "チャット設定", general: "一般", chatCategory: "チャットとモデル", systemCategory: "システム管理", chat: "チャット", signOut: "ログアウト", openMenu: "設定メニューを開く", closeMenu: "設定メニューを閉じる" }
-  return { title: "Settings", account: "Account", assistant: "Assistant", security: "Security", channels: "Upstream Channels", system: "System", chatSettings: "Chat Settings", general: "General", chatCategory: "Chat and models", systemCategory: "System", chat: "Chat", signOut: "Sign out", openMenu: "Open settings menu", closeMenu: "Close settings menu" }
+  if (language === "zh") return { title: "设置", statistics: "统计信息", account: "账户", assistant: "助手", security: "安全", channels: "上级渠道", system: "系统", chatSettings: "聊天设置", general: "通用", chatCategory: "聊天与模型", systemCategory: "系统管理", chat: "聊天", signOut: "退出登录", openMenu: "打开设置菜单", closeMenu: "关闭设置菜单" }
+  if (language === "ja") return { title: "設定", statistics: "統計", account: "アカウント", assistant: "アシスタント", security: "セキュリティ", channels: "上流チャネル", system: "システム", chatSettings: "チャット設定", general: "一般", chatCategory: "チャットとモデル", systemCategory: "システム管理", chat: "チャット", signOut: "ログアウト", openMenu: "設定メニューを開く", closeMenu: "設定メニューを閉じる" }
+  return { title: "Settings", statistics: "Statistics", account: "Account", assistant: "Assistant", security: "Security", channels: "Upstream Channels", system: "System", chatSettings: "Chat Settings", general: "General", chatCategory: "Chat and models", systemCategory: "System", chat: "Chat", signOut: "Sign out", openMenu: "Open settings menu", closeMenu: "Close settings menu" }
 }
 
 function avatarInitials(value: string) {
@@ -192,6 +195,7 @@ function avatarInitials(value: string) {
 function desktopSettingsTitle(pathname: string, language: string) {
   const zh = language === "zh"
   if (pathname === "/settings/assistant") return zh ? "助手设置" : "Assistant settings"
+  if (pathname === "/settings/statistics") return zh ? "统计信息" : "Statistics"
   if (pathname === "/settings/security") return zh ? "安全设置" : "Security settings"
   if (pathname === "/settings/channels") return zh ? "上级渠道" : "Upstream channels"
   if (pathname === "/settings/system") return zh ? "系统设置" : "System settings"

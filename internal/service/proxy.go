@@ -2213,8 +2213,19 @@ func (s *ProxyService) doUpstreamRequest(prepared preparedUpstreamRequest, chann
 	for key, values := range prepared.Header {
 		req.Header[key] = values
 	}
+	baseTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		baseTransport = &http.Transport{Proxy: http.ProxyFromEnvironment}
+	}
+	transport := baseTransport.Clone()
+	if rawProxy := strings.TrimSpace(model.GetSystemSetting("http_proxy", "")); rawProxy != "" {
+		if proxyURL, parseErr := url.Parse(rawProxy); parseErr == nil && proxyURL.Host != "" && (proxyURL.Scheme == "http" || proxyURL.Scheme == "https") {
+			transport.Proxy = http.ProxyURL(proxyURL)
+		}
+	}
 	client := &http.Client{
-		Timeout: 60 * time.Second,
+		Timeout:   60 * time.Second,
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if err := ValidateConfiguredHTTPURL(req.URL.String()); err != nil {
 				return err

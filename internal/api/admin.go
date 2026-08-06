@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -156,6 +157,8 @@ type configurationModelConfig struct {
 }
 
 type systemSettingsResponse struct {
+	BackendVersion                       string `json:"backend_version"`
+	HTTPProxy                            string `json:"http_proxy"`
 	Edition                              string `json:"edition"`
 	SystemMode                           string `json:"system_mode"`
 	EnterpriseFeaturesEnabled            bool   `json:"enterprise_features_enabled"`
@@ -340,6 +343,7 @@ type systemSettingsResponse struct {
 }
 
 type systemSettingsInput struct {
+	HTTPProxy                            *string `json:"http_proxy"`
 	SystemMode                           *string `json:"system_mode"`
 	SiteName                             *string `json:"site_name"`
 	BaseURL                              *string `json:"base_url"`
@@ -1013,8 +1017,21 @@ func (api *SystemAPI) UpdateSettings(c *gin.Context) {
 			}
 		}
 	}
+	var httpProxyValue *string
+	if input.HTTPProxy != nil {
+		proxy := strings.TrimSpace(*input.HTTPProxy)
+		if proxy != "" {
+			parsed, err := url.Parse(proxy)
+			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "HTTP proxy must be an http or https URL"})
+				return
+			}
+		}
+		httpProxyValue = &proxy
+	}
 
 	stringSettings := map[string]*string{
+		"http_proxy":                               httpProxyValue,
 		"base_url":                                 input.BaseURL,
 		"footer_text":                              input.FooterText,
 		"about_html":                               input.AboutHTML,
@@ -1250,6 +1267,8 @@ func (api *SystemAPI) UpdateSettings(c *gin.Context) {
 
 func currentPublicSystemSettings() systemSettingsResponse {
 	return systemSettingsResponse{
+		BackendVersion:                       service.CurrentBuildVersion(),
+		HTTPProxy:                            "",
 		Edition:                              service.CurrentEdition(),
 		SystemMode:                           service.CurrentSystemMode(),
 		EnterpriseFeaturesEnabled:            service.EnterpriseFeaturesEnabled(),
@@ -1375,6 +1394,7 @@ func currentPublicSystemSettings() systemSettingsResponse {
 
 func currentAdminSystemSettings() systemSettingsResponse {
 	settings := currentPublicSystemSettings()
+	settings.HTTPProxy = settingString("http_proxy", "")
 	settings.OIDCIssuer = settingString("oidc_issuer", "")
 	settings.OIDCClientID = settingString("oidc_client_id", "")
 	settings.OIDCRedirectURL = settingString("oidc_redirect_url", "")
@@ -5015,6 +5035,54 @@ func (api *StatsAPI) GetUserLogs(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, paginatedResponse{Items: logs, Total: total, Page: page, PageSize: pageSize})
+}
+
+func (api *StatsAPI) GetUserUsageStatistics(c *gin.Context) {
+	user, ok := currentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	location := time.Local
+	now := time.Now().In(location)
+	to := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location).AddDate(0, 0, 1)
+	from := to.AddDate(0, 0, -30)
+	if raw := strings.TrimSpace(c.Query("from")); raw != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", raw, location)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid from date"})
+			return
+		}
+		from = parsed
+	}
+	if raw := strings.TrimSpace(c.Query("to")); raw != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", raw, location)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid to date"})
+			return
+		}
+		to = parsed.AddDate(0, 0, 1)
+	}
+	if !from.Before(to) || to.Sub(from) > 366*24*time.Hour {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Date range must be between 1 and 366 days"})
+		return
+	}
+	filter := model.TokenLogFilter{UserID: &user.ID, Since: &from, Until: func() *time.Time { value := to.Add(-time.Nanosecond); return &value }()}
+	summary, err := model.SummarizeTokenLogs(filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load usage statistics"})
+		return
+	}
+	series, err := model.SummarizeTokenLogsByDay(filter, location)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load usage statistics"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"from": from.Format("2006-01-02"), "to": to.Add(-time.Nanosecond).Format("2006-01-02"),
+		"summary": gin.H{"request_count": summary.RequestCount, "input_tokens": summary.InputTokens, "output_tokens": summary.OutputTokens, "cached_input_tokens": summary.CachedInputTokens, "total_tokens": summary.TotalTokens, "total_cost": summary.TotalCost},
+		"series":  series,
+	})
 }
 
 func (api *StatsAPI) GetDashboardStats(c *gin.Context) {
