@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { useMemo, useState } from "react"
 import api from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 
 type UsagePoint = { date: string; request_count: number; total_tokens: number; total_cost: string | number }
 type UsageResponse = { from: string; to: string; summary: { request_count: number; input_tokens: number; output_tokens: number; total_tokens: number; total_cost: string | number }; series: UsagePoint[] }
@@ -28,7 +29,7 @@ export default function SettingsStatistics() {
   return <div className="space-y-6">
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div><h1 className="text-2xl font-semibold">统计信息</h1><p className="mt-1 text-sm text-muted-foreground">查看你在当前时间范围内的调用量和费用。</p></div>
-      <div className="flex flex-wrap items-end gap-2"><label className="text-xs text-muted-foreground">开始日期<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="mt-1 block h-9 rounded-md border bg-background px-2 text-sm" /></label><label className="text-xs text-muted-foreground">结束日期<input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="mt-1 block h-9 rounded-md border bg-background px-2 text-sm" /></label><Button size="sm" onClick={apply}>筛选</Button></div>
+      <div className="flex flex-wrap items-end gap-2"><label className="text-xs text-muted-foreground">开始日期<Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="mt-1 block h-9" /></label><label className="text-xs text-muted-foreground">结束日期<Input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="mt-1 block h-9" /></label><Button size="sm" onClick={apply}>筛选</Button></div>
     </div>
     {usage.isError && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">统计信息加载失败。</div>}
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">

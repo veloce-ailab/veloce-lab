@@ -357,7 +357,7 @@ export default function Settings({ section = "profile" }: { section?: SettingsSe
                       >
                         <Camera size={15} />
                       </button>
-                      <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" className="hidden" onChange={selectAvatar} />
+                      <Input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" className="hidden" onChange={selectAvatar} />
                     </div>
                     <div className="min-w-0 space-y-1">
                       <div className="text-sm font-medium">{copy.avatar}</div>

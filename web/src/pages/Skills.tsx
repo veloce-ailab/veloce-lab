@@ -5,6 +5,7 @@ import { Link, useParams } from "react-router-dom"
 import api from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { PageInlineSlot, PageTitleSlot } from "@/components/layout/PageTitleSlot"
 import { useToast } from "@/components/ui/toast"
 import { useI18n } from "@/lib/i18n"
@@ -115,7 +116,7 @@ function SkillListPage() {
           <p className="mt-1 text-sm text-muted-foreground">上传后会自动拆成一个个独立 Skill，运行时按需读取 SKILL.md 和资源文件。</p>
         </div>
         <div>
-          <input
+          <Input
             ref={fileInputRef}
             type="file"
             accept=".zip,.tgz,.tar.gz,application/zip,application/gzip"

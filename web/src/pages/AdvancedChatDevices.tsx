@@ -307,7 +307,7 @@ export default function AdvancedChatDevices() {
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_9rem_1fr_auto]">
             <label className="space-y-1 text-sm">
               <span className="font-medium">{copy.deviceName}</span>
-              <input
+              <Input
                 className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                 value={deviceName}
                 onChange={(event) => {
@@ -333,7 +333,7 @@ export default function AdvancedChatDevices() {
             {deviceMode === "web_server" && (
               <label className="space-y-1 text-sm">
                 <span className="font-medium">{copy.listenPort}</span>
-                <input
+                <Input
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                   type="number"
                   min={1}
@@ -348,7 +348,7 @@ export default function AdvancedChatDevices() {
             )}
             <label className="space-y-1 text-sm">
               <span className="font-medium">Base URL</span>
-              <input className="h-10 w-full rounded-md border bg-muted px-3 text-sm text-muted-foreground" value={baseURL} readOnly />
+              <Input className="h-10 w-full bg-muted text-muted-foreground" value={baseURL} readOnly />
             </label>
             <div className="flex items-end">
               <Button className="w-full gap-2" onClick={createToken} disabled={isCreating}>
