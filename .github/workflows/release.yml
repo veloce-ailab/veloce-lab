@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   build-web:
@@ -237,6 +238,11 @@ jobs:
     needs: [build-binaries, build-desktop]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout release history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download binary assets
         uses: actions/download-artifact@v4
         with:
@@ -250,6 +256,96 @@ jobs:
           pattern: desktop-*
           merge-multiple: true
           path: release-assets
+
+      - name: Find previous release and collect commits
+        id: release-history
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          previous_tag="$(git describe --tags --match 'v*' --abbrev=0 "${RELEASE_TAG}^" 2>/dev/null || true)"
+          echo "previous_tag=${previous_tag}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$previous_tag" ]; then
+            release_range="${previous_tag}..${RELEASE_TAG}"
+          else
+            release_range="${RELEASE_TAG}"
+          fi
+
+          git rev-list "$release_range" > release-commit-shas.txt
+          git log --no-merges --pretty=format:'%H%x09%s' "$release_range" > release-commits.tsv
+
+      - name: Generate change summary
+        uses: actions/github-script@v7
+        env:
+          PREVIOUS_TAG: ${{ steps.release-history.outputs.previous_tag }}
+        with:
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const commitShas = new Set(
+              fs.readFileSync('release-commit-shas.txt', 'utf8')
+                .split(/\r?\n/)
+                .map((sha) => sha.trim())
+                .filter(Boolean),
+            );
+            const commits = fs.readFileSync('release-commits.tsv', 'utf8')
+              .split(/\r?\n/)
+              .filter(Boolean)
+              .map((line) => {
+                const separator = line.indexOf('\t');
+                return {
+                  sha: separator === -1 ? line : line.slice(0, separator),
+                  subject: separator === -1 ? '' : line.slice(separator + 1),
+                };
+              });
+
+            const pullRequests = await github.paginate(
+              github.rest.pulls.list,
+              {
+                owner,
+                repo,
+                state: 'closed',
+                sort: 'updated',
+                direction: 'desc',
+                per_page: 100,
+              },
+            );
+            const mergedPullRequests = pullRequests
+              .filter((pullRequest) =>
+                pullRequest.merged_at && commitShas.has(pullRequest.merge_commit_sha),
+              )
+              .sort((left, right) => left.merged_at.localeCompare(right.merged_at));
+
+            const lines = [
+              '## 变更内容',
+              '',
+              `自 ${process.env.PREVIOUS_TAG || '项目首个提交'} 以来的变更。`,
+              '',
+              '### Pull Requests',
+              '',
+            ];
+            if (mergedPullRequests.length === 0) {
+              lines.push('- 无');
+            } else {
+              for (const pullRequest of mergedPullRequests) {
+                const author = pullRequest.user?.login ? ` @${pullRequest.user.login}` : '';
+                lines.push(`- [#${pullRequest.number} ${pullRequest.title}](${pullRequest.html_url})${author}`);
+              }
+            }
+
+            lines.push('', '### 提交', '');
+            if (commits.length === 0) {
+              lines.push('- 无');
+            } else {
+              for (const commit of commits) {
+                const shortSha = commit.sha.slice(0, 7);
+                lines.push(`- [${shortSha}](https://github.com/${owner}/${repo}/commit/${commit.sha}) ${commit.subject}`);
+              }
+            }
+
+            fs.writeFileSync('release-notes.md', `${lines.join('\n')}\n`);
 
       - name: Package backend update archives
         shell: bash
@@ -284,7 +380,7 @@ jobs:
             rm "$file"
           done
 
-      - name: Generate categorized release notes
+      - name: Append categorized download links
         shell: bash
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -293,6 +389,7 @@ jobs:
         run: |
           base_url="${RELEASE_SERVER}/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}"
           {
+            echo
             echo "## 后端下载"
             echo
             for file in $(find release-assets -maxdepth 1 -type f \( -name 'flai-community-*.zip' -o -name 'flai-community-*.tar.gz' \) -printf '%f\n' | sort); do
@@ -310,7 +407,7 @@ jobs:
             for file in $(find release-assets -maxdepth 1 -type f -name 'veloce-lab-desktop-*' -printf '%f\n' | sort); do
               echo "- [${file}](${base_url}/${file})"
             done
-          } > release-notes.md
+          } >> release-notes.md
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
