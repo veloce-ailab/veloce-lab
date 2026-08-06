@@ -4,7 +4,7 @@ import type { ChangeEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNo
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
 import api, { apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
 import { ConnectorTerminalWindow, type ConnectorTerminalCopy } from "@/components/chat/ConnectorTerminalWindow"
@@ -2293,9 +2293,17 @@ export default function Chat() {
     }
   }
 
-  const runGitAction = async (action: "commit" | "push") => {
+  const runGitAction = async (action: "commit" | "push" | "rollback") => {
     if (!currentConnectorDeviceID || isGitActionSubmitting) {
       return
+    }
+    if (action === "rollback") {
+      const confirmed = window.confirm(language === "zh"
+        ? "确定回滚工作区吗？已跟踪文件的未提交修改将恢复到当前提交，未跟踪文件会保留。"
+        : "Roll back this workspace? Uncommitted changes to tracked files will be restored to HEAD. Untracked files will be kept.")
+      if (!confirmed) {
+        return
+      }
     }
     if (action === "commit" && !gitCommitMessage.trim()) {
       error(gitCopy.commitMessageRequired)
@@ -2315,6 +2323,7 @@ export default function Chat() {
       if (action === "commit") {
         setGitCommitMessage("")
       }
+      await gitStatusQuery.refetch()
     } catch (err) {
       error(apiErrorMessage(err, gitCopy.actionFailed))
     } finally {
@@ -3867,7 +3876,7 @@ export default function Chat() {
                           placeholder={gitCopy.commitMessage}
                           onChange={(event) => setGitCommitMessage(event.target.value)}
                         />
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                           <Button type="button" variant="outline" className="h-9 gap-2" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status)} onClick={() => void runGitAction("commit")}>
                             <FileDiff size={15} />
                             {gitCopy.commit}
@@ -3875,6 +3884,10 @@ export default function Chat() {
                           <Button type="button" className="h-9 gap-2" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status)} onClick={() => void runGitAction("push")}>
                             <Upload size={15} />
                             {gitCopy.push}
+                          </Button>
+                          <Button type="button" variant="outline" className="h-9 gap-2 text-destructive hover:text-destructive" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status) || gitStatusQuery.data?.clean} onClick={() => void runGitAction("rollback")}>
+                            <RotateCcw size={15} />
+                            {gitCopy.rollback}
                           </Button>
                         </div>
                       </div>
@@ -8628,6 +8641,7 @@ const zhGitWorkspaceCopy = {
   noComparison: "不比较分支",
   commit: "提交",
   push: "推送",
+  rollback: "回滚",
   commitMessage: "提交说明",
   commitMessageRequired: "请输入提交说明。",
   approve: "批准",
@@ -8666,6 +8680,7 @@ const enGitWorkspaceCopy: typeof zhGitWorkspaceCopy = {
   noComparison: "No comparison",
   commit: "Commit",
   push: "Push",
+  rollback: "Rollback",
   commitMessage: "Commit message",
   commitMessageRequired: "Enter a commit message.",
   approve: "Approve",

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Bot, Folder, FolderGit2, GitBranch, MessageCircle, Monitor, PanelRightOpen, Plus, RefreshCw, Send, Settings, Trash2, Users, X } from "lucide-react"
+import { ArrowLeft, Bot, Folder, FolderGit2, GitBranch, MessageCircle, Monitor, PanelRightOpen, Plus, RefreshCw, RotateCcw, Send, Settings, Trash2, Users, X } from "lucide-react"
 import api from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -523,6 +523,8 @@ function MemberConfigFields({ agentIDs, agents, catalog, configs, onChange, zh }
 }
 
 function GroupEnvironmentSidebar({ className, group, devices, zh }: { className?: string; group?: ChatGroup; devices: ConnectorDevice[]; zh: boolean }) {
+  const { success, error } = useToast()
+  const [isRollingBack, setIsRollingBack] = useState(false)
   const device = devices.find((item) => item.id === group?.connector_device_id)
   const canInspect = Boolean(group?.connector_device_id && group?.connector_workspace_path)
   const gitStatus = useQuery<GroupGitStatus>({
@@ -533,6 +535,39 @@ function GroupEnvironmentSidebar({ className, group, devices, zh }: { className?
   const gitCopy = zh
     ? { changes: "文件变更", clean: "工作目录干净，没有待提交改动。", untracked: "未跟踪文件，尚无 Git diff。", noDiff: "当前比较范围没有可展示的文本差异。", added: "新增", modified: "修改", deleted: "删除", renamed: "重命名" }
     : { changes: "File changes", clean: "Working tree is clean.", untracked: "Untracked file; no Git diff yet.", noDiff: "No text diff is available for this comparison.", added: "Added", modified: "Modified", deleted: "Deleted", renamed: "Renamed" }
+  const rollback = async () => {
+    if (!group?.connector_device_id || !group.connector_workspace_path || isRollingBack || gitStatus.data?.clean) return
+    const confirmed = window.confirm(zh
+      ? "确定回滚工作区吗？已跟踪文件的未提交修改将恢复到当前提交，未跟踪文件会保留。"
+      : "Roll back this workspace? Uncommitted changes to tracked files will be restored to HEAD. Untracked files will be kept.")
+    if (!confirmed) return
+    setIsRollingBack(true)
+    try {
+      const response = await api.post("/user/advanced-chat/workspace/git/action", {
+        connector_device_id: group.connector_device_id,
+        connector_workspace_path: group.connector_workspace_path,
+        approval_mode: "full_access",
+        action: "rollback",
+      })
+      const taskID = typeof response.data?.id === "string" ? response.data.id : ""
+      if (taskID) {
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 500))
+          const task = (await api.get(`/user/advanced-chat/connector-tasks/${encodeURIComponent(taskID)}`)).data as { status?: string; error_message?: string }
+          if (["completed", "failed"].includes(String(task.status || ""))) {
+            if (task.status === "failed") throw new Error(task.error_message || (zh ? "连接器任务失败" : "Connector task failed"))
+            break
+          }
+        }
+      }
+      await gitStatus.refetch()
+      success(zh ? "工作区已回滚" : "Workspace rolled back")
+    } catch (err) {
+      error(err instanceof Error ? err.message : (zh ? "工作区回滚失败" : "Failed to roll back workspace"))
+    } finally {
+      setIsRollingBack(false)
+    }
+  }
   return <aside className={cn("overflow-y-auto border-l bg-card", className)}>
     <div className="flex h-14 items-center justify-between border-b px-4"><span className="flex items-center gap-2 text-sm font-semibold"><FolderGit2 size={16} />{zh ? "环境信息" : "Environment"}</span><Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canInspect || gitStatus.isFetching} onClick={() => void gitStatus.refetch()} title={zh ? "刷新 Git 状态" : "Refresh Git status"}><RefreshCw size={15} className={gitStatus.isFetching ? "animate-spin" : ""} /></Button></div>
     <div className="space-y-4 p-3">
@@ -540,6 +575,10 @@ function GroupEnvironmentSidebar({ className, group, devices, zh }: { className?
       {!canInspect ? <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{zh ? "在群组设置中绑定设备和工作目录后，可在这里查看 Git 变更。" : "Bind a device and workspace in group settings to inspect Git changes here."}</div> : gitStatus.isLoading ? <div className="py-10 text-center text-sm text-muted-foreground">{zh ? "正在读取 Git 状态..." : "Loading Git status..."}</div> : gitStatus.isError ? <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{zh ? "无法读取 Git 状态。" : "Unable to read Git status."}</div> : <>
         <div className="rounded-md border p-3"><div className="flex items-center gap-2 text-sm font-medium"><GitBranch size={15} />{gitStatus.data?.current_branch || "-"}</div><div className="mt-2 flex items-center gap-2 text-xs tabular-nums"><span className="text-primary">+{gitStatus.data?.additions || 0}</span><span className="text-destructive">-{gitStatus.data?.deletions || 0}</span><span className="text-muted-foreground">{gitStatus.data?.changed_files || 0} {zh ? "个文件" : "files"}</span></div></div>
         <GitChangeList files={gitStatus.data?.files || []} clean={gitStatus.data?.clean} copy={gitCopy} />
+        <Button type="button" variant="outline" className="mt-3 h-9 w-full gap-2 text-destructive hover:text-destructive" disabled={isRollingBack || gitStatus.data?.clean} onClick={() => void rollback()}>
+          <RotateCcw size={15} />
+          {isRollingBack ? (zh ? "回滚中..." : "Rolling back...") : (zh ? "回滚工作区" : "Roll back workspace")}
+        </Button>
       </>}</div>
   </aside>
 }
