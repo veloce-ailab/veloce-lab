@@ -8,6 +8,7 @@ import api from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { PageInlineSlot, PageTitleSlot } from "@/components/layout/PageTitleSlot"
 import { useToast } from "@/components/ui/toast"
 import { useI18n } from "@/lib/i18n"
@@ -433,7 +434,7 @@ export default function Agents() {
             <div className="grid gap-4 md:grid-cols-3">
               <label className="space-y-1 text-sm">
                 <span className="font-medium">{t("common.name")}</span>
-                <input
+                <Input
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
                   value={name}
                   disabled={activeAgentID === defaultAgentID}
@@ -537,7 +538,7 @@ export default function Agents() {
             <div className="grid gap-4 md:grid-cols-3">
               <label className="space-y-1 text-sm">
                 <span className="font-medium">{t("common.name")}</span>
-                <input
+                <Input
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
                   value={createName}
                   onChange={(event) => setCreateName(event.target.value)}

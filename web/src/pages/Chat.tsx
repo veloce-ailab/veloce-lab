@@ -3006,7 +3006,7 @@ export default function Chat() {
             )}>
               <Paperclip size={15} />
               {isUploadingAttachments ? fileCopy.uploading : copy.addAttachment}
-              <input
+              <Input
                 className="sr-only"
                 type="file"
                 multiple
@@ -3859,7 +3859,7 @@ export default function Chat() {
 
                       <div className="space-y-2 border-t border-border/70 pt-3">
                         <label className="block text-xs font-medium text-muted-foreground" htmlFor="git-commit-message">{gitCopy.commitMessage}</label>
-                        <input
+                        <Input
                           id="git-commit-message"
                           className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-ring"
                           value={gitCommitMessage}
@@ -4237,7 +4237,7 @@ export default function Chat() {
           <div className="p-4">
             <label className="relative block">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
+              <Input
                 autoFocus
                 className="h-10 w-full rounded-md border border-border bg-background py-1 pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
                 value={sessionSearch}
@@ -4281,7 +4281,7 @@ export default function Chat() {
           <DialogHeader>
             <DialogTitle>{sessionSidebarCopy.newFolder}</DialogTitle>
           </DialogHeader>
-          <input
+          <Input
             autoFocus
             className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
             value={newSessionFolderName}
@@ -4565,7 +4565,7 @@ export default function Chat() {
                 <div className="space-y-4 rounded-md border p-3">
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">{copy.temperature}</span>
-                    <input
+                    <Input
                       className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                       type="number"
                       min={0}
@@ -4596,7 +4596,7 @@ export default function Chat() {
                   </label>
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">{copy.maxTokens}</span>
-                    <input
+                    <Input
                       className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                       type="number"
                       min={0}
@@ -4927,7 +4927,7 @@ export default function Chat() {
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">{copy.workspacePath}</span>
                       <div className="flex gap-2">
-                        <input
+                        <Input
                           className="h-10 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"
                           value={pendingConnectorWorkspace}
                           placeholder={copy.workspacePathPlaceholder}
@@ -5601,7 +5601,7 @@ function AskUserPromptCard({
       {(prompt.multiSelect || prompt.allowCustom) && (
         <div className="flex items-center gap-2">
           {prompt.allowCustom && (
-            <input
+            <Input
               value={customText}
               disabled={disabled}
               onChange={(event) => setCustomText(event.currentTarget.value)}
