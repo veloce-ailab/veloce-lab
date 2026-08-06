@@ -4772,7 +4772,7 @@ export default function Chat() {
                       {copy.sessionDevice}
                     </div>
                     <Button asChild variant="outline" size="sm">
-                      <Link to="/chat/devices">{copy.manageDevices}</Link>
+                      <Link to="/settings/devices">{copy.manageDevices}</Link>
                     </Button>
                   </div>
 
