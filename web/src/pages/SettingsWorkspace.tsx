@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { BarChart3, Bot, ChevronDown, ChevronRight, Database, Home, LogOut, MessageSquare, Settings as SettingsIcon, Shield, UserCircle } from "lucide-react"
+import { BarChart3, Bell, Bot, ChevronDown, ChevronRight, Database, FileKey2, Globe2, HardDrive, Home, KeyRound, LogOut, MessageSquare, Settings as SettingsIcon, Shield, UserCircle, WalletCards } from "lucide-react"
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useState } from "react"
 import Settings, { type SettingsSection } from "./Settings"
@@ -116,16 +116,28 @@ function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate
       items: [
         { href: "/settings/statistics", label: copy.statistics, icon: BarChart3 },
         { href: "/settings/profile", section: "profile", label: copy.account, icon: UserCircle },
-        { href: "/settings/assistant", section: "assistant", label: copy.assistant, icon: Bot },
         { href: "/settings/security", section: "security", label: copy.security, icon: Shield },
+        { href: "/settings/profile?section=billing", label: copy.billing, icon: WalletCards },
+        { href: "/settings/profile?section=notifications", label: copy.notifications, icon: Bell },
+      ],
+    },
+    {
+      id: "ai",
+      label: copy.aiCategory,
+      items: [
+        { href: "/settings/assistant", section: "assistant", label: copy.assistant, icon: Bot },
+        { href: "/settings/channels", label: copy.channels, icon: Database },
+        { href: "/settings/channels", label: copy.models, icon: Globe2 },
+        { href: "/settings/advanced-chat", label: copy.memory, icon: HardDrive },
       ],
     },
     {
       id: "chat",
       label: copy.chatCategory,
       items: [
-        { href: "/settings/channels", label: copy.channels, icon: Database },
         { href: "/settings/advanced-chat", label: copy.chatSettings, icon: MessageSquare },
+        { href: "/settings/security?section=credentials", label: copy.credentials, icon: KeyRound },
+        { href: "/settings/security?section=api-keys", label: copy.apiKeys, icon: FileKey2 },
       ],
     },
     {
@@ -181,9 +193,9 @@ function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate
 }
 
 function settingsWorkspaceCopy(language: string) {
-  if (language === "zh") return { title: "设置", statistics: "统计信息", account: "账户", assistant: "助手", security: "安全", channels: "上级渠道", system: "系统", chatSettings: "聊天设置", general: "通用", chatCategory: "聊天与模型", systemCategory: "系统管理", chat: "聊天", signOut: "退出登录", openMenu: "打开设置菜单", closeMenu: "关闭设置菜单" }
-  if (language === "ja") return { title: "設定", statistics: "統計", account: "アカウント", assistant: "アシスタント", security: "セキュリティ", channels: "上流チャネル", system: "システム", chatSettings: "チャット設定", general: "一般", chatCategory: "チャットとモデル", systemCategory: "システム管理", chat: "チャット", signOut: "ログアウト", openMenu: "設定メニューを開く", closeMenu: "設定メニューを閉じる" }
-  return { title: "Settings", statistics: "Statistics", account: "Account", assistant: "Assistant", security: "Security", channels: "Upstream Channels", system: "System", chatSettings: "Chat Settings", general: "General", chatCategory: "Chat and models", systemCategory: "System", chat: "Chat", signOut: "Sign out", openMenu: "Open settings menu", closeMenu: "Close settings menu" }
+  if (language === "zh") return { title: "设置", statistics: "统计信息", account: "账户", billing: "账单与余额", notifications: "通知", assistant: "AI 助手", security: "安全", channels: "AI 服务商", models: "服务模型", memory: "记忆设置", credentials: "认证设置", apiKeys: "凭证管理", system: "系统", chatSettings: "聊天设置", general: "通用", aiCategory: "智能体", chatCategory: "聊天", systemCategory: "系统", chat: "聊天", signOut: "退出登录", openMenu: "打开设置菜单", closeMenu: "关闭设置菜单" }
+  if (language === "ja") return { title: "設定", statistics: "統計", account: "アカウント", billing: "請求と残高", notifications: "通知", assistant: "AIアシスタント", security: "セキュリティ", channels: "AIサービス", models: "モデル", memory: "メモリ設定", credentials: "認証設定", apiKeys: "資格情報", system: "システム", chatSettings: "チャット設定", general: "一般", aiCategory: "エージェント", chatCategory: "チャット", systemCategory: "システム", chat: "チャット", signOut: "ログアウト", openMenu: "設定メニューを開く", closeMenu: "設定メニューを閉じる" }
+  return { title: "Settings", statistics: "Statistics", account: "Account", billing: "Billing and balance", notifications: "Notifications", assistant: "AI assistant", security: "Security", channels: "AI providers", models: "Models", memory: "Memory", credentials: "Authentication", apiKeys: "Credentials", system: "System", chatSettings: "Chat settings", general: "General", aiCategory: "Agents", chatCategory: "Chat", systemCategory: "System", chat: "Chat", signOut: "Sign out", openMenu: "Open settings menu", closeMenu: "Close settings menu" }
 }
 
 function avatarInitials(value: string) {

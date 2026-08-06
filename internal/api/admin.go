@@ -1022,8 +1022,8 @@ func (api *SystemAPI) UpdateSettings(c *gin.Context) {
 		proxy := strings.TrimSpace(*input.HTTPProxy)
 		if proxy != "" {
 			parsed, err := url.Parse(proxy)
-			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "HTTP proxy must be an http or https URL"})
+			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https" && parsed.Scheme != "socks5") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Proxy must be an http, https, or socks5 URL"})
 				return
 			}
 		}
