@@ -16,21 +16,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/veloce-ailab/veloce/internal/config"
 	"github.com/veloce-ailab/veloce/internal/model"
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 const (
 	memoryScopeGlobal = "global"
 	memoryScopeAgent  = "agent"
+	memoryScopeGroup  = "group"
 
 	memoryToolList   = "memory_list"
 	memoryToolRead   = "memory_read"
 	memoryToolUpsert = "memory_upsert"
 	memoryToolPatch  = "memory_patch"
 	memoryToolDelete = "memory_delete"
+
+	groupMemoryToolList   = "group_memory_list"
+	groupMemoryToolRead   = "group_memory_read"
+	groupMemoryToolUpsert = "group_memory_upsert"
+	groupMemoryToolPatch  = "group_memory_patch"
 
 	maxMemoryDocumentBytes    = 512 * 1024
 	maxMemoryReadBytes        = 200 * 1024
@@ -62,6 +68,7 @@ type AdvancedChatMemoryDocument struct {
 	User        model.User `gorm:"foreignKey:UserID" json:"-"`
 	Scope       string     `gorm:"size:20;uniqueIndex:idx_memory_user_scope_agent_kind;not null" json:"scope"`
 	AgentID     string     `gorm:"size:80;uniqueIndex:idx_memory_user_scope_agent_kind;not null;default:''" json:"agent_id"`
+	GroupID     string     `gorm:"size:80;index;not null;default:''" json:"group_id,omitempty"`
 	Kind        string     `gorm:"size:40;uniqueIndex:idx_memory_user_scope_agent_kind;not null" json:"kind"`
 	Title       string     `gorm:"size:160;not null" json:"title"`
 	StoragePath string     `gorm:"type:text;not null" json:"-"`
@@ -76,6 +83,7 @@ type AdvancedChatMemoryDocument struct {
 type memoryInput struct {
 	Scope   string `json:"scope"`
 	AgentID string `json:"agent_id"`
+	GroupID string `json:"group_id"`
 	Kind    string `json:"kind"`
 	Title   string `json:"title"`
 	Content string `json:"content"`
@@ -86,6 +94,7 @@ type memoryResponse struct {
 	ID        string    `json:"id"`
 	Scope     string    `json:"scope"`
 	AgentID   string    `json:"agent_id,omitempty"`
+	GroupID   string    `json:"group_id,omitempty"`
 	Kind      string    `json:"kind"`
 	Title     string    `json:"title"`
 	Size      int64     `json:"size"`
@@ -129,6 +138,10 @@ func RegisterMemoryHooks() {
 	RegisterAdvancedChatToolHandler(memoryToolUpsert, handleMemoryTool)
 	RegisterAdvancedChatToolHandler(memoryToolPatch, handleMemoryTool)
 	RegisterAdvancedChatToolHandler(memoryToolDelete, handleMemoryTool)
+	RegisterAdvancedChatToolHandler(groupMemoryToolList, handleGroupMemoryTool)
+	RegisterAdvancedChatToolHandler(groupMemoryToolRead, handleGroupMemoryTool)
+	RegisterAdvancedChatToolHandler(groupMemoryToolUpsert, handleGroupMemoryTool)
+	RegisterAdvancedChatToolHandler(groupMemoryToolPatch, handleGroupMemoryTool)
 }
 
 func (api *memoryAPI) list(c *gin.Context) {
@@ -183,6 +196,10 @@ func (api *memoryAPI) upsert(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if strings.EqualFold(strings.TrimSpace(input.Scope), memoryScopeGroup) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Group memories must be managed from their chat group"})
+		return
+	}
 	memory, status, message, err := upsertMemoryDocument(user.ID, input, "user")
 	if err != nil {
 		c.JSON(status, gin.H{"error": message})
@@ -227,6 +244,127 @@ func (api *memoryAPI) delete(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Memory deleted"})
+}
+
+func (api *advancedChatAPI) listChatGroupMemories(c *gin.Context) {
+	user, ok := currentAdvancedChatUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	groupID, ok := requireChatGroupMemoryAccess(c, user.ID)
+	if !ok {
+		return
+	}
+	memories, err := listGroupMemories(user.ID, groupID, true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list group memories"})
+		return
+	}
+	result := make([]memoryResponse, 0, len(memories))
+	for _, memory := range memories {
+		result = append(result, memoryResponseFromModel(memory))
+	}
+	c.JSON(http.StatusOK, gin.H{"memories": result})
+}
+
+func (api *advancedChatAPI) getChatGroupMemory(c *gin.Context) {
+	user, ok := currentAdvancedChatUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	groupID, ok := requireChatGroupMemoryAccess(c, user.ID)
+	if !ok {
+		return
+	}
+	memory, content, truncated, err := loadGroupMemoryContent(user.ID, groupID, c.Param("memory_id"), maxMemoryReadBytes)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": "Group memory not found"})
+		return
+	}
+	c.JSON(http.StatusOK, memoryContentResponse{memoryResponse: memoryResponseFromModel(memory), Content: content, Truncated: truncated})
+}
+
+func (api *advancedChatAPI) upsertChatGroupMemory(c *gin.Context) {
+	user, ok := currentAdvancedChatUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	groupID, ok := requireChatGroupMemoryAccess(c, user.ID)
+	if !ok {
+		return
+	}
+	var input memoryInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	memory, status, message, err := upsertGroupMemoryDocument(user.ID, groupID, input, "user")
+	if err != nil {
+		c.JSON(status, gin.H{"error": message})
+		return
+	}
+	c.JSON(http.StatusOK, memoryResponseFromModel(memory))
+}
+
+func (api *advancedChatAPI) updateChatGroupMemory(c *gin.Context) {
+	user, ok := currentAdvancedChatUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	groupID, ok := requireChatGroupMemoryAccess(c, user.ID)
+	if !ok {
+		return
+	}
+	var input memoryInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	memory, status, message, err := updateGroupMemoryDocument(user.ID, groupID, c.Param("memory_id"), input, "user")
+	if err != nil {
+		c.JSON(status, gin.H{"error": message})
+		return
+	}
+	c.JSON(http.StatusOK, memoryResponseFromModel(memory))
+}
+
+func (api *advancedChatAPI) deleteChatGroupMemory(c *gin.Context) {
+	user, ok := currentAdvancedChatUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	groupID, ok := requireChatGroupMemoryAccess(c, user.ID)
+	if !ok {
+		return
+	}
+	if err := deleteGroupMemoryDocument(user.ID, groupID, c.Param("memory_id")); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": "Failed to delete group memory"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Group memory deleted"})
+}
+
+func requireChatGroupMemoryAccess(c *gin.Context, userID uint) (string, bool) {
+	groupID := strings.TrimSpace(c.Param("id"))
+	var count int64
+	if groupID == "" || model.DB.Model(&AdvancedChatChatGroup{}).Where("id = ? AND user_id = ?", groupID, userID).Count(&count).Error != nil || count == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Chat group not found"})
+		return "", false
+	}
+	return groupID, true
 }
 
 func memoryRuntimeExtension(ctx context.Context, input AdvancedChatRuntimeContext) (AdvancedChatRuntimeExtension, error) {
@@ -420,7 +558,7 @@ func handleMemoryTool(ctx context.Context, input AdvancedChatToolCallInput) (str
 func listUserMemories(userID uint, rawScope string, rawAgentID string, includeDisabled bool) ([]AdvancedChatMemoryDocument, error) {
 	scope := normalizeMemoryScope(rawScope)
 	agentID := normalizeMemoryAgentID(rawAgentID)
-	query := model.DB.Where("user_id = ?", userID)
+	query := model.DB.Where("user_id = ? AND scope <> ?", userID, memoryScopeGroup)
 	if scope != "" {
 		query = query.Where("scope = ?", scope)
 	}
@@ -447,17 +585,150 @@ func runtimeMemories(userID uint, agentID string) ([]AdvancedChatMemoryDocument,
 	return memories, nil
 }
 
+func handleGroupMemoryTool(_ context.Context, input AdvancedChatToolCallInput) (string, error) {
+	member, err := loadChatGroupMemberForTool(input)
+	if err != nil {
+		return "", err
+	}
+	switch input.Name {
+	case groupMemoryToolList:
+		memories, err := runtimeGroupMemories(input.UserID, member.GroupID)
+		if err != nil {
+			return "", err
+		}
+		return memoriesJSON(memories, false)
+	case groupMemoryToolRead:
+		memory, content, truncated, err := loadGroupMemoryContent(input.UserID, member.GroupID, stringArg(input.Arguments, "memory_id"), maxMemoryReadBytes)
+		if err != nil {
+			return "", err
+		}
+		data, _ := json.Marshal(gin.H{"memory": memoryResponseFromModel(memory), "content": content, "truncated": truncated})
+		return string(data), nil
+	case groupMemoryToolUpsert:
+		memory, _, _, err := upsertGroupMemoryDocument(input.UserID, member.GroupID, memoryInput{
+			Kind:    stringArg(input.Arguments, "kind"),
+			Title:   stringArg(input.Arguments, "title"),
+			Content: stringArg(input.Arguments, "content"),
+		}, "assistant")
+		if err != nil {
+			return "", err
+		}
+		return "Group memory saved: " + memory.ID, nil
+	case groupMemoryToolPatch:
+		memory, content, _, err := loadGroupMemoryContent(input.UserID, member.GroupID, stringArg(input.Arguments, "memory_id"), maxMemoryDocumentBytes)
+		if err != nil {
+			return "", err
+		}
+		oldText := stringArg(input.Arguments, "old_text")
+		if oldText == "" || !strings.Contains(content, oldText) {
+			return "", errors.New("old_text was not found in group memory")
+		}
+		nextContent := strings.Replace(content, oldText, stringArg(input.Arguments, "new_text"), 1)
+		if _, _, _, err = updateGroupMemoryDocument(input.UserID, member.GroupID, memory.ID, memoryInput{Title: memory.Title, Content: nextContent}, "assistant"); err != nil {
+			return "", err
+		}
+		return "Group memory patched: " + memory.ID, nil
+	default:
+		return "", errors.New("unsupported group memory tool")
+	}
+}
+
+func groupMemoryTools() []ChatExecutorTool {
+	return []ChatExecutorTool{
+		{Name: groupMemoryToolList, Description: "List the shared Markdown memories available to every assistant in this chat group.", Schema: map[string]interface{}{"type": "object"}},
+		{Name: groupMemoryToolRead, Description: "Read a shared group memory document by id.", Schema: map[string]interface{}{"type": "object", "required": []string{"memory_id"}, "properties": map[string]interface{}{"memory_id": map[string]interface{}{"type": "string"}}}},
+		{Name: groupMemoryToolUpsert, Description: "Create or replace a durable shared group memory. Use it for group decisions, project context, and collaboration rules that every group member should know.", Schema: map[string]interface{}{"type": "object", "required": []string{"kind", "content"}, "properties": map[string]interface{}{"kind": map[string]interface{}{"type": "string", "enum": []string{"profile", "preferences", "facts", "projects", "rules", "scratch", "custom"}}, "title": map[string]interface{}{"type": "string"}, "content": map[string]interface{}{"type": "string"}}}},
+		{Name: groupMemoryToolPatch, Description: "Patch a shared group memory by replacing exact text.", Schema: map[string]interface{}{"type": "object", "required": []string{"memory_id", "old_text", "new_text"}, "properties": map[string]interface{}{"memory_id": map[string]interface{}{"type": "string"}, "old_text": map[string]interface{}{"type": "string"}, "new_text": map[string]interface{}{"type": "string"}}}},
+	}
+}
+
+func listGroupMemories(userID uint, groupID string, includeDisabled bool) ([]AdvancedChatMemoryDocument, error) {
+	groupID = normalizeMemoryGroupID(groupID)
+	if groupID == "" {
+		return nil, errors.New("group id is required")
+	}
+	query := model.DB.Where("user_id = ? AND scope = ? AND group_id = ?", userID, memoryScopeGroup, groupID)
+	if !includeDisabled {
+		query = query.Where("enabled = ?", true)
+	}
+	var memories []AdvancedChatMemoryDocument
+	if err := query.Order("kind ASC, updated_at DESC").Find(&memories).Error; err != nil {
+		return nil, err
+	}
+	return memories, nil
+}
+
+func runtimeGroupMemories(userID uint, groupID string) ([]AdvancedChatMemoryDocument, error) {
+	return listGroupMemories(userID, groupID, false)
+}
+
+func upsertGroupMemoryDocument(userID uint, groupID string, input memoryInput, updatedBy string) (AdvancedChatMemoryDocument, int, string, error) {
+	groupID = normalizeMemoryGroupID(groupID)
+	if groupID == "" {
+		return AdvancedChatMemoryDocument{}, http.StatusBadRequest, "Invalid chat group", errors.New("invalid group id")
+	}
+	input.Scope = memoryScopeGroup
+	input.GroupID = groupID
+	input.AgentID = groupID // Preserve the existing unique index while group_id is available for authorization and filtering.
+	return upsertMemoryDocument(userID, input, updatedBy)
+}
+
+func updateGroupMemoryDocument(userID uint, groupID, id string, input memoryInput, updatedBy string) (AdvancedChatMemoryDocument, int, string, error) {
+	var memory AdvancedChatMemoryDocument
+	if err := model.DB.Where("id = ? AND user_id = ? AND scope = ? AND group_id = ?", strings.TrimSpace(id), userID, memoryScopeGroup, normalizeMemoryGroupID(groupID)).First(&memory).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return AdvancedChatMemoryDocument{}, http.StatusNotFound, "Group memory not found", err
+		}
+		return AdvancedChatMemoryDocument{}, http.StatusInternalServerError, "Failed to load group memory", err
+	}
+	input.Scope = ""
+	input.AgentID = ""
+	input.GroupID = ""
+	return updateMemoryDocument(userID, memory.ID, input, updatedBy)
+}
+
+func deleteGroupMemoryDocument(userID uint, groupID, id string) error {
+	var memory AdvancedChatMemoryDocument
+	if err := model.DB.Where("id = ? AND user_id = ? AND scope = ? AND group_id = ?", strings.TrimSpace(id), userID, memoryScopeGroup, normalizeMemoryGroupID(groupID)).First(&memory).Error; err != nil {
+		return err
+	}
+	if err := model.DB.Where("id = ? AND user_id = ?", memory.ID, userID).Delete(&AdvancedChatMemoryDocument{}).Error; err != nil {
+		return err
+	}
+	_ = removeMemoryFile(memory.StoragePath)
+	return nil
+}
+
+func loadGroupMemoryContent(userID uint, groupID, id string, maxBytes int) (AdvancedChatMemoryDocument, string, bool, error) {
+	var memory AdvancedChatMemoryDocument
+	if err := model.DB.Where("id = ? AND user_id = ? AND scope = ? AND group_id = ?", strings.TrimSpace(id), userID, memoryScopeGroup, normalizeMemoryGroupID(groupID)).First(&memory).Error; err != nil {
+		return AdvancedChatMemoryDocument{}, "", false, err
+	}
+	content, err := readMemoryFile(memory.StoragePath, maxBytes)
+	if err != nil {
+		return AdvancedChatMemoryDocument{}, "", false, err
+	}
+	return memory, content, memory.Size > int64(maxBytes), nil
+}
+
 func upsertMemoryDocument(userID uint, input memoryInput, updatedBy string) (AdvancedChatMemoryDocument, int, string, error) {
 	scope := normalizeMemoryScope(input.Scope)
 	if scope == "" {
 		return AdvancedChatMemoryDocument{}, http.StatusBadRequest, "Invalid memory scope", errors.New("invalid scope")
 	}
 	agentID := ""
+	groupID := ""
 	if scope == memoryScopeAgent {
 		agentID = normalizeMemoryAgentID(input.AgentID)
 		if agentID == "" {
 			return AdvancedChatMemoryDocument{}, http.StatusBadRequest, "Agent id is required", errors.New("agent id required")
 		}
+	} else if scope == memoryScopeGroup {
+		groupID = normalizeMemoryGroupID(input.GroupID)
+		if groupID == "" {
+			return AdvancedChatMemoryDocument{}, http.StatusBadRequest, "Chat group is required", errors.New("group id required")
+		}
+		agentID = groupID
 	}
 	kind := normalizeMemoryKind(input.Kind)
 	if kind == "" {
@@ -492,7 +763,7 @@ func upsertMemoryDocument(userID uint, input memoryInput, updatedBy string) (Adv
 		enabled = *input.Enabled
 	}
 	data := []byte(content)
-	storagePath := memoryStoragePath(userID, scope, agentID, kind)
+	storagePath := memoryStoragePathForScope(userID, scope, agentID, groupID, kind)
 	tempPath, err := writeMemoryTemp(storagePath, data)
 	if err != nil {
 		return AdvancedChatMemoryDocument{}, http.StatusInternalServerError, "Failed to write memory", err
@@ -509,6 +780,7 @@ func upsertMemoryDocument(userID uint, input memoryInput, updatedBy string) (Adv
 		UserID:      userID,
 		Scope:       scope,
 		AgentID:     agentID,
+		GroupID:     groupID,
 		Kind:        kind,
 		Title:       truncateMemoryRunes(title, 160),
 		StoragePath: storagePath,
@@ -581,7 +853,7 @@ func updateMemoryDocument(userID uint, id string, input memoryInput, updatedBy s
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return AdvancedChatMemoryDocument{}, http.StatusInternalServerError, "Failed to check memory kind", err
 		}
-		memory.StoragePath = memoryStoragePath(userID, memory.Scope, memory.AgentID, nextKind)
+		memory.StoragePath = memoryStoragePathForScope(userID, memory.Scope, memory.AgentID, memory.GroupID, nextKind)
 	}
 	tempPath, err := writeMemoryTemp(memory.StoragePath, data)
 	if err != nil {
@@ -679,6 +951,7 @@ func memoryResponseFromModel(memory AdvancedChatMemoryDocument) memoryResponse {
 		ID:        memory.ID,
 		Scope:     memory.Scope,
 		AgentID:   memory.AgentID,
+		GroupID:   memory.GroupID,
 		Kind:      memory.Kind,
 		Title:     memory.Title,
 		Size:      memory.Size,
@@ -707,8 +980,15 @@ func memoryStorageUsedBytesWithDB(db *gorm.DB, userID uint) (int64, error) {
 }
 
 func memoryStoragePath(userID uint, scope string, agentID string, kind string) string {
+	return memoryStoragePathForScope(userID, scope, agentID, "", kind)
+}
+
+func memoryStoragePathForScope(userID uint, scope string, agentID string, groupID string, kind string) string {
 	if scope == memoryScopeAgent {
 		return path.Join("advanced-chat", "memories", fmt.Sprintf("%d", userID), "agents", sanitizePathPart(agentID), sanitizePathPart(kind)+".md")
+	}
+	if scope == memoryScopeGroup {
+		return path.Join("advanced-chat", "memories", fmt.Sprintf("%d", userID), "groups", sanitizePathPart(groupID), sanitizePathPart(kind)+".md")
 	}
 	return path.Join("advanced-chat", "memories", fmt.Sprintf("%d", userID), "global", sanitizePathPart(kind)+".md")
 }
@@ -808,6 +1088,8 @@ func normalizeMemoryScope(value string) string {
 		return memoryScopeGlobal
 	case memoryScopeAgent:
 		return memoryScopeAgent
+	case memoryScopeGroup:
+		return memoryScopeGroup
 	default:
 		return ""
 	}
@@ -823,6 +1105,10 @@ func normalizeMemoryKind(value string) string {
 }
 
 func normalizeMemoryAgentID(value string) string {
+	return sanitizePathPart(strings.TrimSpace(value))
+}
+
+func normalizeMemoryGroupID(value string) string {
 	return sanitizePathPart(strings.TrimSpace(value))
 }
 

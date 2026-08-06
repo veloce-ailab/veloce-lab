@@ -185,3 +185,32 @@ func TestGroupMembersKeepTheirMemoryScope(t *testing.T) {
 		t.Fatal("memory tools must remain available to group members")
 	}
 }
+
+func TestGroupMembersReceiveOnlyTheirSharedMemories(t *testing.T) {
+	setupChatGroupHistoryTestDB(t)
+	input := seedChatGroupHistory(t)
+	memories := []AdvancedChatMemoryDocument{
+		{ID: "group-memory-visible", UserID: input.UserID, Scope: memoryScopeGroup, AgentID: "group-1", GroupID: "group-1", Kind: "facts", Title: "Shared facts", StoragePath: "unused.md", Enabled: true},
+		{ID: "group-memory-hidden", UserID: input.UserID, Scope: memoryScopeGroup, AgentID: "group-2", GroupID: "group-2", Kind: "facts", Title: "Other facts", StoragePath: "unused.md", Enabled: true},
+	}
+	if err := model.DB.Create(&memories).Error; err != nil {
+		t.Fatalf("seed shared memories: %v", err)
+	}
+	extension, err := chatGroupRuntimeExtension(context.Background(), AdvancedChatRuntimeContext{UserID: input.UserID, Mode: advancedChatModeAssistant, SessionID: input.SessionID})
+	if err != nil {
+		t.Fatalf("load group extension: %v", err)
+	}
+	if !strings.Contains(extension.SystemPrompt, "group-memory-visible") || strings.Contains(extension.SystemPrompt, "group-memory-hidden") {
+		t.Fatalf("group memory scope leaked or was missing: %s", extension.SystemPrompt)
+	}
+	foundSharedMemoryTool := false
+	for _, tool := range extension.Tools {
+		if tool.Name == groupMemoryToolUpsert {
+			foundSharedMemoryTool = true
+			break
+		}
+	}
+	if !foundSharedMemoryTool {
+		t.Fatal("group assistants must receive shared memory tools")
+	}
+}

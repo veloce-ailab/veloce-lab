@@ -156,9 +156,22 @@ func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeConte
 			directory = append(directory, fmt.Sprintf("- %s: %s", item.AgentName, item.ID))
 		}
 	}
+	groupMemoryPrompt := ""
+	groupTools := []ChatExecutorTool{}
+	if !AdvancedChatMemoryToolsDisabled(input.DisabledToolGroups) {
+		groupMemories, err := runtimeGroupMemories(input.UserID, member.GroupID)
+		if err != nil {
+			return AdvancedChatRuntimeExtension{}, err
+		}
+		groupTools = groupMemoryTools()
+		groupMemoryPrompt = "\n\nThis group has no shared memories yet. Use group memory tools when a durable group decision, fact, project detail, or collaboration rule should be remembered."
+		if len(groupMemories) > 0 {
+			groupMemoryPrompt = "\n\nShared group memory is durable context for every assistant. Use group memory tools to read, add, or update decisions and facts that should persist for all members:\n" + memorySystemPrompt(groupMemories)
+		}
+	}
 	return AdvancedChatRuntimeExtension{
-		SystemPrompt: "Messaging rule: normal assistant text is private work output. Use send_group_message only for one useful public group message. Use send_private_message for a message visible only to one other assistant in this group. Use read_group_history to inspect recent public messages, read_private_history to inspect your private conversation with one other assistant, and search_group_history to find relevant public or private messages. History results are newest first. Both message tools can wait for replies; wait_forever ends this run until a later message wakes you. If the incoming message does not require any action or response, call stop_processing immediately to end this run and avoid a private-message loop. Do not publish internal reasoning, progress narration, acknowledgements, or irrelevant work.\n\nPrivate-message targets in this isolated group:\n" + strings.Join(directory, "\n"),
-		Tools: []ChatExecutorTool{{
+		SystemPrompt: "Messaging rule: normal assistant text is private work output. Use send_group_message only for one useful public group message. Use send_private_message for a message visible only to one other assistant in this group. Use read_group_history to inspect recent public messages, read_private_history to inspect your private conversation with one other assistant, and search_group_history to find relevant public or private messages. History results are newest first. Both message tools can wait for replies; wait_forever ends this run until a later message wakes you. If the incoming message does not require any action or response, call stop_processing immediately to end this run and avoid a private-message loop. Do not publish internal reasoning, progress narration, acknowledgements, or irrelevant work.\n\nPrivate-message targets in this isolated group:\n" + strings.Join(directory, "\n") + groupMemoryPrompt,
+		Tools: append([]ChatExecutorTool{{
 			Name:        chatGroupPostToolName,
 			Description: "Post one deliberate message to the current chat group. This is the only way your output becomes visible in the group and notifies other assistants.",
 			Schema: map[string]interface{}{
@@ -224,7 +237,7 @@ func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeConte
 					"reason": map[string]interface{}{"type": "string", "description": "Optional short internal reason for stopping; it is not sent to the group."},
 				},
 			},
-		}},
+		}}, groupTools...),
 	}, nil
 }
 
@@ -866,6 +879,11 @@ func (api *advancedChatAPI) deleteChatGroup(c *gin.Context) {
 			_, _, _, _ = stopAdvancedChatRun(member.RunID, user.ID)
 		}
 	}
+	groupMemories, err := listGroupMemories(user.ID, group.ID, true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load chat group memories"})
+		return
+	}
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("group_id = ? AND user_id = ?", group.ID, user.ID).Delete(&AdvancedChatPrivateMessage{}).Error; err != nil {
 			return err
@@ -879,10 +897,16 @@ func (api *advancedChatAPI) deleteChatGroup(c *gin.Context) {
 		if err := tx.Where("group_id = ? AND user_id = ?", group.ID, user.ID).Delete(&AdvancedChatChatGroupMember{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("user_id = ? AND scope = ? AND group_id = ?", user.ID, memoryScopeGroup, group.ID).Delete(&AdvancedChatMemoryDocument{}).Error; err != nil {
+			return err
+		}
 		return tx.Where("id = ? AND user_id = ?", group.ID, user.ID).Delete(&AdvancedChatChatGroup{}).Error
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete chat group"})
 		return
+	}
+	for _, memory := range groupMemories {
+		_ = removeMemoryFile(memory.StoragePath)
 	}
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }
