@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bot, Paperclip, Save, Server } from "lucide-react"
 import AdvancedChatManagement from "./AdvancedChatManagement"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -13,10 +14,13 @@ type SystemSection = "general" | "advancedChat"
 
 interface SystemSettings {
   message_channel_enabled: boolean
+  http_proxy: string
+  backend_version?: string
 }
 
 const defaults: SystemSettings = {
   message_channel_enabled: true,
+  http_proxy: "",
 }
 
 export default function SystemManagement({ section = "general" }: { section?: SystemSection }) {
@@ -65,7 +69,13 @@ function GeneralSettings() {
 
       <section className="grid gap-5 border-t pt-6">
         <Toggle label="启用消息通道" checked={form.message_channel_enabled} onChange={(checked) => setForm({ ...form, message_channel_enabled: checked })} />
+        <div className="max-w-2xl space-y-2">
+          <Label htmlFor="http-proxy">全局请求代理</Label>
+          <Input id="http-proxy" value={form.http_proxy} onChange={(event) => setForm({ ...form, http_proxy: event.target.value })} placeholder="http://127.0.0.1:7890" />
+          <p className="text-xs text-muted-foreground">用于模型上游及服务端外部请求，留空表示关闭。</p>
+        </div>
       </section>
+      <section className="border-t pt-6"><h2 className="text-lg font-semibold">软件信息</h2><div className="mt-3 grid max-w-2xl gap-2 text-sm sm:grid-cols-2"><div className="rounded-md border p-3"><div className="text-xs text-muted-foreground">后端版本</div><div className="mt-1 font-medium">{form.backend_version || "dev"}</div></div><div className="rounded-md border p-3"><div className="text-xs text-muted-foreground">Desktop 前端版本</div><div className="mt-1 font-medium">{import.meta.env.VITE_APP_VERSION || "0.1.0"}</div></div></div></section>
     </div>
   )
 }

@@ -1,0 +1,146 @@
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  WEB_REPOSITORY: veloce-ailab/veloce-web
+  COMMUNITY_REPOSITORY: veloce-ailab/veloce
+  CONNECTOR_REPOSITORY: veloce-ailab/veloce-app
+
+jobs:
+  build:
+    name: ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-latest
+            arch: x64
+            goos: linux
+            goarch: amd64
+          - os: linux
+            runner: ubuntu-latest
+            arch: arm64
+            goos: linux
+            goarch: arm64
+          - os: windows
+            runner: windows-latest
+            arch: x64
+            goos: windows
+            goarch: amd64
+          - os: windows
+            runner: windows-latest
+            arch: arm64
+            goos: windows
+            goarch: arm64
+          - os: mac
+            runner: macos-latest
+            arch: x64
+            goos: darwin
+            goarch: amd64
+          - os: mac
+            runner: macos-latest
+            arch: arm64
+            goos: darwin
+            goarch: arm64
+
+    steps:
+      - name: Checkout desktop
+        uses: actions/checkout@v4
+        with:
+          path: desktop
+          fetch-depth: 0
+
+      - name: Checkout shared web
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WEB_REPOSITORY }}
+          ref: ${{ github.ref_name }}
+          path: web
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
+
+      - name: Checkout community backend
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.COMMUNITY_REPOSITORY }}
+          ref: ${{ github.ref_name }}
+          path: community
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
+
+      - name: Checkout connector
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CONNECTOR_REPOSITORY }}
+          ref: ${{ github.ref_name }}
+          path: connector
+          token: ${{ secrets.CHECKOUT_TOKEN || github.token }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: community/go.mod
+          cache-dependency-path: community/go.sum
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Set package version
+        working-directory: desktop
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          npm version "$version" --no-git-tag-version
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Install web dependencies
+        working-directory: web
+        run: |
+          corepack enable
+          corepack yarn install --immutable
+
+      - name: Build desktop app
+        working-directory: desktop
+        env:
+          VELOCE_RUNTIME_GOOS: ${{ matrix.goos }}
+          VELOCE_RUNTIME_GOARCH: ${{ matrix.goarch }}
+          VELOCE_CONNECTOR_SOURCE: ../connector
+          VELOCE_RUNTIME_VERSION: ${{ github.ref_name }}
+        run: npm run build
+
+      # The bundled flai-community binary embeds web/dist via //go:embed.
+      # Fail fast if the web build did not produce it, otherwise the built-in
+      # server ships without a frontend and the desktop authorization page
+      # cannot load.
+      - name: Verify embedded frontend
+        shell: bash
+        run: |
+          test -f web/dist/index.html || { echo "web/dist/index.html is missing: the embedded frontend was not built before compiling the community backend"; exit 1; }
+          test -d web/dist/assets || { echo "web/dist/assets is missing: the embedded frontend build is incomplete"; exit 1; }
+          test -f desktop/dist/web/index.html || { echo "desktop/dist/web/index.html is missing: the desktop renderer bundle was not built"; exit 1; }
+
+      - name: Build installer
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --${{ matrix.os }} --${{ matrix.arch }} --publish never
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/release/*

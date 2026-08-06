@@ -943,7 +943,7 @@ function DesktopPageRoutes({ className }: { className: string }) {
             <Route path="/login" element={<Login />} />
             <Route path="/setup" element={<Setup />} />
             <Route path="/chat/*" element={<ProtectedRoute><AdvancedChat /></ProtectedRoute>} />
-            <Route path="/dashboard/*" element={<Navigate to="/settings/channels" replace />} />
+            <Route path="/dashboard/*" element={<Navigate to="/settings/statistics" replace />} />
             <Route path="/settings/*" element={<ProtectedRoute><SettingsWorkspace /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to={hasAuthToken() ? "/chat" : "/login"} replace />} />
           </Routes>

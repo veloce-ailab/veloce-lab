@@ -1,0 +1,78 @@
+{
+  "name": "veloce-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Veloce Desktop Beta",
+  "author": {
+    "name": "WindyPear Team",
+    "email": "fireguo@flweb.cn"
+  },
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "install:mirror": "node scripts/install-with-mirror.mjs",
+    "install:electron": "node scripts/install-electron-with-mirror.mjs",
+    "build:web": "npm --prefix ../web run build && npm --prefix ../web run build:desktop",
+    "build:runtimes": "node scripts/build-runtimes.mjs",
+    "build:electron": "tsc -p tsconfig.json",
+    "build": "npm run build:web && npm run build:runtimes && npm run build:electron",
+    "dist": "npm run build && electron-builder",
+    "start": "npm run build && electron ."
+  },
+  "build": {
+    "appId": "com.windypear.veloce.desktop.beta",
+    "productName": "Veloce Desktop Beta",
+    "artifactName": "Veloce-Desktop-Beta-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "icon": "assets/logo.png",
+      "maintainer": "WindyPear Team <fireguo@flweb.cn>"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "~6.0.2"
+  },
+  "allowScripts": {}
+}

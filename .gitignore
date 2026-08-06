@@ -5,7 +5,7 @@ flai.exe~
 /docs/
 /app/
 /ref/
-/desktop/
+# Desktop Electron app is part of the repository.
 /data/
 /mobile/
 .env

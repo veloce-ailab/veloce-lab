@@ -268,6 +268,53 @@ type TokenLogSummary struct {
 	TotalCost         decimal.Decimal
 }
 
+// TokenLogDailySummary is the compact time-series representation used by the
+// user usage dashboard.
+type TokenLogDailySummary struct {
+	Date              string
+	RequestCount      int64
+	InputTokens       int64
+	OutputTokens      int64
+	CachedInputTokens int64
+	TotalTokens       int64
+	TotalCost         decimal.Decimal
+}
+
+func SummarizeTokenLogsByDay(filter TokenLogFilter, location *time.Location) ([]TokenLogDailySummary, error) {
+	if location == nil {
+		location = time.Local
+	}
+	databases, err := LogDatabases()
+	if err != nil {
+		return nil, err
+	}
+	byDate := map[string]TokenLogDailySummary{}
+	for _, database := range databases {
+		var logs []TokenLog
+		if err := applyTokenLogFilter(database.Model(&TokenLog{}), filter).Find(&logs).Error; err != nil {
+			return nil, err
+		}
+		for _, logEntry := range logs {
+			date := logEntry.CreatedAt.In(location).Format("2006-01-02")
+			item := byDate[date]
+			item.Date = date
+			item.RequestCount++
+			item.InputTokens += int64(logEntry.InputTokens)
+			item.OutputTokens += int64(logEntry.OutputTokens)
+			item.CachedInputTokens += int64(logEntry.CachedInputTokens)
+			item.TotalTokens += int64(logEntry.InputTokens + logEntry.OutputTokens)
+			item.TotalCost = item.TotalCost.Add(logEntry.Cost)
+			byDate[date] = item
+		}
+	}
+	result := make([]TokenLogDailySummary, 0, len(byDate))
+	for _, item := range byDate {
+		result = append(result, item)
+	}
+	sort.Slice(result, func(left, right int) bool { return result[left].Date < result[right].Date })
+	return result, nil
+}
+
 func ListTokenLogs(filter TokenLogFilter, offset, limit int) ([]TokenLog, int64, error) {
 	databases, err := LogDatabases()
 	if err != nil {

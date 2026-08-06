@@ -70,7 +70,7 @@ function App() {
                   <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
                   <Route path="/chat/*" element={<ProtectedRoute authenticated={authenticated}><AdvancedChat /></ProtectedRoute>} />
                   <Route path="/settings/*" element={<ProtectedRoute authenticated={authenticated}><SettingsWorkspace /></ProtectedRoute>} />
-                  <Route path="/admin/*" element={<Navigate to="/settings/channels" replace />} />
+                  <Route path="/admin/*" element={<Navigate to="/settings/statistics" replace />} />
                   <Route path="/" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
                   <Route path="/dashboard" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
                   <Route path="*" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
