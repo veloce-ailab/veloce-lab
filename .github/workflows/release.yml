@@ -39,7 +39,7 @@ jobs:
 
   build-binaries:
     name: Build ${{ matrix.target }} ${{ matrix.arch }}
-    needs: build-web
+    needs: [build-web, prepare-release]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -70,7 +70,7 @@ jobs:
             goarch: arm64
             extension: .exe
           - target: macos
-            runner: macos-13
+            runner: macos-15-intel
             goos: darwin
             arch: amd64
             goarch: amd64
@@ -120,9 +120,49 @@ jobs:
           path: release-assets/*
           if-no-files-found: error
 
+      - name: Package backend update archive
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          for file in release-assets/veloce-backend-*; do
+            [ -f "$file" ] || continue
+            filename="$(basename "$file")"
+            platform_arch="${filename#veloce-backend-}"
+            platform_arch="${platform_arch%.exe}"
+            platform="${platform_arch%-*}"
+            arch="${platform_arch##*-}"
+            case "$platform" in
+              linux) goos="linux" ;;
+              windows) goos="windows" ;;
+              macos) goos="darwin" ;;
+              *) echo "Unsupported backend platform: $platform" >&2; exit 1 ;;
+            esac
+            archive_base="flai-community-${RELEASE_TAG}-${goos}-${arch}"
+            binary_name="${archive_base}"
+            if [ "$platform" = "windows" ]; then
+              binary_name="${binary_name}.exe"
+            fi
+            cp "$file" "release-assets/${binary_name}"
+            if [ "$platform" = "windows" ]; then
+              (cd release-assets && zip -q "${archive_base}.zip" "$binary_name")
+            else
+              tar -czf "release-assets/${archive_base}.tar.gz" -C release-assets "$binary_name"
+            fi
+            rm "release-assets/${binary_name}"
+            rm "$file"
+          done
+
+      - name: Publish binary assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
+
   build-desktop:
     name: Build desktop ${{ matrix.target }} ${{ matrix.arch }}
-    needs: build-web
+    needs: [build-web, prepare-release]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -154,7 +194,7 @@ jobs:
             electron_arch: arm64
           - target: macos
             electron_target: mac
-            runner: macos-13
+            runner: macos-15-intel
             goos: darwin
             arch: amd64
             electron_arch: x64
@@ -233,29 +273,21 @@ jobs:
           path: desktop/release-assets/*
           if-no-files-found: error
 
-  release:
-    name: Publish GitHub release
-    needs: [build-binaries, build-desktop]
+      - name: Publish desktop assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: desktop/release-assets/*
+          fail_on_unmatched_files: true
+
+  prepare-release:
+    name: Create GitHub release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout release history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Download binary assets
-        uses: actions/download-artifact@v4
-        with:
-          pattern: binaries-*
-          merge-multiple: true
-          path: release-assets
-
-      - name: Download desktop assets
-        uses: actions/download-artifact@v4
-        with:
-          pattern: desktop-*
-          merge-multiple: true
-          path: release-assets
 
       - name: Find previous release and collect commits
         id: release-history
@@ -347,73 +379,45 @@ jobs:
 
             fs.writeFileSync('release-notes.md', `${lines.join('\n')}\n`);
 
-      - name: Package backend update archives
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          for file in release-assets/veloce-backend-*; do
-            [ -f "$file" ] || continue
-            filename="$(basename "$file")"
-            platform_arch="${filename#veloce-backend-}"
-            platform_arch="${platform_arch%.exe}"
-            platform="${platform_arch%-*}"
-            arch="${platform_arch##*-}"
-            case "$platform" in
-              linux) goos="linux" ;;
-              windows) goos="windows" ;;
-              macos) goos="darwin" ;;
-              *) echo "Unsupported backend platform: $platform" >&2; exit 1 ;;
-            esac
-            archive_base="flai-community-${RELEASE_TAG}-${goos}-${arch}"
-            binary_name="${archive_base}"
-            if [ "$platform" = "windows" ]; then
-              binary_name="${binary_name}.exe"
-            fi
-            cp "$file" "release-assets/${binary_name}"
-            if [ "$platform" = "windows" ]; then
-              (cd release-assets && zip -q "${archive_base}.zip" "$binary_name")
-            else
-              tar -czf "release-assets/${archive_base}.tar.gz" -C release-assets "$binary_name"
-            fi
-            rm "release-assets/${binary_name}"
-            rm "$file"
-          done
-
-      - name: Append categorized download links
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_REPOSITORY: ${{ github.repository }}
-          RELEASE_SERVER: ${{ github.server_url }}
-        run: |
-          base_url="${RELEASE_SERVER}/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}"
-          {
-            echo
-            echo "## 后端下载"
-            echo
-            for file in $(find release-assets -maxdepth 1 -type f \( -name 'flai-community-*.zip' -o -name 'flai-community-*.tar.gz' \) -printf '%f\n' | sort); do
-              echo "- [${file}](${base_url}/${file})"
-            done
-            echo
-            echo "## 连接器下载"
-            echo
-            for file in $(find release-assets -maxdepth 1 -type f -name 'veloce-connector-*' -printf '%f\n' | sort); do
-              echo "- [${file}](${base_url}/${file})"
-            done
-            echo
-            echo "## 桌面端下载"
-            echo
-            for file in $(find release-assets -maxdepth 1 -type f -name 'veloce-lab-desktop-*' -printf '%f\n' | sort); do
-              echo "- [${file}](${base_url}/${file})"
-            done
-          } >> release-notes.md
-
-      - name: Publish release
+      - name: Publish release shell
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Veloce ${{ github.ref_name }}
           body_path: release-notes.md
-          files: release-assets/*
-          fail_on_unmatched_files: true
+
+  finalize-release:
+    name: Update release download links
+    needs: [build-binaries, build-desktop]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update categorized download links
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        with:
+          script: |
+            const release = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: process.env.RELEASE_TAG,
+            });
+            const baseUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/releases/download/${process.env.RELEASE_TAG}`;
+            const assets = release.data.assets.map((asset) => asset.name).sort();
+            const groups = [
+              ['后端下载', (name) => name.startsWith('flai-community-') && (name.endsWith('.zip') || name.endsWith('.tar.gz'))],
+              ['连接器下载', (name) => name.startsWith('veloce-connector-')],
+              ['桌面端下载', (name) => name.startsWith('veloce-lab-desktop-')],
+            ];
+            const body = (release.data.body || '').split('\n## 后端下载')[0].trimEnd();
+            const sections = groups.map(([title, matches]) => {
+              const files = assets.filter(matches);
+              return [`## ${title}`, '', ...(files.length ? files.map((file) => `- [${file}](${baseUrl}/${file})`) : ['- 无'])].join('\n');
+            });
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              body: `${body}\n\n${sections.join('\n\n')}\n`,
+            });
