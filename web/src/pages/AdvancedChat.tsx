@@ -1,8 +1,8 @@
-import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, Globe2, Home, Laptop, Menu, MessageSquare, MessageSquareText, Send, SlidersHorizontal, Sparkles, UserCircle, Users } from "lucide-react"
+import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, Globe2, Home, Laptop, Menu, MessageSquare, MessageSquareText, Search, Send, Settings as SettingsIcon, Sparkles, UserCircle, Users } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom"
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Chat from "./Chat"
 import Agents from "./Agents"
 import AgentEditor from "./AgentEditor"
@@ -22,6 +22,8 @@ import Community from "./Community"
 import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { PageTransition } from "@/components/layout/PageTransition"
 import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
 import api, { apiURL, isDesktopTarget } from "@/lib/api"
@@ -35,6 +37,13 @@ interface CurrentUser {
   email?: string
   avatar_url?: string
   is_admin?: boolean
+}
+
+interface GlobalChatSession {
+  id: string
+  title?: string
+  updated_at?: string
+  created_at?: string
 }
 
 interface AdvancedChatSidebarItem {
@@ -82,7 +91,25 @@ interface AdvancedChatSidebarGroup {
 export default function AdvancedChat() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const location = useLocation()
+  const navigate = useNavigate()
   const { language, t } = useI18n()
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false)
+  const [globalSearch, setGlobalSearch] = useState("")
+  const { data: globalSessions = [] } = useQuery<GlobalChatSession[]>({
+    queryKey: ["advanced-chat-global-session-search"],
+    enabled: isGlobalSearchOpen,
+    queryFn: async () => {
+      const res = await api.get("/user/advanced-chat/sessions")
+      return Array.isArray(res.data) ? res.data : []
+    },
+  })
+  const filteredGlobalSessions = useMemo(() => {
+    const query = globalSearch.trim().toLowerCase()
+    return globalSessions.slice()
+      .filter((session) => !query || (session.title || "").toLowerCase().includes(query))
+      .sort((a, b) => Date.parse(b.updated_at || b.created_at || "") - Date.parse(a.updated_at || a.created_at || ""))
+      .slice(0, 50)
+  }, [globalSearch, globalSessions])
   const { data: settings, isLoading: isSettingsLoading } = useQuery<PublicSettings>({
     queryKey: ["public-settings"],
     queryFn: async () => {
@@ -101,6 +128,7 @@ export default function AdvancedChat() {
   const isDesktop = isDesktopTarget()
   const topNavItems = parseTopNavItems(publicSettings.top_nav_items)
   const isChatRoute = location.pathname === "/chat" || location.pathname.startsWith("/chat/session/")
+  const isFullHeightRoute = isChatRoute || location.pathname === "/chat/memories"
   const transitionKey = isChatRoute ? "/chat" : location.pathname
   const viewportHeightClass = isDesktopTarget() ? "h-full" : "h-screen"
 
@@ -121,7 +149,7 @@ export default function AdvancedChat() {
 
   return (
     <div className={cn("flex flex-col overflow-hidden", isDesktop ? "desktop-acrylic-window" : "bg-background", viewportHeightClass)}>
-      {!isDesktop && <header className="z-30 flex h-16 shrink-0 items-center justify-between bg-background/95 px-4 backdrop-blur sm:px-6">
+      <header className={cn("z-30 flex shrink-0 items-center justify-between border-b border-border/70 bg-background/95 px-4 backdrop-blur sm:px-6", isDesktop ? "h-12" : "h-16")}>
         <div className="flex min-w-0 items-center gap-3">
           <Button
             className="lg:hidden"
@@ -145,15 +173,25 @@ export default function AdvancedChat() {
               ))}
             </div>
           )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setIsGlobalSearchOpen(true)}
+            aria-label={language === "zh" ? "搜索会话" : "Search sessions"}
+            title={language === "zh" ? "搜索会话" : "Search sessions"}
+          >
+            <Search size={17} />
+          </Button>
           <ThemeSwitcher />
           <LanguageSwitcher compact />
           <UserAvatar user={user} />
         </div>
-      </header>}
+      </header>
 
-      <div className={cn("flex min-h-0 flex-1", isChatRoute && "bg-background")}>
+      <div className={cn("flex min-h-0 flex-1", isFullHeightRoute && "bg-background")}>
         <ResizableSidebar storageKey="advanced-chat-navigation" side="left" defaultWidth={224} minWidth={192} maxWidth={420} className="hidden lg:block lg:h-full">
-          <AdvancedChatSidebar className={cn("w-full", isChatRoute && "border-r-0 bg-background")} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot-desktop" />
+          <AdvancedChatSidebar className={cn("w-full", isFullHeightRoute && "border-r-0 bg-background")} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot-desktop" />
         </ResizableSidebar>
 
         <div className={cn("fixed inset-0 z-40 transition-opacity duration-200 lg:hidden", isDesktop ? "top-0" : "top-16", isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSidebarOpen}>
@@ -164,14 +202,14 @@ export default function AdvancedChat() {
               onClick={() => setIsSidebarOpen(false)}
             />
             <div className={cn("relative z-50 h-full w-64 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")}>
-              <AdvancedChatSidebar className={cn("w-full", isChatRoute && "border-r-0 bg-background")} publicSettings={publicSettings} user={user} onNavigate={() => setIsSidebarOpen(false)} sessionSlotID="chat-sessions-sidebar-slot-mobile" />
+              <AdvancedChatSidebar className={cn("w-full", isFullHeightRoute && "border-r-0 bg-background")} publicSettings={publicSettings} user={user} onNavigate={() => setIsSidebarOpen(false)} sessionSlotID="chat-sessions-sidebar-slot-mobile" />
             </div>
         </div>
 
-        <main className={cn("flex min-h-0 flex-1 flex-col transition-[filter] duration-200", isChatRoute ? "overflow-hidden" : "overflow-y-auto", isSidebarOpen && "max-lg:blur-sm")}>
-          <div className={cn("w-full flex-1", isChatRoute ? "min-h-0" : "mx-auto max-w-6xl p-4 sm:p-6 lg:p-8")}>
-            <PageTransition transitionKey={transitionKey} className={cn("page-shell-transition", isChatRoute && "h-full min-h-0")}>
-              <div className={cn(isChatRoute ? "h-full" : "space-y-6")}>
+        <main className={cn("flex min-h-0 flex-1 flex-col transition-[filter] duration-200", isFullHeightRoute ? "overflow-hidden" : "overflow-y-auto", isSidebarOpen && "max-lg:blur-sm")}>
+          <div className={cn("w-full flex-1", isFullHeightRoute ? "min-h-0" : "mx-auto max-w-6xl p-4 sm:p-6 lg:p-8")}>
+            <PageTransition transitionKey={transitionKey} className={cn("page-shell-transition", isFullHeightRoute && "h-full min-h-0")}>
+              <div className={cn(isFullHeightRoute ? "h-full" : "space-y-6")}>
                 {isChatRoute ? (
                   <Chat />
                 ) : (
@@ -203,13 +241,44 @@ export default function AdvancedChat() {
               </div>
             </PageTransition>
           </div>
-          {!isChatRoute && publicSettings.footer_text && (
+          {!isFullHeightRoute && publicSettings.footer_text && (
             <footer className="border-t px-4 py-4 text-center text-sm text-muted-foreground sm:px-6 lg:px-8">
               {publicSettings.footer_text}
             </footer>
           )}
         </main>
       </div>
+      <Dialog open={isGlobalSearchOpen} onOpenChange={(open) => { setIsGlobalSearchOpen(open); if (!open) setGlobalSearch("") }}>
+        <DialogContent className="max-h-[75vh] max-w-lg overflow-hidden p-0">
+          <DialogHeader className="border-b px-5 py-4 pr-12">
+            <DialogTitle>{language === "zh" ? "搜索会话" : "Search sessions"}</DialogTitle>
+          </DialogHeader>
+          <div className="p-4">
+            <Input
+              autoFocus
+              value={globalSearch}
+              onChange={(event) => setGlobalSearch(event.target.value)}
+              placeholder={language === "zh" ? "搜索会话标题" : "Search session titles"}
+              aria-label={language === "zh" ? "搜索会话标题" : "Search session titles"}
+              className="h-10"
+            />
+            <div className="mt-3 max-h-[48vh] overflow-y-auto rounded-md border p-1">
+              {filteredGlobalSessions.length === 0 ? (
+                <div className="px-3 py-10 text-center text-sm text-muted-foreground">{language === "zh" ? "没有找到会话" : "No sessions found"}</div>
+              ) : filteredGlobalSessions.map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  className="flex min-h-10 w-full items-center rounded px-2 text-left hover:bg-muted"
+                  onClick={() => { navigate(`/chat/session/${encodeURIComponent(session.id)}`); setIsGlobalSearchOpen(false); setGlobalSearch("") }}
+                >
+                  <span className="truncate text-sm font-medium">{session.title || (language === "zh" ? "未命名会话" : "Untitled session")}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -268,19 +337,24 @@ function AdvancedChatSidebar({
   const workflowLabel = language === "zh" ? "工作流" : language === "ja" ? "ワークフロー" : "Workflows"
   const agentLabel = language === "zh" ? "代理" : language === "ja" ? "エージェント" : "Agents"
   const homeItem: AdvancedChatSidebarItem = {
-    href: "/chat",
-    label: t("nav.chat"),
+    href: "/chat?new_session=1",
+    label: language === "zh" ? "主页" : language === "ja" ? "ホーム" : "Home",
     icon: MessageSquare,
     active: location.pathname === "/chat" || location.pathname.startsWith("/chat/session/"),
   }
   const directItems: AdvancedChatSidebarItem[] = [
     { href: "/chat/community", label: language === "zh" ? "社区" : language === "ja" ? "コミュニティ" : "Community", icon: Users, active: location.pathname === "/chat/community" || location.pathname.startsWith("/chat/community/") },
     { href: "/chat/groups", label: language === "zh" ? "聊天群组" : "Chat Groups", icon: MessageSquareText, active: location.pathname === "/chat/groups" || location.pathname.startsWith("/chat/groups/") },
-    { href: "/chat/files", label: filesLabel, icon: FileText, active: location.pathname === "/chat/files" },
-    { href: "/chat/knowledge", label: knowledgeLabel, icon: Database, active: location.pathname === "/chat/knowledge" },
-    ...(user?.is_admin ? [{ href: "/settings/channels", label: language === "zh" ? "设置" : "Settings", icon: SlidersHorizontal, active: location.pathname.startsWith("/settings") }] : []),
   ]
   const groups: AdvancedChatSidebarGroup[] = [
+    {
+      id: "library",
+      label: language === "zh" ? "库" : language === "ja" ? "ライブラリ" : "Library",
+      items: [
+        { href: "/chat/files", label: filesLabel, icon: FileText, active: location.pathname === "/chat/files" },
+        { href: "/chat/knowledge", label: knowledgeLabel, icon: Database, active: location.pathname === "/chat/knowledge" },
+      ],
+    },
     {
       id: "workflow",
       label: workflowLabel,
@@ -354,10 +428,12 @@ function AdvancedChatSidebar({
 
   return (
     <aside className={cn("flex h-full min-h-0 w-56 flex-col overflow-hidden border-r bg-card", className)}>
-      <nav className={cn("relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain", !homeItem.active && "min-h-full")}>
+      <div className="shrink-0 px-3 py-3">
+        {renderSidebarLink(homeItem)}
+      </div>
+      <nav className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
         <div className={cn("transition-transform duration-200 ease-out", homeItem.active && "flex min-h-full flex-col", showingGroup && "-translate-x-full")}>
-          <div className="flex flex-col gap-1 px-3 py-3">
-            {renderSidebarLink(homeItem)}
+          <div className="flex flex-col gap-1 px-3 pb-3">
             {directItems.map((item) => renderSidebarLink(item))}
             <div className="my-1.5" />
             {groups.map((group) => {
@@ -404,6 +480,18 @@ function AdvancedChatSidebar({
           )}
         </div>
       </nav>
+      <div className="shrink-0 border-t border-border p-3">
+        <Link
+          to={user?.is_admin ? "/settings/channels" : "/settings/profile"}
+          onClick={onNavigate}
+          className={cn("flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors", location.pathname.startsWith("/settings") ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted")}
+        >
+          <span className={cn("flex size-6 shrink-0 items-center justify-center rounded", location.pathname.startsWith("/settings") ? "bg-primary-foreground/15 text-primary-foreground" : "bg-muted text-muted-foreground")}>
+            <SettingsIcon size={15} />
+          </span>
+          <span className="flex-1 truncate">{language === "zh" ? "设置" : language === "ja" ? "設定" : "Settings"}</span>
+        </Link>
+      </div>
     </aside>
   )
 }

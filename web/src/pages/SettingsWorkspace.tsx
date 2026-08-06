@@ -6,7 +6,6 @@ import Settings, { type SettingsSection } from "./Settings"
 import Channels from "./Channels"
 import SystemManagement from "./SystemManagement"
 import SettingsStatistics from "./SettingsStatistics"
-import AdvancedChatMemories from "./AdvancedChatMemories"
 import ConnectorCredentials from "./ConnectorCredentials"
 import DesktopNotifications from "./DesktopNotifications"
 import { AppHeader } from "@/components/layout/Layout"
@@ -102,7 +101,7 @@ export default function SettingsWorkspace() {
                 <Route path="about" element={<SystemManagement section="about" />} />
                 <Route path="chat" element={<SystemManagement section="advancedChat" />} />
                 <Route path="advanced-chat" element={<Navigate to="../chat" replace />} />
-                <Route path="memory" element={<AdvancedChatMemories />} />
+                <Route path="memory" element={<Navigate to="/chat/memories" replace />} />
                 <Route path="credentials" element={<ConnectorCredentials />} />
                 <Route path="notifications" element={<DesktopNotifications />} />
                 <Route path="*" element={<Navigate to="profile" replace />} />
@@ -141,7 +140,6 @@ function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate
       items: [
         { href: "/settings/assistant", section: "assistant", label: copy.assistant, icon: Bot },
         { href: "/settings/channels", label: copy.channels, icon: Database },
-        { href: "/settings/memory", label: copy.memory, icon: HardDrive },
       ],
     },
     {
