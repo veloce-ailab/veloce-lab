@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Veloce Lab desktop application",
+  "homepage": "https://veloce.flweb.cn",
   "author": {
     "name": "WindyPear Team",
     "email": "fireguo@flweb.cn"
