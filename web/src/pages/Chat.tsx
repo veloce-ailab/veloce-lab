@@ -21,6 +21,8 @@ import { PageInlineSlot, PageTitleSlot } from "@/components/layout/PageTitleSlot
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
 import { desktopNotificationEnabled } from "@/lib/desktop-notifications"
+import { GitChangeList, type GitChangeFile } from "@/components/chat/GitChangeList"
+import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
 
 interface UpstreamChannelCatalog {
   id: number
@@ -388,6 +390,7 @@ interface WorkspaceGitStatus {
   additions: number
   deletions: number
   clean: boolean
+  files: GitChangeFile[]
 }
 
 interface ConnectorTaskStatus {
@@ -3842,6 +3845,8 @@ export default function Chat() {
                         </div>
                       </div>
 
+                      <GitChangeList files={gitStatusQuery.data?.files || []} clean={gitStatusQuery.data?.clean} copy={gitCopy} />
+
                       <label className="block text-xs font-medium text-muted-foreground">
                         <span className="mb-1.5 flex items-center gap-1.5"><GitCompareArrows size={14} />{gitCopy.compareBranch}</span>
                         <Select value={String((gitCompareBranch) || "__shadcn_empty__")} onValueChange={(value) => setGitCompareBranch((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="h-9 w-full rounded-2xl border border-border bg-background px-2 text-sm text-foreground"><SelectValue /></SelectTrigger><SelectContent>
@@ -5010,11 +5015,9 @@ export default function Chat() {
         </Dialog>
       )}
       </div>
-      {activeRunMode !== "chat" && (
-        <aside className={cn(
-          "hidden h-full min-h-0 shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain border-l border-border bg-muted/20 p-3 transition-[width,opacity,padding] duration-200 xl:flex",
-          isDesktopSessionsSidebarVisible ? "w-72 opacity-100" : "w-0 overflow-hidden border-l-0 p-0 opacity-0 pointer-events-none"
-        )}>
+      {activeRunMode !== "chat" && isDesktopSessionsSidebarVisible && (
+        <ResizableSidebar storageKey="chat-workspace" side="right" defaultWidth={288} minWidth={240} maxWidth={560} className="hidden h-full min-h-0 xl:flex">
+        <aside className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto overscroll-contain border-l border-border bg-muted/20 p-3">
           <div ref={setEnvironmentSidebarHost} className="shrink-0" />
           <section className="min-h-0 rounded-md border border-border bg-card shadow-sm">
             <div className="flex h-11 items-center justify-between border-b px-3">
@@ -5034,6 +5037,7 @@ export default function Chat() {
             </div>
           </section>
         </aside>
+        </ResizableSidebar>
       )}
     </div>
   )
@@ -6616,6 +6620,12 @@ function normalizeWorkspaceGitStatus(value: unknown): WorkspaceGitStatus {
     additions: numberValue(item.additions),
     deletions: numberValue(item.deletions),
     clean: item.clean === true,
+    files: Array.isArray(item.files) ? item.files.flatMap((entry) => {
+      if (!isRecord(entry)) return []
+      const path = stringFromUnknown(entry.path)
+      if (!path) return []
+      return [{ path, status: stringFromUnknown(entry.status) || "", additions: numberValue(entry.additions), deletions: numberValue(entry.deletions), diff: stringFromUnknown(entry.diff) || undefined }]
+    }) : [],
   }
 }
 
@@ -8605,6 +8615,13 @@ const zhGitWorkspaceCopy = {
   noDevice: "未选择设备",
   noWorkspacePath: "未选择运行目录",
   changes: "变更",
+  clean: "工作目录干净，没有待提交改动。",
+  untracked: "未跟踪文件，尚无 Git diff。",
+  noDiff: "当前比较范围没有可展示的文本差异。",
+  added: "新增",
+  modified: "修改",
+  deleted: "删除",
+  renamed: "重命名",
   local: "本地",
   files: "{count} 个文件",
   compareBranch: "比较分支",
@@ -8636,6 +8653,13 @@ const enGitWorkspaceCopy: typeof zhGitWorkspaceCopy = {
   noDevice: "No device selected",
   noWorkspacePath: "No run directory selected",
   changes: "Changes",
+  clean: "Working tree is clean.",
+  untracked: "Untracked file; no Git diff yet.",
+  noDiff: "No text diff is available for this comparison.",
+  added: "Added",
+  modified: "Modified",
+  deleted: "Deleted",
+  renamed: "Renamed",
   local: "Local",
   files: "{count} files",
   compareBranch: "Compare branch",

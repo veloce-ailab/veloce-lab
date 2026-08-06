@@ -23,6 +23,7 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { Button } from "@/components/ui/button"
 import { PageTransition } from "@/components/layout/PageTransition"
+import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
 import api, { apiURL, isDesktopTarget } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
@@ -151,9 +152,9 @@ export default function AdvancedChat() {
       </header>}
 
       <div className={cn("flex min-h-0 flex-1", isChatRoute && "bg-background")}>
-        <div className="hidden lg:block lg:h-full lg:shrink-0">
-          <AdvancedChatSidebar className={isChatRoute ? "border-r-0 bg-background" : undefined} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot-desktop" />
-        </div>
+        <ResizableSidebar storageKey="advanced-chat-navigation" side="left" defaultWidth={224} minWidth={192} maxWidth={420} className="hidden lg:block lg:h-full">
+          <AdvancedChatSidebar className={cn("w-full", isChatRoute && "border-r-0 bg-background")} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot-desktop" />
+        </ResizableSidebar>
 
         <div className={cn("fixed inset-0 z-40 transition-opacity duration-200 lg:hidden", isDesktop ? "top-0" : "top-16", isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSidebarOpen}>
             <button
