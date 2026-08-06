@@ -14,6 +14,12 @@ const __dirname = path.dirname(__filename)
 const indexPath = path.join(__dirname, "web", "index.html")
 const iconPath = path.join(__dirname, "..", "assets", "logo.png")
 const preloadPath = path.join(__dirname, "preload.cjs")
+const desktopInternalName = "veloce-lab"
+const desktopDisplayName = "Veloce Lab"
+
+// Use the project identifier for Electron's single-instance lock while
+// keeping the display name user-facing in windows and the tray.
+app.setName(desktopInternalName)
 
 let mainWindow: BrowserWindow | null = null
 let browserWindow: BrowserWindow | null = null
@@ -197,7 +203,7 @@ function registerDesktopProtocol() {
   if (process.platform !== "win32") {
     return
   }
-  app.setAppUserModelId("com.windypear.veloce.desktop.beta")
+  app.setAppUserModelId("com.windypear.veloce.lab")
   if (process.defaultApp && process.argv[1]) {
     app.setAsDefaultProtocolClient(desktopProtocolScheme, process.execPath, [path.resolve(process.argv[1])])
     return
@@ -419,7 +425,7 @@ function openDesktopBrowser(rawURL?: string) {
       height: 820,
       minWidth: 760,
       minHeight: 520,
-      title: "Veloce Browser",
+      title: `${desktopDisplayName} Browser`,
       icon: iconPath,
       ...(process.platform === "win32" ? { backgroundMaterial: "acrylic" as const } : {}),
       titleBarStyle: "hidden",
@@ -823,7 +829,7 @@ function setupBuiltinServerIPC() {
   ipcMain.handle("desktop:open-link", async (_event, target: unknown) => {
     const links: Record<string, string> = {
       "official-site": "https://veloce.flweb.cn",
-      github: "https://github.com/veloce-ailab/veloce-desktop",
+      github: "https://github.com/veloce-ailab/veloce-lab",
     }
     const url = typeof target === "string" ? links[target] : undefined
     if (!url) return { ok: false }
@@ -1457,7 +1463,7 @@ async function checkDesktopUpdate(): Promise<DesktopUpdateResult> {
   }
 
   try {
-    const release = await requestJSON<GitHubRelease>("https://api.github.com/repos/veloce-ailab/veloce-desktop/releases/latest")
+    const release = await requestJSON<GitHubRelease>("https://api.github.com/repos/veloce-ailab/veloce-lab/releases/latest")
     const asset = selectDesktopUpdateAsset(release.assets)
     if (!asset) {
       return { state: "not_available", message: "No compatible desktop update asset found", version: release.tag_name }
@@ -1649,7 +1655,7 @@ async function desktopAuthLogin(event: Electron.IpcMainInvokeEvent, input: unkno
     width: 480,
     height: 760,
     parent,
-    title: "Veloce",
+    title: desktopDisplayName,
     icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {
@@ -1761,9 +1767,9 @@ function createTray() {
     return
   }
   tray = new Tray(iconPath)
-  tray.setToolTip("Veloce")
+  tray.setToolTip(desktopDisplayName)
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "显示 Veloce", click: showMainWindow },
+    { label: `显示 ${desktopDisplayName}`, click: showMainWindow },
     { type: "separator" },
     {
       label: "退出",
@@ -1782,7 +1788,7 @@ function createWindow(initialTab?: DesktopTab) {
     height: 860,
     minWidth: 960,
     minHeight: 640,
-    title: "Veloce",
+    title: desktopDisplayName,
     icon: iconPath,
     ...(process.platform === "win32" ? { backgroundMaterial: "acrylic" as const } : {}),
     titleBarStyle: "hidden",

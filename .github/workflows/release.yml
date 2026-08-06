@@ -220,7 +220,7 @@ jobs:
             [ -f "$file" ] || continue
             case "$file" in
               *.AppImage|*.deb|*.exe|*.dmg|*.zip)
-                cp "$file" "release-assets/veloce-desktop-${{ matrix.target }}-${{ matrix.arch }}-$(basename "$file")"
+                cp "$file" "release-assets/veloce-lab-desktop-${{ matrix.target }}-${{ matrix.arch }}-$(basename "$file")"
                 ;;
             esac
           done
@@ -307,7 +307,7 @@ jobs:
             echo
             echo "## 桌面端下载"
             echo
-            for file in $(find release-assets -maxdepth 1 -type f -name 'veloce-desktop-*' -printf '%f\n' | sort); do
+            for file in $(find release-assets -maxdepth 1 -type f -name 'veloce-lab-desktop-*' -printf '%f\n' | sort); do
               echo "- [${file}](${base_url}/${file})"
             done
           } > release-notes.md

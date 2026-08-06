@@ -1,8 +1,8 @@
 {
-  "name": "veloce-desktop",
+  "name": "veloce-lab",
   "private": true,
   "version": "0.1.0",
-  "description": "Veloce Desktop Beta",
+  "description": "Veloce Lab desktop application",
   "author": {
     "name": "WindyPear Team",
     "email": "fireguo@flweb.cn"
@@ -20,9 +20,9 @@
     "start": "npm run build && electron ."
   },
   "build": {
-    "appId": "com.windypear.veloce.desktop.beta",
-    "productName": "Veloce Desktop Beta",
-    "artifactName": "Veloce-Desktop-Beta-${version}-${os}-${arch}.${ext}",
+    "appId": "com.windypear.veloce.lab",
+    "productName": "Veloce Lab",
+    "artifactName": "Veloce-Lab-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
