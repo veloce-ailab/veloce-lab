@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "react-router-dom"
 import { ArrowLeft, Bot, Folder, FolderGit2, GitBranch, MessageCircle, Monitor, PanelRightOpen, Plus, RefreshCw, Send, Settings, Trash2, Users, X } from "lucide-react"
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/toast"
 import { useConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -26,8 +27,14 @@ interface PrivateMessage { id: string; sender_member_id: string; sender_name: st
 interface PrivateConversationDetail { conversation: PrivateConversation; messages: PrivateMessage[] }
 interface GroupGitFile { path: string; status: string; additions: number; deletions: number; diff?: string }
 interface GroupGitStatus { current_branch: string; changed_files: number; additions: number; deletions: number; clean: boolean; files: GroupGitFile[] }
+interface GroupMemoryDocument { id: string; kind: string; title: string; size: number; enabled: boolean; updated_by: string; updated_at: string }
+interface GroupMemoryListResponse { memories: GroupMemoryDocument[] }
+interface GroupMemoryContentResponse extends GroupMemoryDocument { content: string }
+interface GroupMemoryDraft { id: string; kind: string; title: string; content: string; enabled: boolean }
 
 const groupsKey = ["advanced-chat-chat-groups"] as const
+const groupMemoryKinds = ["profile", "preferences", "facts", "projects", "rules", "scratch", "custom"]
+const emptyGroupMemoryDraft: GroupMemoryDraft = { id: "", kind: "facts", title: "", content: "", enabled: true }
 
 export default function ChatGroups() {
   const { groupID = "" } = useParams()
@@ -59,9 +66,13 @@ export default function ChatGroups() {
   const [settingsDeviceID, setSettingsDeviceID] = useState("")
   const [settingsWorkspacePath, setSettingsWorkspacePath] = useState("")
   const [isSavingSettings, setIsSavingSettings] = useState(false)
-  const [settingsTab, setSettingsTab] = useState<"basic" | "members">("basic")
+  const [settingsTab, setSettingsTab] = useState<"basic" | "members" | "memory">("basic")
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false)
   const [editingMemberAgentID, setEditingMemberAgentID] = useState("")
+  const [selectedGroupMemoryID, setSelectedGroupMemoryID] = useState("")
+  const [groupMemoryDraft, setGroupMemoryDraft] = useState<GroupMemoryDraft>(emptyGroupMemoryDraft)
+  const [isSavingGroupMemory, setIsSavingGroupMemory] = useState(false)
+  const [isDeletingGroupMemory, setIsDeletingGroupMemory] = useState(false)
 
   const { data: groups = [], isFetching } = useQuery<ChatGroup[]>({
     queryKey: groupsKey,
@@ -93,6 +104,11 @@ export default function ChatGroups() {
     refetchInterval: 1200,
     queryFn: async () => (await api.get(`/user/advanced-chat/chat-groups/${encodeURIComponent(groupID)}`)).data,
   })
+  const groupMemoriesQuery = useQuery<GroupMemoryListResponse>({
+    queryKey: ["chat-group-memories", detail?.group.id],
+    enabled: isSettingsOpen && Boolean(detail?.group.id),
+    queryFn: async () => (await api.get(`/user/advanced-chat/chat-groups/${encodeURIComponent(String(detail?.group.id || ""))}/memories`)).data,
+  })
   const members = detail?.group.members || []
 	const { data: privateConversations = [] } = useQuery<PrivateConversation[]>({
 		queryKey: ["chat-group-private-conversations", groupID],
@@ -104,6 +120,19 @@ export default function ChatGroups() {
 		},
 	})
   const mentionedMembers = useMemo(() => members.filter((member) => mentions.includes(member.id)), [members, mentions])
+
+  useEffect(() => {
+    if (!selectedGroupMemoryID || !detail?.group.id) return
+    let cancelled = false
+    api.get(`/user/advanced-chat/chat-groups/${encodeURIComponent(detail.group.id)}/memories/${encodeURIComponent(selectedGroupMemoryID)}`)
+      .then((response) => {
+        if (cancelled) return
+        const memory = response.data as GroupMemoryContentResponse
+        setGroupMemoryDraft({ id: memory.id, kind: memory.kind || "facts", title: memory.title || "", content: memory.content || "", enabled: memory.enabled !== false })
+      })
+      .catch((err) => error(apiError(err, zh ? "加载共同记忆失败" : "Failed to load shared memory")))
+    return () => { cancelled = true }
+  }, [detail?.group.id, error, selectedGroupMemoryID, zh])
 
   const createGroup = async () => {
     if (!name.trim() || agentIDs.length === 0) return
@@ -145,6 +174,8 @@ export default function ChatGroups() {
     setSettingsTab("basic")
     setIsAddMemberOpen(false)
     setEditingMemberAgentID(group.members[0]?.agent_id || "")
+    setSelectedGroupMemoryID("")
+    setGroupMemoryDraft(emptyGroupMemoryDraft)
     setIsSettingsOpen(true)
   }
 
@@ -181,6 +212,46 @@ export default function ChatGroups() {
       error(apiError(err, zh ? "保存群组设置失败" : "Failed to save group settings"))
     } finally {
       setIsSavingSettings(false)
+    }
+  }
+
+  const startNewGroupMemory = () => {
+    setSelectedGroupMemoryID("")
+    setGroupMemoryDraft(emptyGroupMemoryDraft)
+  }
+
+  const saveGroupMemory = async () => {
+    if (!detail?.group.id || !groupMemoryDraft.content.trim() || isSavingGroupMemory) return
+    setIsSavingGroupMemory(true)
+    try {
+      const payload = { kind: groupMemoryDraft.kind, title: groupMemoryDraft.title.trim(), content: groupMemoryDraft.content, enabled: groupMemoryDraft.enabled }
+      const response = groupMemoryDraft.id
+        ? await api.put(`/user/advanced-chat/chat-groups/${encodeURIComponent(detail.group.id)}/memories/${encodeURIComponent(groupMemoryDraft.id)}`, payload)
+        : await api.post(`/user/advanced-chat/chat-groups/${encodeURIComponent(detail.group.id)}/memories`, payload)
+      const saved = response.data as GroupMemoryDocument
+      setSelectedGroupMemoryID(saved.id)
+      setGroupMemoryDraft((current) => ({ ...current, id: saved.id }))
+      await groupMemoriesQuery.refetch()
+      success(zh ? "共同记忆已保存" : "Shared memory saved")
+    } catch (err) {
+      error(apiError(err, zh ? "保存共同记忆失败" : "Failed to save shared memory"))
+    } finally {
+      setIsSavingGroupMemory(false)
+    }
+  }
+
+  const deleteGroupMemory = async () => {
+    if (!detail?.group.id || !groupMemoryDraft.id || isDeletingGroupMemory) return
+    setIsDeletingGroupMemory(true)
+    try {
+      await api.delete(`/user/advanced-chat/chat-groups/${encodeURIComponent(detail.group.id)}/memories/${encodeURIComponent(groupMemoryDraft.id)}`)
+      startNewGroupMemory()
+      await groupMemoriesQuery.refetch()
+      success(zh ? "共同记忆已删除" : "Shared memory deleted")
+    } catch (err) {
+      error(apiError(err, zh ? "删除共同记忆失败" : "Failed to delete shared memory"))
+    } finally {
+      setIsDeletingGroupMemory(false)
     }
   }
 
@@ -231,12 +302,13 @@ export default function ChatGroups() {
 
   const settingsDialog = detail && (
     <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader><DialogTitle>{zh ? "群组设置" : "Group settings"}</DialogTitle></DialogHeader>
-        <Tabs value={settingsTab} onValueChange={(value) => setSettingsTab(value as "basic" | "members")}>
+        <Tabs value={settingsTab} onValueChange={(value) => setSettingsTab(value as "basic" | "members" | "memory")}>
           <TabsList className="w-full">
             <TabsTrigger value="basic">{zh ? "基础信息" : "Basic"}</TabsTrigger>
             <TabsTrigger value="members">{zh ? "成员信息" : "Members"}</TabsTrigger>
+            <TabsTrigger value="memory">{zh ? "共同记忆" : "Shared memory"}</TabsTrigger>
           </TabsList>
           <TabsContent value="basic" className="space-y-4 pt-2">
             <div className="space-y-1.5"><label className="text-sm font-medium">{zh ? "群组名称" : "Group name"}</label><Input value={settingsName} onChange={(event) => setSettingsName(event.target.value)} /></div>
@@ -266,8 +338,26 @@ export default function ChatGroups() {
               })()}
             </div>
           </TabsContent>
+          <TabsContent value="memory" className="space-y-3 pt-2">
+            <div className="flex items-center justify-between gap-3">
+              <div><div className="text-sm font-medium">{zh ? "群组共同记忆" : "Shared group memory"}</div><p className="mt-1 text-xs text-muted-foreground">{zh ? "所有群成员均可读取、添加和修改这些记忆。" : "Every group member can read, add, and update these memories."}</p></div>
+              <div className="flex gap-1"><Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => groupMemoriesQuery.refetch()} title={zh ? "刷新" : "Refresh"}><RefreshCw size={15} /></Button><Button size="sm" className="gap-1.5" onClick={startNewGroupMemory}><Plus size={15} />{zh ? "新建" : "New"}</Button></div>
+            </div>
+            <div className="grid min-h-[360px] gap-3 md:grid-cols-[190px_minmax(0,1fr)]">
+              <div className="max-h-[56vh] space-y-1 overflow-y-auto rounded-md border p-1.5">
+                {(groupMemoriesQuery.data?.memories || []).map((memory) => <button key={memory.id} type="button" className={cn("flex w-full flex-col rounded px-2 py-2 text-left hover:bg-muted", selectedGroupMemoryID === memory.id && "bg-muted font-medium")} onClick={() => setSelectedGroupMemoryID(memory.id)}><span className="w-full truncate text-sm">{memory.title || memory.kind}</span><span className="mt-0.5 text-xs text-muted-foreground">{memory.kind}{memory.enabled ? "" : (zh ? " · 已停用" : " · Disabled")}</span></button>)}
+                {!groupMemoriesQuery.isLoading && (groupMemoriesQuery.data?.memories || []).length === 0 && <div className="px-2 py-8 text-center text-xs text-muted-foreground">{zh ? "暂无共同记忆" : "No shared memories"}</div>}
+              </div>
+              <div className="space-y-3 rounded-md border p-3">
+                <div className="grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]"><label className="space-y-1"><span className="text-xs text-muted-foreground">{zh ? "类型" : "Kind"}</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={groupMemoryDraft.kind} onChange={(event) => setGroupMemoryDraft((current) => ({ ...current, kind: event.target.value }))}>{groupMemoryKinds.map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label><label className="space-y-1"><span className="text-xs text-muted-foreground">{zh ? "标题" : "Title"}</span><Input value={groupMemoryDraft.title} onChange={(event) => setGroupMemoryDraft((current) => ({ ...current, title: event.target.value }))} placeholder={zh ? "例如：项目决策" : "For example: Project decisions"} /></label></div>
+                <label className="flex items-center gap-2 text-sm"><Switch checked={groupMemoryDraft.enabled} onCheckedChange={(enabled) => setGroupMemoryDraft((current) => ({ ...current, enabled }))} />{zh ? "启用此记忆" : "Enable this memory"}</label>
+                <textarea className="min-h-[230px] w-full rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-ring" value={groupMemoryDraft.content} onChange={(event) => setGroupMemoryDraft((current) => ({ ...current, content: event.target.value }))} placeholder={zh ? "使用 Markdown 记录全体成员需要长期共享的决策、事实和规则。" : "Use Markdown for decisions, facts, and rules shared by the group."} />
+                <div className="flex items-center justify-between gap-2"><Button variant="outline" className="gap-1.5 text-destructive hover:text-destructive" disabled={!groupMemoryDraft.id || isDeletingGroupMemory} onClick={deleteGroupMemory}><Trash2 size={15} />{zh ? "删除" : "Delete"}</Button><Button disabled={!groupMemoryDraft.content.trim() || isSavingGroupMemory} onClick={saveGroupMemory}>{isSavingGroupMemory ? (zh ? "保存中..." : "Saving...") : (zh ? "保存记忆" : "Save memory")}</Button></div>
+              </div>
+            </div>
+          </TabsContent>
         </Tabs>
-        <DialogFooter><Button variant="outline" onClick={() => setIsSettingsOpen(false)}>{zh ? "取消" : "Cancel"}</Button><Button disabled={!settingsName.trim() || settingsAgentIDs.length === 0 || isSavingSettings} onClick={saveGroupSettings}>{isSavingSettings ? (zh ? "保存中..." : "Saving...") : (zh ? "保存" : "Save")}</Button></DialogFooter>
+        {settingsTab !== "memory" && <DialogFooter><Button variant="outline" onClick={() => setIsSettingsOpen(false)}>{zh ? "取消" : "Cancel"}</Button><Button disabled={!settingsName.trim() || settingsAgentIDs.length === 0 || isSavingSettings} onClick={saveGroupSettings}>{isSavingSettings ? (zh ? "保存中..." : "Saving...") : (zh ? "保存" : "Save")}</Button></DialogFooter>}
         <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
           <DialogContent className="max-w-sm">
             <DialogHeader><DialogTitle>{zh ? "添加成员" : "Add member"}</DialogTitle></DialogHeader>
