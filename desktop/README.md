@@ -1,6 +1,6 @@
-# Veloce Desktop
+# Veloce Lab
 
-Electron shell for the desktop build of the Veloce web app.
+Electron shell for the Veloce Lab desktop application.
 
 The desktop bundle reuses the web source code, but Vite resolves `@/AppEntry` to `web/src/App.desktop.tsx` when built with `--mode desktop`. The desktop app only includes login/setup and `/chat/*` routes, then connects to an existing Veloce server selected in the app.
 

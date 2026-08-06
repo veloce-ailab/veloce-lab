@@ -62,7 +62,7 @@ export default function DesktopLogin() {
     <div className="flex min-h-full w-full items-center justify-center bg-muted/50 p-4">
       <Card className="w-full max-w-[440px]">
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold">Veloce</CardTitle>
+          <CardTitle className="text-3xl font-bold">Veloce Lab</CardTitle>
           <CardDescription>{t("login.description")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
