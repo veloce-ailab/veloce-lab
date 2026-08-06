@@ -1,5 +1,6 @@
 import { Sidebar } from "./Sidebar"
 import { PageTransition } from "./PageTransition"
+import { ResizableSidebar } from "./ResizableSidebar"
 import { Menu, UserCircle } from "lucide-react"
 import { Link, Outlet, useLocation } from "react-router-dom"
 import { useState, type ReactNode } from "react"
@@ -51,9 +52,9 @@ export function Layout() {
       />
 
       <div className="flex min-h-0 flex-1">
-        <div className={cn("hidden lg:h-full lg:shrink-0", !isChatWorkspace && "lg:block")}>
-          <Sidebar />
-        </div>
+        {!isChatWorkspace && <ResizableSidebar storageKey="main-navigation" side="left" defaultWidth={240} minWidth={192} maxWidth={420} className="hidden lg:block lg:h-full">
+          <Sidebar className="w-full" />
+        </ResizableSidebar>}
 
         <div className={cn("fixed inset-0 top-16 z-40 transition-opacity duration-200 lg:hidden", isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSidebarOpen}>
             <button

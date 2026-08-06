@@ -11,6 +11,7 @@ import ConnectorCredentials from "./ConnectorCredentials"
 import DesktopNotifications from "./DesktopNotifications"
 import { AppHeader } from "@/components/layout/Layout"
 import { PageTransition } from "@/components/layout/PageTransition"
+import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
 import api, { apiURL, isDesktopTarget } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
@@ -76,7 +77,9 @@ export default function SettingsWorkspace() {
       )}
 
       <div className="flex min-h-0 flex-1">
-        <SettingsSidebar pathname={location.pathname} copy={copy} user={user} onLogout={logout} />
+        <ResizableSidebar storageKey="settings-navigation" side="left" defaultWidth={288} minWidth={216} maxWidth={440} className="hidden lg:block lg:h-full">
+          <SettingsSidebar className="h-full w-full" pathname={location.pathname} copy={copy} user={user} onLogout={logout} />
+        </ResizableSidebar>
         <div className={cn("fixed inset-0 z-40 transition-opacity duration-200 lg:hidden", isDesktop ? "top-0" : "top-16", isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSidebarOpen}>
           <button type="button" className="absolute inset-0 bg-black/35 backdrop-blur-sm transition-opacity duration-200" aria-label={copy.closeMenu} onClick={() => setIsSidebarOpen(false)} />
           <SettingsSidebar className={cn("relative z-50 h-full w-72 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")} pathname={location.pathname} copy={copy} user={user} onLogout={logout} onNavigate={() => setIsSidebarOpen(false)} />

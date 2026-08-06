@@ -5,6 +5,8 @@ import { ArrowLeft, Bot, Folder, FolderGit2, GitBranch, MessageCircle, Monitor, 
 import api from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import { GitChangeList } from "@/components/chat/GitChangeList"
+import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -401,10 +403,10 @@ export default function ChatGroups() {
   }
 
   return (
-    <div className="-m-4 flex min-h-[calc(100vh-7rem)] overflow-hidden border-y sm:-m-6 lg:-m-8">
+    <div className="-m-4 flex h-[calc(100dvh-7rem)] min-h-80 overflow-hidden border-y sm:-m-6 lg:-m-8">
       {confirmDialog}
       {settingsDialog}
-      <section className="flex min-w-0 flex-1 flex-col bg-background">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
         {detail ? (
           <>
             <header className="flex h-14 shrink-0 items-center justify-between border-b px-3">
@@ -415,7 +417,7 @@ export default function ChatGroups() {
               </div>
               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openGroupSettings(detail.group)} title={zh ? "群组设置" : "Group settings"}><Settings size={16} /></Button>
             </header>
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
               <div className="mx-auto max-w-3xl space-y-4">
                 {detail.messages.map((message) => (
                   <div key={message.id} className={cn("flex gap-3", message.sender_type === "user" && "flex-row-reverse")}>
@@ -443,7 +445,11 @@ export default function ChatGroups() {
       </section>
 
       <div className="hidden shrink-0 lg:flex">
-        {activeSidebarPanel === "group" ? <GroupSidebar className="w-72" members={members} mentions={mentions} privateConversations={privateConversations} zh={zh} onMember={setActiveMember} onMention={(id) => setMentions((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} onPrivateConversation={setActivePrivateConversation} /> : <GroupEnvironmentSidebar className="w-80" group={detail?.group} devices={devices} zh={zh} />}
+        <ResizableSidebar storageKey="chat-group-details" side="right" defaultWidth={320} minWidth={256} maxWidth={560} className="h-full">
+          <div className="h-full min-h-0 overflow-hidden bg-card">
+            {activeSidebarPanel === "group" ? <GroupSidebar className="h-full w-full border-l-0" members={members} mentions={mentions} privateConversations={privateConversations} zh={zh} onMember={setActiveMember} onMention={(id) => setMentions((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} onPrivateConversation={setActivePrivateConversation} /> : <GroupEnvironmentSidebar className="h-full w-full border-l-0" group={detail?.group} devices={devices} zh={zh} />}
+          </div>
+        </ResizableSidebar>
         <aside className="flex w-12 flex-col items-center gap-2 border-l bg-card py-3">
           <button type="button" className={cn("flex h-9 w-9 items-center justify-center rounded-md", activeSidebarPanel === "group" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")} onClick={() => setActiveSidebarPanel("group")} title={zh ? "群组信息" : "Group information"}><Users size={17} /></button>
           <button type="button" className={cn("flex h-9 w-9 items-center justify-center rounded-md", activeSidebarPanel === "environment" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")} onClick={() => setActiveSidebarPanel("environment")} title={zh ? "环境信息" : "Environment"}><FolderGit2 size={17} /></button>
@@ -522,11 +528,17 @@ function GroupEnvironmentSidebar({ className, group, devices, zh }: { className?
     enabled: canInspect,
     queryFn: async () => (await api.get("/user/advanced-chat/workspace/git/status", { params: { connector_device_id: group?.connector_device_id, connector_workspace_path: group?.connector_workspace_path } })).data,
   })
+  const gitCopy = zh
+    ? { changes: "文件变更", clean: "工作目录干净，没有待提交改动。", untracked: "未跟踪文件，尚无 Git diff。", noDiff: "当前比较范围没有可展示的文本差异。", added: "新增", modified: "修改", deleted: "删除", renamed: "重命名" }
+    : { changes: "File changes", clean: "Working tree is clean.", untracked: "Untracked file; no Git diff yet.", noDiff: "No text diff is available for this comparison.", added: "Added", modified: "Modified", deleted: "Deleted", renamed: "Renamed" }
   return <aside className={cn("overflow-y-auto border-l bg-card", className)}>
     <div className="flex h-14 items-center justify-between border-b px-4"><span className="flex items-center gap-2 text-sm font-semibold"><FolderGit2 size={16} />{zh ? "环境信息" : "Environment"}</span><Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canInspect || gitStatus.isFetching} onClick={() => void gitStatus.refetch()} title={zh ? "刷新 Git 状态" : "Refresh Git status"}><RefreshCw size={15} className={gitStatus.isFetching ? "animate-spin" : ""} /></Button></div>
     <div className="space-y-4 p-3">
       <div className="overflow-hidden rounded-md border"><div className="flex items-center gap-2 border-b px-3 py-2"><Monitor size={15} className="text-muted-foreground" /><span className="text-xs text-muted-foreground">{zh ? "执行设备" : "Execution device"}</span></div><div className="px-3 py-2 text-sm font-medium">{device?.name || (zh ? "未绑定设备" : "No device bound")}</div>{device?.hostname && <div className="px-3 pb-2 text-xs text-muted-foreground">{device.hostname}</div>}<div className="flex items-center gap-2 border-t px-3 py-2"><Folder size={15} className="text-primary" /><span className="min-w-0 truncate font-mono text-xs">{group?.connector_workspace_path || (zh ? "未设置工作目录" : "No workspace path")}</span></div></div>
-      {!canInspect ? <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{zh ? "在群组设置中绑定设备和工作目录后，可在这里查看 Git 变更。" : "Bind a device and workspace in group settings to inspect Git changes here."}</div> : gitStatus.isLoading ? <div className="py-10 text-center text-sm text-muted-foreground">{zh ? "正在读取 Git 状态..." : "Loading Git status..."}</div> : gitStatus.isError ? <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{zh ? "无法读取 Git 状态。" : "Unable to read Git status."}</div> : <><div className="rounded-md border p-3"><div className="flex items-center gap-2 text-sm font-medium"><GitBranch size={15} />{gitStatus.data?.current_branch || "-"}</div><div className="mt-2 flex items-center gap-2 text-xs tabular-nums"><span className="text-primary">+{gitStatus.data?.additions || 0}</span><span className="text-destructive">-{gitStatus.data?.deletions || 0}</span><span className="text-muted-foreground">{gitStatus.data?.changed_files || 0} {zh ? "个文件" : "files"}</span></div></div><div><div className="mb-2 text-sm font-semibold">{zh ? "文件变更" : "File changes"}</div><div className="space-y-2">{(gitStatus.data?.files || []).map((file) => <details key={file.path} className="group rounded-md border bg-background" open={gitStatus.data?.files.length === 1}><summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm [&::-webkit-details-marker]:hidden"><span className="min-w-0 flex-1 truncate font-mono text-xs">{file.path}</span><span className="shrink-0 text-xs text-primary">+{file.additions}</span><span className="shrink-0 text-xs text-destructive">-{file.deletions}</span></summary><div className="border-t bg-muted/30 p-2">{file.diff ? <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5">{file.diff}</pre> : <div className="text-xs text-muted-foreground">{file.status.includes("??") ? (zh ? "未跟踪文件，尚无 Git diff。" : "Untracked file; no Git diff yet.") : (zh ? "当前比较范围没有可展示的文本差异。" : "No text diff is available for this comparison.")}</div>}</div></details>)}{gitStatus.data?.clean && <div className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground">{zh ? "工作目录干净，没有待提交改动。" : "Working tree is clean."}</div>}</div></div></>}</div>
+      {!canInspect ? <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{zh ? "在群组设置中绑定设备和工作目录后，可在这里查看 Git 变更。" : "Bind a device and workspace in group settings to inspect Git changes here."}</div> : gitStatus.isLoading ? <div className="py-10 text-center text-sm text-muted-foreground">{zh ? "正在读取 Git 状态..." : "Loading Git status..."}</div> : gitStatus.isError ? <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{zh ? "无法读取 Git 状态。" : "Unable to read Git status."}</div> : <>
+        <div className="rounded-md border p-3"><div className="flex items-center gap-2 text-sm font-medium"><GitBranch size={15} />{gitStatus.data?.current_branch || "-"}</div><div className="mt-2 flex items-center gap-2 text-xs tabular-nums"><span className="text-primary">+{gitStatus.data?.additions || 0}</span><span className="text-destructive">-{gitStatus.data?.deletions || 0}</span><span className="text-muted-foreground">{gitStatus.data?.changed_files || 0} {zh ? "个文件" : "files"}</span></div></div>
+        <GitChangeList files={gitStatus.data?.files || []} clean={gitStatus.data?.clean} copy={gitCopy} />
+      </>}</div>
   </aside>
 }
 
