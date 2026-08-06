@@ -1,0 +1,322 @@
+name: Build And Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-web:
+    name: Build web assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build frontend
+        working-directory: web
+        shell: bash
+        run: |
+          corepack enable
+          yarn install --immutable
+          yarn build
+
+      - name: Upload embedded frontend
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          if-no-files-found: error
+
+  build-binaries:
+    name: Build ${{ matrix.target }} ${{ matrix.arch }}
+    needs: build-web
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux
+            runner: ubuntu-latest
+            goos: linux
+            arch: amd64
+            goarch: amd64
+            extension: ""
+          - target: linux
+            runner: ubuntu-latest
+            goos: linux
+            arch: arm64
+            goarch: arm64
+            extension: ""
+          - target: windows
+            runner: windows-latest
+            goos: windows
+            arch: amd64
+            goarch: amd64
+            extension: .exe
+          - target: windows
+            runner: windows-latest
+            goos: windows
+            arch: arm64
+            goarch: arm64
+            extension: .exe
+          - target: macos
+            runner: macos-13
+            goos: darwin
+            arch: amd64
+            goarch: amd64
+            extension: ""
+          - target: macos
+            runner: macos-14
+            goos: darwin
+            arch: arm64
+            goarch: arm64
+            extension: ""
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Download embedded frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Build backend and connector
+        shell: bash
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          mkdir -p release-assets
+          go build -buildvcs=false -trimpath -ldflags "-s -w -X github.com/veloce-ailab/veloce/internal/service.BuildVersion=${RELEASE_VERSION}" -o "release-assets/veloce-backend-${{ matrix.target }}-${{ matrix.arch }}${{ matrix.extension }}" .
+          (
+            cd app
+            go build -buildvcs=false -trimpath -ldflags "-s -w -X main.connectorVersion=${RELEASE_VERSION}" -o "../release-assets/veloce-connector-${{ matrix.target }}-${{ matrix.arch }}${{ matrix.extension }}" .
+          )
+
+      - name: Upload backend and connector
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}-${{ matrix.arch }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  build-desktop:
+    name: Build desktop ${{ matrix.target }} ${{ matrix.arch }}
+    needs: build-web
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux
+            electron_target: linux
+            runner: ubuntu-latest
+            goos: linux
+            arch: amd64
+            electron_arch: x64
+          - target: linux
+            electron_target: linux
+            runner: ubuntu-latest
+            goos: linux
+            arch: arm64
+            electron_arch: arm64
+          - target: windows
+            electron_target: win
+            runner: windows-latest
+            goos: windows
+            arch: amd64
+            electron_arch: x64
+          - target: windows
+            electron_target: win
+            runner: windows-latest
+            goos: windows
+            arch: arm64
+            electron_arch: arm64
+          - target: macos
+            electron_target: mac
+            runner: macos-13
+            goos: darwin
+            arch: amd64
+            electron_arch: x64
+          - target: macos
+            electron_target: mac
+            runner: macos-14
+            goos: darwin
+            arch: arm64
+            electron_arch: arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        shell: bash
+        run: |
+          corepack enable
+          yarn install --immutable
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Set desktop version
+        working-directory: desktop
+        shell: bash
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
+
+      - name: Build desktop package
+        working-directory: desktop
+        shell: bash
+        env:
+          VELOCE_RUNTIME_GOOS: ${{ matrix.goos }}
+          VELOCE_RUNTIME_GOARCH: ${{ matrix.arch }}
+          VELOCE_COMMUNITY_SOURCE: ..
+          VELOCE_CONNECTOR_SOURCE: ../app
+          VELOCE_RUNTIME_VERSION: ${{ github.ref_name }}
+        run: |
+          npm run build
+          test -f dist/web/index.html
+          npx electron-builder --${{ matrix.electron_target }} --${{ matrix.electron_arch }} --publish never
+
+      - name: Prefix desktop assets
+        working-directory: desktop
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          for file in release/*; do
+            [ -f "$file" ] || continue
+            case "$file" in
+              *.AppImage|*.deb|*.exe|*.dmg|*.zip)
+                cp "$file" "release-assets/veloce-desktop-${{ matrix.target }}-${{ matrix.arch }}-$(basename "$file")"
+                ;;
+            esac
+          done
+
+      - name: Upload desktop assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}-${{ matrix.arch }}
+          path: desktop/release-assets/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: [build-binaries, build-desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binary assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Download desktop assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Package backend update archives
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          for file in release-assets/veloce-backend-*; do
+            [ -f "$file" ] || continue
+            filename="$(basename "$file")"
+            platform_arch="${filename#veloce-backend-}"
+            platform_arch="${platform_arch%.exe}"
+            platform="${platform_arch%-*}"
+            arch="${platform_arch##*-}"
+            case "$platform" in
+              linux) goos="linux" ;;
+              windows) goos="windows" ;;
+              macos) goos="darwin" ;;
+              *) echo "Unsupported backend platform: $platform" >&2; exit 1 ;;
+            esac
+            archive_base="flai-community-${RELEASE_TAG}-${goos}-${arch}"
+            binary_name="${archive_base}"
+            if [ "$platform" = "windows" ]; then
+              binary_name="${binary_name}.exe"
+            fi
+            cp "$file" "release-assets/${binary_name}"
+            if [ "$platform" = "windows" ]; then
+              (cd release-assets && zip -q "${archive_base}.zip" "$binary_name")
+            else
+              tar -czf "release-assets/${archive_base}.tar.gz" -C release-assets "$binary_name"
+            fi
+            rm "release-assets/${binary_name}"
+            rm "$file"
+          done
+
+      - name: Generate categorized release notes
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_SERVER: ${{ github.server_url }}
+        run: |
+          base_url="${RELEASE_SERVER}/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}"
+          {
+            echo "## 后端下载"
+            echo
+            for file in $(find release-assets -maxdepth 1 -type f \( -name 'flai-community-*.zip' -o -name 'flai-community-*.tar.gz' \) -printf '%f\n' | sort); do
+              echo "- [${file}](${base_url}/${file})"
+            done
+            echo
+            echo "## 连接器下载"
+            echo
+            for file in $(find release-assets -maxdepth 1 -type f -name 'veloce-connector-*' -printf '%f\n' | sort); do
+              echo "- [${file}](${base_url}/${file})"
+            done
+            echo
+            echo "## 桌面端下载"
+            echo
+            for file in $(find release-assets -maxdepth 1 -type f -name 'veloce-desktop-*' -printf '%f\n' | sort); do
+              echo "- [${file}](${base_url}/${file})"
+            done
+          } > release-notes.md
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Veloce ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: release-assets/*
+          fail_on_unmatched_files: true

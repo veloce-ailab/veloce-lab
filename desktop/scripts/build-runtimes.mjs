@@ -9,7 +9,10 @@ const runtimeDir = path.join(desktopRoot, "resources", "bin")
 const goos = process.env.VELOCE_RUNTIME_GOOS || hostGoOS()
 const goarch = process.env.VELOCE_RUNTIME_GOARCH || hostGoArch()
 const binaryExtension = goos === "windows" ? ".exe" : ""
-const communitySource = path.resolve(desktopRoot, process.env.VELOCE_COMMUNITY_SOURCE || "../community")
+// The desktop package lives beside the backend in this repository. Keep the
+// environment override for CI/checkouts that use a different layout, while
+// making the local default point at the actual repository root.
+const communitySource = path.resolve(desktopRoot, process.env.VELOCE_COMMUNITY_SOURCE || "..")
 const connectorSource = path.resolve(desktopRoot, process.env.VELOCE_CONNECTOR_SOURCE || "../app")
 const connectorVersion = process.env.VELOCE_RUNTIME_VERSION || "dev"
 
