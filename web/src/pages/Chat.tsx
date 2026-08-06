@@ -20,6 +20,7 @@ import { Switch } from "@/components/ui/switch"
 import { PageInlineSlot, PageTitleSlot } from "@/components/layout/PageTitleSlot"
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
+import { desktopNotificationEnabled } from "@/lib/desktop-notifications"
 
 interface UpstreamChannelCatalog {
   id: number
@@ -1046,7 +1047,7 @@ export default function Chat() {
     },
   })
   useEffect(() => {
-    if (!isDesktop || !window.veloceDesktop?.notifyConnectorApproval) {
+    if (!isDesktop || !window.veloceDesktop?.notifyConnectorApproval || !desktopNotificationEnabled("connectorApproval")) {
       return
     }
     for (const task of pendingConnectorApprovals) {
@@ -1297,7 +1298,7 @@ export default function Chat() {
   }, [activeSessionID, isAdvanced, serverSessions, serverSessionsFetched])
 
   useEffect(() => {
-    if (!isAdvanced || !isDesktop || !window.veloceDesktop?.notifyTaskComplete) {
+    if (!isAdvanced || !isDesktop || !window.veloceDesktop?.notifyTaskComplete || !desktopNotificationEnabled("taskCompleted")) {
       return
     }
     const nextStates = new Map<string, { runID: string; status: string }>()
