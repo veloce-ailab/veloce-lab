@@ -1,0 +1,83 @@
+name: Build and Release Go Project
+
+on:
+  push:
+    tags:
+      - 'v*' # 仅在推送以 v 开头的 tag 时触发
+  workflow_dispatch:
+
+permissions:
+  contents: write # 赋予创建 Release 和上传附件的权限
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            binary_name: app
+          - goos: linux
+            goarch: arm64
+            binary_name: app
+          - goos: darwin
+            goarch: amd64
+            binary_name: app
+          - goos: darwin
+            goarch: arm64
+            binary_name: app
+          - goos: windows
+            goarch: amd64
+            binary_name: app.exe
+          - goos: windows
+            goarch: arm64
+            binary_name: app.exe
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 设置 Go 环境
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable' # 可以指定具体版本，如 '1.22'
+
+      # 3. 编译项目
+      - name: Build Binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0 # 禁用 CGO 以实现静态编译，确保跨平台兼容性
+          VELOCE_CONNECTOR_VERSION: ${{ github.ref_name }}
+        run: |
+          go build -v -trimpath -ldflags="-s -w -X main.connectorVersion=${VELOCE_CONNECTOR_VERSION}" -o ${{ matrix.binary_name }} .
+
+      # 4. 打包压缩文件
+      - name: Package Binary
+        run: |
+          # 获取不带 refs/tags/ 前缀的纯 tag 名称 (例如 v1.0.0)
+          TAG_NAME="${{ github.ref_name }}"
+          ARCHIVE_NAME="app-${TAG_NAME}-${{ matrix.goos }}-${{ matrix.goarch }}"
+
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip "${ARCHIVE_NAME}.zip" ${{ matrix.binary_name }}
+            echo "ASSET_PATH=${ARCHIVE_NAME}.zip" >> $GITHUB_ENV
+          else
+            tar -czvf "${ARCHIVE_NAME}.tar.gz" ${{ matrix.binary_name }}
+            echo "ASSET_PATH=${ARCHIVE_NAME}.tar.gz" >> $GITHUB_ENV
+          fi
+
+      # 5. 发布到 GitHub Release
+      # 使用 softprops/action-gh-release，它会自动处理多 job 并发上传到同一个 Release
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET_PATH }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
