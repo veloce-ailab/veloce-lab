@@ -145,7 +145,7 @@ jobs:
             fi
             cp "$file" "release-assets/${binary_name}"
             if [ "$platform" = "windows" ]; then
-              (cd release-assets && zip -q "${archive_base}.zip" "$binary_name")
+              powershell.exe -NoProfile -NonInteractive -Command "Compress-Archive -LiteralPath 'release-assets/${binary_name}' -DestinationPath 'release-assets/${archive_base}.zip' -Force"
             else
               tar -czf "release-assets/${archive_base}.tar.gz" -C release-assets "$binary_name"
             fi
