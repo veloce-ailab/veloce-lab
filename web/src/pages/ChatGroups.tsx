@@ -405,7 +405,7 @@ export default function ChatGroups() {
   }
 
   return (
-    <div className="-m-4 flex h-[calc(100dvh-7rem)] min-h-80 overflow-hidden border-y sm:-m-6 lg:-m-8">
+    <div className="-m-4 flex h-[calc(100dvh-4rem)] min-h-80 overflow-hidden border-y sm:-m-6 lg:-m-8">
       {confirmDialog}
       {settingsDialog}
       <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">

@@ -278,7 +278,7 @@ function AdvancedChatSidebar({
     { href: "/chat/groups", label: language === "zh" ? "聊天群组" : "Chat Groups", icon: MessageSquareText, active: location.pathname === "/chat/groups" || location.pathname.startsWith("/chat/groups/") },
     { href: "/chat/files", label: filesLabel, icon: FileText, active: location.pathname === "/chat/files" },
     { href: "/chat/knowledge", label: knowledgeLabel, icon: Database, active: location.pathname === "/chat/knowledge" },
-    ...(user?.is_admin ? [{ href: "/settings/channels", label: language === "zh" ? "账户设置" : "Account Settings", icon: SlidersHorizontal, active: location.pathname.startsWith("/settings") }] : []),
+    ...(user?.is_admin ? [{ href: "/settings/channels", label: language === "zh" ? "设置" : "Settings", icon: SlidersHorizontal, active: location.pathname.startsWith("/settings") }] : []),
   ]
   const groups: AdvancedChatSidebarGroup[] = [
     {
@@ -354,7 +354,7 @@ function AdvancedChatSidebar({
 
   return (
     <aside className={cn("flex h-full min-h-0 w-56 flex-col overflow-hidden border-r bg-card", className)}>
-      <nav className={cn("relative min-h-0 flex-1 overflow-y-auto overscroll-contain", !homeItem.active && "min-h-full")}>
+      <nav className={cn("relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain", !homeItem.active && "min-h-full")}>
         <div className={cn("transition-transform duration-200 ease-out", homeItem.active && "flex min-h-full flex-col", showingGroup && "-translate-x-full")}>
           <div className="flex flex-col gap-1 px-3 py-3">
             {renderSidebarLink(homeItem)}
