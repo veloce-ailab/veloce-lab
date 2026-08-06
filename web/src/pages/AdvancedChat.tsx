@@ -322,24 +322,24 @@ function AdvancedChatSidebar({
         to={item.href}
         onClick={onNavigate}
         className={cn(
-          "flex h-7 items-center gap-2 rounded-md px-2 text-xs font-medium transition-colors",
+          "flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors",
           item.active ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted"
         )}
       >
-        <span className={cn("flex size-5 shrink-0 items-center justify-center rounded", item.active ? "bg-primary-foreground/15 text-primary-foreground" : advancedChatSidebarIconTones[item.href] || "bg-muted text-muted-foreground")}>
-          <item.icon size={13} />
+        <span className={cn("flex size-6 shrink-0 items-center justify-center rounded", item.active ? "bg-primary-foreground/15 text-primary-foreground" : advancedChatSidebarIconTones[item.href] || "bg-muted text-muted-foreground")}>
+          <item.icon size={15} />
         </span>
         <span className="flex-1 truncate">{item.label}</span>
       </Link>
       {item.children && item.active && (
-          <div className="ml-7 mt-0.5 flex flex-col gap-0.5">
+          <div className="ml-8 mt-1 flex flex-col gap-1">
           {item.children.map((child) => (
             <Link
               key={child.href}
               to={child.href}
               onClick={onNavigate}
               className={cn(
-                "flex h-6 items-center rounded px-2 text-xs transition-colors",
+                "flex h-8 items-center rounded px-2 text-sm transition-colors",
                 location.pathname === child.href ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
@@ -355,10 +355,10 @@ function AdvancedChatSidebar({
     <aside className={cn("flex h-full w-56 flex-col overflow-x-hidden overflow-y-auto border-r bg-card", className)}>
       <nav className={cn("relative shrink-0", !homeItem.active && "min-h-full")}>
         <div className={cn("transition-transform duration-200 ease-out", showingGroup && "-translate-x-full")}>
-          <div className="flex flex-col gap-0.5 px-2 py-2">
+          <div className="flex flex-col gap-1 px-3 py-3">
             {renderSidebarLink(homeItem)}
             {directItems.map((item) => renderSidebarLink(item))}
-            <div className="my-1" />
+            <div className="my-1.5" />
             {groups.map((group) => {
               const firstItem = group.items[0]
               return (
@@ -367,35 +367,35 @@ function AdvancedChatSidebar({
                   to={firstItem.href}
                   onClick={() => setSelectedGroupID(group.id)}
                   className={cn(
-                    "flex h-7 items-center gap-2 rounded-md px-2 text-xs font-medium transition-colors",
+                    "flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors",
                     group.id === routeGroup?.id ? "bg-muted text-foreground" : "hover:bg-muted"
                   )}
                 >
-                  <span className={cn("flex size-5 shrink-0 items-center justify-center rounded", advancedChatSidebarIconTones[firstItem.href] || "bg-muted text-muted-foreground")}>
-                    <firstItem.icon size={13} />
+                  <span className={cn("flex size-6 shrink-0 items-center justify-center rounded", advancedChatSidebarIconTones[firstItem.href] || "bg-muted text-muted-foreground")}>
+                    <firstItem.icon size={15} />
                   </span>
                   <span className="flex-1 truncate">{group.label}</span>
-                  <ChevronRight size={13} className="text-muted-foreground" />
+                  <ChevronRight size={15} className="text-muted-foreground" />
                 </Link>
               )
             })}
           </div>
           {homeItem.active && <div id={sessionSlotID} className="border-t border-border" />}
         </div>
-        <div className={cn("absolute inset-x-0 top-0 px-2 py-2 transition-transform duration-200 ease-out", showingGroup ? "translate-x-0" : "translate-x-full")}>
+        <div className={cn("absolute inset-x-0 top-0 px-3 py-3 transition-transform duration-200 ease-out", showingGroup ? "translate-x-0" : "translate-x-full")}>
           {activeGroup && (
-            <div className="flex flex-col gap-0.5">
-              <div className="mb-2 flex items-center gap-1 border-b pb-2 text-xs">
+            <div className="flex flex-col gap-1">
+              <div className="mb-3 flex items-center gap-1 border-b pb-3 text-sm">
                 <Link
                   to="/chat"
                   onClick={() => setSelectedGroupID("")}
-                  className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted"
+                  className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-muted"
                   aria-label={t("nav.chat")}
                   title={t("nav.chat")}
                 >
-                  <Home size={14} />
+                  <Home size={16} />
                 </Link>
-                <ChevronRight size={12} className="text-muted-foreground" />
+                <ChevronRight size={14} className="text-muted-foreground" />
                 <span className="min-w-0 truncate font-medium">{activeGroup.label}</span>
               </div>
               {activeGroup.items.map((item) => renderSidebarLink(item))}

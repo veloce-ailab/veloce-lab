@@ -26,6 +26,7 @@ const (
 	chatGroupHistoryToolName   = "read_group_history"
 	chatPrivateHistoryToolName = "read_private_history"
 	chatHistorySearchToolName  = "search_group_history"
+	chatGroupStopToolName      = "stop_processing"
 	chatMessageMaxWait         = 300
 	chatHistoryDefaultLimit    = 20
 	chatHistoryMaxLimit        = 50
@@ -127,6 +128,7 @@ func init() {
 	RegisterAdvancedChatToolHandler(chatGroupHistoryToolName, handleChatGroupHistoryTool)
 	RegisterAdvancedChatToolHandler(chatPrivateHistoryToolName, handleChatPrivateHistoryTool)
 	RegisterAdvancedChatToolHandler(chatHistorySearchToolName, handleChatHistorySearchTool)
+	RegisterAdvancedChatToolHandler(chatGroupStopToolName, handleChatGroupStopTool)
 }
 
 func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeContext) (AdvancedChatRuntimeExtension, error) {
@@ -151,7 +153,7 @@ func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeConte
 		}
 	}
 	return AdvancedChatRuntimeExtension{
-		SystemPrompt: "Messaging rule: normal assistant text is private work output. Use send_group_message only for one useful public group message. Use send_private_message for a message visible only to one other assistant in this group. Use read_group_history to inspect recent public messages, read_private_history to inspect your private conversation with one other assistant, and search_group_history to find relevant public or private messages. History results are newest first. Both message tools can wait for replies; wait_forever ends this run until a later message wakes you. Do not publish internal reasoning, progress narration, acknowledgements, or irrelevant work.\n\nPrivate-message targets in this isolated group:\n" + strings.Join(directory, "\n"),
+		SystemPrompt: "Messaging rule: normal assistant text is private work output. Use send_group_message only for one useful public group message. Use send_private_message for a message visible only to one other assistant in this group. Use read_group_history to inspect recent public messages, read_private_history to inspect your private conversation with one other assistant, and search_group_history to find relevant public or private messages. History results are newest first. Both message tools can wait for replies; wait_forever ends this run until a later message wakes you. If the incoming message does not require any action or response, call stop_processing immediately to end this run and avoid a private-message loop. Do not publish internal reasoning, progress narration, acknowledgements, or irrelevant work.\n\nPrivate-message targets in this isolated group:\n" + strings.Join(directory, "\n"),
 		Tools: []ChatExecutorTool{{
 			Name:        chatGroupPostToolName,
 			Description: "Post one deliberate message to the current chat group. This is the only way your output becomes visible in the group and notifies other assistants.",
@@ -207,6 +209,15 @@ func chatGroupRuntimeExtension(_ context.Context, input AdvancedChatRuntimeConte
 					"scope":            map[string]interface{}{"type": "string", "enum": []string{"all", "group", "private"}, "description": "Defaults to all."},
 					"target_member_id": map[string]interface{}{"type": "string", "description": "Optionally limit private results to one other assistant."},
 					"limit":            map[string]interface{}{"type": "integer", "minimum": 1, "maximum": chatHistoryMaxLimit, "description": "Number of messages to return; defaults to 20."},
+				},
+			},
+		}, {
+			Name:        chatGroupStopToolName,
+			Description: "Stop this assistant run when the incoming group or private message does not require any action or response. Use this instead of sending an acknowledgement; it prevents assistants from repeatedly waking each other.",
+			Schema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"reason": map[string]interface{}{"type": "string", "description": "Optional short internal reason for stopping; it is not sent to the group."},
 				},
 			},
 		}},
@@ -377,6 +388,24 @@ func handleChatHistorySearchTool(_ context.Context, input AdvancedChatToolCallIn
 		results = results[:limit]
 	}
 	encoded, err := json.Marshal(gin.H{"scope": scope, "group_id": member.GroupID, "order": "newest_first", "results": results})
+	return string(encoded), err
+}
+
+func handleChatGroupStopTool(_ context.Context, input AdvancedChatToolCallInput) (string, error) {
+	if _, err := loadChatGroupMemberForTool(input); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(input.RunID) == "" {
+		return "", errors.New("current run is required")
+	}
+	run, _, message, err := stopAdvancedChatRun(input.RunID, input.UserID)
+	if err != nil {
+		if strings.TrimSpace(message) != "" {
+			return "", errors.New(message)
+		}
+		return "", err
+	}
+	encoded, err := json.Marshal(gin.H{"stopped": run.Status == advancedChatRunStatusCancelled, "run_id": run.ID})
 	return string(encoded), err
 }
 

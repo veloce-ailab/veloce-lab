@@ -115,6 +115,24 @@ func TestChatGroupHistoryToolsScopeAndOrder(t *testing.T) {
 	}
 }
 
+func TestChatGroupRuntimeExtensionIncludesStopProcessingTool(t *testing.T) {
+	setupChatGroupHistoryTestDB(t)
+	seedChatGroupHistory(t)
+	extension, err := chatGroupRuntimeExtension(context.Background(), AdvancedChatRuntimeContext{UserID: 7, Mode: advancedChatModeAssistant, SessionID: "session-a"})
+	if err != nil {
+		t.Fatalf("load group extension: %v", err)
+	}
+	for _, tool := range extension.Tools {
+		if tool.Name == chatGroupStopToolName {
+			if !strings.Contains(extension.SystemPrompt, "stop_processing") {
+				t.Fatal("group prompt must explain when to stop processing")
+			}
+			return
+		}
+	}
+	t.Fatal("group assistants must receive the stop_processing tool")
+}
+
 func TestChatGroupHistorySearchKeepsPrivateConversationsIsolated(t *testing.T) {
 	setupChatGroupHistoryTestDB(t)
 	input := seedChatGroupHistory(t)

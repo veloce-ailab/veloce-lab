@@ -12,7 +12,7 @@ import { useI18n, type TranslationKey } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
 import { withPublicSettingsDefaults } from "@/lib/public-settings"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -516,7 +516,7 @@ type ConnectorApprovalMode = "manual" | "full_access" | "assistant"
 type SessionConfigTab = "basic" | "advanced" | "agent" | "agent_group" | "skills" | "knowledge" | "mcp" | "device"
 type SessionCapabilityPicker = "skills" | "knowledge" | "mcp" | null
 type AttachmentTarget = "composer" | "editor"
-type ComposerControlMenu = "" | "mode" | "model" | "device" | "workspace" | "agent" | "agent_group" | "approval"
+type ComposerControlMenu = "" | "mode" | "device" | "workspace" | "agent" | "agent_group" | "approval"
 type WorkspacePickerTarget = "session" | "pending"
 
 interface ChatStoreKeys {
@@ -658,7 +658,6 @@ export default function Chat() {
   const [selectingFileID, setSelectingFileID] = useState("")
   const [attachmentMenuTarget, setAttachmentMenuTarget] = useState<AttachmentTarget | "">("")
   const [composerControlMenu, setComposerControlMenu] = useState<ComposerControlMenu>("")
-  const [composerModelSubmenu, setComposerModelSubmenu] = useState<"" | "model" | "reasoning">("")
   const [sessionMenu, setSessionMenu] = useState<{ sessionID: string; x: number; y: number } | null>(null)
   const [sessionFolderContextMenu, setSessionFolderContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [messageSelectionMenu, setMessageSelectionMenu] = useState<{ text: string; x: number; y: number } | null>(null)
@@ -3141,7 +3140,6 @@ export default function Chat() {
     if (activeRunMode === "agent_group") {
       return null
     }
-    const open = composerControlMenu === "model"
     const reasoningOptions = [
       { value: "", label: copy.reasoningDefault },
       { value: "minimal", label: copy.reasoningMinimal },
@@ -3157,83 +3155,34 @@ export default function Chat() {
       if (currentSession) {
         updateSession(currentSession.id, (session) => ({ ...session, reasoning_effort: value }), { persist: true })
       }
-      setComposerModelSubmenu("")
-      setComposerControlMenu("")
     }
     return (
-      <div className="relative min-w-0">
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-5 max-w-36 justify-between gap-1 rounded-lg px-2 text-[11px]"
-          onClick={() => setComposerControlMenu((current) => {
-            const next = current === "model" ? "" : "model"
-            if (!next) setComposerModelSubmenu("")
-            return next
-          })}
-          title={controlLabel}
-        >
-          <span className="min-w-0 truncate">
-            <span>{modelLabel}</span>
-            <span className="ml-1 text-muted-foreground">{reasoningLabel}</span>
-          </span>
-          <ChevronDown className="h-3 w-3 shrink-0" />
-        </Button>
-        {open && (
-          <div className="absolute bottom-full right-0 z-30 mb-2 w-44 rounded-md border bg-popover p-1 text-popover-foreground shadow-lg">
-            <button
-              type="button"
-              className={cn("flex h-8 w-full items-center justify-between rounded px-2 text-left text-xs hover:bg-muted", composerModelSubmenu === "model" && "bg-muted")}
-              onClick={() => setComposerModelSubmenu((current) => current === "model" ? "" : "model")}
-            >
-              <span>{copy.selectModel}</span>
-              <ChevronRight size={14} />
-            </button>
-            <button
-              type="button"
-              className={cn("flex h-8 w-full items-center justify-between rounded px-2 text-left text-xs hover:bg-muted", composerModelSubmenu === "reasoning" && "bg-muted")}
-              onClick={() => setComposerModelSubmenu((current) => current === "reasoning" ? "" : "reasoning")}
-            >
-              <span>{copy.reasoningEffort}</span>
-              <ChevronRight size={14} />
-            </button>
-            {composerModelSubmenu === "model" && (
-              <div className="absolute left-full top-0 ml-1 max-h-56 w-56 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-lg">
-                {modelSelectOptions.map((model) => (
-                  <button
-                    key={model}
-                    type="button"
-                    className={cn("flex h-8 w-full items-center justify-between rounded px-2 text-left text-xs hover:bg-muted", activeModelName === model && "bg-primary/10 text-primary")}
-                    onClick={() => {
-                      handleSessionModelChange(model)
-                      setComposerModelSubmenu("")
-                      setComposerControlMenu("")
-                    }}
-                  >
-                    <span className="truncate">{model}</span>
-                    {activeModelName === model && <Check size={13} />}
-                  </button>
-                ))}
-              </div>
-            )}
-            {composerModelSubmenu === "reasoning" && (
-              <div className="absolute left-full top-0 ml-1 w-44 rounded-md border bg-popover p-1 text-popover-foreground shadow-lg">
-                {reasoningOptions.map((option) => (
-                  <button
-                    key={option.value || "default"}
-                    type="button"
-                    className={cn("flex h-8 w-full items-center justify-between rounded px-2 text-left text-xs hover:bg-muted", selectedReasoning === option.value && "bg-primary/10 text-primary")}
-                    onClick={() => selectReasoning(option.value)}
-                  >
-                    <span>{option.label}</span>
-                    {selectedReasoning === option.value && <Check size={13} />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="ghost" className="h-5 max-w-36 justify-between gap-1 rounded-lg px-2 text-[11px]" title={controlLabel}>
+            <span className="min-w-0 truncate"><span>{modelLabel}</span><span className="ml-1 text-muted-foreground">{reasoningLabel}</span></span>
+            <ChevronDown className="h-3 w-3 shrink-0" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="end" className="w-44">
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="min-h-8 text-xs">{copy.selectModel}</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="max-h-56 w-56 overflow-y-auto">
+              <DropdownMenuRadioGroup value={activeModelName} onValueChange={handleSessionModelChange}>
+                {modelSelectOptions.map((model) => <DropdownMenuRadioItem key={model} value={model} className="min-h-8 text-xs"><span className="truncate">{model}</span></DropdownMenuRadioItem>)}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="min-h-8 text-xs">{copy.reasoningEffort}</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-44">
+              <DropdownMenuRadioGroup value={selectedReasoning || "__default__"} onValueChange={(value) => selectReasoning(value === "__default__" ? "" : value)}>
+                {reasoningOptions.map((option) => <DropdownMenuRadioItem key={option.value || "default"} value={option.value || "__default__"} className="min-h-8 text-xs">{option.label}</DropdownMenuRadioItem>)}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
     )
   }
 
