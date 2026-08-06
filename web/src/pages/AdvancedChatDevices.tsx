@@ -7,6 +7,7 @@ import api, { getDesktopServerURL, isDesktopTarget } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/components/ui/toast"
@@ -61,6 +62,19 @@ interface MCPProcess {
   initialized: boolean
   pending_requests: number
   started_at?: string
+}
+
+interface ConnectorCredential {
+  id: string
+  name: string
+  type: "environment" | "http_header"
+  key: string
+  value_set: boolean
+}
+
+interface ConnectorDeviceCredentialsResponse {
+  credentials: ConnectorCredential[]
+  credential_ids: string[]
 }
 
 const devicesQueryKey = ["advanced-chat-connector-devices"] as const
@@ -489,6 +503,8 @@ export function AdvancedChatDeviceDetail() {
   const [mcpProcesses, setMCPProcesses] = useState<MCPProcess[]>([])
   const [isLoadingMCP, setIsLoadingMCP] = useState(false)
   const [stoppingMCPKey, setStoppingMCPKey] = useState("")
+  const [selectedCredentialIDs, setSelectedCredentialIDs] = useState<string[]>([])
+  const [isSavingCredentials, setIsSavingCredentials] = useState(false)
 
   const { data: device, isFetching: isFetchingDevice } = useQuery<ConnectorDevice | null>({
     queryKey: ["advanced-chat-connector-device", deviceID],
@@ -510,6 +526,17 @@ export function AdvancedChatDeviceDetail() {
       return Array.isArray(res.data) ? res.data.map(normalizeConnectorTask).filter((task): task is ConnectorTask => Boolean(task)) : []
     },
   })
+
+  const credentialsQueryKey = ["advanced-chat-connector-device-credentials", deviceID] as const
+  const credentialsQuery = useQuery<ConnectorDeviceCredentialsResponse>({
+    queryKey: credentialsQueryKey,
+    enabled: Boolean(deviceID),
+    queryFn: async () => normalizeConnectorDeviceCredentials((await api.get(`/user/advanced-chat/devices/${encodeURIComponent(deviceID)}/credentials`)).data),
+  })
+
+  useEffect(() => {
+    setSelectedCredentialIDs(credentialsQuery.data?.credential_ids || [])
+  }, [credentialsQuery.data?.credential_ids])
 
   const refreshMCPProcesses = async () => {
     if (!deviceID) {
@@ -563,6 +590,23 @@ export function AdvancedChatDeviceDetail() {
     }
   }
 
+  const saveCredentials = async () => {
+    setIsSavingCredentials(true)
+    try {
+      await api.put(`/user/advanced-chat/devices/${encodeURIComponent(deviceID)}/credentials`, { credential_ids: selectedCredentialIDs })
+      success(copy.credentialsSaved)
+      await queryClient.invalidateQueries({ queryKey: credentialsQueryKey })
+    } catch (err) {
+      error(apiErrorMessage(err, copy.credentialsSaveFailed))
+    } finally {
+      setIsSavingCredentials(false)
+    }
+  }
+
+  const toggleCredential = (credentialID: string, checked: boolean) => {
+    setSelectedCredentialIDs((current) => checked ? [...new Set([...current, credentialID])] : current.filter((id) => id !== credentialID))
+  }
+
   const activeTasks = tasks.filter((task) => isActiveConnectorTask(task.status))
   const recentTasks = tasks.filter((task) => !isActiveConnectorTask(task.status))
 
@@ -602,6 +646,32 @@ export function AdvancedChatDeviceDetail() {
               <InfoField label={copy.version} value={device.version || "-"} />
               <InfoField label={copy.lastSeen} value={formatDateTime(device.last_seen_at) || "-"} />
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <KeyRound size={18} />
+            {copy.connectorCredentials}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {credentialsQuery.isLoading ? <div className="text-sm text-muted-foreground">{copy.loading}</div> : (credentialsQuery.data?.credentials || []).length === 0 ? (
+            <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+              {copy.noCredentials} <Link to="/settings/credentials" className="ml-1 text-primary underline-offset-4 hover:underline">{copy.manageCredentials}</Link>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                {(credentialsQuery.data?.credentials || []).map((credential) => {
+                  const selected = selectedCredentialIDs.includes(credential.id)
+                  return <label key={credential.id} className="flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 text-sm hover:bg-muted/30"><Checkbox checked={selected} onCheckedChange={(checked) => toggleCredential(credential.id, checked === true)} /><span className="min-w-0 flex-1"><span className="block truncate font-medium">{credential.name}</span><span className="block truncate font-mono text-xs text-muted-foreground">{credential.key}</span></span><span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">{credential.type === "environment" ? copy.environmentCredential : copy.headerCredential}</span></label>
+                })}
+              </div>
+              <div className="flex items-center justify-between gap-3"><Link to="/settings/credentials" className="text-sm text-primary underline-offset-4 hover:underline">{copy.manageCredentials}</Link><Button size="sm" className="gap-2" disabled={isSavingCredentials} onClick={saveCredentials}><Save size={15} />{isSavingCredentials ? copy.saving : copy.save}</Button></div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -809,6 +879,22 @@ function normalizeMCPProcess(value: unknown): MCPProcess | null {
   }
 }
 
+function normalizeConnectorDeviceCredentials(value: unknown): ConnectorDeviceCredentialsResponse {
+  const item = isRecord(value) ? value : {}
+  const credentials = Array.isArray(item.credentials) ? item.credentials.map((credential) => {
+    if (!isRecord(credential) || !stringFromUnknown(credential.id)) return null
+    return {
+      id: stringFromUnknown(credential.id),
+      name: stringFromUnknown(credential.name),
+      type: credential.type === "http_header" ? "http_header" as const : "environment" as const,
+      key: stringFromUnknown(credential.key),
+      value_set: credential.value_set === true,
+    }
+  }).filter((credential): credential is ConnectorCredential => Boolean(credential)) : []
+  const credentialIDs = Array.isArray(item.credential_ids) ? item.credential_ids.filter((id): id is string => typeof id === "string" && id.trim() !== "") : []
+  return { credentials, credential_ids: credentialIDs }
+}
+
 function isActiveConnectorTask(status: string) {
   return status === "queued" || status === "running" || status === "pending_approval"
 }
@@ -928,6 +1014,13 @@ const zhCopy = {
   loading: "加载中...",
   status: "状态",
   environment: "运行环境",
+  connectorCredentials: "连接器凭据",
+  noCredentials: "暂未创建可用凭据。",
+  manageCredentials: "管理凭据",
+  environmentCredential: "环境变量",
+  headerCredential: "HTTP 请求头",
+  credentialsSaved: "连接器凭据已保存",
+  credentialsSaveFailed: "保存连接器凭据失败",
   version: "版本",
   runningTasks: "正在运行的任务",
   noRunningTasks: "暂无正在运行的任务",
@@ -957,6 +1050,7 @@ const zhCopy = {
   stopProcess: "停止进程",
   stopping: "停止中...",
   save: "保存",
+  saving: "保存中...",
   savedName: "设备名称已保存",
   saveFailed: "保存设备名称失败",
   deviceNameRequired: "设备名称不能为空",
@@ -1011,6 +1105,13 @@ const enCopy: typeof zhCopy = {
   loading: "Loading...",
   status: "Status",
   environment: "Environment",
+  connectorCredentials: "Connector credentials",
+  noCredentials: "No credentials are available yet.",
+  manageCredentials: "Manage credentials",
+  environmentCredential: "Environment variable",
+  headerCredential: "HTTP header",
+  credentialsSaved: "Connector credentials saved",
+  credentialsSaveFailed: "Failed to save connector credentials",
   version: "Version",
   runningTasks: "Running tasks",
   noRunningTasks: "No running tasks",
@@ -1040,6 +1141,7 @@ const enCopy: typeof zhCopy = {
   stopProcess: "Stop process",
   stopping: "Stopping...",
   save: "Save",
+  saving: "Saving...",
   savedName: "Device name saved",
   saveFailed: "Failed to save device name",
   deviceNameRequired: "Device name is required",
