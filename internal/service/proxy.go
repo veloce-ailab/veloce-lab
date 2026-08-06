@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -26,6 +27,7 @@ import (
 	"github.com/veloce-ailab/veloce/internal/cache"
 	"github.com/veloce-ailab/veloce/internal/model"
 	"github.com/veloce-ailab/veloce/internal/ratelimit"
+	socksproxy "golang.org/x/net/proxy"
 	"gorm.io/gorm"
 )
 
@@ -2219,8 +2221,21 @@ func (s *ProxyService) doUpstreamRequest(prepared preparedUpstreamRequest, chann
 	}
 	transport := baseTransport.Clone()
 	if rawProxy := strings.TrimSpace(model.GetSystemSetting("http_proxy", "")); rawProxy != "" {
-		if proxyURL, parseErr := url.Parse(rawProxy); parseErr == nil && proxyURL.Host != "" && (proxyURL.Scheme == "http" || proxyURL.Scheme == "https") {
+		if proxyURL, parseErr := url.Parse(rawProxy); parseErr == nil && proxyURL.Host != "" && (proxyURL.Scheme == "http" || proxyURL.Scheme == "https" || proxyURL.Scheme == "socks5") {
 			transport.Proxy = http.ProxyURL(proxyURL)
+			if proxyURL.Scheme == "socks5" {
+				var auth *socksproxy.Auth
+				if proxyURL.User != nil {
+					password, _ := proxyURL.User.Password()
+					auth = &socksproxy.Auth{User: proxyURL.User.Username(), Password: password}
+				}
+				if dialer, dialErr := socksproxy.SOCKS5("tcp", proxyURL.Host, auth, socksproxy.Direct); dialErr == nil {
+					transport.Proxy = nil
+					transport.DialContext = func(_ context.Context, network, address string) (net.Conn, error) {
+						return dialer.Dial(network, address)
+					}
+				}
+			}
 		}
 	}
 	client := &http.Client{
