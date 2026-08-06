@@ -394,11 +394,11 @@ export default function AdvancedChatDevices() {
                   className="cursor-pointer rounded-md border p-4 transition-colors hover:bg-muted/30"
                   role="button"
                   tabIndex={0}
-                  onClick={() => navigate(`/chat/devices/${encodeURIComponent(device.id)}`)}
+                  onClick={() => navigate(`/settings/devices/${encodeURIComponent(device.id)}`)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault()
-                      navigate(`/chat/devices/${encodeURIComponent(device.id)}`)
+                      navigate(`/settings/devices/${encodeURIComponent(device.id)}`)
                     }
                   }}
                 >
@@ -615,7 +615,7 @@ export function AdvancedChatDeviceDetail() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <Button asChild variant="ghost" className="-ml-3 mb-2 gap-2">
-            <Link to="/chat/devices">
+            <Link to="/settings/devices">
               <ArrowLeft size={16} />
               {copy.backToDevices}
             </Link>
