@@ -3124,6 +3124,10 @@ func advancedChatWorkspaceGitActionCommand(action string, message string) (strin
 		return "git add -A; git commit -m \"" + message + "\"", nil
 	case "push":
 		return "git push", nil
+	case "rollback":
+		// Restore tracked files and the index to HEAD. Untracked files are kept so
+		// generated output is not removed accidentally.
+		return "git restore --source=HEAD --staged --worktree .", nil
 	default:
 		return "", errors.New("unsupported Git action")
 	}

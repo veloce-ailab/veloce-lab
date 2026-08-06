@@ -226,6 +226,10 @@ func TestWorkspaceGitHelpers(t *testing.T) {
 	if err != nil || command != "git add -A; git commit -m \"Add workspace actions\"" {
 		t.Fatalf("commit command = %q, err=%v", command, err)
 	}
+	rollback, err := advancedChatWorkspaceGitActionCommand("rollback", "")
+	if err != nil || rollback != "git restore --source=HEAD --staged --worktree ." {
+		t.Fatalf("rollback command = %q, err=%v", rollback, err)
+	}
 	if _, err := advancedChatWorkspaceGitActionCommand("commit", "bad\nmessage"); err == nil {
 		t.Fatal("commit message containing a newline should be rejected")
 	}
