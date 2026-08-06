@@ -588,6 +588,7 @@ export default function Chat() {
   const location = useLocation()
   const routeSessionID = isAdvanced ? sessionIDFromAdvancedChatPath(location.pathname) : ""
   const requestedAgentID = isAdvanced ? new URLSearchParams(location.search).get("agent_id") || "" : ""
+  const newSessionRequest = isAdvanced ? new URLSearchParams(location.search).get("new_session") || "" : ""
   const { language, t } = useI18n()
   const { data: publicSettingsData } = useQuery<PublicSettings>({ queryKey: ["public-settings"], queryFn: async () => (await api.get("/public/settings")).data })
   const enterpriseMode = String(withPublicSettingsDefaults(publicSettingsData).system_mode).toLowerCase() === "enterprise"
@@ -624,8 +625,6 @@ export default function Chat() {
   const [, setIsSessionsSidebarOpen] = useState(false)
   const [isDesktopSessionsSidebarVisible, setIsDesktopSessionsSidebarVisible] = useState(true)
   const [desktopSessionsSidebarHost, setDesktopSessionsSidebarHost] = useState<HTMLElement | null>(null)
-  const [sessionSearch, setSessionSearch] = useState("")
-	const [isSessionSearchOpen, setIsSessionSearchOpen] = useState(false)
   const [visibleSessionCount, setVisibleSessionCount] = useState(20)
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>(readSessionFolders)
   const [sessionFolderAssignments, setSessionFolderAssignments] = useState<Record<string, string>>(readSessionFolderAssignments)
@@ -676,6 +675,7 @@ export default function Chat() {
   const [, setProcessingTick] = useState(0)
   const [terminalWindow, setTerminalWindow] = useState<{ deviceID: string; deviceName: string; deviceOS?: string; workspacePath: string } | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const handledNewSessionRequestRef = useRef("")
   const observedTaskRunStatesRef = useRef<Map<string, { runID: string; status: string }>>(new Map())
   const hasObservedTaskRunStatesRef = useRef(false)
   const notifiedConnectorApprovalTaskIDsRef = useRef(new Set<string>())
@@ -844,12 +844,10 @@ export default function Chat() {
     [sessions, activeSessionID, loadedSharedSession]
   )
   const displaySessions = useMemo(() => sessions.map(normalizeRuntimeSession), [sessions])
-  const normalizedSessionSearch = sessionSearch.trim().toLowerCase()
   const searchedSessions = useMemo(
     () => displaySessions
-      .filter((session) => (session.title || copy.untitledSession).toLowerCase().includes(normalizedSessionSearch))
       .sort((a, b) => Date.parse(b.updated_at || b.created_at) - Date.parse(a.updated_at || a.created_at)),
-    [copy.untitledSession, displaySessions, normalizedSessionSearch]
+    [displaySessions]
   )
   const visibleSessionGroups = useMemo(() => {
     const now = new Date()
@@ -1673,6 +1671,19 @@ export default function Chat() {
       navigate("/chat")
     }
   }
+
+  useEffect(() => {
+    if (!newSessionRequest) {
+      handledNewSessionRequestRef.current = ""
+      return
+    }
+    if (handledNewSessionRequestRef.current === newSessionRequest) {
+      return
+    }
+    handledNewSessionRequestRef.current = newSessionRequest
+    void createNewSession()
+    navigate("/chat", { replace: true })
+  }, [navigate, newSessionRequest])
 
   const startBrowserPageConversation = (title: string, url: string) => {
     const pageURL = url.trim()
@@ -3409,16 +3420,6 @@ export default function Chat() {
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/80 px-3">
         <div className="truncate text-xs font-semibold uppercase text-muted-foreground">{copy.sessions}</div>
         <div className="flex items-center gap-1">
-			<Button
-				variant="ghost"
-				size="icon"
-				className="h-8 w-8"
-				onClick={() => setIsSessionSearchOpen(true)}
-				aria-label={sessionSidebarCopy.search}
-				title={sessionSidebarCopy.search}
-			>
-				<Search size={16} />
-			</Button>
           <Button
             variant="ghost"
             size="icon"
@@ -3430,12 +3431,6 @@ export default function Chat() {
             <FolderPlus size={16} />
           </Button>
         </div>
-      </div>
-      <div className="border-b border-border/80 p-2.5">
-        <Button className="h-9 w-full justify-start gap-2 rounded-md bg-background text-foreground shadow-sm hover:bg-muted" variant="outline" onClick={() => createNewSession()}>
-          <MessageSquarePlus size={16} />
-          {copy.newSession}
-        </Button>
       </div>
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain p-2">
         {isAdvanced && enterpriseMode && sharedPools.length > 0 && (
@@ -4233,54 +4228,6 @@ export default function Chat() {
           copy={taskChangeCopy}
         />
       )}
-      <Dialog
-        open={isSessionSearchOpen}
-        onOpenChange={(open) => {
-          setIsSessionSearchOpen(open)
-          if (!open) {
-            setSessionSearch("")
-            setVisibleSessionCount(20)
-          }
-        }}
-      >
-        <DialogContent className="max-h-[75vh] max-w-lg overflow-hidden p-0">
-          <DialogHeader className="border-b px-5 py-4 pr-12">
-            <DialogTitle>{sessionSidebarCopy.search}</DialogTitle>
-          </DialogHeader>
-          <div className="p-4">
-            <label className="relative block">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                autoFocus
-                className="h-10 w-full rounded-md border border-border bg-background py-1 pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
-                value={sessionSearch}
-                onChange={(event) => setSessionSearch(event.target.value)}
-                placeholder={sessionSidebarCopy.search}
-                aria-label={sessionSidebarCopy.search}
-              />
-            </label>
-            <div className="mt-3 max-h-[48vh] overflow-y-auto rounded-md border p-1">
-              {searchedSessions.length === 0 ? (
-                <div className="px-3 py-10 text-center text-sm text-muted-foreground">{sessionSidebarCopy.noSessions}</div>
-              ) : searchedSessions.map((session) => (
-                <button
-                  key={session.id}
-                  type="button"
-                  className="flex min-h-10 w-full items-center rounded px-2 text-left hover:bg-muted"
-                  onClick={() => {
-                    selectSession(session.id)
-                    setIsSessionSearchOpen(false)
-                    setSessionSearch("")
-                    setVisibleSessionCount(20)
-                  }}
-                >
-                  <span className="truncate text-sm font-medium">{session.title || copy.untitledSession}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
       <Dialog
         open={isSessionFolderDialogOpen}
         onOpenChange={(open) => {
