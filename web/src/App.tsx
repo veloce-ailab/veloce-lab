@@ -4,9 +4,11 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-route
 import { PageTransition } from "./components/layout/PageTransition"
 import { ToastProvider } from "./components/ui/toast"
 import api, { getAuthToken } from "./lib/api"
+import { resolvePostLoginPath } from "./lib/desktop-authorize"
 import { I18nProvider, useI18n } from "./lib/i18n"
 import { ThemeProvider } from "./lib/theme"
 import AdvancedChat from "./pages/AdvancedChat"
+import DesktopAuthorize from "./pages/DesktopAuthorize"
 import Login from "./pages/Login"
 import SettingsWorkspace from "./pages/SettingsWorkspace"
 import Setup from "./pages/Setup"
@@ -53,8 +55,9 @@ function App() {
     const token = new URLSearchParams(window.location.search).get("token")
     if (token) {
       localStorage.setItem("token", token)
-      window.history.replaceState(null, "", "/chat")
-      window.location.reload()
+      // OAuth callbacks use /dashboard as a neutral landing path. Restore a
+      // pending desktop authorization before taking the signed-in user home.
+      window.location.replace(resolvePostLoginPath())
     }
   }, [])
 
@@ -67,6 +70,7 @@ function App() {
               <SetupGate>
                 <Routes>
                   <Route path="/setup" element={<PageTransition><Setup /></PageTransition>} />
+                  <Route path="/desktop/authorize" element={<PageTransition><DesktopAuthorize /></PageTransition>} />
                   <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
                   <Route path="/chat/*" element={<ProtectedRoute authenticated={authenticated}><AdvancedChat /></ProtectedRoute>} />
                   <Route path="/settings/*" element={<ProtectedRoute authenticated={authenticated}><SettingsWorkspace /></ProtectedRoute>} />
