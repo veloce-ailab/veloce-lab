@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Bot, MessageCircle, PanelRightOpen, Plus, Send, Settings, Trash2, Users, X } from "lucide-react"
+import { ArrowLeft, Bot, Folder, FolderGit2, GitBranch, MessageCircle, Monitor, PanelRightOpen, Plus, RefreshCw, Send, Settings, Trash2, Users, X } from "lucide-react"
 import api from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -17,13 +17,15 @@ interface GroupMember { id: string; agent_id: string; agent_name: string; model_
 interface UpstreamChannel { id: number; name: string; models: string[] }
 interface ConnectorDevice { id: string; name: string; hostname?: string; online?: boolean }
 interface MemberConfig { agent_id: string; model_name: string; user_channel_id: number; connector_device_id: string }
-interface ChatGroup { id: string; name: string; description: string; members: GroupMember[]; updated_at?: string }
+interface ChatGroup { id: string; name: string; description: string; connector_device_id?: string; connector_workspace_path?: string; members: GroupMember[]; updated_at?: string }
 interface GroupMessage { id: string; sender_type: "user" | "agent"; sender_id?: string; sender_name: string; content: string; mention_member_ids: string[]; created_at: string }
 interface GroupDetail { group: ChatGroup; messages: GroupMessage[] }
 interface MemberActivity { member: GroupMember; run?: { status?: string; status_message?: string; current_round?: number; error_message?: string; updated_at?: string }; events: { id: number; event: string; payload: Record<string, unknown>; created_at: string }[]; output: string }
 interface PrivateConversation { id: string; member_a_id: string; member_b_id: string; member_a_name: string; member_b_name: string; last_message: string; last_message_at: string }
 interface PrivateMessage { id: string; sender_member_id: string; sender_name: string; recipient_member_id: string; content: string; created_at: string }
 interface PrivateConversationDetail { conversation: PrivateConversation; messages: PrivateMessage[] }
+interface GroupGitFile { path: string; status: string; additions: number; deletions: number; diff?: string }
+interface GroupGitStatus { current_branch: string; changed_files: number; additions: number; deletions: number; clean: boolean; files: GroupGitFile[] }
 
 const groupsKey = ["advanced-chat-chat-groups"] as const
 
@@ -41,16 +43,21 @@ export default function ChatGroups() {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [agentIDs, setAgentIDs] = useState<string[]>([])
+  const [groupDeviceID, setGroupDeviceID] = useState("")
+  const [groupWorkspacePath, setGroupWorkspacePath] = useState("")
   const [memberConfigs, setMemberConfigs] = useState<Record<string, MemberConfig>>({})
   const [activeMember, setActiveMember] = useState<GroupMember | null>(null)
   const [activePrivateConversation, setActivePrivateConversation] = useState<PrivateConversation | null>(null)
   const [isSending, setIsSending] = useState(false)
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [activeSidebarPanel, setActiveSidebarPanel] = useState<"group" | "environment">("group")
   const [settingsName, setSettingsName] = useState("")
   const [settingsDescription, setSettingsDescription] = useState("")
   const [settingsAgentIDs, setSettingsAgentIDs] = useState<string[]>([])
   const [settingsMemberConfigs, setSettingsMemberConfigs] = useState<Record<string, MemberConfig>>({})
+  const [settingsDeviceID, setSettingsDeviceID] = useState("")
+  const [settingsWorkspacePath, setSettingsWorkspacePath] = useState("")
   const [isSavingSettings, setIsSavingSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState<"basic" | "members">("basic")
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false)
@@ -101,12 +108,14 @@ export default function ChatGroups() {
   const createGroup = async () => {
     if (!name.trim() || agentIDs.length === 0) return
     try {
-      const response = await api.post("/user/advanced-chat/chat-groups", { name: name.trim(), description: description.trim(), agent_ids: agentIDs, member_configs: agentIDs.map((id) => memberConfigs[id] || defaultMemberConfig(agents.find((agent) => agent.id === id))) })
+      const response = await api.post("/user/advanced-chat/chat-groups", { name: name.trim(), description: description.trim(), connector_device_id: groupDeviceID, connector_workspace_path: groupWorkspacePath, agent_ids: agentIDs, member_configs: agentIDs.map((id) => memberConfigs[id] || defaultMemberConfig(agents.find((agent) => agent.id === id))) })
       setIsCreateOpen(false)
       setName("")
       setDescription("")
       setAgentIDs([])
       setMemberConfigs({})
+      setGroupDeviceID("")
+      setGroupWorkspacePath("")
       await queryClient.invalidateQueries({ queryKey: groupsKey })
       navigate(`/chat/groups/${encodeURIComponent(String(response.data.id))}`)
       success(zh ? "群组已创建" : "Group created")
@@ -129,6 +138,8 @@ export default function ChatGroups() {
   const openGroupSettings = (group: ChatGroup) => {
     setSettingsName(group.name)
     setSettingsDescription(group.description)
+    setSettingsDeviceID(group.connector_device_id || "")
+    setSettingsWorkspacePath(group.connector_workspace_path || "")
     setSettingsAgentIDs(group.members.map((member) => member.agent_id))
     setSettingsMemberConfigs(Object.fromEntries(group.members.map((member) => [member.agent_id, { agent_id: member.agent_id, model_name: member.model_name || agents.find((agent) => agent.id === member.agent_id)?.default_model || "", user_channel_id: member.user_channel_id || agents.find((agent) => agent.id === member.agent_id)?.user_channel_id || 0, connector_device_id: member.connector_device_id || "" }])))
     setSettingsTab("basic")
@@ -158,7 +169,7 @@ export default function ChatGroups() {
     if (!detail || !settingsName.trim() || settingsAgentIDs.length === 0 || isSavingSettings) return
     setIsSavingSettings(true)
     try {
-      await api.put(`/user/advanced-chat/chat-groups/${encodeURIComponent(detail.group.id)}`, { name: settingsName.trim(), description: settingsDescription.trim(), agent_ids: settingsAgentIDs, member_configs: settingsAgentIDs.map((id) => settingsMemberConfigs[id] || defaultMemberConfig(agents.find((agent) => agent.id === id))) })
+      await api.put(`/user/advanced-chat/chat-groups/${encodeURIComponent(detail.group.id)}`, { name: settingsName.trim(), description: settingsDescription.trim(), connector_device_id: settingsDeviceID, connector_workspace_path: settingsWorkspacePath, agent_ids: settingsAgentIDs, member_configs: settingsAgentIDs.map((id) => settingsMemberConfigs[id] || defaultMemberConfig(agents.find((agent) => agent.id === id))) })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: groupsKey }),
         queryClient.invalidateQueries({ queryKey: ["advanced-chat-chat-group", detail.group.id] }),
@@ -195,6 +206,7 @@ export default function ChatGroups() {
         <div className="space-y-4">
           <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={zh ? "群组名称" : "Group name"} />
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder={zh ? "群组描述" : "Description"} />
+          <GroupEnvironmentFields deviceID={groupDeviceID} workspacePath={groupWorkspacePath} devices={devices} onDeviceChange={setGroupDeviceID} onWorkspaceChange={setGroupWorkspacePath} zh={zh} />
           <div>
             <div className="mb-2 text-sm font-medium">{zh ? "选择助理" : "Select assistants"}</div>
             <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border p-2">
@@ -207,7 +219,7 @@ export default function ChatGroups() {
               ))}
             </div>
           </div>
-          <MemberConfigFields agentIDs={agentIDs} agents={agents} catalog={catalog} devices={devices} configs={memberConfigs} onChange={setMemberConfigs} zh={zh} />
+          <MemberConfigFields agentIDs={agentIDs} agents={agents} catalog={catalog} configs={memberConfigs} onChange={setMemberConfigs} zh={zh} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setIsCreateOpen(false)}>{zh ? "取消" : "Cancel"}</Button>
@@ -229,6 +241,7 @@ export default function ChatGroups() {
           <TabsContent value="basic" className="space-y-4 pt-2">
             <div className="space-y-1.5"><label className="text-sm font-medium">{zh ? "群组名称" : "Group name"}</label><Input value={settingsName} onChange={(event) => setSettingsName(event.target.value)} /></div>
             <div className="space-y-1.5"><label className="text-sm font-medium">{zh ? "群组描述" : "Description"}</label><textarea value={settingsDescription} onChange={(event) => setSettingsDescription(event.target.value)} className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" /></div>
+            <GroupEnvironmentFields deviceID={settingsDeviceID} workspacePath={settingsWorkspacePath} devices={devices} onDeviceChange={setSettingsDeviceID} onWorkspaceChange={setSettingsWorkspacePath} zh={zh} />
             <div className="border-t pt-4"><Button variant="outline" className="gap-2 text-destructive hover:text-destructive" onClick={() => { setIsSettingsOpen(false); void deleteGroup(detail.group) }}><Trash2 size={15} />{zh ? "删除群组" : "Delete group"}</Button></div>
           </TabsContent>
           <TabsContent value="members" className="space-y-3 pt-2">
@@ -249,7 +262,7 @@ export default function ChatGroups() {
                 const agent = agents.find((item) => item.id === editingMemberAgentID)
                 if (!agent || !settingsAgentIDs.includes(agent.id)) return <div className="flex min-h-40 items-center justify-center rounded-md border border-dashed px-4 text-center text-sm text-muted-foreground">{zh ? "选择一个成员以更改模型或移除成员" : "Select a member to change its model or remove it"}</div>
                 const config = settingsMemberConfigs[agent.id] || defaultMemberConfig(agent)
-                return <div className="rounded-md border p-3"><div className="mb-3 flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-2 text-sm font-medium"><Bot size={15} /><span className="truncate">{agent.name}</span></span><Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-destructive hover:text-destructive" onClick={() => removeSettingsMember(agent.id)}><Trash2 size={14} />{zh ? "移除" : "Remove"}</Button></div><MemberConfigEditor agentID={agent.id} config={config} catalog={catalog} devices={devices} onChange={(nextConfig) => setSettingsMemberConfigs((current) => ({ ...current, [agent.id]: nextConfig }))} zh={zh} /></div>
+                return <div className="rounded-md border p-3"><div className="mb-3 flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-2 text-sm font-medium"><Bot size={15} /><span className="truncate">{agent.name}</span></span><Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-destructive hover:text-destructive" onClick={() => removeSettingsMember(agent.id)}><Trash2 size={14} />{zh ? "移除" : "Remove"}</Button></div><MemberConfigEditor agentID={agent.id} config={config} catalog={catalog} onChange={(nextConfig) => setSettingsMemberConfigs((current) => ({ ...current, [agent.id]: nextConfig }))} zh={zh} /></div>
               })()}
             </div>
           </TabsContent>
@@ -339,10 +352,18 @@ export default function ChatGroups() {
         ) : <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">{zh ? "加载群组..." : "Loading group..."}</div>}
       </section>
 
-      <GroupSidebar className="hidden w-72 shrink-0 lg:block" members={members} mentions={mentions} privateConversations={privateConversations} zh={zh} onMember={setActiveMember} onMention={(id) => setMentions((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} onPrivateConversation={setActivePrivateConversation} />
+      <div className="hidden shrink-0 lg:flex">
+        {activeSidebarPanel === "group" ? <GroupSidebar className="w-72" members={members} mentions={mentions} privateConversations={privateConversations} zh={zh} onMember={setActiveMember} onMention={(id) => setMentions((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} onPrivateConversation={setActivePrivateConversation} /> : <GroupEnvironmentSidebar className="w-80" group={detail?.group} devices={devices} zh={zh} />}
+        <aside className="flex w-12 flex-col items-center gap-2 border-l bg-card py-3">
+          <button type="button" className={cn("flex h-9 w-9 items-center justify-center rounded-md", activeSidebarPanel === "group" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")} onClick={() => setActiveSidebarPanel("group")} title={zh ? "群组信息" : "Group information"}><Users size={17} /></button>
+          <button type="button" className={cn("flex h-9 w-9 items-center justify-center rounded-md", activeSidebarPanel === "environment" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")} onClick={() => setActiveSidebarPanel("environment")} title={zh ? "环境信息" : "Environment"}><FolderGit2 size={17} /></button>
+        </aside>
+      </div>
       <div className={cn("fixed inset-0 z-40 lg:hidden", isMobileSidebarOpen ? "pointer-events-auto" : "pointer-events-none")} aria-hidden={!isMobileSidebarOpen}>
         <button type="button" className={cn("absolute inset-0 bg-black/35 transition-opacity", isMobileSidebarOpen ? "opacity-100" : "opacity-0")} onClick={() => setIsMobileSidebarOpen(false)} aria-label={zh ? "关闭群组信息" : "Close group details"} />
-        <GroupSidebar className={cn("absolute right-0 top-0 h-full w-72 max-w-[85vw] transition-transform duration-200", isMobileSidebarOpen ? "translate-x-0" : "translate-x-full")} members={members} mentions={mentions} privateConversations={privateConversations} zh={zh} onClose={() => setIsMobileSidebarOpen(false)} onMember={(member) => { setIsMobileSidebarOpen(false); setActiveMember(member) }} onMention={(id) => setMentions((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} onPrivateConversation={(conversation) => { setIsMobileSidebarOpen(false); setActivePrivateConversation(conversation) }} />
+        <div className={cn("absolute right-0 top-0 h-full w-80 max-w-[85vw] transition-transform duration-200", isMobileSidebarOpen ? "translate-x-0" : "translate-x-full")}>
+          <div className="flex h-full flex-col bg-card"><div className="flex h-12 shrink-0 items-center gap-1 border-b px-2"><button type="button" className={cn("flex h-8 flex-1 items-center justify-center rounded text-xs", activeSidebarPanel === "group" ? "bg-primary text-primary-foreground" : "hover:bg-muted")} onClick={() => setActiveSidebarPanel("group")}>{zh ? "群组" : "Group"}</button><button type="button" className={cn("flex h-8 flex-1 items-center justify-center rounded text-xs", activeSidebarPanel === "environment" ? "bg-primary text-primary-foreground" : "hover:bg-muted")} onClick={() => setActiveSidebarPanel("environment")}>{zh ? "环境" : "Environment"}</button><Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setIsMobileSidebarOpen(false)}><X size={16} /></Button></div>{activeSidebarPanel === "group" ? <GroupSidebar className="min-h-0 flex-1" members={members} mentions={mentions} privateConversations={privateConversations} zh={zh} onMember={(member) => { setIsMobileSidebarOpen(false); setActiveMember(member) }} onMention={(id) => setMentions((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])} onPrivateConversation={(conversation) => { setIsMobileSidebarOpen(false); setActivePrivateConversation(conversation) }} /> : <GroupEnvironmentSidebar className="min-h-0 flex-1" group={detail?.group} devices={devices} zh={zh} />}</div>
+        </div>
       </div>
       {activeMember && detail && <MemberActivityDialog groupID={detail.group.id} member={activeMember} onClose={() => setActiveMember(null)} zh={zh} />}
 	  {activePrivateConversation && detail && <PrivateConversationDialog groupID={detail.group.id} conversation={activePrivateConversation} onClose={() => setActivePrivateConversation(null)} zh={zh} />}
@@ -379,7 +400,11 @@ function GroupSidebar({ className, members, mentions, privateConversations, zh, 
   )
 }
 
-function MemberConfigFields({ agentIDs, agents, catalog, devices, configs, onChange, zh }: { agentIDs: string[]; agents: Agent[]; catalog: UpstreamChannel[]; devices: ConnectorDevice[]; configs: Record<string, MemberConfig>; onChange: (value: Record<string, MemberConfig>) => void; zh: boolean }) {
+function GroupEnvironmentFields({ deviceID, workspacePath, devices, onDeviceChange, onWorkspaceChange, zh }: { deviceID: string; workspacePath: string; devices: ConnectorDevice[]; onDeviceChange: (value: string) => void; onWorkspaceChange: (value: string) => void; zh: boolean }) {
+  return <div className="space-y-3 rounded-md border bg-muted/20 p-3"><div className="flex items-center gap-2 text-sm font-medium"><Monitor size={15} />{zh ? "群组运行环境" : "Group environment"}</div><p className="text-xs text-muted-foreground">{zh ? "一个群组只能绑定一个设备，所有成员在同一环境中执行。" : "A group uses one device shared by every member."}</p><label className="block space-y-1"><span className="text-xs text-muted-foreground">{zh ? "设备" : "Device"}</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={deviceID} onChange={(event) => onDeviceChange(event.target.value)}><option value="">{zh ? "无设备环境" : "No device"}</option>{devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.hostname ? ` · ${device.hostname}` : ""}{device.online === false ? (zh ? "（离线）" : " (offline)") : ""}</option>)}</select></label><label className="block space-y-1"><span className="text-xs text-muted-foreground">{zh ? "工作目录" : "Workspace path"}</span><Input value={workspacePath} disabled={!deviceID} onChange={(event) => onWorkspaceChange(event.target.value)} placeholder={zh ? "例如 D:\\workspace\\project" : "e.g. /workspace/project"} /></label></div>
+}
+
+function MemberConfigFields({ agentIDs, agents, catalog, configs, onChange, zh }: { agentIDs: string[]; agents: Agent[]; catalog: UpstreamChannel[]; configs: Record<string, MemberConfig>; onChange: (value: Record<string, MemberConfig>) => void; zh: boolean }) {
   if (agentIDs.length === 0) return null
   return (
     <div className="space-y-2 border-t pt-4">
@@ -391,7 +416,7 @@ function MemberConfigFields({ agentIDs, agents, catalog, devices, configs, onCha
         return (
           <div key={agentID} className="rounded-md border p-3">
             <div className="mb-2 flex items-center gap-2 text-sm font-medium"><Bot size={15} />{agent.name}</div>
-            <MemberConfigEditor agentID={agentID} config={config} catalog={catalog} devices={devices} onChange={(nextConfig) => onChange({ ...configs, [agentID]: nextConfig })} zh={zh} />
+            <MemberConfigEditor agentID={agentID} config={config} catalog={catalog} onChange={(nextConfig) => onChange({ ...configs, [agentID]: nextConfig })} zh={zh} />
           </div>
         )
       })}
@@ -399,13 +424,28 @@ function MemberConfigFields({ agentIDs, agents, catalog, devices, configs, onCha
   )
 }
 
-function MemberConfigEditor({ agentID, config, catalog, devices, onChange, zh }: { agentID: string; config: MemberConfig; catalog: UpstreamChannel[]; devices: ConnectorDevice[]; onChange: (value: MemberConfig) => void; zh: boolean }) {
+function GroupEnvironmentSidebar({ className, group, devices, zh }: { className?: string; group?: ChatGroup; devices: ConnectorDevice[]; zh: boolean }) {
+  const device = devices.find((item) => item.id === group?.connector_device_id)
+  const canInspect = Boolean(group?.connector_device_id && group?.connector_workspace_path)
+  const gitStatus = useQuery<GroupGitStatus>({
+    queryKey: ["chat-group-git-status", group?.id, group?.connector_device_id, group?.connector_workspace_path],
+    enabled: canInspect,
+    queryFn: async () => (await api.get("/user/advanced-chat/workspace/git/status", { params: { connector_device_id: group?.connector_device_id, connector_workspace_path: group?.connector_workspace_path } })).data,
+  })
+  return <aside className={cn("overflow-y-auto border-l bg-card", className)}>
+    <div className="flex h-14 items-center justify-between border-b px-4"><span className="flex items-center gap-2 text-sm font-semibold"><FolderGit2 size={16} />{zh ? "环境信息" : "Environment"}</span><Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canInspect || gitStatus.isFetching} onClick={() => void gitStatus.refetch()} title={zh ? "刷新 Git 状态" : "Refresh Git status"}><RefreshCw size={15} className={gitStatus.isFetching ? "animate-spin" : ""} /></Button></div>
+    <div className="space-y-4 p-3">
+      <div className="overflow-hidden rounded-md border"><div className="flex items-center gap-2 border-b px-3 py-2"><Monitor size={15} className="text-muted-foreground" /><span className="text-xs text-muted-foreground">{zh ? "执行设备" : "Execution device"}</span></div><div className="px-3 py-2 text-sm font-medium">{device?.name || (zh ? "未绑定设备" : "No device bound")}</div>{device?.hostname && <div className="px-3 pb-2 text-xs text-muted-foreground">{device.hostname}</div>}<div className="flex items-center gap-2 border-t px-3 py-2"><Folder size={15} className="text-primary" /><span className="min-w-0 truncate font-mono text-xs">{group?.connector_workspace_path || (zh ? "未设置工作目录" : "No workspace path")}</span></div></div>
+      {!canInspect ? <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{zh ? "在群组设置中绑定设备和工作目录后，可在这里查看 Git 变更。" : "Bind a device and workspace in group settings to inspect Git changes here."}</div> : gitStatus.isLoading ? <div className="py-10 text-center text-sm text-muted-foreground">{zh ? "正在读取 Git 状态..." : "Loading Git status..."}</div> : gitStatus.isError ? <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{zh ? "无法读取 Git 状态。" : "Unable to read Git status."}</div> : <><div className="rounded-md border p-3"><div className="flex items-center gap-2 text-sm font-medium"><GitBranch size={15} />{gitStatus.data?.current_branch || "-"}</div><div className="mt-2 flex items-center gap-2 text-xs tabular-nums"><span className="text-primary">+{gitStatus.data?.additions || 0}</span><span className="text-destructive">-{gitStatus.data?.deletions || 0}</span><span className="text-muted-foreground">{gitStatus.data?.changed_files || 0} {zh ? "个文件" : "files"}</span></div></div><div><div className="mb-2 text-sm font-semibold">{zh ? "文件变更" : "File changes"}</div><div className="space-y-2">{(gitStatus.data?.files || []).map((file) => <details key={file.path} className="group rounded-md border bg-background" open={gitStatus.data?.files.length === 1}><summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm [&::-webkit-details-marker]:hidden"><span className="min-w-0 flex-1 truncate font-mono text-xs">{file.path}</span><span className="shrink-0 text-xs text-primary">+{file.additions}</span><span className="shrink-0 text-xs text-destructive">-{file.deletions}</span></summary><div className="border-t bg-muted/30 p-2">{file.diff ? <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5">{file.diff}</pre> : <div className="text-xs text-muted-foreground">{file.status.includes("??") ? (zh ? "未跟踪文件，尚无 Git diff。" : "Untracked file; no Git diff yet.") : (zh ? "当前比较范围没有可展示的文本差异。" : "No text diff is available for this comparison.")}</div>}</div></details>)}{gitStatus.data?.clean && <div className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground">{zh ? "工作目录干净，没有待提交改动。" : "Working tree is clean."}</div>}</div></div></>}</div>
+  </aside>
+}
+
+function MemberConfigEditor({ agentID, config, catalog, onChange, zh }: { agentID: string; config: MemberConfig; catalog: UpstreamChannel[]; onChange: (value: MemberConfig) => void; zh: boolean }) {
   const selectedChannel = catalog.find((channel) => channel.id === config.user_channel_id && channel.models.includes(config.model_name))
   const selectedModelValue = selectedChannel ? JSON.stringify([selectedChannel.id, config.model_name]) : "current"
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
+    <div className="grid gap-2">
       <label className="space-y-1"><span className="text-xs text-muted-foreground">{zh ? "上级渠道 / 模型" : "Upstream / model"}</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={selectedModelValue} onChange={(event) => { if (event.target.value === "current") return; const [channelID, modelName] = JSON.parse(event.target.value) as [number, string]; onChange({ ...config, agent_id: agentID, user_channel_id: channelID, model_name: modelName }) }}>{!selectedChannel && config.model_name && <option value="current">{config.model_name}</option>}{catalog.flatMap((channel) => channel.models.map((model) => <option key={`${channel.id}-${model}`} value={JSON.stringify([channel.id, model])}>{channel.name} / {model}</option>))}</select></label>
-      <label className="space-y-1"><span className="text-xs text-muted-foreground">{zh ? "设备" : "Device"}</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={config.connector_device_id} onChange={(event) => onChange({ ...config, agent_id: agentID, connector_device_id: event.target.value })}><option value="">{zh ? "无设备环境" : "No device"}</option>{devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.hostname ? ` · ${device.hostname}` : ""}{device.online === false ? (zh ? "（离线）" : " (offline)") : ""}</option>)}</select></label>
     </div>
   )
 }

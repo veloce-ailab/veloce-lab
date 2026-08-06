@@ -352,13 +352,22 @@ type advancedChatWorkspaceDirectoriesResponse struct {
 }
 
 type advancedChatWorkspaceGitStatusResponse struct {
-	CurrentBranch string   `json:"current_branch"`
-	CompareBranch string   `json:"compare_branch,omitempty"`
-	Branches      []string `json:"branches"`
-	ChangedFiles  int      `json:"changed_files"`
-	Additions     int      `json:"additions"`
-	Deletions     int      `json:"deletions"`
-	Clean         bool     `json:"clean"`
+	CurrentBranch string                         `json:"current_branch"`
+	CompareBranch string                         `json:"compare_branch,omitempty"`
+	Branches      []string                       `json:"branches"`
+	ChangedFiles  int                            `json:"changed_files"`
+	Additions     int                            `json:"additions"`
+	Deletions     int                            `json:"deletions"`
+	Clean         bool                           `json:"clean"`
+	Files         []advancedChatWorkspaceGitFile `json:"files"`
+}
+
+type advancedChatWorkspaceGitFile struct {
+	Path      string `json:"path"`
+	Status    string `json:"status"`
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
+	Diff      string `json:"diff,omitempty"`
 }
 
 type advancedChatConnectorMCPProcessStopInput struct {
@@ -2918,15 +2927,22 @@ func advancedChatWorkspaceGitStatus(ctx context.Context, userID uint, device *Ad
 		return advancedChatWorkspaceGitStatusResponse{}, fmt.Errorf("git branch failed: %w", err)
 	}
 	diffCommand := "git diff --numstat && git diff --cached --numstat"
+	patchCommand := "git diff --no-ext-diff --unified=3 && git diff --cached --no-ext-diff --unified=3"
 	if compareBranch != "" {
 		diffCommand = "git diff --numstat " + compareBranch + "...HEAD"
+		patchCommand = "git diff --no-ext-diff --unified=3 " + compareBranch + "...HEAD"
 	}
 	diffOutput, err := callAdvancedChatWorkspaceGitReadCommand(ctx, userID, device, workspacePath, diffCommand)
 	if err != nil {
 		return advancedChatWorkspaceGitStatusResponse{}, fmt.Errorf("git diff failed: %w", err)
 	}
+	patchOutput, err := callAdvancedChatWorkspaceGitReadCommand(ctx, userID, device, workspacePath, patchCommand)
+	if err != nil {
+		return advancedChatWorkspaceGitStatusResponse{}, fmt.Errorf("git patch failed: %w", err)
+	}
 	branch, changedFiles := parseAdvancedChatGitStatus(statusOutput)
 	additions, deletions := parseAdvancedChatGitNumstat(diffOutput)
+	files := parseAdvancedChatWorkspaceGitFiles(statusOutput, diffOutput, patchOutput)
 	return advancedChatWorkspaceGitStatusResponse{
 		CurrentBranch: branch,
 		CompareBranch: compareBranch,
@@ -2935,6 +2951,7 @@ func advancedChatWorkspaceGitStatus(ctx context.Context, userID uint, device *Ad
 		Additions:     additions,
 		Deletions:     deletions,
 		Clean:         changedFiles == 0 && additions == 0 && deletions == 0,
+		Files:         files,
 	}, nil
 }
 
@@ -3082,6 +3099,90 @@ func parseAdvancedChatGitNumstat(value string) (int, int) {
 		}
 	}
 	return additions, deletions
+}
+
+func parseAdvancedChatWorkspaceGitFiles(statusOutput, numstatOutput, patchOutput string) []advancedChatWorkspaceGitFile {
+	files := map[string]advancedChatWorkspaceGitFile{}
+	order := make([]string, 0)
+	add := func(path string) *advancedChatWorkspaceGitFile {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return nil
+		}
+		item, exists := files[path]
+		if !exists {
+			item.Path = path
+			files[path] = item
+			order = append(order, path)
+		}
+		return &item
+	}
+	for _, line := range strings.Split(strings.ReplaceAll(statusOutput, "\r\n", "\n"), "\n") {
+		if len(line) < 4 || strings.HasPrefix(line, "## ") {
+			continue
+		}
+		status := strings.TrimSpace(line[:2])
+		path := strings.TrimSpace(line[3:])
+		if index := strings.Index(path, " -> "); index >= 0 {
+			path = strings.TrimSpace(path[index+4:])
+		}
+		item := add(path)
+		if item != nil {
+			item.Status = status
+			files[path] = *item
+		}
+	}
+	for _, line := range strings.Split(strings.ReplaceAll(numstatOutput, "\r\n", "\n"), "\n") {
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		item := add(parts[2])
+		if item == nil {
+			continue
+		}
+		item.Additions, _ = strconv.Atoi(parts[0])
+		item.Deletions, _ = strconv.Atoi(parts[1])
+		files[item.Path] = *item
+	}
+	currentPath := ""
+	var patch strings.Builder
+	flush := func() {
+		if currentPath == "" || patch.Len() == 0 {
+			return
+		}
+		item := add(currentPath)
+		if item != nil {
+			content := patch.String()
+			if len(content) > 16*1024 {
+				content = content[:16*1024] + "\n... diff truncated ..."
+			}
+			item.Diff = content
+			files[item.Path] = *item
+		}
+	}
+	for _, line := range strings.Split(strings.ReplaceAll(patchOutput, "\r\n", "\n"), "\n") {
+		if strings.HasPrefix(line, "diff --git a/") {
+			flush()
+			patch.Reset()
+			parts := strings.Split(line, " b/")
+			if len(parts) == 2 {
+				currentPath = strings.TrimSpace(parts[1])
+			} else {
+				currentPath = ""
+			}
+		}
+		if currentPath != "" {
+			patch.WriteString(line)
+			patch.WriteByte('\n')
+		}
+	}
+	flush()
+	result := make([]advancedChatWorkspaceGitFile, 0, len(order))
+	for _, path := range order {
+		result = append(result, files[path])
+	}
+	return result
 }
 
 func parseAdvancedChatGitBranches(value string) []string {

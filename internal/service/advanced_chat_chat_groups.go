@@ -33,13 +33,15 @@ const (
 )
 
 type AdvancedChatChatGroup struct {
-	ID          string                        `gorm:"primaryKey;size:80" json:"id"`
-	UserID      uint                          `gorm:"index;not null" json:"-"`
-	Name        string                        `gorm:"size:120;not null" json:"name"`
-	Description string                        `gorm:"type:text;not null" json:"description"`
-	CreatedAt   time.Time                     `json:"created_at"`
-	UpdatedAt   time.Time                     `json:"updated_at"`
-	Members     []AdvancedChatChatGroupMember `gorm:"foreignKey:GroupID" json:"members,omitempty"`
+	ID                     string                        `gorm:"primaryKey;size:80" json:"id"`
+	UserID                 uint                          `gorm:"index;not null" json:"-"`
+	Name                   string                        `gorm:"size:120;not null" json:"name"`
+	Description            string                        `gorm:"type:text;not null" json:"description"`
+	ConnectorDeviceID      string                        `gorm:"size:80;index;not null;default:''" json:"connector_device_id,omitempty"`
+	ConnectorWorkspacePath string                        `gorm:"size:1000;not null;default:''" json:"connector_workspace_path,omitempty"`
+	CreatedAt              time.Time                     `json:"created_at"`
+	UpdatedAt              time.Time                     `json:"updated_at"`
+	Members                []AdvancedChatChatGroupMember `gorm:"foreignKey:GroupID" json:"members,omitempty"`
 }
 
 type AdvancedChatChatGroupMember struct {
@@ -103,10 +105,12 @@ type AdvancedChatPrivateMessage struct {
 }
 
 type chatGroupInput struct {
-	Name          string                       `json:"name"`
-	Description   string                       `json:"description"`
-	AgentIDs      []string                     `json:"agent_ids"`
-	MemberConfigs []chatGroupMemberConfigInput `json:"member_configs"`
+	Name                   string                       `json:"name"`
+	Description            string                       `json:"description"`
+	ConnectorDeviceID      string                       `json:"connector_device_id"`
+	ConnectorWorkspacePath string                       `json:"connector_workspace_path"`
+	AgentIDs               []string                     `json:"agent_ids"`
+	MemberConfigs          []chatGroupMemberConfigInput `json:"member_configs"`
 }
 
 type chatGroupMemberConfigInput struct {
@@ -659,7 +663,7 @@ func (api *advancedChatAPI) updateChatGroup(c *gin.Context) {
 		return
 	}
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&existing).Updates(map[string]interface{}{"name": group.Name, "description": group.Description}).Error; err != nil {
+		if err := tx.Model(&existing).Updates(map[string]interface{}{"name": group.Name, "description": group.Description, "connector_device_id": group.ConnectorDeviceID, "connector_workspace_path": group.ConnectorWorkspacePath}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("group_id = ? AND user_id = ?", existing.ID, user.ID).Delete(&AdvancedChatPrivateMessage{}).Error; err != nil {
@@ -692,10 +696,30 @@ func buildChatGroup(userID uint, groupID string, input chatGroupInput) (Advanced
 	if groupID == "" {
 		groupID = newAdvancedChatID("acg")
 	}
+	deviceID := strings.TrimSpace(input.ConnectorDeviceID)
+	workspacePath := strings.TrimSpace(input.ConnectorWorkspacePath)
 	members := make([]AdvancedChatChatGroupMember, 0, len(agentIDs))
 	configs := map[string]chatGroupMemberConfigInput{}
+	legacyDeviceIDs := map[string]struct{}{}
 	for _, config := range input.MemberConfigs {
 		configs[strings.TrimSpace(config.AgentID)] = config
+		if legacy := strings.TrimSpace(config.ConnectorDeviceID); legacy != "" {
+			legacyDeviceIDs[legacy] = struct{}{}
+		}
+	}
+	if deviceID == "" && len(legacyDeviceIDs) == 1 {
+		for legacy := range legacyDeviceIDs {
+			deviceID = legacy
+		}
+	}
+	if len(legacyDeviceIDs) > 1 {
+		return AdvancedChatChatGroup{}, nil, errors.New("a chat group can only be bound to one device")
+	}
+	if deviceID != "" {
+		var count int64
+		if err := model.DB.Model(&AdvancedChatConnectorDevice{}).Where("id = ? AND user_id = ?", deviceID, userID).Count(&count).Error; err != nil || count == 0 {
+			return AdvancedChatChatGroup{}, nil, errors.New("group device was not found")
+		}
 	}
 	for _, agentID := range agentIDs {
 		agent, err := loadAdvancedChatAgent(userID, agentID)
@@ -714,16 +738,18 @@ func buildChatGroup(userID uint, groupID string, input chatGroupInput) (Advanced
 		if userChannelID == 0 {
 			userChannelID = agent.UserChannelID
 		}
-		deviceID := strings.TrimSpace(config.ConnectorDeviceID)
-		if deviceID != "" {
-			var count int64
-			if err := model.DB.Model(&AdvancedChatConnectorDevice{}).Where("id = ? AND user_id = ?", deviceID, userID).Count(&count).Error; err != nil || count == 0 {
-				return AdvancedChatChatGroup{}, nil, fmt.Errorf("device for assistant %s was not found", agentID)
-			}
-		}
 		members = append(members, AdvancedChatChatGroupMember{ID: newAdvancedChatID("acgm"), GroupID: groupID, UserID: userID, AgentID: agentID, AgentName: agent.Name, ModelName: modelName, UserChannelID: userChannelID, ConnectorDeviceID: deviceID, Status: chatGroupMemberIdle})
 	}
-	return AdvancedChatChatGroup{ID: groupID, UserID: userID, Name: name, Description: truncateSessionTaskText(input.Description, 2000)}, members, nil
+	return AdvancedChatChatGroup{ID: groupID, UserID: userID, Name: name, Description: truncateSessionTaskText(input.Description, 2000), ConnectorDeviceID: deviceID, ConnectorWorkspacePath: workspacePath}, members, nil
+}
+
+func chatGroupDeviceID(group AdvancedChatChatGroup, member AdvancedChatChatGroupMember) string {
+	if deviceID := strings.TrimSpace(group.ConnectorDeviceID); deviceID != "" {
+		return deviceID
+	}
+	// Existing rows created before devices became group-scoped retain their
+	// previous binding until the group is next saved.
+	return strings.TrimSpace(member.ConnectorDeviceID)
 }
 
 func (api *advancedChatAPI) getChatGroup(c *gin.Context) {
@@ -1032,7 +1058,7 @@ func runChatGroupMember(userID uint, groupID string, memberID string, trigger Ad
 	if userChannelID == 0 {
 		userChannelID = agent.UserChannelID
 	}
-	input := advancedChatCompletionInput{SessionID: sessionID, Title: group.Name + " / " + member.AgentName, Mode: advancedChatModeAssistant, AgentID: member.AgentID, ModelName: modelName, UserChannelID: userChannelID, ConnectorDeviceID: member.ConnectorDeviceID, Messages: messages, AutoCompressContext: true}
+	input := advancedChatCompletionInput{SessionID: sessionID, Title: group.Name + " / " + member.AgentName, Mode: advancedChatModeAssistant, AgentID: member.AgentID, ModelName: modelName, UserChannelID: userChannelID, ConnectorDeviceID: chatGroupDeviceID(group, member), ConnectorWorkspacePath: group.ConnectorWorkspacePath, Messages: messages, AutoCompressContext: true}
 	prepared, _, _, err := prepareAdvancedChatAssistantRun(context.Background(), userID, input, messages, modelName)
 	if err != nil {
 		return
@@ -1098,7 +1124,7 @@ func runPrivateChatMember(userID uint, trigger AdvancedChatPrivateMessage) {
 	if userChannelID == 0 {
 		userChannelID = agent.UserChannelID
 	}
-	input := advancedChatCompletionInput{SessionID: sessionID, Title: group.Name + " / " + member.AgentName, Mode: advancedChatModeAssistant, AgentID: member.AgentID, ModelName: modelName, UserChannelID: userChannelID, ConnectorDeviceID: member.ConnectorDeviceID, Messages: messages, AutoCompressContext: true}
+	input := advancedChatCompletionInput{SessionID: sessionID, Title: group.Name + " / " + member.AgentName, Mode: advancedChatModeAssistant, AgentID: member.AgentID, ModelName: modelName, UserChannelID: userChannelID, ConnectorDeviceID: chatGroupDeviceID(group, member), ConnectorWorkspacePath: group.ConnectorWorkspacePath, Messages: messages, AutoCompressContext: true}
 	prepared, _, _, err := prepareAdvancedChatAssistantRun(context.Background(), userID, input, messages, modelName)
 	if err != nil {
 		return
