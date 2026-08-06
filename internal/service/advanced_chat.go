@@ -294,6 +294,8 @@ func initAdvancedChatFeatures() error {
 		&AdvancedChatKnowledgeChunk{},
 		&AdvancedChatConnectorDevice{},
 		&AdvancedChatConnectorTask{},
+		&AdvancedChatConnectorCredential{},
+		&AdvancedChatConnectorCredentialBinding{},
 		&AdvancedChatCloudSandboxHost{},
 		&AdvancedChatCloudSandbox{},
 		&AdvancedChatCloudSandboxCharge{},
@@ -324,6 +326,10 @@ func registerAdvancedChatUserRoutes(group *gin.RouterGroup) {
 	api := &advancedChatAPI{}
 	group.GET("/advanced-chat/settings", api.getUserSettings)
 	group.PUT("/advanced-chat/settings", api.updateUserSettings)
+	group.GET("/advanced-chat/connector-credentials", api.listConnectorCredentials)
+	group.POST("/advanced-chat/connector-credentials", api.createConnectorCredential)
+	group.PUT("/advanced-chat/connector-credentials/:id", api.updateConnectorCredential)
+	group.DELETE("/advanced-chat/connector-credentials/:id", api.deleteConnectorCredential)
 	group.POST("/advanced-chat/completions", api.completeChat)
 	group.GET("/advanced-chat/sessions/folders", api.listSessionFolders)
 	group.POST("/advanced-chat/sessions/folders", api.createSessionFolder)
@@ -365,6 +371,8 @@ func registerAdvancedChatUserRoutes(group *gin.RouterGroup) {
 	registerAdvancedChatTerminalRoutes(group)
 	group.GET("/advanced-chat/devices", api.listConnectorDevices)
 	group.GET("/advanced-chat/devices/:id", api.getConnectorDevice)
+	group.GET("/advanced-chat/devices/:id/credentials", api.listConnectorDeviceCredentials)
+	group.PUT("/advanced-chat/devices/:id/credentials", api.updateConnectorDeviceCredentials)
 	group.GET("/advanced-chat/devices/:id/tasks", api.listConnectorDeviceTasks)
 	group.POST("/advanced-chat/devices/:id/tasks/:task_id/cancel", api.cancelConnectorDeviceTask)
 	group.GET("/advanced-chat/devices/:id/mcp-processes", api.listConnectorDeviceMCPProcesses)

@@ -1031,6 +1031,9 @@ func (api *advancedChatAPI) deleteConnectorDevice(c *gin.Context) {
 		if err := tx.Where("device_id = ? AND user_id = ?", deviceID, user.ID).Delete(&AdvancedChatConnectorTask{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("device_id = ? AND user_id = ?", deviceID, user.ID).Delete(&AdvancedChatConnectorCredentialBinding{}).Error; err != nil {
+			return err
+		}
 		return tx.Where("id = ? AND user_id = ?", deviceID, user.ID).Delete(&AdvancedChatConnectorDevice{}).Error
 	})
 	if err != nil {
@@ -1439,7 +1442,7 @@ func advancedChatConnectorTaskApprovalResponseFromModel(task AdvancedChatConnect
 		Action:                task.Action,
 		WorkspacePath:         task.WorkspacePath,
 		WorkspaceUnrestricted: strings.TrimSpace(task.WorkspacePath) == "",
-		Payload:               payload,
+		Payload:               stripAdvancedChatConnectorPreviewFields(payload),
 		CreatedAt:             task.CreatedAt,
 	}
 }
@@ -1727,9 +1730,9 @@ func advancedChatConnectorToolsWithApprovalModeAndSandbox(device *AdvancedChatCo
 		},
 	})
 	bind(advancedChatConnectorToolRunCommand, "run_command")
-	runDescription := "Run a shell command in the selected local workspace. This always requires approval unless the full command starts with a command prefix explicitly allowed in the session settings."
+	runDescription := "Run a shell command in the selected local workspace. Bound connector environment-variable credentials are attached automatically. This always requires approval unless the full command starts with a command prefix explicitly allowed in the session settings."
 	if unrestricted {
-		runDescription = "Run a shell command on the connected local device. It runs without a workspace limit. This always requires approval unless the full command starts with a command prefix explicitly allowed in the session settings."
+		runDescription = "Run a shell command on the connected local device. It runs without a workspace limit, and bound connector environment-variable credentials are attached automatically. This always requires approval unless the full command starts with a command prefix explicitly allowed in the session settings."
 	}
 	add("run_command", ChatExecutorTool{
 		Name:        advancedChatConnectorToolRunCommand,
@@ -1763,7 +1766,7 @@ func advancedChatConnectorToolsWithApprovalModeAndSandbox(device *AdvancedChatCo
 	bind(advancedChatConnectorToolWebFetch, "web_fetch")
 	add("web_fetch", ChatExecutorTool{
 		Name:        advancedChatConnectorToolWebFetch,
-		Description: "Fetch a specific HTTP or HTTPS webpage from the local connector and return readable page text or response content. Use this when the user provides a URL or after web_search returns a relevant URL.",
+		Description: "Fetch a specific HTTP or HTTPS webpage from the local connector and return readable page text or response content. Bound connector HTTP-header credentials are attached automatically. Use this when the user provides a URL or after web_search returns a relevant URL.",
 		Schema: map[string]interface{}{
 			"type":     "object",
 			"required": []string{"url"},
@@ -1864,6 +1867,10 @@ func createAdvancedChatConnectorTask(userID uint, runID string, binding advanced
 			return AdvancedChatConnectorTask{}, err
 		}
 	}
+	arguments, err := attachConnectorCredentials(userID, binding.DeviceID, binding.Action, arguments)
+	if err != nil {
+		return AdvancedChatConnectorTask{}, err
+	}
 	payload, err := json.Marshal(arguments)
 	if err != nil {
 		return AdvancedChatConnectorTask{}, err
@@ -1955,6 +1962,11 @@ func createAdvancedChatStaticSiteToolTask(userID uint, runID string, binding adv
 }
 
 func createAdvancedChatRawConnectorTask(userID uint, runID string, binding advancedChatConnectorToolBinding, arguments map[string]interface{}, allowApproval bool) (AdvancedChatConnectorTask, error) {
+	var err error
+	arguments, err = attachConnectorCredentials(userID, binding.DeviceID, binding.Action, arguments)
+	if err != nil {
+		return AdvancedChatConnectorTask{}, err
+	}
 	payload, err := json.Marshal(arguments)
 	if err != nil {
 		return AdvancedChatConnectorTask{}, err
@@ -2723,9 +2735,77 @@ func stripAdvancedChatConnectorPreviewFields(payload map[string]interface{}) map
 			sanitized[key] = stripAdvancedChatConnectorMCPServerPayload(value)
 			continue
 		}
+		if key == "environment" || key == "headers" {
+			sanitized[key] = redactAdvancedChatConnectorCredentialMap(value)
+			continue
+		}
 		sanitized[key] = value
 	}
 	return sanitized
+}
+
+func redactAdvancedChatConnectorCredentialMap(value interface{}) interface{} {
+	values, ok := value.(map[string]string)
+	if ok {
+		redacted := make(map[string]string, len(values))
+		for key := range values {
+			redacted[key] = "********"
+		}
+		return redacted
+	}
+	valuesAny, ok := value.(map[string]interface{})
+	if !ok {
+		return value
+	}
+	redacted := make(map[string]string, len(valuesAny))
+	for key := range valuesAny {
+		redacted[key] = "********"
+	}
+	return redacted
+}
+
+// attachConnectorCredentials adds the execution context recognized by
+// connectors. Environment values are scoped to process execution and HTTP
+// headers are scoped to web_fetch; neither is exposed in user task history.
+func attachConnectorCredentials(userID uint, deviceID, action string, arguments map[string]interface{}) (map[string]interface{}, error) {
+	if userID == 0 || strings.TrimSpace(deviceID) == "" || (action != "run_command" && action != "web_fetch") {
+		return arguments, nil
+	}
+	var credentials []AdvancedChatConnectorCredential
+	if err := model.DB.
+		Joins("JOIN advanced_chat_connector_credential_bindings ON advanced_chat_connector_credential_bindings.credential_id = advanced_chat_connector_credentials.id").
+		Where("advanced_chat_connector_credentials.user_id = ? AND advanced_chat_connector_credential_bindings.user_id = ? AND advanced_chat_connector_credential_bindings.device_id = ?", userID, userID, deviceID).
+		Order("advanced_chat_connector_credentials.created_at ASC").
+		Find(&credentials).Error; err != nil {
+		return nil, err
+	}
+	if len(credentials) == 0 {
+		return arguments, nil
+	}
+	result := cloneAdvancedChatConnectorArguments(arguments)
+	if action == "run_command" {
+		environment := map[string]string{}
+		for _, credential := range credentials {
+			if credential.Type == connectorCredentialTypeEnvironment && credential.Key != "" && credential.Value != "" {
+				environment[credential.Key] = credential.Value
+			}
+		}
+		if len(environment) > 0 {
+			result["environment"] = environment
+		}
+	}
+	if action == "web_fetch" {
+		headers := map[string]string{}
+		for _, credential := range credentials {
+			if credential.Type == connectorCredentialTypeHTTPHeader && credential.Key != "" && credential.Value != "" {
+				headers[credential.Key] = credential.Value
+			}
+		}
+		if len(headers) > 0 {
+			result["headers"] = headers
+		}
+	}
+	return result, nil
 }
 
 func stripAdvancedChatConnectorMCPServerPayload(value interface{}) interface{} {
