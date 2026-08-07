@@ -62,29 +62,7 @@ func InitDB() {
 	hadCacheWrite1hInputPrice := DB.Migrator().HasColumn(&Model{}, "cache_write_1h_input_price")
 
 	// Auto Migrate
-	err = DB.AutoMigrate(
-		&User{},
-		&UserAvatar{},
-		&EmailVerificationCode{},
-		&PhoneVerificationCode{},
-		&OIDCBindRequest{},
-		&WebAuthnChallenge{},
-		&PasskeyCredential{},
-		&Group{},
-		&UserGroupMembership{},
-		&UserChannel{},
-		&Channel{},
-		&ChannelGroupMultiplier{},
-		&Model{},
-		&ModelConfig{},
-		&ModelGroupMultiplier{},
-		&SystemSetting{},
-		&VideoTask{},
-		&Plugin{},
-		&UserPluginState{},
-		&UserPluginConfig{},
-		&PluginKV{},
-	)
+	err = migrateDatabase(DB)
 	if err != nil {
 		log.Fatalf("failed to migrate database: %v", err)
 	}
@@ -120,6 +98,49 @@ func InitDB() {
 
 	// Initial data
 	initData()
+}
+
+func migrateDatabase(db *gorm.DB) error {
+	return db.AutoMigrate(
+		&User{},
+		&UserAvatar{},
+		&EmailVerificationCode{},
+		&PhoneVerificationCode{},
+		&OIDCBindRequest{},
+		&WebAuthnChallenge{},
+		&PasskeyCredential{},
+		&Group{},
+		&UserGroupMembership{},
+		&UserChannel{},
+		&Channel{},
+		&ChannelGroupMultiplier{},
+		&Model{},
+		&ModelConfig{},
+		&ModelGroupMultiplier{},
+		&SystemSetting{},
+		&VideoTask{},
+		&Plugin{},
+		&UserPluginState{},
+		&UserPluginConfig{},
+		&PluginKV{},
+		&PersonalCompany{},
+		&CompanyCharterRevision{},
+		&PersonalCompanyEmployee{},
+		&CompanyRoleTemplate{},
+		&CompanyEmployeeVersion{},
+		&CompanyCapabilityEvidence{},
+		&CompanyRecruitmentPlan{},
+		&CompanyObjective{},
+		&CompanyWorkItem{},
+		&CompanyWorkAttempt{},
+		&CompanyArtifact{},
+		&CompanyHandoffPackage{},
+		&CompanyApprovalRequest{},
+		&CompanyBudgetLedger{},
+		&CompanyAuditEvent{},
+		&CompanySignal{},
+		&CompanyOutboxEvent{},
+	)
 }
 
 func databaseDialector() (gorm.Dialector, bool, error) {
