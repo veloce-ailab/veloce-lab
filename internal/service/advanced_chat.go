@@ -289,6 +289,8 @@ func initAdvancedChatFeatures() error {
 		&AdvancedChatRun{},
 		&AdvancedChatRunEvent{},
 		&AdvancedChatFile{},
+		&AdvancedChatWorkspace{},
+		&AdvancedChatWorkspaceFile{},
 		&AdvancedChatKnowledgeBase{},
 		&AdvancedChatKnowledgeDocument{},
 		&AdvancedChatKnowledgeChunk{},
@@ -351,6 +353,14 @@ func registerAdvancedChatUserRoutes(group *gin.RouterGroup) {
 	group.GET("/advanced-chat/files/:id/content", api.getFileContent)
 	group.GET("/advanced-chat/files/:id/download", api.downloadFile)
 	group.DELETE("/advanced-chat/files/:id", api.deleteFile)
+	group.GET("/advanced-chat/workspaces", api.listWorkspaces)
+	group.POST("/advanced-chat/workspaces", api.createWorkspace)
+	group.PUT("/advanced-chat/workspaces/:id", api.updateWorkspace)
+	group.DELETE("/advanced-chat/workspaces/:id", api.deleteWorkspace)
+	group.POST("/advanced-chat/workspaces/:id/files", api.createWorkspaceFile)
+	group.PUT("/advanced-chat/workspaces/:id/files/:file_id", api.updateWorkspaceFile)
+	group.DELETE("/advanced-chat/workspaces/:id/files/:file_id", api.deleteWorkspaceFile)
+	group.POST("/advanced-chat/workspaces/:id/ai", api.runWorkspaceAI)
 	group.GET("/advanced-chat/knowledge-bases", api.listKnowledgeBases)
 	group.POST("/advanced-chat/knowledge-bases", api.createKnowledgeBase)
 	group.POST("/advanced-chat/community/knowledge-bases/:id/import", api.importCommunityKnowledgeBase)
