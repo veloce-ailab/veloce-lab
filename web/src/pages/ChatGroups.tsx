@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Bot, Folder, FolderGit2, GitBranch, MessageCircle, Monitor, PanelRightOpen, Plus, RefreshCw, RotateCcw, Send, Settings, Trash2, Users, X } from "lucide-react"
+import { ArrowLeft, Bot, FileText, Folder, FolderGit2, GitBranch, Loader2, MessageCircle, Monitor, PanelRightOpen, Paperclip, Plus, RefreshCw, RotateCcw, Send, Settings, Trash2, Users, X } from "lucide-react"
 import api from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -10,6 +10,7 @@ import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
@@ -35,10 +36,14 @@ interface GroupMemoryDocument { id: string; kind: string; title: string; size: n
 interface GroupMemoryListResponse { memories: GroupMemoryDocument[] }
 interface GroupMemoryContentResponse extends GroupMemoryDocument { content: string }
 interface GroupMemoryDraft { id: string; kind: string; title: string; content: string; enabled: boolean }
+interface GroupAttachment { id: string; storage_id: string; name: string; type: string; size: number; text: string; binary: boolean; truncated: boolean }
+interface GroupStoredFile { id: string; name: string; type: string; size: number; text_available: boolean }
+interface GroupFileSettings { file_storage_enabled: boolean; attachment_allowed_types: string[] }
 
 const groupsKey = ["advanced-chat-chat-groups"] as const
 const groupMemoryKinds = ["profile", "preferences", "facts", "projects", "rules", "scratch", "custom"]
 const emptyGroupMemoryDraft: GroupMemoryDraft = { id: "", kind: "facts", title: "", content: "", enabled: true }
+const defaultGroupAttachmentTypes = ["text/plain", "text/markdown", "application/json", "text/csv", "image/png", "image/jpeg", "application/pdf"]
 
 export default function ChatGroups() {
   const { groupID = "" } = useParams()
@@ -50,6 +55,10 @@ export default function ChatGroups() {
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState("")
   const [mentions, setMentions] = useState<string[]>([])
+  const [attachments, setAttachments] = useState<GroupAttachment[]>([])
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
+  const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
+  const [selectingFileID, setSelectingFileID] = useState("")
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
@@ -107,6 +116,24 @@ export default function ChatGroups() {
     enabled: Boolean(groupID),
     refetchInterval: 1200,
     queryFn: async () => (await api.get(`/user/advanced-chat/chat-groups/${encodeURIComponent(groupID)}`)).data,
+  })
+  const { data: fileSettings } = useQuery<GroupFileSettings>({
+    queryKey: ["advanced-chat-user-settings"],
+    queryFn: async () => {
+      const value = (await api.get("/user/advanced-chat/settings")).data as Record<string, unknown>
+      return {
+        file_storage_enabled: value.file_storage_enabled !== false,
+        attachment_allowed_types: Array.isArray(value.attachment_allowed_types) ? value.attachment_allowed_types.filter((item): item is string => typeof item === "string") : defaultGroupAttachmentTypes,
+      }
+    },
+  })
+  const { data: storedFiles = [], isFetching: isFetchingFiles } = useQuery<GroupStoredFile[]>({
+    queryKey: ["advanced-chat-files"],
+    enabled: Boolean(groupID) && fileSettings?.file_storage_enabled !== false,
+    queryFn: async () => {
+      const value = (await api.get("/user/advanced-chat/files")).data as { files?: unknown[] }
+      return Array.isArray(value?.files) ? value.files.map(normalizeGroupStoredFile).filter((item): item is GroupStoredFile => Boolean(item)) : []
+    },
   })
   const groupMemoriesQuery = useQuery<GroupMemoryListResponse>({
     queryKey: ["chat-group-memories", detail?.group.id],
@@ -260,17 +287,70 @@ export default function ChatGroups() {
   }
 
   const sendMessage = async () => {
-    if (!groupID || !draft.trim() || isSending) return
+    if (!groupID || (!draft.trim() && attachments.length === 0) || isSending || isUploadingAttachments) return
     setIsSending(true)
     try {
-      await api.post(`/user/advanced-chat/chat-groups/${encodeURIComponent(groupID)}/messages`, { content: draft.trim(), mention_member_ids: mentions })
+      await api.post(`/user/advanced-chat/chat-groups/${encodeURIComponent(groupID)}/messages`, { content: groupMessageContent(draft.trim(), attachments), mention_member_ids: mentions })
       setDraft("")
       setMentions([])
+      setAttachments([])
       await queryClient.invalidateQueries({ queryKey: ["advanced-chat-chat-group", groupID] })
     } catch (err) {
       error(apiError(err, zh ? "消息发送失败" : "Failed to send message"))
     } finally {
       setIsSending(false)
+    }
+  }
+
+  const handleAttachmentFiles = async (files: FileList | null) => {
+    if (!files?.length || isUploadingAttachments) return
+    if (fileSettings?.file_storage_enabled === false) {
+      error(zh ? "文件存储已禁用" : "File storage is disabled")
+      return
+    }
+    setIsUploadingAttachments(true)
+    try {
+      const next: GroupAttachment[] = []
+      for (const file of Array.from(files)) {
+        const type = groupAttachmentFileType(file)
+        if (!groupMimeAllowed(type, fileSettings?.attachment_allowed_types || defaultGroupAttachmentTypes)) {
+          error(zh ? `不支持的附件类型：${file.name}` : `Attachment type is not allowed: ${file.name}`)
+          continue
+        }
+        const formData = new FormData()
+        formData.append("file", file)
+        const response = await api.post("/user/advanced-chat/files", formData)
+        const stored = normalizeGroupStoredFile(response.data?.file)
+        if (!stored) continue
+        const content = normalizeGroupStoredFileContent(response.data?.content)
+        next.push({ id: `${stored.id}-${Date.now()}`, storage_id: stored.id, name: stored.name, type: stored.type || type, size: stored.size, text: content.text, binary: content.binary || !stored.text_available, truncated: content.truncated })
+      }
+      if (next.length > 0) {
+        setAttachments((current) => mergeGroupAttachments(current, next).slice(0, 8))
+        void queryClient.invalidateQueries({ queryKey: ["advanced-chat-files"] })
+      }
+    } catch (err) {
+      error(apiError(err, zh ? "附件上传失败" : "Attachment upload failed"))
+    } finally {
+      setIsUploadingAttachments(false)
+    }
+  }
+
+  const selectStoredFile = async (file: GroupStoredFile) => {
+    if (attachments.some((attachment) => attachment.storage_id === file.id)) {
+      setIsFilePickerOpen(false)
+      return
+    }
+    setSelectingFileID(file.id)
+    try {
+      const response = await api.get(`/user/advanced-chat/files/${encodeURIComponent(file.id)}/content`)
+      const content = normalizeGroupStoredFileContent(response.data)
+      setAttachments((current) => mergeGroupAttachments(current, [{ id: `${file.id}-${Date.now()}`, storage_id: file.id, name: file.name, type: file.type || "application/octet-stream", size: file.size, text: content.text, binary: content.binary || !file.text_available, truncated: content.truncated }]).slice(0, 8))
+      setIsFilePickerOpen(false)
+    } catch (err) {
+      error(apiError(err, zh ? "选择附件失败" : "Failed to select attachment"))
+    } finally {
+      setSelectingFileID("")
     }
   }
 
@@ -421,24 +501,49 @@ export default function ChatGroups() {
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
               <div className="mx-auto max-w-3xl space-y-4">
-                {detail.messages.map((message) => (
-                  <div key={message.id} className={cn("flex gap-3", message.sender_type === "user" && "flex-row-reverse")}>
+                {detail.messages.map((message) => {
+                  const parsed = parseGroupMessageContent(message.content)
+                  return <div key={message.id} className={cn("flex gap-3", message.sender_type === "user" && "flex-row-reverse")}>
                     <button type="button" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-muted" onClick={() => message.sender_type === "agent" && setActiveMember(members.find((member) => member.id === message.sender_id) || null)}>{message.sender_type === "agent" ? <Bot size={15} /> : <Users size={15} />}</button>
                     <div className={cn("max-w-[78%]", message.sender_type === "user" && "text-right")}>
                       <div className="mb-1 text-xs text-muted-foreground">{message.sender_name} · {formatTime(message.created_at)}</div>
-                      <div className={cn("whitespace-pre-wrap rounded-md px-3 py-2 text-left text-sm", message.sender_type === "user" ? "bg-primary text-primary-foreground" : "border bg-card")}>{message.content}</div>
+                      <div className={cn("rounded-md px-3 py-2 text-left text-sm", message.sender_type === "user" ? "bg-primary text-primary-foreground" : "border bg-card")}>
+                        {parsed.text && <div className="whitespace-pre-wrap">{parsed.text}</div>}
+                        {parsed.attachments.length > 0 && <div className={cn("flex flex-wrap gap-1.5", parsed.text && "mt-2")}>{parsed.attachments.map((attachment) => <span key={`${attachment.name}-${attachment.sizeLabel}`} className={cn("flex items-center gap-1.5 rounded border px-2 py-1 text-xs", message.sender_type === "user" ? "border-primary-foreground/25 bg-primary-foreground/10" : "bg-muted/50")}><Paperclip size={12} /><span className="max-w-40 truncate">{attachment.name}</span><span className="text-[10px] opacity-70">{attachment.sizeLabel}</span></span>)}</div>}
+                      </div>
                     </div>
                   </div>
-                ))}
+                })}
                 {detail.messages.length === 0 && <div className="py-20 text-center text-sm text-muted-foreground">{zh ? "发送第一条消息，空闲助理会自行判断是否处理" : "Send the first message. Idle assistants will decide whether to act."}</div>}
               </div>
             </div>
             <div className="shrink-0 border-t p-3">
               <div className="mx-auto max-w-3xl">
                 {mentionedMembers.length > 0 && <div className="mb-2 flex flex-wrap gap-1">{mentionedMembers.map((member) => <button type="button" key={member.id} className="flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs text-primary" onClick={() => setMentions((current) => current.filter((id) => id !== member.id))}>@{member.agent_name}<X size={12} /></button>)}</div>}
+                {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{attachments.map((attachment) => <span key={attachment.id} className="flex max-w-full items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1 text-xs"><Paperclip size={12} className="shrink-0 text-muted-foreground" /><span className="max-w-48 truncate">{attachment.name}</span><button type="button" className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))} aria-label={zh ? `移除附件 ${attachment.name}` : `Remove ${attachment.name}`}><X size={12} /></button></span>)}</div>}
                 <div className="flex items-end gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-full" disabled={fileSettings?.file_storage_enabled === false || isUploadingAttachments} aria-label={zh ? "添加附件" : "Add attachment"}>
+                        {isUploadingAttachments ? <Loader2 size={17} className="animate-spin" /> : <Plus size={18} />}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="top" align="start" className="w-48">
+                      <DropdownMenuItem asChild disabled={isUploadingAttachments || fileSettings?.file_storage_enabled === false}>
+                        <label className="flex cursor-pointer items-center gap-2">
+                          <Paperclip size={15} />
+                          {isUploadingAttachments ? (zh ? "上传中..." : "Uploading...") : (zh ? "上传本地文件" : "Upload local file")}
+                          <Input className="sr-only" type="file" multiple disabled={isUploadingAttachments || fileSettings?.file_storage_enabled === false} onChange={(event) => { void handleAttachmentFiles(event.target.files); event.target.value = "" }} />
+                        </label>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem disabled={fileSettings?.file_storage_enabled === false} onSelect={() => setIsFilePickerOpen(true)}>
+                        <FileText size={15} />
+                        {zh ? "选择已有文件" : "Choose existing file"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage() } }} className="max-h-40 min-h-10 flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-ring" placeholder={zh ? "发送消息；右侧点击 @ 可强制通知忙碌助理" : "Send a message; use @ to interrupt a busy assistant"} />
-                  <Button size="icon" disabled={!draft.trim() || isSending} onClick={sendMessage}><Send size={16} /></Button>
+                  <Button size="icon" disabled={(!draft.trim() && attachments.length === 0) || isSending || isUploadingAttachments} onClick={sendMessage}><Send size={16} /></Button>
                 </div>
               </div>
             </div>
@@ -465,6 +570,16 @@ export default function ChatGroups() {
       </div>
       {activeMember && detail && <MemberActivityDialog groupID={detail.group.id} member={activeMember} onClose={() => setActiveMember(null)} zh={zh} />}
 	  {activePrivateConversation && detail && <PrivateConversationDialog groupID={detail.group.id} conversation={activePrivateConversation} onClose={() => setActivePrivateConversation(null)} zh={zh} />}
+      <Dialog open={isFilePickerOpen} onOpenChange={setIsFilePickerOpen}>
+        <DialogContent className="max-h-[75vh] max-w-md overflow-hidden">
+          <DialogHeader><DialogTitle>{zh ? "选择已有文件" : "Choose existing file"}</DialogTitle></DialogHeader>
+          <div className="max-h-[55vh] space-y-1 overflow-y-auto rounded-md border p-1.5">
+            {storedFiles.map((file) => <button key={file.id} type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted disabled:pointer-events-none disabled:opacity-50" disabled={Boolean(selectingFileID)} onClick={() => void selectStoredFile(file)}><FileText size={15} className="shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{file.name}</span><span className="shrink-0 text-xs text-muted-foreground">{formatGroupBytes(file.size)}</span>{selectingFileID === file.id && <Loader2 size={14} className="animate-spin" />}</button>)}
+            {!isFetchingFiles && storedFiles.length === 0 && <div className="px-2 py-8 text-center text-sm text-muted-foreground">{zh ? "暂无已上传文件" : "No uploaded files"}</div>}
+            {isFetchingFiles && <div className="py-8 text-center text-sm text-muted-foreground">{zh ? "加载中..." : "Loading..."}</div>}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -568,6 +683,7 @@ function GroupEnvironmentSidebar({ className, group, devices, zh }: { className?
       setIsRollingBack(false)
     }
   }
+
   return <aside className={cn("overflow-y-auto border-l bg-card", className)}>
     <div className="flex h-14 items-center justify-between border-b px-4"><span className="flex items-center gap-2 text-sm font-semibold"><FolderGit2 size={16} />{zh ? "环境信息" : "Environment"}</span><Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canInspect || gitStatus.isFetching} onClick={() => void gitStatus.refetch()} title={zh ? "刷新 Git 状态" : "Refresh Git status"}><RefreshCw size={15} className={gitStatus.isFetching ? "animate-spin" : ""} /></Button></div>
     <div className="space-y-4 p-3">
@@ -674,6 +790,89 @@ function eventContent(payload: Record<string, unknown>) {
   const preferred = payload.delta || payload.message || payload.error || payload.name || payload.tool
   if (typeof preferred === "string" && preferred.trim()) return preferred
   return JSON.stringify(payload, null, 2)
+}
+
+function normalizeGroupStoredFile(value: unknown): GroupStoredFile | null {
+  if (!value || typeof value !== "object") return null
+  const item = value as Record<string, unknown>
+  const id = typeof item.id === "string" ? item.id : ""
+  if (!id) return null
+  return {
+    id,
+    name: typeof item.name === "string" ? item.name : id,
+    type: typeof item.type === "string" ? item.type : "",
+    size: Number(item.size || 0),
+    text_available: item.text_available === true,
+  }
+}
+
+function normalizeGroupStoredFileContent(value: unknown) {
+  const item = value && typeof value === "object" ? value as Record<string, unknown> : {}
+  return {
+    text: typeof item.text === "string" ? item.text : "",
+    binary: item.binary === true,
+    truncated: item.truncated === true,
+  }
+}
+
+function groupAttachmentFileType(file: File) {
+  if (file.type) return file.type.toLowerCase()
+  const extension = file.name.split(".").pop()?.toLowerCase() || ""
+  return ({ txt: "text/plain", md: "text/markdown", markdown: "text/markdown", json: "application/json", csv: "text/csv", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", pdf: "application/pdf" } as Record<string, string>)[extension] || "application/octet-stream"
+}
+
+function groupMimeAllowed(type: string, allowedTypes: string[]) {
+  return allowedTypes.some((allowed) => {
+    const value = allowed.trim().toLowerCase()
+    return value === "*/*" || value === type || (value.endsWith("/*") && type.startsWith(value.slice(0, -1)))
+  })
+}
+
+function mergeGroupAttachments(current: GroupAttachment[], next: GroupAttachment[]) {
+  const ids = new Set(current.map((attachment) => attachment.storage_id))
+  return [...current, ...next.filter((attachment) => !ids.has(attachment.storage_id))]
+}
+
+function groupMessageContent(content: string, attachments: GroupAttachment[]) {
+  if (attachments.length === 0) return content
+  const sections = attachments.map((attachment) => {
+    const header = `[Attachment: ${attachment.name}; type=${attachment.type}; size=${formatGroupBytes(attachment.size)}; file_id=${attachment.storage_id}]`
+    if (!attachment.text) return `${header}\n${attachment.type.toLowerCase().startsWith("image/") ? "(image attached for model vision input)" : "(binary content omitted)"}`
+    return `${header}\n${attachment.text.slice(0, 12000)}${attachment.truncated ? "\n...(truncated)" : ""}`
+  })
+  return [content, sections.join("\n\n")].filter(Boolean).join("\n\n")
+}
+
+function parseGroupMessageContent(content: string) {
+  const normalized = content.replace(/\r\n/g, "\n")
+  const pattern = /^\[Attachment:\s*(.*?);\s*type=([^;\]]*);\s*size=([^;\]]+)(?:;\s*file_id=[^\]]+)?\]\s*$/gm
+  const attachments: Array<{ name: string; sizeLabel: string }> = []
+  const ranges: Array<{ start: number; end: number }> = []
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(normalized)) !== null) {
+    const start = match.index
+    const nextHeader = normalized.slice(pattern.lastIndex).search(/^\[Attachment:\s*/m)
+    const end = nextHeader >= 0 ? pattern.lastIndex + nextHeader : normalized.length
+    attachments.push({ name: match[1]?.trim() || "Attachment", sizeLabel: match[3]?.trim() || "0 B" })
+    ranges.push({ start, end })
+    pattern.lastIndex = end
+  }
+  if (ranges.length === 0) return { text: content, attachments }
+  let text = ""
+  let cursor = 0
+  for (const range of ranges) {
+    text += normalized.slice(cursor, range.start)
+    cursor = range.end
+  }
+  text += normalized.slice(cursor)
+  return { text: text.replace(/\n{3,}/g, "\n\n").trim(), attachments }
+}
+
+function formatGroupBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 function formatTime(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? "" : date.toLocaleString() }

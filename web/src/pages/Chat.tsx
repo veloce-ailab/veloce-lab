@@ -1,6 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { ChangeEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react"
+import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
@@ -13,6 +13,7 @@ import type { PublicSettings } from "@/lib/public-settings"
 import { withPublicSettingsDefaults } from "@/lib/public-settings"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -659,12 +660,8 @@ export default function Chat() {
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
   const [selectingFileID, setSelectingFileID] = useState("")
-  const [attachmentMenuTarget, setAttachmentMenuTarget] = useState<AttachmentTarget | "">("")
   const [composerControlMenu, setComposerControlMenu] = useState<ComposerControlMenu>("")
-  const [sessionMenu, setSessionMenu] = useState<{ sessionID: string; x: number; y: number } | null>(null)
-  const [sessionFolderContextMenu, setSessionFolderContextMenu] = useState<{ x: number; y: number } | null>(null)
-  const [messageSelectionMenu, setMessageSelectionMenu] = useState<{ text: string; x: number; y: number } | null>(null)
-  const [isMessageSelectionSearchOpen, setIsMessageSelectionSearchOpen] = useState(false)
+  const [messageSelectionMenu, setMessageSelectionMenu] = useState<{ text: string } | null>(null)
   const [regeneratingTitleSessionID, setRegeneratingTitleSessionID] = useState("")
   const [renamingSession, setRenamingSession] = useState<ChatSession | null>(null)
   const [renamedTitle, setRenamedTitle] = useState("")
@@ -1236,24 +1233,6 @@ export default function Chat() {
   }, [activeRunMode, configTab])
 
   useEffect(() => {
-    if (!sessionMenu && !sessionFolderContextMenu && !messageSelectionMenu) {
-      return
-    }
-    const close = () => {
-      setSessionMenu(null)
-      setSessionFolderContextMenu(null)
-      setMessageSelectionMenu(null)
-      setIsMessageSelectionSearchOpen(false)
-    }
-    window.addEventListener("click", close)
-    window.addEventListener("scroll", close, true)
-    return () => {
-      window.removeEventListener("click", close)
-      window.removeEventListener("scroll", close, true)
-    }
-  }, [messageSelectionMenu, sessionFolderContextMenu, sessionMenu])
-
-  useEffect(() => {
     if (isAdvanced) {
       setSessionFolders(serverSessionFolders)
     }
@@ -1620,7 +1599,6 @@ export default function Chat() {
   }, [selectableConnectorDevices, connectorDevices, pendingConnectorDeviceID])
 
   const createNewSession = async (context: { folderID?: string; poolID?: string } = {}) => {
-    setSessionMenu(null)
     setSharedSessionID("")
     setSharedSessionPoolID(context.poolID || "")
     setSelectedSharedPoolID(context.poolID || "")
@@ -1742,7 +1720,6 @@ export default function Chat() {
   }
 
   const deleteSession = (sessionID: string) => {
-    setSessionMenu(null)
     if (isAdvanced) {
       void api.delete(`/user/advanced-chat/sessions/${encodeURIComponent(sessionID)}`).then(() => refetchAdvancedSessions()).catch(() => undefined)
     }
@@ -1811,11 +1788,9 @@ export default function Chat() {
     } catch (err) {
       error(apiErrorMessage(err, sessionSidebarCopy.moveFailed))
     }
-    setSessionMenu(null)
   }
 
   const renameSessionTitle = (session: ChatSession) => {
-    setSessionMenu(null)
     setRenamingSession(session)
     setRenamedTitle(session.title || copy.untitledSession)
   }
@@ -1832,7 +1807,6 @@ export default function Chat() {
   }
 
   const regenerateSessionTitle = async (session: ChatSession) => {
-    setSessionMenu(null)
     if (!isAdvanced || session.id === sharedSessionID) {
       return
     }
@@ -1919,7 +1893,6 @@ export default function Chat() {
   }, [activeRunMode, currentSession, isAdvanced, isDesktop, localDesktopConnectorDevice])
 
   const selectSession = (sessionID: string) => {
-    setSessionMenu(null)
     if (sessionID !== sharedSessionID) {
       setSharedSessionID("")
       setSharedSessionPoolID("")
@@ -2822,18 +2795,14 @@ export default function Chat() {
     }
   }
 
-  const handleMessageSelectionContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+  const handleMessageSelectionContextMenu = () => {
     const selection = window.getSelection()
     const rawText = selection?.toString().replace(/\s+/g, " ").trim() || ""
     const range = selection?.rangeCount ? selection.getRangeAt(0) : null
     if (!rawText || !range || !messagesViewportRef.current?.contains(range.commonAncestorContainer)) {
       return
     }
-    event.preventDefault()
-    setSessionMenu(null)
-    setSessionFolderContextMenu(null)
-    setMessageSelectionMenu({ text: rawText.slice(0, 12000), x: event.clientX, y: event.clientY })
-    setIsMessageSelectionSearchOpen(false)
+    setMessageSelectionMenu({ text: rawText.slice(0, 12000) })
   }
 
   const copySelectedMessageText = async () => {
@@ -2859,7 +2828,6 @@ export default function Chat() {
       : `Regarding what you know about ${messageSelectionMenu.text}, `
     setPrompt(quoted)
     setMessageSelectionMenu(null)
-    setIsMessageSelectionSearchOpen(false)
     window.setTimeout(() => composerTextareaRef.current?.focus(), 0)
   }
 
@@ -2874,7 +2842,6 @@ export default function Chat() {
         ? `https://www.google.com/search?q=${query}`
         : `https://www.baidu.com/s?wd=${query}`
     setMessageSelectionMenu(null)
-    setIsMessageSelectionSearchOpen(false)
     if (isDesktop && window.veloceDesktop?.openDesktopBrowser) {
       await window.veloceDesktop.openDesktopBrowser(url)
       return
@@ -2886,7 +2853,6 @@ export default function Chat() {
     if (!isAdvanced || !files?.length) {
       return
     }
-    setAttachmentMenuTarget("")
     if (!currentAdvancedSettings.file_storage_enabled) {
       error(fileCopy.storageDisabled)
       return
@@ -2961,7 +2927,6 @@ export default function Chat() {
   }
 
   const openFilePicker = (target: AttachmentTarget) => {
-    setAttachmentMenuTarget("")
     setFilePickerTarget(target)
     setIsFilePickerOpen(true)
   }
@@ -3002,28 +2967,24 @@ export default function Chat() {
   }
 
   const attachmentMenuButton = (target: AttachmentTarget, className = "") => {
-    const open = attachmentMenuTarget === target
     const disabled = !currentAdvancedSettings.file_storage_enabled
     return (
-      <div className={cn("relative shrink-0", className)}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-5 w-5 rounded-full"
-          disabled={disabled}
-          aria-label={copy.addAttachment}
-          aria-expanded={open}
-          onClick={() => setAttachmentMenuTarget((current) => current === target ? "" : target)}
-        >
-          <Plus size={16} />
-        </Button>
-        {open && (
-          <div className="absolute bottom-full left-0 z-30 mb-2 w-44 rounded-md border bg-popover p-1 text-popover-foreground shadow-lg">
-            <label className={cn(
-              "flex h-9 cursor-pointer items-center gap-2 rounded px-2 text-sm hover:bg-muted",
-              isUploadingAttachments && "pointer-events-none opacity-50"
-            )}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn("h-5 w-5 shrink-0 rounded-full", className)}
+            disabled={disabled}
+            aria-label={copy.addAttachment}
+          >
+            <Plus size={16} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="start" className="w-48">
+          <DropdownMenuItem asChild disabled={isUploadingAttachments || disabled}>
+            <label className="flex cursor-pointer items-center gap-2">
               <Paperclip size={15} />
               {isUploadingAttachments ? fileCopy.uploading : copy.addAttachment}
               <Input
@@ -3032,23 +2993,18 @@ export default function Chat() {
                 multiple
                 disabled={isUploadingAttachments || disabled}
                 onChange={(event) => {
-                  handleAttachmentFiles(event.target.files, target)
+                  void handleAttachmentFiles(event.target.files, target)
                   event.target.value = ""
                 }}
               />
             </label>
-            <button
-              type="button"
-              className="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-sm hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
-              disabled={disabled}
-              onClick={() => openFilePicker(target)}
-            >
-              <FileText size={15} />
-              {fileCopy.selectFile}
-            </button>
-          </div>
-        )}
-      </div>
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={disabled} onSelect={() => openFilePicker(target)}>
+            <FileText size={15} />
+            {fileCopy.selectFile}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     )
   }
 
@@ -3309,26 +3265,18 @@ export default function Chat() {
     setEditingText("")
     setEditingAttachments([])
     setFilePickerTarget("composer")
-    setAttachmentMenuTarget("")
     setComposerControlMenu("")
   }
 
   const sessionSidebarItem = (session: ChatSession) => {
     const activePersonalSession = session.id === activeSession?.id && !isSharedSession
-    return <div
+    const item = <div
       key={session.id}
       className={cn(
         "group relative grid min-h-6 grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-transparent px-1.5 py-0.5 transition-colors",
         activePersonalSession ? "border-primary/40 bg-primary/15 shadow-sm before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-r before:bg-primary" : "hover:bg-muted"
       )}
-      onContextMenu={(event) => {
-        if (session.id === sharedSessionID) {
-          return
-        }
-        event.preventDefault()
-        setSessionFolderContextMenu(null)
-        setSessionMenu({ sessionID: session.id, x: event.clientX, y: event.clientY })
-      }}
+      onContextMenu={(event) => event.stopPropagation()}
     >
       <button type="button" className="min-w-0 text-left" onClick={() => selectSession(session.id)}>
         <div className="flex min-w-0 items-center gap-1.5">
@@ -3340,6 +3288,26 @@ export default function Chat() {
         <Trash2 size={13} />
       </Button>}
     </div>
+    if (session.id === sharedSessionID) {
+      return item
+    }
+    return (
+      <ContextMenu key={session.id}>
+        <ContextMenuTrigger asChild>{item}</ContextMenuTrigger>
+        <ContextMenuContent className="w-56">
+          <ContextMenuItem onSelect={() => renameSessionTitle(session)}>{copy.customTitle}</ContextMenuItem>
+          <ContextMenuItem disabled={!isAdvanced || regeneratingTitleSessionID === session.id} onSelect={() => void regenerateSessionTitle(session)}>
+            {regeneratingTitleSessionID === session.id ? copy.regeneratingTitle : copy.regenerateTitle}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuLabel>{sessionSidebarCopy.moveToFolder}</ContextMenuLabel>
+          <ContextMenuItem onSelect={() => void moveSessionToFolder(session.id)}><Folder size={14} />{sessionSidebarCopy.uncategorized}</ContextMenuItem>
+          {sessionFolders.map((folder) => (
+            <ContextMenuItem key={folder.id} onSelect={() => void moveSessionToFolder(session.id, folder.id)}><Folder size={14} className="text-primary" /><span className="truncate">{folder.name}</span></ContextMenuItem>
+          ))}
+        </ContextMenuContent>
+      </ContextMenu>
+    )
   }
 
   const advancedComposer = () => (
@@ -3406,17 +3374,9 @@ export default function Chat() {
         : null
 
   const sessionsSidebar = (
-    <aside
-      className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden bg-card text-foreground"
-      onContextMenu={(event) => {
-        if (event.defaultPrevented) {
-          return
-        }
-        event.preventDefault()
-        setSessionMenu(null)
-        setSessionFolderContextMenu({ x: event.clientX, y: event.clientY })
-      }}
-    >
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <aside className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden bg-card text-foreground">
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/80 px-3">
         <div className="truncate text-xs font-semibold uppercase text-muted-foreground">{copy.sessions}</div>
         <div className="flex items-center gap-1">
@@ -3467,150 +3427,20 @@ export default function Chat() {
           </Button>
         )}
         {searchedSessions.length === 0 && <div className="px-3 py-10 text-center text-sm text-muted-foreground">{sessionSidebarCopy.noSessions}</div>}
-        {sessionMenu && typeof document !== "undefined" && (() => {
-          const session = sessions.find((item) => item.id === sessionMenu.sessionID)
-          if (!session) {
-            return null
-          }
-          const placement = sessionContextMenuPlacement(sessionMenu.x, sessionMenu.y, 224)
-          return createPortal(
-            <div
-              className="pointer-events-none fixed z-[80] w-56 overflow-hidden"
-              style={placement.opensUp
-                ? { left: placement.left, top: 8, bottom: window.innerHeight - placement.lineY }
-                : { left: placement.left, top: placement.lineY, bottom: 8 }}
-            >
-              <div
-                className={cn("session-context-surface pointer-events-auto absolute inset-x-0 max-h-full overflow-y-auto rounded-md border p-1 text-sm text-popover-foreground will-change-transform", placement.animationClass, placement.opensUp ? "bottom-0" : "top-0")}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <button type="button" className="flex h-9 w-full items-center rounded px-2 text-left hover:bg-muted" onClick={() => renameSessionTitle(session)}>
-                  {copy.customTitle}
-                </button>
-                <button
-                  type="button"
-                  className="flex h-9 w-full items-center rounded px-2 text-left hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
-                  disabled={!isAdvanced || regeneratingTitleSessionID === session.id}
-                  onClick={() => void regenerateSessionTitle(session)}
-                >
-                  {regeneratingTitleSessionID === session.id ? copy.regeneratingTitle : copy.regenerateTitle}
-                </button>
-                <div className="my-1 border-t" />
-                <div className="px-2 py-1 text-xs text-muted-foreground">{sessionSidebarCopy.moveToFolder}</div>
-                <button type="button" className="flex h-9 w-full items-center gap-2 rounded px-2 text-left hover:bg-muted" onClick={() => void moveSessionToFolder(session.id)}>
-                  <Folder size={14} />
-                  {sessionSidebarCopy.uncategorized}
-                </button>
-                {sessionFolders.map((folder) => (
-                  <button key={folder.id} type="button" className="flex h-9 w-full items-center gap-2 rounded px-2 text-left hover:bg-muted" onClick={() => void moveSessionToFolder(session.id, folder.id)}>
-                    <Folder size={14} className="text-primary" />
-                    <span className="truncate">{folder.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>,
-            document.body
-          )
-        })()}
-        {sessionFolderContextMenu && typeof document !== "undefined" && (() => {
-          const placement = sessionContextMenuPlacement(sessionFolderContextMenu.x, sessionFolderContextMenu.y, 176)
-          return createPortal(
-            <div
-              className="pointer-events-none fixed z-[80] w-44 overflow-hidden"
-              style={placement.opensUp
-                ? { left: placement.left, top: 8, bottom: window.innerHeight - placement.lineY }
-                : { left: placement.left, top: placement.lineY, bottom: 8 }}
-            >
-              <div
-                className={cn("session-context-surface pointer-events-auto absolute inset-x-0 max-h-full overflow-y-auto rounded-md border p-1 text-sm text-popover-foreground will-change-transform", placement.animationClass, placement.opensUp ? "bottom-0" : "top-0")}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  className="flex h-9 w-full items-center gap-2 rounded px-2 text-left hover:bg-muted"
-                  onClick={() => {
-                    setSessionFolderContextMenu(null)
-                    setIsSessionFolderDialogOpen(true)
-                  }}
-                >
-                  <FolderPlus size={15} />
-                  {sessionSidebarCopy.newFolder}
-                </button>
-              </div>
-            </div>,
-            document.body
-          )
-        })()}
       </div>
-    </aside>
+        </aside>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-44">
+        <ContextMenuItem onSelect={() => setIsSessionFolderDialogOpen(true)}><FolderPlus size={15} />{sessionSidebarCopy.newFolder}</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
   const desktopSessionsSidebarPortal = desktopSessionsSidebarHost
     ? createPortal(sessionsSidebar, desktopSessionsSidebarHost)
     : null
-  const messageSelectionContextMenuPortal = messageSelectionMenu && typeof document !== "undefined" && (() => {
-    const labels = language === "zh"
-      ? { copy: "复制", quote: "引用", search: "搜索" }
-      : { copy: "Copy", quote: "Quote", search: "Search" }
-    const placement = sessionContextMenuPlacement(messageSelectionMenu.x, messageSelectionMenu.y, 176)
-    const searchPlacement = sessionContextSubmenuPlacement(placement.left, 176, placement.lineY, 176)
-    return createPortal(
-      <>
-        <div
-          className="pointer-events-none fixed z-[90] w-44 overflow-hidden"
-          style={placement.opensUp
-            ? { left: placement.left, top: 8, bottom: window.innerHeight - placement.lineY }
-            : { left: placement.left, top: placement.lineY, bottom: 8 }}
-        >
-          <div
-            className={cn("session-context-surface pointer-events-auto absolute inset-x-0 max-h-full overflow-y-auto rounded-md border p-1 text-sm text-popover-foreground will-change-transform", placement.animationClass, placement.opensUp ? "bottom-0" : "top-0")}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button type="button" className="flex h-9 w-full items-center gap-2 rounded px-2 text-left hover:bg-muted" onClick={() => void copySelectedMessageText()}>
-              <Copy size={15} />
-              {labels.copy}
-            </button>
-            <button type="button" className="flex h-9 w-full items-center gap-2 rounded px-2 text-left hover:bg-muted" onClick={quoteSelectedMessageText}>
-              <Quote size={15} />
-              {labels.quote}
-            </button>
-            <button
-              type="button"
-              className="flex h-9 w-full items-center gap-2 rounded px-2 text-left hover:bg-muted"
-              onMouseEnter={() => setIsMessageSelectionSearchOpen(true)}
-              onClick={() => setIsMessageSelectionSearchOpen((open) => !open)}
-            >
-              <Search size={15} />
-              <span className="flex-1">{labels.search}</span>
-              {searchPlacement.opensLeft ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
-            </button>
-          </div>
-        </div>
-        {isMessageSelectionSearchOpen && (
-          <div
-            className="pointer-events-none fixed z-[91] w-44 overflow-hidden"
-            style={searchPlacement.opensUp
-              ? { left: searchPlacement.left, top: 8, bottom: window.innerHeight - searchPlacement.lineY }
-              : { left: searchPlacement.left, top: searchPlacement.lineY, bottom: 8 }}
-          >
-            <div
-              className={cn("session-context-surface pointer-events-auto absolute inset-x-0 max-h-full overflow-y-auto rounded-md border p-1 text-sm text-popover-foreground will-change-transform", searchPlacement.animationClass, searchPlacement.opensUp ? "bottom-0" : "top-0")}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <button type="button" className="flex h-9 w-full items-center rounded px-2 text-left hover:bg-muted" onClick={() => void searchSelectedMessageText("bing")}>Bing</button>
-              <button type="button" className="flex h-9 w-full items-center rounded px-2 text-left hover:bg-muted" onClick={() => void searchSelectedMessageText("google")}>Google</button>
-              <button type="button" className="flex h-9 w-full items-center rounded px-2 text-left hover:bg-muted" onClick={() => void searchSelectedMessageText("baidu")}>Baidu</button>
-            </div>
-          </div>
-        )}
-      </>,
-      document.body
-    )
-  })()
-
   return (
     <div className={cn("flex min-w-0", isAdvanced && "h-full min-h-0 overflow-hidden")}>
       {desktopSessionsSidebarPortal}
-      {messageSelectionContextMenuPortal}
       {terminalWindow && (
         <ConnectorTerminalWindow
           key={`${terminalWindow.deviceID}:${terminalWindow.workspacePath}`}
@@ -3945,7 +3775,9 @@ export default function Chat() {
               </div>
             </div>
             <div className={cn(isAdvanced ? "relative flex min-h-0 flex-1 flex-col gap-3" : "space-y-4 p-6 pt-0")}>
-              <div ref={messagesViewportRef} className={cn(isAdvanced ? "min-h-0 flex-1 overflow-y-auto overscroll-contain" : "min-h-[360px] space-y-3 rounded-md border p-3")} onContextMenu={handleMessageSelectionContextMenu}>
+              <ContextMenu open={Boolean(messageSelectionMenu)} onOpenChange={(open) => { if (!open) setMessageSelectionMenu(null) }}>
+                <ContextMenuTrigger asChild>
+                  <div ref={messagesViewportRef} className={cn(isAdvanced ? "min-h-0 flex-1 overflow-y-auto overscroll-contain" : "min-h-[360px] space-y-3 rounded-md border p-3")} onContextMenu={handleMessageSelectionContextMenu}>
                 <div
                   className={cn(isAdvanced ? "mx-auto w-full max-w-3xl space-y-4 px-2 py-5 pb-36 sm:px-4" : "contents")}
                   style={isAdvanced && composerOverlayHeight > 0 ? { paddingBottom: Math.max(144, composerOverlayHeight + 28) } : undefined}
@@ -4117,7 +3949,21 @@ export default function Chat() {
                 )}
                 <div ref={messagesEndRef} />
                 </div>
-              </div>
+                  </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent className="w-48">
+                  <ContextMenuItem onSelect={() => void copySelectedMessageText()}><Copy size={15} />{language === "zh" ? "复制" : "Copy"}</ContextMenuItem>
+                  <ContextMenuItem onSelect={quoteSelectedMessageText}><Quote size={15} />{language === "zh" ? "引用" : "Quote"}</ContextMenuItem>
+                  <ContextMenuSub>
+                    <ContextMenuSubTrigger><Search size={15} />{language === "zh" ? "搜索" : "Search"}</ContextMenuSubTrigger>
+                    <ContextMenuSubContent className="w-40">
+                      <ContextMenuItem onSelect={() => void searchSelectedMessageText("bing")}>Bing</ContextMenuItem>
+                      <ContextMenuItem onSelect={() => void searchSelectedMessageText("google")}>Google</ContextMenuItem>
+                      <ContextMenuItem onSelect={() => void searchSelectedMessageText("baidu")}>Baidu</ContextMenuItem>
+                    </ContextMenuSubContent>
+                  </ContextMenuSub>
+                </ContextMenuContent>
+              </ContextMenu>
 
               {attachments.length > 0 && !isAdvanced && (
                 <div className={cn(isAdvanced && "mx-auto w-full max-w-3xl px-2 sm:px-4")}>
@@ -7558,33 +7404,6 @@ function liveProcessingDurationMs(message: ChatMessage, nowMs: number) {
 function formatProcessingDuration(durationMs: number) {
   const totalSeconds = Math.max(0, Math.floor(durationMs / 1000))
   return `已处理${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`
-}
-
-function sessionContextMenuPlacement(x: number, y: number, width: number) {
-  const edge = 8
-  const opensLeft = x > window.innerWidth - x
-  const opensUp = y > window.innerHeight - y
-  const lineY = Math.max(edge, Math.min(y, window.innerHeight - edge))
-  return {
-    left: Math.max(edge, Math.min(opensLeft ? x - width : x, window.innerWidth - width - edge)),
-    lineY,
-    opensUp,
-    animationClass: opensUp ? "animate-session-context-up" : "animate-session-context-down",
-  }
-}
-
-function sessionContextSubmenuPlacement(anchorLeft: number, anchorWidth: number, y: number, width: number) {
-  const edge = 8
-  const opensLeft = window.innerWidth - (anchorLeft + anchorWidth) < anchorLeft
-  const lineY = Math.max(edge, Math.min(y, window.innerHeight - edge))
-  const opensUp = lineY > window.innerHeight - lineY
-  return {
-    left: Math.max(edge, Math.min(opensLeft ? anchorLeft - width : anchorLeft + anchorWidth, window.innerWidth - width - edge)),
-    lineY,
-    opensLeft,
-    opensUp,
-    animationClass: opensUp ? "animate-session-context-up" : "animate-session-context-down",
-  }
 }
 
 function greetingForHour(language: string, hour = new Date().getHours()) {
