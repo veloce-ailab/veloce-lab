@@ -128,7 +128,9 @@ export default function ChatGroups() {
     },
   })
   const { data: storedFiles = [], isFetching: isFetchingFiles } = useQuery<GroupStoredFile[]>({
-    queryKey: ["advanced-chat-files"],
+    // Keep the picker cache separate from AdvancedChatFiles, which stores the
+    // full quota response object under the base key.
+    queryKey: ["advanced-chat-files", "chat-groups-picker"],
     enabled: Boolean(groupID) && fileSettings?.file_storage_enabled !== false,
     queryFn: async () => {
       const value = (await api.get("/user/advanced-chat/files")).data as { files?: unknown[] }
