@@ -1,4 +1,4 @@
-import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, Globe2, Home, Menu, MessageSquare, MessageSquareText, Search, Send, Settings as SettingsIcon, Sparkles, UserCircle, Users } from "lucide-react"
+import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, FolderKanban, Globe2, Home, Menu, MessageSquare, MessageSquareText, Search, Send, Settings as SettingsIcon, Sparkles, UserCircle, Users } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
@@ -17,6 +17,7 @@ import AdvancedChatDeliveries from "./AdvancedChatDeliveries"
 import AdvancedChatScheduledTasks from "./AdvancedChatScheduledTasks"
 import AgentGroupsPage from "./AgentGroupsPage"
 import ChatGroups from "./ChatGroups"
+import Workspaces from "./Workspaces"
 import Community from "./Community"
 import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
@@ -59,6 +60,7 @@ const advancedChatSidebarIconTones: Record<string, string> = {
   "/chat/tasks": "bg-orange-500/15 text-orange-600 dark:bg-orange-400/15 dark:text-orange-300",
   "/chat/files": "bg-amber-500/15 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300",
   "/chat/knowledge": "bg-cyan-500/15 text-cyan-600 dark:bg-cyan-400/15 dark:text-cyan-300",
+  "/chat/workspaces": "bg-indigo-500/15 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300",
   "/chat/images": "bg-pink-500/15 text-pink-600 dark:bg-pink-400/15 dark:text-pink-300",
   "/chat/videos": "bg-violet-500/15 text-violet-600 dark:bg-violet-400/15 dark:text-violet-300",
   "/chat/channels": "bg-sky-500/15 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300",
@@ -126,7 +128,7 @@ export default function AdvancedChat() {
   const isDesktop = isDesktopTarget()
   const topNavItems = parseTopNavItems(publicSettings.top_nav_items)
   const isChatRoute = location.pathname === "/chat" || location.pathname.startsWith("/chat/session/")
-  const isFullHeightRoute = isChatRoute || location.pathname === "/chat/memories"
+  const isFullHeightRoute = isChatRoute || location.pathname === "/chat/memories" || location.pathname === "/chat/workspaces"
   const transitionKey = isChatRoute ? "/chat" : location.pathname
   const viewportHeightClass = isDesktopTarget() ? "h-full" : "h-screen"
 
@@ -231,6 +233,7 @@ export default function AdvancedChat() {
                     <Route path="groups/:groupID" element={<ChatGroups />} />
                     <Route path="files" element={<AdvancedChatFiles />} />
                     <Route path="knowledge" element={<KnowledgeBases />} />
+                    <Route path="workspaces" element={<Workspaces />} />
                     <Route path="memories" element={<AdvancedChatMemories />} />
                     <Route path="*" element={<Navigate to="/chat" replace />} />
                   </Routes>
@@ -286,6 +289,7 @@ function desktopPageTitle(pathname: string, language: string) {
   if (pathname === "/chat/community" || pathname.startsWith("/chat/community/")) return zh ? "社区" : "Community"
   if (pathname === "/chat/files") return zh ? "文件库" : "Files"
   if (pathname === "/chat/knowledge") return zh ? "知识库" : "Knowledge bases"
+  if (pathname === "/chat/workspaces") return zh ? "工作区" : "Workspaces"
   if (pathname === "/chat/memories") return zh ? "记忆" : "Memory"
   if (pathname.startsWith("/chat/channels")) return zh ? "消息通道" : "Message Channels"
   if (pathname === "/chat/deliveries") return zh ? "结果投递" : "Result Delivery"
@@ -324,6 +328,7 @@ function AdvancedChatSidebar({
   const { language, t } = useI18n()
   const filesLabel = language === "zh" ? "文件库" : "Files"
   const knowledgeLabel = t("nav.knowledgeBases")
+  const workspacesLabel = language === "zh" ? "工作区" : language === "ja" ? "ワークスペース" : "Workspaces"
   const memoriesLabel = language === "zh" ? "记忆" : "Memory"
   const messageChannelsLabel = language === "zh" ? "消息通道" : "Message Channels"
   const deliveriesLabel = language === "zh" ? "结果投递" : "Result Delivery"
@@ -349,6 +354,7 @@ function AdvancedChatSidebar({
       items: [
         { href: "/chat/files", label: filesLabel, icon: FileText, active: location.pathname === "/chat/files" },
         { href: "/chat/knowledge", label: knowledgeLabel, icon: Database, active: location.pathname === "/chat/knowledge" },
+        { href: "/chat/workspaces", label: workspacesLabel, icon: FolderKanban, active: location.pathname === "/chat/workspaces" },
       ],
     },
     {
