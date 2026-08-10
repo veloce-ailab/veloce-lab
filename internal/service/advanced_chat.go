@@ -166,7 +166,6 @@ type advancedChatAdminSettingsResponse struct {
 	AssistantConnectorReplaceTextEnabled bool                    `json:"assistant_connector_replace_text_enabled"`
 	AssistantConnectorRunCommandEnabled  bool                    `json:"assistant_connector_run_command_enabled"`
 	AssistantConnectorWebSearchEnabled   bool                    `json:"assistant_connector_web_search_enabled"`
-	AssistantConnectorStaticSiteEnabled  bool                    `json:"assistant_connector_static_site_enabled"`
 	ScheduledTasksEnabled                bool                    `json:"scheduled_tasks_enabled"`
 	MessageChannelEnabled                bool                    `json:"message_channel_enabled"`
 	MessageDeliveryEnabled               bool                    `json:"message_delivery_enabled"`
@@ -192,7 +191,6 @@ type advancedChatUserSettingsResponse struct {
 	AssistantConnectorReplaceTextEnabled bool                    `json:"assistant_connector_replace_text_enabled"`
 	AssistantConnectorRunCommandEnabled  bool                    `json:"assistant_connector_run_command_enabled"`
 	AssistantConnectorWebSearchEnabled   bool                    `json:"assistant_connector_web_search_enabled"`
-	AssistantConnectorStaticSiteEnabled  bool                    `json:"assistant_connector_static_site_enabled"`
 	ScheduledTasksEnabled                bool                    `json:"scheduled_tasks_enabled"`
 	MessageDeliveryEnabled               bool                    `json:"message_delivery_enabled"`
 	DeliverySystemSMTPEnabled            bool                    `json:"delivery_system_smtp_enabled"`
@@ -220,7 +218,6 @@ type advancedChatAdminSettingsInput struct {
 	AssistantConnectorReplaceTextEnabled *bool                   `json:"assistant_connector_replace_text_enabled"`
 	AssistantConnectorRunCommandEnabled  *bool                   `json:"assistant_connector_run_command_enabled"`
 	AssistantConnectorWebSearchEnabled   *bool                   `json:"assistant_connector_web_search_enabled"`
-	AssistantConnectorStaticSiteEnabled  *bool                   `json:"assistant_connector_static_site_enabled"`
 	ScheduledTasksEnabled                *bool                   `json:"scheduled_tasks_enabled"`
 	MessageChannelEnabled                *bool                   `json:"message_channel_enabled"`
 	MessageDeliveryEnabled               *bool                   `json:"message_delivery_enabled"`
@@ -256,7 +253,6 @@ const (
 	advancedChatAssistantConnectorReplaceTextEnabledKey = "advanced_chat_assistant_connector_replace_text_enabled"
 	advancedChatAssistantConnectorRunCommandEnabledKey  = "advanced_chat_assistant_connector_run_command_enabled"
 	advancedChatAssistantConnectorWebSearchEnabledKey   = "advanced_chat_assistant_connector_web_search_enabled"
-	advancedChatAssistantConnectorStaticSiteEnabledKey  = "advanced_chat_assistant_connector_static_site_enabled"
 	advancedChatScheduledTasksEnabledKey                = "advanced_chat_scheduled_tasks_enabled"
 	advancedChatMessageChannelEnabledKey                = "message_channel_enabled"
 	advancedChatMessageDeliveryEnabledKey               = "advanced_chat_message_delivery_enabled"
@@ -301,7 +297,6 @@ func initAdvancedChatFeatures() error {
 		&AdvancedChatCloudSandboxHost{},
 		&AdvancedChatCloudSandbox{},
 		&AdvancedChatCloudSandboxCharge{},
-		&AdvancedChatStaticSite{},
 		&AdvancedChatDelivery{},
 		&AdvancedChatScheduledTask{},
 		&AdvancedChatChatGroup{},
@@ -392,9 +387,6 @@ func registerAdvancedChatUserRoutes(group *gin.RouterGroup) {
 	group.POST("/advanced-chat/devices/:id/token", api.rotateConnectorDeviceToken)
 	group.PUT("/advanced-chat/devices/:id", api.updateConnectorDevice)
 	group.DELETE("/advanced-chat/devices/:id", api.deleteConnectorDevice)
-	group.GET("/advanced-chat/static-sites", api.listStaticSites)
-	group.PUT("/advanced-chat/static-sites/:id", api.updateStaticSite)
-	group.DELETE("/advanced-chat/static-sites/:id", api.deleteStaticSite)
 	group.GET("/advanced-chat/agent-groups", api.listAgentGroups)
 	group.GET("/advanced-chat/agent-groups/:id", api.getAgentGroup)
 	group.POST("/advanced-chat/agent-groups", api.saveAgentGroup)
@@ -542,7 +534,6 @@ func (api *advancedChatAPI) updateAdminSettings(c *gin.Context) {
 		advancedChatAssistantConnectorReplaceTextEnabledKey: input.AssistantConnectorReplaceTextEnabled,
 		advancedChatAssistantConnectorRunCommandEnabledKey:  input.AssistantConnectorRunCommandEnabled,
 		advancedChatAssistantConnectorWebSearchEnabledKey:   input.AssistantConnectorWebSearchEnabled,
-		advancedChatAssistantConnectorStaticSiteEnabledKey:  input.AssistantConnectorStaticSiteEnabled,
 		advancedChatScheduledTasksEnabledKey:                input.ScheduledTasksEnabled,
 		advancedChatMessageChannelEnabledKey:                input.MessageChannelEnabled,
 		advancedChatMessageDeliveryEnabledKey:               input.MessageDeliveryEnabled,
@@ -1114,7 +1105,6 @@ func currentAdvancedChatAdminSettings() advancedChatAdminSettingsResponse {
 		AssistantConnectorReplaceTextEnabled: advancedChatAssistantConnectorReplaceTextEnabled(),
 		AssistantConnectorRunCommandEnabled:  advancedChatAssistantConnectorRunCommandEnabled(),
 		AssistantConnectorWebSearchEnabled:   advancedChatAssistantConnectorWebSearchEnabled(),
-		AssistantConnectorStaticSiteEnabled:  advancedChatAssistantConnectorStaticSiteEnabled(),
 		ScheduledTasksEnabled:                advancedChatScheduledTasksEnabled(),
 		MessageChannelEnabled:                advancedChatMessageChannelEnabled(),
 		MessageDeliveryEnabled:               advancedChatMessageDeliveryEnabled(),
@@ -1156,7 +1146,6 @@ func currentAdvancedChatUserSettings(userID uint) advancedChatUserSettingsRespon
 		AssistantConnectorReplaceTextEnabled: advancedChatAssistantConnectorReplaceTextEnabled(),
 		AssistantConnectorRunCommandEnabled:  advancedChatAssistantConnectorRunCommandEnabled(),
 		AssistantConnectorWebSearchEnabled:   advancedChatAssistantConnectorWebSearchEnabled(),
-		AssistantConnectorStaticSiteEnabled:  advancedChatAssistantConnectorStaticSiteEnabled(),
 		ScheduledTasksEnabled:                advancedChatScheduledTasksEnabled(),
 		MessageDeliveryEnabled:               advancedChatMessageDeliveryEnabled(),
 		DeliverySystemSMTPEnabled:            advancedChatDeliverySystemSMTPEnabled(),
@@ -1300,10 +1289,6 @@ func advancedChatAssistantConnectorWebSearchEnabled() bool {
 	return advancedChatSettingBool(advancedChatAssistantConnectorWebSearchEnabledKey, true)
 }
 
-func advancedChatAssistantConnectorStaticSiteEnabled() bool {
-	return advancedChatSettingBool(advancedChatAssistantConnectorStaticSiteEnabledKey, true)
-}
-
 func advancedChatScheduledTasksEnabled() bool {
 	if !advancedChatPremiumFeaturesAvailable() {
 		return false
@@ -1338,8 +1323,7 @@ func advancedChatAssistantConnectorToolsEnabled() bool {
 		advancedChatAssistantConnectorWriteFileEnabled() ||
 		advancedChatAssistantConnectorReplaceTextEnabled() ||
 		advancedChatAssistantConnectorRunCommandEnabled() ||
-		advancedChatAssistantConnectorWebSearchEnabled() ||
-		advancedChatAssistantConnectorStaticSiteEnabled()
+		advancedChatAssistantConnectorWebSearchEnabled()
 }
 
 func advancedChatAssistantConnectorActionEnabled(action string) bool {
@@ -1363,8 +1347,6 @@ func advancedChatAssistantConnectorActionEnabled(action string) bool {
 		return advancedChatAssistantConnectorWebSearchEnabled()
 	case "web_fetch":
 		return advancedChatAssistantConnectorWebSearchEnabled()
-	case "list_static_sites", "deploy_static_site", "set_static_site_enabled", "delete_static_site":
-		return advancedChatAssistantConnectorStaticSiteEnabled()
 	default:
 		return false
 	}

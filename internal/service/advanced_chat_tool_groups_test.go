@@ -19,7 +19,6 @@ func TestAdvancedChatToolGroupForTool(t *testing.T) {
 		"workspace_list_windows_drives": advancedChatToolGroupWorkspace,
 		"workspace_web_search":          advancedChatToolGroupWeb,
 		"workspace_web_fetch":           advancedChatToolGroupWeb,
-		"deploy_static_site":            advancedChatToolGroupSites,
 		"tasks_plan":                    advancedChatToolGroupTasks,
 		"tasks_update":                  advancedChatToolGroupTasks,
 		"ask_user":                      advancedChatToolGroupAskUser,

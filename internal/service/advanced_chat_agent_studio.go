@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/veloce-ailab/veloce/internal/model"
 	"github.com/gin-gonic/gin"
+	"github.com/veloce-ailab/veloce/internal/model"
 )
 
 const (
@@ -95,7 +95,7 @@ func advancedChatAgentStudioConnectorActionAllowed(agentType string, action stri
 		return true
 	}
 	switch strings.TrimSpace(action) {
-	case "list_files", "list_windows_drives", "read_file", "run_command", "web_search", "web_fetch", "list_static_sites":
+	case "list_files", "list_windows_drives", "read_file", "run_command", "web_search", "web_fetch":
 		return true
 	default:
 		return false

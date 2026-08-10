@@ -15,12 +15,7 @@ go run . -server http://localhost:8080 -token <connector-token>
 ```
 
 If no mode is specified, the connector runs in the standard platform mode for
-workspace file and command tools. Website devices run a static site server in
-addition to the normal task receiver:
-
-```powershell
-go run . -server http://localhost:8080 -token <connector-token> -mode web_server -web-port 8080
-```
+workspace file and command tools.
 
 ## Managed cloud sandbox worker
 
@@ -46,9 +41,6 @@ workspace, launches `cmd.exe` with `SECURITY_CAPABILITIES`, and supplies no
 network capabilities. This runtime requires no Docker installation, rejects
 policies that request network access, and requires a Windows version that
 provides the AppContainer APIs.
-
-Use `-data-dir <path>` to choose where hosted sites are stored. By default the
-connector uses the user config directory and stores sites under `sites/<domain>`.
 
 ## Permissions
 
@@ -85,16 +77,6 @@ Command execution always requires approval unless the full command starts with
 one of the prefixes allowed in the chat session settings:
 
 - `run_command`
-
-Website devices also accept static site tasks:
-
-- `deploy_static_site`
-- `set_static_site_enabled`
-- `delete_static_site`
-
-Static site routing uses the HTTP `Host` header. Unknown hosts return 404, and
-suspended sites return 403. Deployments write to a temporary directory first and
-then atomically swap the site's `public` directory.
 
 ## Build
 

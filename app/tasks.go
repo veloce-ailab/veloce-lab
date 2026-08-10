@@ -199,24 +199,6 @@ func (client connectorClient) executeTask(task connectorTask) (taskResult, error
 	case "delete_agent_group":
 		result, err := deleteAgentGroup(stringArg(task.Payload, "id"))
 		return textTaskResult(result), err
-	case "deploy_static_site":
-		if client.siteManager == nil {
-			return taskResult{}, fmt.Errorf("deploy_static_site requires web_server mode")
-		}
-		result, err := client.siteManager.deploy(task.Payload)
-		return textTaskResult(result), err
-	case "set_static_site_enabled":
-		if client.siteManager == nil {
-			return taskResult{}, fmt.Errorf("set_static_site_enabled requires web_server mode")
-		}
-		result, err := client.siteManager.setEnabled(task.Payload)
-		return textTaskResult(result), err
-	case "delete_static_site":
-		if client.siteManager == nil {
-			return taskResult{}, fmt.Errorf("delete_static_site requires web_server mode")
-		}
-		result, err := client.siteManager.delete(task.Payload)
-		return textTaskResult(result), err
 	}
 	workspace := ""
 	if strings.TrimSpace(task.WorkspacePath) != "" {
