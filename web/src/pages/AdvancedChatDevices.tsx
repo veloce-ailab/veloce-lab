@@ -1,4 +1,3 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Copy, KeyRound, Laptop, Play, Plus, RefreshCcw, Save, Server, Settings, Square, Terminal, Trash2, XCircle } from "lucide-react"
@@ -15,8 +14,6 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog"
 import { cn } from "@/lib/utils"
 import { withPublicSettingsDefaults, type PublicSettings } from "@/lib/public-settings"
 
-type ConnectorDeviceMode = "platform" | "web_server"
-
 interface ConnectorDevice {
   id: string
   name: string
@@ -26,8 +23,6 @@ interface ConnectorDevice {
   version?: string
   kind?: "cli" | "desktop" | string
   desktop_instance_id?: string
-  mode: string
-  listen_port?: number
   status: string
   online: boolean
   last_seen_at?: string
@@ -87,8 +82,6 @@ export default function AdvancedChatDevices() {
   const { success, error } = useToast()
   const { confirm, confirmDialog } = useConfirmDialog()
   const [deviceName, setDeviceName] = useState(copy.defaultDeviceName)
-  const [deviceMode, setDeviceMode] = useState<ConnectorDeviceMode>("platform")
-  const [listenPort, setListenPort] = useState(8080)
   const [token, setToken] = useState("")
   const [isCreating, setIsCreating] = useState(false)
   const [generatingDeviceID, setGeneratingDeviceID] = useState("")
@@ -132,12 +125,11 @@ export default function AdvancedChatDevices() {
     }
     const server = quoteArg(baseURL)
     const rawToken = quoteArg(token)
-    const modeArgs = deviceMode === "web_server" ? ` -mode web_server -web-port ${listenPort || 8080}` : ""
     return {
-      windows: `app.exe -server ${server} -token ${rawToken}${modeArgs}`,
-      unix: `./app -server ${server} -token ${rawToken}${modeArgs}`,
+      windows: `app.exe -server ${server} -token ${rawToken}`,
+      unix: `./app -server ${server} -token ${rawToken}`,
     }
-  }, [baseURL, deviceMode, listenPort, token])
+  }, [baseURL, token])
 
   const createToken = async () => {
     const name = deviceName.trim() || copy.defaultDeviceName
@@ -145,8 +137,7 @@ export default function AdvancedChatDevices() {
     try {
       const res = await api.post("/user/advanced-chat/devices/token", {
         name,
-        mode: deviceMode,
-        listen_port: deviceMode === "web_server" ? listenPort || 8080 : 0,
+        mode: "platform",
       })
       const nextToken = typeof res.data?.token === "string" ? res.data.token : ""
       if (!nextToken) {
@@ -179,9 +170,6 @@ export default function AdvancedChatDevices() {
         throw new Error(copy.regenerateFailed)
       }
       setDeviceName(device.name)
-      const nextMode = normalizeDeviceMode(device.mode)
-      setDeviceMode(nextMode)
-      setListenPort(nextMode === "web_server" ? device.listen_port || 8080 : 8080)
       setToken(nextToken)
       success(copy.commandRegenerated)
       await queryClient.invalidateQueries({ queryKey: devicesQueryKey })
@@ -194,13 +182,9 @@ export default function AdvancedChatDevices() {
 
   const connectToken = async ({
     connectionToken,
-    mode,
-    port,
     deviceID,
   }: {
     connectionToken: string
-    mode: ConnectorDeviceMode
-    port: number
     deviceID: string
   }) => {
     if (!window.veloceDesktop) {
@@ -212,8 +196,7 @@ export default function AdvancedChatDevices() {
       const result = await window.veloceDesktop.startConnector({
         serverURL: baseURL,
         token: connectionToken,
-        mode,
-        webPort: mode === "web_server" ? port || 8080 : undefined,
+        mode: "platform",
       })
       if (!result.ok) {
         throw new Error(result.message || copy.connectFailed)
@@ -230,8 +213,6 @@ export default function AdvancedChatDevices() {
   const connectCurrentToken = async () => {
     await connectToken({
       connectionToken: token,
-      mode: deviceMode,
-      port: listenPort,
       deviceID: "__new__",
     })
   }
@@ -304,7 +285,7 @@ export default function AdvancedChatDevices() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_9rem_1fr_auto]">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_auto]">
             <label className="space-y-1 text-sm">
               <span className="font-medium">{copy.deviceName}</span>
               <Input
@@ -316,36 +297,6 @@ export default function AdvancedChatDevices() {
                 }}
               />
             </label>
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">{copy.deviceType}</span>
-              <Select value={String((deviceMode) || "__shadcn_empty__")} onValueChange={(value) => {
-                  const mode = normalizeDeviceMode((value === "__shadcn_empty__" ? "" : value))
-                  setDeviceMode(mode)
-                  setToken("")
-                  if (mode === "web_server" && !listenPort) {
-                    setListenPort(8080)
-                  }
-                }}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
-                <SelectItem value="platform">{copy.standardDevice}</SelectItem>
-                <SelectItem value="web_server">{copy.websiteDevice}</SelectItem>
-              </SelectContent></Select>
-            </label>
-            {deviceMode === "web_server" && (
-              <label className="space-y-1 text-sm">
-                <span className="font-medium">{copy.listenPort}</span>
-                <Input
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={listenPort}
-                  onChange={(event) => {
-                    setListenPort(Math.max(1, Math.min(65535, Number(event.target.value) || 8080)))
-                    setToken("")
-                  }}
-                />
-              </label>
-            )}
             <label className="space-y-1 text-sm">
               <span className="font-medium">Base URL</span>
               <Input className="h-10 w-full bg-muted text-muted-foreground" value={baseURL} readOnly />
@@ -411,7 +362,7 @@ export default function AdvancedChatDevices() {
                         </span>
                       </div>
                       <div className="mt-1 truncate text-xs text-muted-foreground">
-                        {[device.kind === "desktop" ? (language === "zh" ? "桌面端设备" : "Desktop device") : (language === "zh" ? "CLI 设备" : "CLI device"), device.hostname, device.os, device.arch, device.version, device.mode === "web_server" ? `web:${device.listen_port || 8080}` : "platform"].filter(Boolean).join(" / ") || "-"}
+                        {[device.kind === "desktop" ? (language === "zh" ? "桌面端设备" : "Desktop device") : (language === "zh" ? "CLI 设备" : "CLI device"), device.hostname, device.os, device.arch, device.version, "platform"].filter(Boolean).join(" / ") || "-"}
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">{copy.lastSeen}: {formatDateTime(device.last_seen_at) || "-"}</div>
                     </div>
@@ -822,8 +773,6 @@ function normalizeDevice(value: unknown): ConnectorDevice | null {
     version: stringFromUnknown(value.version) || undefined,
     kind: stringFromUnknown(value.kind) || "cli",
     desktop_instance_id: stringFromUnknown(value.desktop_instance_id) || undefined,
-    mode: normalizeDeviceMode(value.mode),
-    listen_port: typeof value.listen_port === "number" ? value.listen_port : undefined,
     status: stringFromUnknown(value.status) || "offline",
     online: value.online === true,
     last_seen_at: stringFromUnknown(value.last_seen_at) || undefined,
@@ -937,10 +886,6 @@ function stringFromUnknown(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
 }
 
-function normalizeDeviceMode(value: unknown): ConnectorDeviceMode {
-  return stringFromUnknown(value) === "web_server" ? "web_server" : "platform"
-}
-
 function quoteArg(value: string) {
   if (!/[ \t"]/g.test(value)) {
     return value
@@ -971,10 +916,6 @@ const zhCopy = {
   subtitle: "管理连接到助理聊天的本地设备，并生成本地连接器启动命令。",
   commandTitle: "添加设备",
   deviceName: "设备名称",
-  deviceType: "设备类型",
-  standardDevice: "标准设备",
-  websiteDevice: "网站设备",
-  listenPort: "站点端口",
   defaultDeviceName: "本地设备",
   generateCommand: "生成连接命令",
   creating: "生成中...",
@@ -1062,10 +1003,6 @@ const enCopy: typeof zhCopy = {
   subtitle: "Manage local devices connected to agent chat and generate connector start commands.",
   commandTitle: "Add device",
   deviceName: "Device name",
-  deviceType: "Device type",
-  standardDevice: "Standard device",
-  websiteDevice: "Website device",
-  listenPort: "Site port",
   defaultDeviceName: "Local device",
   generateCommand: "Generate command",
   creating: "Generating...",
@@ -1154,10 +1091,6 @@ const jaCopy: typeof zhCopy = {
   subtitle: "高度なチャットに接続するローカルデバイスを管理し、コネクター起動コマンドを生成します。",
   commandTitle: "デバイスを追加",
   deviceName: "デバイス名",
-  deviceType: "デバイスタイプ",
-  standardDevice: "標準デバイス",
-  websiteDevice: "Webサイトデバイス",
-  listenPort: "サイトポート",
   defaultDeviceName: "ローカルデバイス",
   generateCommand: "コマンドを生成",
   deviceList: "デバイス一覧",

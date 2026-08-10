@@ -69,14 +69,13 @@ interface SessionTask {
 const SESSION_TASK_TOOL_NAMES = new Set(["tasks_plan", "tasks_update", "tasks_list"])
 const ASK_USER_TOOL_NAME = "ask_user"
 
-const CHAT_TOOL_GROUP_KEYS = ["workspace", "web", "sites", "tasks", "ask_user", "memory"] as const
+const CHAT_TOOL_GROUP_KEYS = ["workspace", "web", "tasks", "ask_user", "memory"] as const
 type ChatToolGroupKey = typeof CHAT_TOOL_GROUP_KEYS[number]
 
 function chatToolGroupItems(copy: ChatCopy): { key: ChatToolGroupKey; label: string; hint: string }[] {
   return [
     { key: "workspace", label: copy.toolGroupWorkspace, hint: copy.toolGroupWorkspaceHint },
     { key: "web", label: copy.toolGroupWeb, hint: copy.toolGroupWebHint },
-    { key: "sites", label: copy.toolGroupSites, hint: copy.toolGroupSitesHint },
     { key: "tasks", label: copy.toolGroupTasks, hint: copy.toolGroupTasksHint },
     { key: "ask_user", label: copy.toolGroupAskUser, hint: copy.toolGroupAskUserHint },
     { key: "memory", label: copy.toolGroupMemory, hint: copy.toolGroupMemoryHint },
@@ -452,7 +451,6 @@ interface AdvancedChatSettings {
   assistant_connector_replace_text_enabled: boolean
   assistant_connector_run_command_enabled: boolean
   assistant_connector_web_search_enabled: boolean
-  assistant_connector_static_site_enabled: boolean
   connector_approval_agent_id: string
 }
 
@@ -569,7 +567,6 @@ const defaultAdvancedChatSettings: AdvancedChatSettings = {
   assistant_connector_replace_text_enabled: true,
   assistant_connector_run_command_enabled: true,
   assistant_connector_web_search_enabled: true,
-  assistant_connector_static_site_enabled: true,
   connector_approval_agent_id: "",
 }
 
@@ -973,8 +970,7 @@ export default function Chat() {
     currentAdvancedSettings.assistant_connector_write_file_enabled ||
     currentAdvancedSettings.assistant_connector_replace_text_enabled ||
     currentAdvancedSettings.assistant_connector_run_command_enabled ||
-    currentAdvancedSettings.assistant_connector_web_search_enabled ||
-    currentAdvancedSettings.assistant_connector_static_site_enabled
+    currentAdvancedSettings.assistant_connector_web_search_enabled
   const selectedAgent = useMemo(() => {
     if (!isAdvanced) {
       return undefined
@@ -5145,14 +5141,11 @@ function ToolCallDetails({
   const command = stringArgument(toolCall.arguments, "command")
   const query = stringArgument(toolCall.arguments, "query")
   const url = stringArgument(toolCall.arguments, "url")
-  const domainName = stringArgument(toolCall.arguments, "domain_name")
-  const siteID = stringArgument(toolCall.arguments, "site_id")
   const replacements = replacementEntriesFromArguments(toolCall.arguments)
   const toolTarget = builtinKind === "search" ? query : builtinKind === "fetch" ? url : command
-  const siteTitle = staticSiteToolTitle(toolCall, domainName, siteID)
   const title = builtinKind
     ? builtinToolTitle(builtinKind, path, toolTarget, copy, booleanArgument(toolCall.arguments, "preview_old_content_available"))
-    : siteTitle || toolLabel(toolCall)
+    : toolLabel(toolCall)
 
   return (
     <details
@@ -6319,7 +6312,6 @@ function normalizeAdvancedChatSettings(value: unknown): AdvancedChatSettings {
     assistant_connector_replace_text_enabled: item.assistant_connector_replace_text_enabled !== false,
     assistant_connector_run_command_enabled: item.assistant_connector_run_command_enabled !== false,
     assistant_connector_web_search_enabled: item.assistant_connector_web_search_enabled !== false,
-    assistant_connector_static_site_enabled: item.assistant_connector_static_site_enabled !== false,
     connector_approval_agent_id: stringFromUnknown(item.connector_approval_agent_id) || "",
   }
 }
@@ -7808,24 +7800,6 @@ function toolLabel(toolCall: ChatToolCall) {
   return `${toolCall.server ? `${toolCall.server}: ` : ""}${toolCall.tool || toolCall.name}`
 }
 
-function staticSiteToolTitle(toolCall: ChatToolCall, domainName: string, siteID: string) {
-  const name = toolCall.name.toLowerCase()
-  const target = domainName || siteID || "."
-  if (name === "list_static_sites") {
-    return "列出静态站点"
-  }
-  if (name === "deploy_static_site") {
-    return `部署静态站点: ${target}`
-  }
-  if (name === "set_static_site_enabled") {
-    return `切换静态站点: ${target}`
-  }
-  if (name === "delete_static_site") {
-    return `删除静态站点: ${target}`
-  }
-  return ""
-}
-
 function findConnectorApprovalTask(toolCall: ChatToolCall, tasks: ConnectorApprovalTask[]) {
   if (toolCall.status !== "approval_required" || tasks.length === 0) {
     return undefined
@@ -8212,8 +8186,6 @@ const chatCopyKeys = {
   toolGroupWorkspaceHint: "chat.toolGroupWorkspaceHint",
   toolGroupWeb: "chat.toolGroupWeb",
   toolGroupWebHint: "chat.toolGroupWebHint",
-  toolGroupSites: "chat.toolGroupSites",
-  toolGroupSitesHint: "chat.toolGroupSitesHint",
   toolGroupTasks: "chat.toolGroupTasks",
   toolGroupTasksHint: "chat.toolGroupTasksHint",
   toolGroupAskUser: "chat.toolGroupAskUser",

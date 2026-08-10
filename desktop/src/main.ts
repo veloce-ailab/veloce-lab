@@ -104,8 +104,7 @@ interface DesktopUpdateResult {
 interface StartConnectorInput {
   serverURL: string
   token: string
-  mode: "platform" | "web_server"
-  webPort?: number
+  mode: "platform"
   deviceID?: string
   deviceKind?: "cli" | "desktop"
   desktopInstanceID?: string
@@ -120,7 +119,7 @@ interface ConnectorStatus {
   message: string
   serverURL: string
   version: string
-  mode: "platform" | "web_server"
+  mode: "platform"
   startedAt: string
   deviceID: string
   deviceKind: "cli" | "desktop"
@@ -1256,7 +1255,7 @@ async function startConnector(input: StartConnectorInput) {
       message: "Preparing bundled connector",
       serverURL,
       version: "",
-      mode: input.mode,
+      mode: "platform",
       startedAt: "",
       deviceID,
       deviceKind,
@@ -1265,16 +1264,13 @@ async function startConnector(input: StartConnectorInput) {
   emitDesktopProcessStatus()
   try {
     const useGoRunConnector = !app.isPackaged && !desktopSettings.connectorPath.trim()
-    updateConnectorStatus(connectorID, { phase: "checking", message: useGoRunConnector ? "Preparing connector from ../app" : "Preparing bundled connector", serverURL, mode: input.mode })
+    updateConnectorStatus(connectorID, { phase: "checking", message: useGoRunConnector ? "Preparing connector from ../app" : "Preparing bundled connector", serverURL, mode: "platform" })
     const install = useGoRunConnector ? null : await ensureLatestConnectorInstall()
     const connectorVersion = useGoRunConnector ? "dev" : install!.tagName
-    updateConnectorStatus(connectorID, { phase: "starting", message: useGoRunConnector ? "Starting connector from ../app" : "Starting connector", serverURL, version: connectorVersion, mode: input.mode })
+    updateConnectorStatus(connectorID, { phase: "starting", message: useGoRunConnector ? "Starting connector from ../app" : "Starting connector", serverURL, version: connectorVersion, mode: "platform" })
     const args = ["-server", serverURL, "-token", token, "-device-kind", deviceKind]
     if (deviceKind === "desktop") {
       args.push("-desktop-instance-id", input.desktopInstanceID?.trim() || desktopInstanceID())
-    }
-    if (input.mode === "web_server") {
-      args.push("-mode", "web_server", "-web-port", String(input.webPort || 8080))
     }
     const childProcess = spawn(
       useGoRunConnector ? (process.platform === "win32" ? "go.exe" : "go") : install!.executablePath,
@@ -1312,7 +1308,7 @@ async function startConnector(input: StartConnectorInput) {
       message: "Connector is running",
       serverURL,
       version: connectorVersion,
-      mode: input.mode,
+      mode: "platform",
       startedAt: new Date().toISOString(),
       deviceID,
       deviceKind,

@@ -24,7 +24,6 @@ func init() {
 		&AdvancedChatCloudSandboxHost{},
 		&AdvancedChatCloudSandbox{},
 		&AdvancedChatCloudSandboxCharge{},
-		&AdvancedChatStaticSite{},
 		&AdvancedChatDelivery{},
 		&AdvancedChatScheduledTask{},
 		&AdvancedChatChatGroup{},

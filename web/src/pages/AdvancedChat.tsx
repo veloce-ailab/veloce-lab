@@ -1,4 +1,4 @@
-import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, FolderKanban, Globe2, Home, Menu, MessageSquare, MessageSquareText, Search, Send, Settings as SettingsIcon, Sparkles, UserCircle, Users } from "lucide-react"
+import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, FolderKanban, Home, Menu, MessageSquare, MessageSquareText, Search, Send, Settings as SettingsIcon, Sparkles, UserCircle, Users } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
@@ -11,7 +11,6 @@ import AdvancedChatMCP from "./AdvancedChatMCP"
 import AdvancedChatFiles from "./AdvancedChatFiles"
 import KnowledgeBases from "./KnowledgeBases"
 import AdvancedChatMemories from "./AdvancedChatMemories"
-import AdvancedChatSites from "./AdvancedChatSites"
 import MessageChannels from "./MessageChannelsWorkspace"
 import AdvancedChatDeliveries from "./AdvancedChatDeliveries"
 import AdvancedChatScheduledTasks from "./AdvancedChatScheduledTasks"
@@ -70,7 +69,6 @@ const advancedChatSidebarIconTones: Record<string, string> = {
   "/chat/agents": "bg-purple-500/15 text-purple-600 dark:bg-purple-400/15 dark:text-purple-300",
   "/chat/memories": "bg-rose-500/15 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300",
   "/chat/skills": "bg-fuchsia-500/15 text-fuchsia-600 dark:bg-fuchsia-400/15 dark:text-fuchsia-300",
-  "/chat/sites": "bg-lime-500/15 text-lime-700 dark:bg-lime-400/15 dark:text-lime-300",
   "/chat/agent-groups": "bg-indigo-500/15 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300",
   "/chat/agent-tasks": "bg-orange-500/15 text-orange-600 dark:bg-orange-400/15 dark:text-orange-300",
   "/chat/mcp": "bg-indigo-500/15 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300",
@@ -224,7 +222,6 @@ export default function AdvancedChat() {
                     <Route path="skills/:id" element={<Skills />} />
                     <Route path="mcp" element={<AdvancedChatMCP />} />
                     <Route path="devices/*" element={<Navigate to="/settings/devices" replace />} />
-                    <Route path="sites" element={<AdvancedChatSites />} />
                     <Route path="agent-groups/*" element={<AgentGroupsPage />} />
                     {publicSettings.message_channel_enabled && <Route path="channels/*" element={<MessageChannels />} />}
                     <Route path="deliveries" element={<AdvancedChatDeliveries />} />
@@ -297,7 +294,6 @@ function desktopPageTitle(pathname: string, language: string) {
   if (pathname === "/chat/groups" || pathname.startsWith("/chat/groups/")) return zh ? "聊天群组" : "Chat Groups"
   if (pathname === "/chat/agents" || pathname.startsWith("/chat/agents/")) return zh ? "助理" : "Agents"
   if (pathname === "/chat/skills" || pathname.startsWith("/chat/skills/")) return zh ? "技能" : "Skills"
-  if (pathname === "/chat/sites") return zh ? "站点" : "Sites"
   if (pathname.includes("/agent-groups/") && pathname.endsWith("/operations")) return zh ? "工作室运营" : "Studio Operations"
   if (pathname.startsWith("/chat/agent-groups")) return zh ? "工作室" : "Agent Studios"
   if (pathname === "/chat/agent-tasks") return zh ? "代理任务" : "Agent Tasks"
@@ -334,7 +330,6 @@ function AdvancedChatSidebar({
   const deliveriesLabel = language === "zh" ? "结果投递" : "Result Delivery"
   const scheduledTasksLabel = language === "zh" ? "任务" : "Tasks"
   const agentGroupsLabel = language === "zh" ? "工作室" : "Agent Studios"
-  const sitesLabel = language === "zh" ? "站点" : language === "ja" ? "サイト" : "Sites"
   const workflowLabel = language === "zh" ? "工作流" : language === "ja" ? "ワークフロー" : "Workflows"
   const agentLabel = language === "zh" ? "代理" : language === "ja" ? "エージェント" : "Agents"
   const homeItem: AdvancedChatSidebarItem = {
@@ -373,7 +368,6 @@ function AdvancedChatSidebar({
         { href: "/chat/agents", label: t("nav.agents"), icon: Bot, active: location.pathname === "/chat/agents" },
         { href: "/chat/memories", label: memoriesLabel, icon: Brain, active: location.pathname === "/chat/memories" },
         { href: "/chat/skills", label: t("nav.skills"), icon: Sparkles, active: location.pathname === "/chat/skills" || location.pathname.startsWith("/chat/skills/") },
-        { href: "/chat/sites", label: sitesLabel, icon: Globe2, active: location.pathname === "/chat/sites" },
         { href: "/chat/agent-groups", label: agentGroupsLabel, icon: Users, active: location.pathname.startsWith("/chat/agent-groups") },
         { href: "/chat/mcp", label: t("nav.mcp"), icon: Bot, active: location.pathname === "/chat/mcp" },
       ],

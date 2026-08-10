@@ -12,8 +12,7 @@ interface BuiltinServerStatus {
 interface StartConnectorInput {
   serverURL: string
   token: string
-  mode: "platform" | "web_server"
-  webPort?: number
+  mode: "platform"
 }
 
 interface StartConnectorResult {

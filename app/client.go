@@ -19,7 +19,6 @@ func (client connectorClient) register() error {
 		"arch":                runtime.GOARCH,
 		"version":             version,
 		"mode":                client.config.Mode,
-		"listen_port":         client.config.ListenPort,
 		"kind":                client.config.Kind,
 		"desktop_instance_id": client.config.DesktopInstanceID,
 	}
@@ -41,7 +40,6 @@ func (client connectorClient) heartbeatLoop() {
 			"arch":                runtime.GOARCH,
 			"version":             version,
 			"mode":                client.config.Mode,
-			"listen_port":         client.config.ListenPort,
 			"kind":                client.config.Kind,
 			"desktop_instance_id": client.config.DesktopInstanceID,
 		}

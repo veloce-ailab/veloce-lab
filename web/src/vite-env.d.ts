@@ -79,8 +79,7 @@ interface Window {
     startConnector: (input: {
       serverURL: string
       token: string
-      mode: "platform" | "web_server"
-      webPort?: number
+      mode: "platform"
     }) => Promise<{ ok: boolean; message: string; version: string }>
     ensureDesktopConnector: (input: { serverURL: string; authToken: string }) => Promise<{ ok: boolean; message: string; version: string }>
     desktopAuthLogin: (input: { serverURL: string; hint?: string }) => Promise<{ ok: boolean; token?: string; cancelled?: boolean; message?: string }>

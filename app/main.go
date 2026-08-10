@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -16,26 +17,23 @@ type connectorConfig struct {
 	Token             string
 	Name              string
 	Mode              string
-	ListenPort        int
 	DataDir           string
 	Kind              string
 	DesktopInstanceID string
 }
 
 type connectorClient struct {
-	config      connectorConfig
-	http        *http.Client
-	siteManager *staticSiteManager
-	mcp         *mcpProcessManager
-	terminals   *terminalManager
+	config    connectorConfig
+	http      *http.Client
+	mcp       *mcpProcessManager
+	terminals *terminalManager
 }
 
 func main() {
 	server := flag.String("server", "http://localhost:8080", "Backend server URL")
 	token := flag.String("token", "", "Connector token generated from agent chat")
 	name := flag.String("name", "", "Device name shown in agent chat")
-	mode := flag.String("mode", "platform", "Connector mode: platform, web_server, or sandboxd")
-	webPort := flag.Int("web-port", 8080, "Static website server port in web_server mode")
+	mode := flag.String("mode", "platform", "Connector mode: platform or sandboxd")
 	dataDir := flag.String("data-dir", "", "Connector data directory")
 	deviceKind := flag.String("device-kind", "cli", "Connector device kind: cli or desktop")
 	desktopInstanceID := flag.String("desktop-instance-id", "", "Veloce Desktop installation id")
@@ -54,7 +52,6 @@ func main() {
 		Token:             strings.TrimSpace(*token),
 		Name:              deviceName,
 		Mode:              normalizeConnectorMode(*mode),
-		ListenPort:        normalizeListenPort(*webPort, *mode),
 		DataDir:           strings.TrimSpace(*dataDir),
 		Kind:              normalizeConnectorDeviceKind(*deviceKind),
 		DesktopInstanceID: strings.TrimSpace(*desktopInstanceID),
@@ -65,26 +62,10 @@ func main() {
 		mcp:       newMCPProcessManager(),
 		terminals: newTerminalManager(),
 	}
-	if client.config.Mode == connectorModeWebServer {
-		manager, err := newStaticSiteManager(client.config.DataDir)
-		if err != nil {
-			fatalf("static site manager failed: %v", err)
-		}
-		client.siteManager = manager
-		go func() {
-			if err := manager.serve(client.config.ListenPort); err != nil {
-				fatalf("web server failed: %v", err)
-			}
-		}()
-	}
 	if err := client.register(); err != nil {
 		fatalf("register failed: %v", err)
 	}
-	if client.config.Mode == connectorModeWebServer {
-		fmt.Printf("Connector online as %q in web_server mode on port %d\n", deviceName, client.config.ListenPort)
-	} else {
-		fmt.Printf("Connector online as %q\n", deviceName)
-	}
+	fmt.Printf("Connector online as %q\n", deviceName)
 	go client.heartbeatLoop()
 	client.pollLoop()
 }
@@ -114,15 +95,12 @@ func currentConnectorVersion() string {
 }
 
 const (
-	connectorModePlatform  = "platform"
-	connectorModeWebServer = "web_server"
-	connectorModeSandboxd  = "sandboxd"
+	connectorModePlatform = "platform"
+	connectorModeSandboxd = "sandboxd"
 )
 
 func normalizeConnectorMode(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case connectorModeWebServer:
-		return connectorModeWebServer
 	case connectorModeSandboxd:
 		return connectorModeSandboxd
 	default:
@@ -130,12 +108,12 @@ func normalizeConnectorMode(value string) string {
 	}
 }
 
-func normalizeListenPort(port int, mode string) int {
-	if normalizeConnectorMode(mode) != connectorModeWebServer {
-		return 0
+func defaultConnectorDataDir() string {
+	if value := strings.TrimSpace(os.Getenv("VELOCE_APP_DATA")); value != "" {
+		return value
 	}
-	if port <= 0 || port > 65535 {
-		return 8080
+	if dir, err := os.UserConfigDir(); err == nil && strings.TrimSpace(dir) != "" {
+		return filepath.Join(dir, "veloce-app")
 	}
-	return port
+	return filepath.Join(".", "data")
 }

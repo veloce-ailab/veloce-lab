@@ -9,7 +9,6 @@ import "strings"
 const (
 	advancedChatToolGroupWorkspace = "workspace"
 	advancedChatToolGroupWeb       = "web"
-	advancedChatToolGroupSites     = "sites"
 	advancedChatToolGroupTasks     = "tasks"
 	advancedChatToolGroupAskUser   = "ask_user"
 	advancedChatToolGroupMemory    = "memory"
@@ -18,7 +17,6 @@ const (
 var advancedChatToolGroupNames = []string{
 	advancedChatToolGroupWorkspace,
 	advancedChatToolGroupWeb,
-	advancedChatToolGroupSites,
 	advancedChatToolGroupTasks,
 	advancedChatToolGroupAskUser,
 	advancedChatToolGroupMemory,
@@ -53,8 +51,6 @@ func advancedChatToolGroupForTool(name string) string {
 		return advancedChatToolGroupWorkspace
 	case advancedChatConnectorToolWebSearch, advancedChatConnectorToolWebFetch:
 		return advancedChatToolGroupWeb
-	case "list_static_sites", "deploy_static_site", "set_static_site_enabled", "delete_static_site":
-		return advancedChatToolGroupSites
 	case sessionTasksPlanToolName, sessionTasksUpdateToolName, sessionTasksListToolName:
 		return advancedChatToolGroupTasks
 	case askUserToolName:
