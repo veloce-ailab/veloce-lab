@@ -70,6 +70,15 @@ export async function streamRequest(path: string, body: unknown, onEvent: (event
   }
   if (buffer.trim()) parse(buffer)
 }
+
+export async function uploadFile(path: string, asset: { uri: string; name: string; mimeType?: string | null }) {
+  const form = new FormData()
+  form.append("file", { uri: asset.uri, name: asset.name, type: asset.mimeType || "application/octet-stream" } as any)
+  const response = await fetch(`${serverURL}/api${path}`, { method: "POST", headers: { Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: form })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(typeof payload?.error === "string" ? payload.error : `上传失败（${response.status}）`)
+  return payload as { file?: { id?: string; name?: string; type?: string; size?: number }; content?: { text?: string; truncated?: boolean; binary?: boolean } }
+}
 export async function login(identifier: string, password: string) {
   const response = await fetch(`${serverURL}/auth/password/login`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ identifier, password, agreement_accepted: true }) })
   const payload = await response.json().catch(() => ({}))
