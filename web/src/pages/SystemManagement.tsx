@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Bot, ChevronDown, Globe2, HardDrive, Info, KeyRound, Paperclip, Save, Server, ShieldCheck, SlidersHorizontal, Wifi } from "lucide-react"
+import { Bot, Globe2, HardDrive, Info, KeyRound, Paperclip, Save, Server, ShieldCheck, Wifi } from "lucide-react"
 import AdvancedChatManagement from "./AdvancedChatManagement"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -83,7 +83,7 @@ function GeneralSettings({ section }: { section: Exclude<SystemSection, "advance
   return (
     <div className="mx-auto max-w-5xl space-y-7 pb-10">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b pb-6">
-        <div><div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><SlidersHorizontal size={14} />系统 / 设置</div><h1 className="text-3xl font-semibold tracking-tight">{page.title}</h1><p className="mt-2 text-sm text-muted-foreground">{page.description}</p></div>
+        <div><h1 className="text-3xl font-semibold tracking-tight">{page.title}</h1><p className="mt-2 text-sm text-muted-foreground">{page.description}</p></div>
         <Button className="gap-2" disabled={save.isPending || settings.isLoading} onClick={() => save.mutate()}><Save size={16} />保存更改</Button>
       </div>
 
@@ -126,7 +126,7 @@ function buildProxyURL(input: { proxyType: string; proxyHost: string; proxyPort:
 }
 
 function SettingGroup({ icon, title, description, children }: { icon: ReactNode; title: string; description: string; children: ReactNode }) {
-  return <details open className="group overflow-hidden rounded-lg border bg-card shadow-sm"><summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">{icon}</span><span className="min-w-0 flex-1"><span className="block font-semibold">{title}</span><span className="mt-0.5 block text-xs text-muted-foreground">{description}</span></span><ChevronDown size={17} className="text-muted-foreground transition-transform group-open:rotate-180" /></summary><div className="border-t">{children}</div></details>
+  return <section className="overflow-hidden rounded-lg border bg-card shadow-sm"><div className="flex items-center gap-3 px-5 py-4"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">{icon}</span><span className="min-w-0 flex-1"><span className="block font-semibold">{title}</span><span className="mt-0.5 block text-xs text-muted-foreground">{description}</span></span></div><div className="border-t">{children}</div></section>
 }
 
 function SettingRow({ title, description, children }: { title: string; description: string; children: ReactNode }) {
@@ -141,14 +141,13 @@ function AdvancedChatSettings() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">高级聊天设置</h1>
-        <p className="mt-1 text-sm text-muted-foreground">管理聊天助理、附件处理和 MCP 工具。</p>
+        <h1 className="text-3xl font-semibold tracking-tight">聊天设置</h1>
       </div>
-      <Tabs defaultValue="assistant">
-        <TabsList>
-          <TabsTrigger value="assistant"><Bot size={15} />助理</TabsTrigger>
-          <TabsTrigger value="attachments"><Paperclip size={15} />附件</TabsTrigger>
-          <TabsTrigger value="mcp"><Server size={15} />MCP</TabsTrigger>
+      <Tabs defaultValue="assistant" className="gap-5">
+        <TabsList variant="line" className="w-full justify-start gap-5 rounded-none border-b p-0">
+          <TabsTrigger value="assistant" className="flex-none rounded-none px-1.5 data-active:bg-transparent data-active:text-foreground after:bottom-[-1px]"><Bot size={15} />助理</TabsTrigger>
+          <TabsTrigger value="attachments" className="flex-none rounded-none px-1.5 data-active:bg-transparent data-active:text-foreground after:bottom-[-1px]"><Paperclip size={15} />附件</TabsTrigger>
+          <TabsTrigger value="mcp" className="flex-none rounded-none px-1.5 data-active:bg-transparent data-active:text-foreground after:bottom-[-1px]"><Server size={15} />MCP</TabsTrigger>
         </TabsList>
         <TabsContent value="assistant"><AdvancedChatManagement mode="assistant" /></TabsContent>
         <TabsContent value="attachments"><AdvancedChatManagement mode="attachments" /></TabsContent>
