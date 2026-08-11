@@ -189,7 +189,7 @@ export default function AdvancedChat() {
 
       <div className={cn("flex min-h-0 flex-1", isFullHeightRoute && "bg-background")}>
         <ResizableSidebar storageKey="advanced-chat-navigation" side="left" defaultWidth={224} minWidth={192} maxWidth={420} className="hidden lg:block lg:h-full">
-          <AdvancedChatSidebar className={cn("w-full", isFullHeightRoute && "border-r-0 bg-background")} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot-desktop" />
+          <AdvancedChatSidebar className={cn("w-full", isFullHeightRoute && "bg-background")} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot-desktop" />
         </ResizableSidebar>
 
         <div className={cn("fixed inset-0 z-40 transition-opacity duration-200 lg:hidden", isDesktop ? "top-0" : "top-16", isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSidebarOpen}>
@@ -200,7 +200,7 @@ export default function AdvancedChat() {
               onClick={() => setIsSidebarOpen(false)}
             />
             <div className={cn("relative z-50 h-full w-64 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")}>
-              <AdvancedChatSidebar className={cn("w-full", isFullHeightRoute && "border-r-0 bg-background")} publicSettings={publicSettings} user={user} onNavigate={() => setIsSidebarOpen(false)} sessionSlotID="chat-sessions-sidebar-slot-mobile" />
+              <AdvancedChatSidebar className={cn("w-full", isFullHeightRoute && "bg-background")} publicSettings={publicSettings} user={user} onNavigate={() => setIsSidebarOpen(false)} sessionSlotID="chat-sessions-sidebar-slot-mobile" />
             </div>
         </div>
 
