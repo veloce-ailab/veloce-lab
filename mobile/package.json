@@ -1,0 +1,27 @@
+{
+  "name": "veloce-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "node node_modules/expo/bin/cli start",
+    "android": "node node_modules/expo/bin/cli start --android",
+    "ios": "node node_modules/expo/bin/cli start --ios",
+    "web": "node node_modules/expo/bin/cli start --web",
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^14.1.0",
+    "@react-native-async-storage/async-storage": "2.1.2",
+    "expo": "~54.0.0",
+    "expo-document-picker": "~14.0.7",
+    "expo-status-bar": "~3.0.8",
+    "react": "19.1.0",
+    "react-native": "0.81.4",
+    "react-native-safe-area-context": "5.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.10",
+    "typescript": "~5.9.2"
+  }
+}
