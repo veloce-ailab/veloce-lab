@@ -114,9 +114,6 @@ export default function AdvancedChatManagement({ mode = "attachments" }: { mode?
         attachment_max_mb: Number(form.attachment_max_mb) || 10,
         attachment_allowed_types: allowedTypes,
         file_storage_total_mb: Number(form.file_storage_total_mb) || 100,
-        file_storage_enabled: form.file_storage_enabled,
-        file_storage_auto_save_images_enabled: form.file_storage_auto_save_images_enabled,
-        file_storage_auto_save_videos_enabled: form.file_storage_auto_save_videos_enabled,
       })
       return normalizeAdvancedChatSettings(res.data)
     },
@@ -134,7 +131,6 @@ export default function AdvancedChatManagement({ mode = "attachments" }: { mode?
   const saveAssistantSettings = useMutation({
     mutationFn: async () => {
       const res = await api.put("/advanced-chat/settings", {
-        assistant_mode_enabled: form.assistant_mode_enabled,
         assistant_run_timeout_seconds: Number(form.assistant_run_timeout_seconds) || defaultAdvancedChatSettings.assistant_run_timeout_seconds,
         agent_group_run_timeout_seconds: Number(form.agent_group_run_timeout_seconds) || defaultAdvancedChatSettings.agent_group_run_timeout_seconds,
         assistant_mcp_tools_enabled: form.assistant_mcp_tools_enabled,
@@ -144,10 +140,6 @@ export default function AdvancedChatManagement({ mode = "attachments" }: { mode?
         assistant_connector_replace_text_enabled: form.assistant_connector_replace_text_enabled,
         assistant_connector_run_command_enabled: form.assistant_connector_run_command_enabled,
         assistant_connector_web_search_enabled: form.assistant_connector_web_search_enabled,
-        scheduled_tasks_enabled: form.scheduled_tasks_enabled,
-        message_channel_enabled: form.message_channel_enabled,
-        message_delivery_enabled: form.message_delivery_enabled,
-        delivery_system_smtp_enabled: form.delivery_system_smtp_enabled,
       })
       return normalizeAdvancedChatSettings(res.data)
     },
@@ -232,23 +224,12 @@ export default function AdvancedChatManagement({ mode = "attachments" }: { mode?
     })
   }
 
-  const updateFeatureToggle =
-    (key: "file_storage_enabled" | "file_storage_auto_save_images_enabled" | "file_storage_auto_save_videos_enabled" | "scheduled_tasks_enabled" | "message_channel_enabled" | "message_delivery_enabled" | "delivery_system_smtp_enabled") =>
-    (checked: boolean) => setForm((current) => ({ ...current, [key]: checked }))
-
   if (advancedSettings.isLoading) {
     return <div className="text-sm text-muted-foreground">Loading...</div>
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">助理聊天管理</h1>
-          <div className="mt-2 text-sm text-muted-foreground">管理独立聊天的助理模式、可用工具、附件限制和内置 MCP 服务器。</div>
-        </div>
-      </div>
-
       <>
           {mode === "attachments" && (
             <Card>
@@ -274,26 +255,6 @@ export default function AdvancedChatManagement({ mode = "attachments" }: { mode?
                     <span className="block text-xs text-muted-foreground">每行一个 MIME 类型，支持 `text/*` 这样的通配。</span>
                   </label>
                 </div>
-                <div className="grid gap-3 lg:grid-cols-3">
-                  <ToggleRow
-                    title="启用文件存储"
-                    description="关闭后，独立助理聊天文件库、上传附件和选择已有文件都会被禁用。"
-                    checked={form.file_storage_enabled}
-                    onChange={updateFeatureToggle("file_storage_enabled")}
-                  />
-                  <ToggleRow
-                    title="图片生成自动入库"
-                    description="开启后，图片生成或编辑返回的图片会在用户剩余空间足够时保存到文件库。"
-                    checked={form.file_storage_auto_save_images_enabled}
-                    onChange={updateFeatureToggle("file_storage_auto_save_images_enabled")}
-                  />
-                  <ToggleRow
-                    title="视频生成自动入库"
-                    description="开启后，视频生成完成并返回视频时会在用户剩余空间足够时保存到文件库。"
-                    checked={form.file_storage_auto_save_videos_enabled}
-                    onChange={updateFeatureToggle("file_storage_auto_save_videos_enabled")}
-                  />
-                </div>
               </CardContent>
             </Card>
           )}
@@ -310,12 +271,6 @@ export default function AdvancedChatManagement({ mode = "attachments" }: { mode?
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <ToggleRow
-                  title="启用助理模式"
-                  description="关闭后，独立聊天页面不能切换到助理模式，后端也会拒绝助理运行请求。"
-                  checked={form.assistant_mode_enabled}
-                  onChange={(checked) => setForm((current) => ({ ...current, assistant_mode_enabled: checked }))}
-                />
                 <div className="grid gap-3 lg:grid-cols-2">
                   <label className="space-y-2 text-sm">
                     <span className="font-medium">助理运行超时（秒）</span>
@@ -341,32 +296,6 @@ export default function AdvancedChatManagement({ mode = "attachments" }: { mode?
                     />
                     <span className="block text-xs leading-5 text-muted-foreground">工作室模式单次后台运行的总时限，默认 3600 秒。</span>
                   </label>
-                </div>
-                <div className="grid gap-3 lg:grid-cols-3">
-                  <ToggleRow
-                    title="启用计划任务"
-                    description="关闭后，用户不能创建、编辑或运行助理聊天计划任务，后台调度器也不会执行到期任务。"
-                    checked={form.scheduled_tasks_enabled}
-                    onChange={updateFeatureToggle("scheduled_tasks_enabled")}
-                  />
-                  <ToggleRow
-                    title="启用消息通道"
-                    description="开启后，用户可以在独立聊天页面配置 Telegram、QQ、Discord 等消息通道。"
-                    checked={form.message_channel_enabled}
-                    onChange={updateFeatureToggle("message_channel_enabled")}
-                  />
-                  <ToggleRow
-                    title="启用消息投递"
-                    description="关闭后，计划任务仍可运行，但不会向 AI 暴露结果投递工具，也不能管理投递配置。"
-                    checked={form.message_delivery_enabled}
-                    onChange={updateFeatureToggle("message_delivery_enabled")}
-                  />
-                  <ToggleRow
-                    title="允许使用系统 SMTP"
-                    description="开启后，邮箱投递可使用后台认证邮件的 SMTP；关闭后，用户必须在投递配置中填写自己的 SMTP。"
-                    checked={form.delivery_system_smtp_enabled}
-                    onChange={updateFeatureToggle("delivery_system_smtp_enabled")}
-                  />
                 </div>
                 <div className="rounded-md border p-3">
                   <div className="text-sm font-medium">助理工具</div>

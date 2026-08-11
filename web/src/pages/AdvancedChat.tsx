@@ -335,7 +335,7 @@ function AdvancedChatSidebar({
   const homeItem: AdvancedChatSidebarItem = {
     href: "/chat?new_session=1",
     label: language === "zh" ? "主页" : language === "ja" ? "ホーム" : "Home",
-    icon: MessageSquare,
+    icon: Home,
     active: location.pathname === "/chat" || location.pathname.startsWith("/chat/session/"),
   }
   const directItems: AdvancedChatSidebarItem[] = [
