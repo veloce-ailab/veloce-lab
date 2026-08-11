@@ -35,10 +35,44 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   if (!response.ok) throw new Error(typeof payload?.error === "string" ? payload.error : `请求失败（${response.status}）`)
   return payload as T
 }
+
+export type StreamEvent = { type: string; payload: any }
+
+export async function streamRequest(path: string, body: unknown, onEvent: (event: StreamEvent) => void, signal?: AbortSignal) {
+  const response = await fetch(`${serverURL}/api${path}`, {
+    method: "POST", signal,
+    headers: { Accept: "text/event-stream, application/json", "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(typeof payload?.error === "string" ? payload.error : `请求失败（${response.status}）`)
+  }
+  const parse = (raw: string) => {
+    let type = "message"; const data: string[] = []
+    for (const line of raw.split(/\r?\n/)) { if (line.startsWith("event:")) type = line.slice(6).trim(); if (line.startsWith("data:")) data.push(line.slice(5).trimStart()) }
+    if (!data.length) return
+    let payload: any
+    try { payload = JSON.parse(data.join("\n")) } catch { return /* ignore malformed keep-alive frames */ }
+    onEvent({ type, payload })
+  }
+  if (!response.headers.get("content-type")?.includes("text/event-stream")) {
+    onEvent({ type: "done", payload: await response.json().catch(() => ({})) })
+    return
+  }
+  if (!response.body) { (await response.text()).split(/\r?\n\r?\n/).forEach(parse); return }
+  const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split(/\r?\n\r?\n/); buffer = events.pop() || ""; events.forEach(parse)
+  }
+  if (buffer.trim()) parse(buffer)
+}
 export async function login(identifier: string, password: string) {
   const response = await fetch(`${serverURL}/auth/password/login`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ identifier, password, agreement_accepted: true }) })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok || !payload.token) throw new Error(payload.error || "登录失败")
   await setToken(payload.token)
 }
-
