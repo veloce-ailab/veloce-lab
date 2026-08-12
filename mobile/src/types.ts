@@ -6,7 +6,8 @@ export interface SessionMessage { id: string; role: "user" | "assistant"; conten
 export interface Session {
   id: string; title: string; messages: SessionMessage[]; run_mode?: "chat" | "assistant" | "agent_group";
   model_name?: string; agent_id?: string; skill_ids?: string[]; mcp_server_ids?: string[];
-  knowledge_base_ids?: string[]; created_at?: string; updated_at?: string
+  knowledge_base_ids?: string[]; max_tokens?: number; temperature?: number | null; reasoning_effort?: string;
+  auto_compress_context?: boolean; disabled_tool_groups?: string[]; created_at?: string; updated_at?: string
 }
 export interface Agent { id: string; name: string; prompt?: string; default_model?: string; stream?: boolean; created_at?: string }
 export interface KnowledgeBase { id: string; name: string; description?: string; document_count?: number; vectorized?: boolean; updated_at?: string }
