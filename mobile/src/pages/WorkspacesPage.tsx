@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { Alert, BackHandler, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { request } from "../api"
 import type { Palette } from "../theme"
 import { Action, Choice, Input, Sheet, Top } from "./TasksPage"
@@ -9,6 +9,7 @@ export default function WorkspacesPage({ colors, onBack }: { colors: Palette; on
   const [items, setItems] = useState<Workspace[]>([]); const [agents, setAgents] = useState<any[]>([]); const [models, setModels] = useState<string[]>([]); const [editor, setEditor] = useState<Workspace | null>(null); const [form, setForm] = useState<any>({ name: "", location: "server", device_id: "", path: "", model: "", agent: "" }); const [file, setFile] = useState<any | null>(null); const [content, setContent] = useState(""); const [error, setError] = useState("")
   const load = useCallback(async () => { try { const [data, nextAgents, catalog] = await Promise.all([request<any>("/user/advanced-chat/workspaces"), request<any[]>("/user/advanced-chat/agents"), request<any[]>("/user/catalog")]); setItems(Array.isArray(data?.workspaces) ? data.workspaces : Array.isArray(data) ? data : []); setAgents(Array.isArray(nextAgents) ? nextAgents : []); setModels([...new Set((Array.isArray(catalog) ? catalog : []).flatMap(item => item.models || []))]) } catch (e) { setError(message(e)) } }, [])
   useEffect(() => { void load() }, [load])
+  useEffect(() => { if (!file) return; const subscription = BackHandler.addEventListener("hardwareBackPress", () => { setFile(null); setContent(""); return true }); return () => subscription.remove() }, [file])
   const open = (item?: Workspace) => { setEditor(item || {}); setForm(item ? { name: item.name || "", location: item.location || "server", device_id: item.device_id || "", path: item.path || "", model: item.model || "", agent: item.agent || "" } : { name: "", location: "server", device_id: "", path: "", model: models[0] || "", agent: agents[0]?.id || "" }) }
   const saveWorkspace = async () => { if (!form.name.trim() || !form.model || !form.agent) { setError("请填写名称、模型和智能体"); return } try { await request(editor?.id ? `/user/advanced-chat/workspaces/${encodeURIComponent(editor.id)}` : "/user/advanced-chat/workspaces", { method: editor?.id ? "PUT" : "POST", body: form }); setEditor(null); await load() } catch (e) { setError(message(e)) } }
   const remove = (item: Workspace) => Alert.alert("删除工作区", `确定删除“${item.name}”及其中文件？`, [{ text: "取消", style: "cancel" }, { text: "删除", style: "destructive", onPress: async () => { try { await request(`/user/advanced-chat/workspaces/${encodeURIComponent(item.id)}`, { method: "DELETE" }); await load() } catch (e) { setError(message(e)) } } }])
