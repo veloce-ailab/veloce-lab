@@ -81,6 +81,8 @@ type ChatExecutorResult struct {
 	AssistantMessage map[string]interface{}
 	FinishReason     string
 	Cost             decimal.Decimal
+	InputTokens      int
+	OutputTokens     int
 }
 
 // ChatExecutorError carries an HTTP status so callers can surface upstream and
@@ -197,6 +199,8 @@ func ExecuteServerChatCompletion(c *gin.Context, user *model.User, req ChatExecu
 			return nil, newChatExecutorError(status, message)
 		}
 		result.Cost = cost
+		result.InputTokens = usage.InputTokens
+		result.OutputTokens = usage.OutputTokens
 		if streamErr != nil && strings.TrimSpace(result.FinishReason) == "" {
 			result.FinishReason = "stream_error"
 		}
@@ -225,6 +229,8 @@ func ExecuteServerChatCompletion(c *gin.Context, user *model.User, req ChatExecu
 
 	result := parseServerChatResponse(protocol, responseData)
 	result.Cost = cost
+	result.InputTokens = usage.InputTokens
+	result.OutputTokens = usage.OutputTokens
 	return result, nil
 }
 
