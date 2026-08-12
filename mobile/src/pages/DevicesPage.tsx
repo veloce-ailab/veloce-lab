@@ -1,0 +1,17 @@
+import { useCallback, useEffect, useState } from "react"
+import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { request } from "../api"
+import type { Palette } from "../theme"
+import { Action, Input, Sheet, Top } from "./TasksPage"
+
+export default function DevicesPage({ colors, onBack }: { colors: Palette; onBack: () => void }) {
+  const [items, setItems] = useState<any[]>([]); const [name, setName] = useState("新设备"); const [token, setToken] = useState(""); const [editing, setEditing] = useState<any | null>(null); const [error, setError] = useState("")
+  const load = useCallback(async () => { try { const value = await request<any[]>("/user/advanced-chat/devices"); setItems(Array.isArray(value) ? value : []) } catch (e) { setError(message(e)) } }, [])
+  useEffect(() => { void load() }, [load])
+  const create = async () => { try { const value = await request<any>("/user/advanced-chat/devices/token", { method: "POST", body: { name: name.trim() || "新设备", mode: "platform" } }); setToken(value.token || ""); await load() } catch (e) { setError(message(e)) } }
+  const rename = async () => { if (!editing?.id || !editing.name.trim()) return; try { await request(`/user/advanced-chat/devices/${encodeURIComponent(editing.id)}`, { method: "PUT", body: { name: editing.name.trim() } }); setEditing(null); await load() } catch (e) { setError(message(e)) } }
+  const remove = (item: any) => Alert.alert("删除设备", `确定删除“${item.name}”？`, [{ text: "取消", style: "cancel" }, { text: "删除", style: "destructive", onPress: async () => { try { await request(`/user/advanced-chat/devices/${encodeURIComponent(item.id)}`, { method: "DELETE" }); await load() } catch (e) { setError(message(e)) } } }])
+  return <View style={styles.root}><Top colors={colors} title="设备" onBack={onBack} right="add" onRight={create} />{error ? <Text style={{ color: colors.destructive, padding: 12 }}>{error}</Text> : null}<View style={[styles.create, { backgroundColor: colors.card }]}><Input colors={colors} label="设备名称" value={name} onChangeText={setName} /><Action colors={colors} title="生成连接令牌" onPress={create} />{token ? <Text selectable style={{ color: colors.text, fontSize: 12 }}>连接令牌：{token}</Text> : null}</View><FlatList data={items} keyExtractor={item => item.id} contentContainerStyle={styles.list} renderItem={({ item }) => <Pressable onPress={() => setEditing({ ...item })} onLongPress={() => remove(item)} style={[styles.row, { borderColor: colors.border, backgroundColor: colors.card }]}><View style={{ flex: 1 }}><Text style={{ color: colors.text, fontWeight: "600" }}>{item.name || item.hostname || item.id}</Text><Text style={{ color: colors.muted, fontSize: 12 }}>{item.hostname || ""} · {item.online ? "在线" : item.status || "离线"}</Text></View><Text style={{ color: colors.muted }}>编辑</Text></Pressable>} /><Modal visible={Boolean(editing)} transparent animationType="slide"><Sheet colors={colors} title="编辑设备" onClose={() => setEditing(null)}><Input colors={colors} label="设备名称" value={editing?.name || ""} onChangeText={(v: string) => setEditing({ ...editing, name: v })} /><Action colors={colors} title="保存名称" onPress={rename} /></Sheet></Modal></View>
+}
+function message(error: unknown) { return error instanceof Error ? error.message : "发生未知错误" }
+const styles = StyleSheet.create({ root: { flex: 1 }, create: { padding: 14, gap: 10 }, list: { padding: 14, gap: 10 }, row: { borderWidth: 1, borderRadius: 12, padding: 12, flexDirection: "row", gap: 10 } })

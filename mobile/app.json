@@ -5,9 +5,21 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "splash": { "resizeMode": "contain", "backgroundColor": "#ffffff" },
-    "android": { "package": "io.veloce.mobile" },
-    "ios": { "bundleIdentifier": "io.veloce.mobile" },
-    "web": { "bundler": "metro" }
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "android": {
+      "package": "io.veloce.mobile"
+    },
+    "ios": {
+      "bundleIdentifier": "io.veloce.mobile"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker"
+    ]
   }
 }
