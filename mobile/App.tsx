@@ -10,6 +10,7 @@ import ExplorePage from "./src/pages/ExplorePage"
 import LibraryPage from "./src/pages/LibraryPage"
 import LoginPage from "./src/pages/LoginPage"
 import SettingsPage from "./src/pages/SettingsPage"
+import ScreenTransition from "./src/components/ScreenTransition"
 import { paletteFor, type Palette } from "./src/theme"
 import type { ThemeMode } from "./src/types"
 
@@ -34,14 +35,16 @@ function VeloceApp() {
 
 function Main({ colors, preferences, savePreferences, onLogout }: { colors: Palette; preferences: Preferences; savePreferences: (next: Preferences) => void; onLogout: () => void }) {
   const [tab, setTab] = useState<Tab>("chat")
+  const [tabDirection, setTabDirection] = useState<"fromRight" | "fromLeft">("fromRight")
   const insets = useSafeAreaInsets()
   const logout = async () => { await clearToken(); onLogout() }
-  return <View style={[styles.safe, { paddingTop: Math.max(insets.top, Platform.OS === "android" ? NativeStatusBar.currentHeight || 24 : 0) }]}><View style={styles.content}>{tab === "chat" && <ChatPage colors={colors} />}{tab === "explore" && <ExplorePage colors={colors} />}{tab === "library" && <LibraryPage colors={colors} />}{tab === "settings" && <SettingsPage colors={colors} preferences={preferences} savePreferences={savePreferences} onLogout={logout} />}</View><BottomTabs colors={colors} active={tab} onChange={setTab} bottom={Math.max(insets.bottom, 8)} /></View>
+  const changeTab = (next: Tab) => { const order: Tab[] = ["chat", "explore", "library", "settings"]; setTabDirection(order.indexOf(next) >= order.indexOf(tab) ? "fromRight" : "fromLeft"); setTab(next) }
+  return <View style={[styles.safe, { paddingTop: Math.max(insets.top, Platform.OS === "android" ? NativeStatusBar.currentHeight || 24 : 0) }]}><View style={styles.content}><ScreenTransition key={tab} direction={tabDirection}>{tab === "chat" && <ChatPage colors={colors} />}{tab === "explore" && <ExplorePage colors={colors} />}{tab === "library" && <LibraryPage colors={colors} />}{tab === "settings" && <SettingsPage colors={colors} preferences={preferences} savePreferences={savePreferences} onLogout={logout} />}</ScreenTransition></View><BottomTabs colors={colors} active={tab} onChange={changeTab} bottom={Math.max(insets.bottom, 8)} /></View>
 }
 
 function BottomTabs({ colors, active, onChange, bottom }: { colors: Palette; active: Tab; onChange: (tab: Tab) => void; bottom: number }) {
   const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [{ key: "chat", label: "聊天", icon: "chatbubbles-outline" }, { key: "explore", label: "工作台", icon: "grid-outline" }, { key: "library", label: "资源", icon: "folder-outline" }, { key: "settings", label: "设置", icon: "settings-outline" }]
-  return <View style={[styles.tabs, { borderColor: colors.border, backgroundColor: colors.card, paddingBottom: bottom }]}>{tabs.map(item => <Pressable key={item.key} onPress={() => onChange(item.key)} style={styles.tab}><Ionicons name={item.icon} size={22} color={active === item.key ? colors.text : colors.muted} /><Text style={[styles.tabLabel, { color: active === item.key ? colors.text : colors.muted }]}>{item.label}</Text></Pressable>)}</View>
+  return <View style={[styles.tabs, { borderColor: colors.border, backgroundColor: colors.card, paddingBottom: bottom }]}>{tabs.map(item => <Pressable key={item.key} onPress={() => onChange(item.key)} android_ripple={{ color: colors.input }} style={({ pressed }) => [styles.tab, pressed && styles.pressed]}><Ionicons name={item.icon} size={22} color={active === item.key ? colors.text : colors.muted} /><Text style={[styles.tabLabel, { color: active === item.key ? colors.text : colors.muted }]}>{item.label}</Text></Pressable>)}</View>
 }
 
-const styles = StyleSheet.create({ app: { flex: 1 }, safe: { flex: 1 }, content: { flex: 1 }, loading: { flex: 1, alignItems: "center", justifyContent: "center" }, tabs: { minHeight: 65, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: "row", justifyContent: "space-around" }, tab: { flex: 1, alignItems: "center", justifyContent: "center", gap: 3 }, tabLabel: { fontSize: 11, fontWeight: "500" } })
+const styles = StyleSheet.create({ app: { flex: 1 }, safe: { flex: 1 }, content: { flex: 1 }, loading: { flex: 1, alignItems: "center", justifyContent: "center" }, tabs: { minHeight: 65, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: "row", justifyContent: "space-around" }, tab: { flex: 1, alignItems: "center", justifyContent: "center", gap: 3 }, pressed: { opacity: .55, transform: [{ scale: .96 }] }, tabLabel: { fontSize: 11, fontWeight: "500" } })
