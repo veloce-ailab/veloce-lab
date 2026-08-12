@@ -211,6 +211,8 @@ interface ChatMessage {
   created_at: string
   updated_at?: string
   processing_duration_ms?: number
+  input_tokens?: number
+  output_tokens?: number
   tool_calls?: ChatToolCall[]
 }
 
@@ -2584,6 +2586,8 @@ export default function Chat() {
               }
             }
             const assistantMessage = createMessage("assistant", content || copy.emptyResponse, finalToolCalls)
+            assistantMessage.input_tokens = tokenCountFromPayload(res.data?.input_tokens)
+            assistantMessage.output_tokens = tokenCountFromPayload(res.data?.output_tokens)
             updateSession(session.id, (current) => ({
               ...current,
               messages: [...current.messages, { ...assistantMessage, content_parts: finalParts }],
@@ -2689,7 +2693,14 @@ export default function Chat() {
               const finalContent = typeof event.payload.message?.content === "string" ? event.payload.message.content : accumulatedText
               const finalParts = normalizeContentParts(event.payload.message?.content_parts, finalContent)
               const finalToolCalls = normalizeToolCalls(event.payload.tool_call_details)
-              upsertAssistantMessage((message) => ({ ...message, content: finalContent || copy.emptyResponse, content_parts: finalParts, tool_calls: finalToolCalls }))
+              upsertAssistantMessage((message) => ({
+                ...message,
+                content: finalContent || copy.emptyResponse,
+                content_parts: finalParts,
+                tool_calls: finalToolCalls,
+                input_tokens: tokenCountFromPayload(event.payload.input_tokens),
+                output_tokens: tokenCountFromPayload(event.payload.output_tokens),
+              }))
             } else if (event.type === "error") {
               throw new Error(typeof event.payload.error === "string" ? event.payload.error : copy.sendFailed)
             }
@@ -3332,6 +3343,7 @@ export default function Chat() {
             {agentWorkStatusButton("h-5 w-5")}
           </div>
           <div className="flex items-center gap-1">
+            <SessionTokenUsage session={currentSession} language={language} />
             {composerModelControl()}
             {advancedComposerActionButton("h-5 w-5 rounded-full")}
           </div>
@@ -6941,6 +6953,8 @@ function normalizeMessage(value: unknown): ChatMessage | null {
     created_at: typeof value.created_at === "string" ? value.created_at : new Date().toISOString(),
     updated_at: typeof value.updated_at === "string" ? value.updated_at : undefined,
     processing_duration_ms: typeof value.processing_duration_ms === "number" && Number.isFinite(value.processing_duration_ms) && value.processing_duration_ms >= 0 ? value.processing_duration_ms : undefined,
+    input_tokens: tokenCountFromPayload(value.input_tokens),
+    output_tokens: tokenCountFromPayload(value.output_tokens),
     tool_calls: normalizeToolCalls(value.tool_calls),
   }
 }
@@ -7172,6 +7186,36 @@ function createMessage(role: ChatMessage["role"], content: string, toolCalls: Ch
     created_at: new Date().toISOString(),
     tool_calls: toolCalls,
   }
+}
+
+function tokenCountFromPayload(value: unknown) {
+  const count = typeof value === "number" ? value : Number(value)
+  return Number.isFinite(count) && count > 0 ? Math.floor(count) : undefined
+}
+
+function formatTokenCount(count: number) {
+  return new Intl.NumberFormat().format(count)
+}
+
+function SessionTokenUsage({ session, language }: { session?: ChatSession; language: string }) {
+  const usage = useMemo(() => {
+    const messages = session?.messages || []
+    return messages.reduce((total, message) => ({
+      input: total.input + (message.input_tokens || 0),
+      output: total.output + (message.output_tokens || 0),
+    }), { input: 0, output: 0 })
+  }, [session?.messages])
+  const total = usage.input + usage.output
+  const isChinese = language === "zh"
+  const label = isChinese ? "本会话 Token" : "Session tokens"
+  const inputLabel = isChinese ? "输入" : "Input"
+  const outputLabel = isChinese ? "输出" : "Output"
+  const title = `${label}\n${inputLabel}: ${formatTokenCount(usage.input)}\n${outputLabel}: ${formatTokenCount(usage.output)}\n${isChinese ? "总计" : "Total"}: ${formatTokenCount(total)}`
+  return (
+    <span className="hidden cursor-help whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground hover:bg-muted sm:inline" title={title} aria-label={title}>
+      {formatTokenCount(total)} tok
+    </span>
+  )
 }
 
 function createID() {

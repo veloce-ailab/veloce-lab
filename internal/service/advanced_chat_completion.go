@@ -74,6 +74,8 @@ type advancedChatCompletionResponse struct {
 	Cost            decimal.Decimal                  `json:"cost"`
 	ToolCalls       int                              `json:"tool_calls"`
 	ToolCallDetails []advancedChatCompletionToolCall `json:"tool_call_details,omitempty"`
+	InputTokens     int                              `json:"input_tokens"`
+	OutputTokens    int                              `json:"output_tokens"`
 }
 
 type advancedChatCompletionToolCall struct {
@@ -329,6 +331,8 @@ func (api *advancedChatAPI) completeChat(c *gin.Context) {
 	}
 
 	totalCost := decimal.Zero
+	totalInputTokens := 0
+	totalOutputTokens := 0
 	totalToolCalls := 0
 	toolCallDetails := []advancedChatCompletionToolCall{}
 	var lastContent string
@@ -374,6 +378,8 @@ func (api *advancedChatAPI) completeChat(c *gin.Context) {
 			return
 		}
 		totalCost = totalCost.Add(result.Cost)
+		totalInputTokens += result.InputTokens
+		totalOutputTokens += result.OutputTokens
 		lastContent = result.Content
 		if streamWriter != nil && !streamedText && strings.TrimSpace(result.Content) != "" {
 			if persistedAssistantMessageID != "" {
@@ -392,6 +398,8 @@ func (api *advancedChatAPI) completeChat(c *gin.Context) {
 				Cost:            totalCost,
 				ToolCalls:       totalToolCalls,
 				ToolCallDetails: toolCallDetails,
+				InputTokens:     totalInputTokens,
+				OutputTokens:    totalOutputTokens,
 			}
 			finishPersistedAdvancedChatCompletionMessage(persistedSessionID, persistedAssistantMessageID, user.ID, response)
 			if streamWriter != nil {
@@ -502,6 +510,8 @@ func (api *advancedChatAPI) completeChat(c *gin.Context) {
 		Cost:            totalCost,
 		ToolCalls:       totalToolCalls,
 		ToolCallDetails: toolCallDetails,
+		InputTokens:     totalInputTokens,
+		OutputTokens:    totalOutputTokens,
 	}
 	finishPersistedAdvancedChatCompletionMessage(persistedSessionID, persistedAssistantMessageID, user.ID, response)
 	if streamWriter != nil {

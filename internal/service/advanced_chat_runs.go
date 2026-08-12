@@ -105,6 +105,8 @@ type AdvancedChatMessage struct {
 	Content      string     `gorm:"type:text;not null" json:"content"`
 	ContentParts string     `gorm:"type:text;not null;default:'[]'" json:"-"`
 	ToolCalls    string     `gorm:"type:text;not null" json:"-"`
+	InputTokens  int        `gorm:"default:0" json:"input_tokens"`
+	OutputTokens int        `gorm:"default:0" json:"output_tokens"`
 	SortOrder    int        `gorm:"index;not null" json:"sort_order"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
@@ -142,13 +144,15 @@ type AdvancedChatRunEvent struct {
 }
 
 type advancedChatMessageResponse struct {
-	ID        string                           `json:"id"`
-	Role      string                           `json:"role"`
-	Content   string                           `json:"content"`
-	Parts     []advancedChatContentPart        `json:"content_parts,omitempty"`
-	ToolCalls []advancedChatCompletionToolCall `json:"tool_calls,omitempty"`
-	CreatedAt time.Time                        `json:"created_at"`
-	UpdatedAt time.Time                        `json:"updated_at"`
+	ID           string                           `json:"id"`
+	Role         string                           `json:"role"`
+	Content      string                           `json:"content"`
+	Parts        []advancedChatContentPart        `json:"content_parts,omitempty"`
+	ToolCalls    []advancedChatCompletionToolCall `json:"tool_calls,omitempty"`
+	InputTokens  int                              `json:"input_tokens"`
+	OutputTokens int                              `json:"output_tokens"`
+	CreatedAt    time.Time                        `json:"created_at"`
+	UpdatedAt    time.Time                        `json:"updated_at"`
 }
 
 type advancedChatRunResponse struct {
@@ -2196,6 +2200,8 @@ func executePreparedAdvancedChatCompletion(ctx context.Context, user *model.User
 	}
 
 	totalCost := decimal.Zero
+	totalInputTokens := 0
+	totalOutputTokens := 0
 	totalToolCalls := 0
 	toolCallDetails := []advancedChatCompletionToolCall{}
 	contentParts := []advancedChatContentPart{}
@@ -2237,6 +2243,8 @@ func executePreparedAdvancedChatCompletion(ctx context.Context, user *model.User
 			return nil, err
 		}
 		totalCost = totalCost.Add(result.Cost)
+		totalInputTokens += result.InputTokens
+		totalOutputTokens += result.OutputTokens
 		lastContent = result.Content
 		contentParts = appendAdvancedChatContentPart(contentParts, round+1, result.Content)
 		if stream && !streamedText && strings.TrimSpace(result.Content) != "" && observer.OnText != nil {
@@ -2250,6 +2258,8 @@ func executePreparedAdvancedChatCompletion(ctx context.Context, user *model.User
 				Cost:            totalCost,
 				ToolCalls:       totalToolCalls,
 				ToolCallDetails: toolCallDetails,
+				InputTokens:     totalInputTokens,
+				OutputTokens:    totalOutputTokens,
 			}, nil
 		}
 
@@ -2644,6 +2654,8 @@ func executePreparedAdvancedChatCompletion(ctx context.Context, user *model.User
 		Cost:            totalCost,
 		ToolCalls:       totalToolCalls,
 		ToolCallDetails: toolCallDetails,
+		InputTokens:     totalInputTokens,
+		OutputTokens:    totalOutputTokens,
 	}, nil
 }
 
@@ -2798,7 +2810,7 @@ func finishAdvancedChatRun(runID string, sessionID string, userID uint, assistan
 		}
 		if err := tx.Model(&AdvancedChatMessage{}).
 			Where("id = ? AND user_id = ?", assistantMessageID, userID).
-			Updates(map[string]interface{}{"content": content, "content_parts": string(contentParts), "tool_calls": string(toolDetailsJSON)}).Error; err != nil {
+			Updates(map[string]interface{}{"content": content, "content_parts": string(contentParts), "tool_calls": string(toolDetailsJSON), "input_tokens": response.InputTokens, "output_tokens": response.OutputTokens}).Error; err != nil {
 			return err
 		}
 		response.ToolCallDetails = toolCallDetails
@@ -3160,7 +3172,7 @@ func finishPersistedAdvancedChatCompletionMessage(sessionID string, messageID st
 	_ = model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&AdvancedChatMessage{}).
 			Where("id = ? AND user_id = ?", messageID, userID).
-			Updates(map[string]interface{}{"content": response.Message.Content, "content_parts": string(contentParts), "tool_calls": string(toolCalls)}).Error; err != nil {
+			Updates(map[string]interface{}{"content": response.Message.Content, "content_parts": string(contentParts), "tool_calls": string(toolCalls), "input_tokens": response.InputTokens, "output_tokens": response.OutputTokens}).Error; err != nil {
 			return err
 		}
 		if sessionID == "" {
@@ -3434,13 +3446,15 @@ func advancedChatSessionResponseFromModel(session AdvancedChatSession) (advanced
 
 func advancedChatMessageResponseFromModel(message AdvancedChatMessage) advancedChatMessageResponse {
 	return advancedChatMessageResponse{
-		ID:        message.ID,
-		Role:      message.Role,
-		Content:   message.Content,
-		Parts:     decodeAdvancedChatContentPartsWithFallback(message.ContentParts, message.Content),
-		ToolCalls: decodeAdvancedChatToolCalls(message.ToolCalls),
-		CreatedAt: message.CreatedAt,
-		UpdatedAt: message.UpdatedAt,
+		ID:           message.ID,
+		Role:         message.Role,
+		Content:      message.Content,
+		Parts:        decodeAdvancedChatContentPartsWithFallback(message.ContentParts, message.Content),
+		ToolCalls:    decodeAdvancedChatToolCalls(message.ToolCalls),
+		InputTokens:  message.InputTokens,
+		OutputTokens: message.OutputTokens,
+		CreatedAt:    message.CreatedAt,
+		UpdatedAt:    message.UpdatedAt,
 	}
 }
 
