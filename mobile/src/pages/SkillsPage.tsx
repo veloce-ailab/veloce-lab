@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons"
 import * as DocumentPicker from "expo-document-picker"
 import { useCallback, useEffect, useState } from "react"
-import { Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native"
+import { Alert, BackHandler, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native"
 import { request, uploadFile } from "../api"
 import type { Palette } from "../theme"
 import { Top } from "./TasksPage"
@@ -34,6 +34,7 @@ export default function SkillsPage({ colors, onBack }: { colors: Palette; onBack
   }, [])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => { if (!selected) return; const subscription = BackHandler.addEventListener("hardwareBackPress", () => { setSelected(null); setFile(null); setContent(null); return true }); return () => subscription.remove() }, [selected])
 
   const upload = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: ["application/zip", "application/gzip", "application/x-gzip"], copyToCacheDirectory: false })
