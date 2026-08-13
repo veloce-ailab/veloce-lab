@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react"
 import { BackHandler, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native"
 import { request } from "../api"
 import type { Palette } from "../theme"
+import DeliveriesPage from "./DeliveriesPage"
 import DevicesPage from "./DevicesPage"
 import FilesPage from "./FilesPage"
 import MemoriesPage from "./MemoriesPage"
@@ -27,6 +28,7 @@ export default function LibraryPage({ colors, onNestedChange }: { colors: Palett
   useEffect(() => { onNestedChange?.(Boolean(detail)); return () => onNestedChange?.(false) }, [detail, onNestedChange])
   useEffect(() => { if (!detail) return; const subscription = BackHandler.addEventListener("hardwareBackPress", () => { setReturning(true); setDetail(""); return true }); return () => subscription.remove() }, [detail])
   const goBack = () => { setReturning(true); setDetail("") }
+  if (detail === "deliveries") return <ScreenTransition direction="fromRight"><DeliveriesPage colors={colors} onBack={goBack} /></ScreenTransition>
   if (detail === "devices") return <ScreenTransition direction="fromRight"><DevicesPage colors={colors} onBack={goBack} /></ScreenTransition>
   if (detail === "files") return <ScreenTransition direction="fromRight"><FilesPage colors={colors} onBack={goBack} /></ScreenTransition>
   if (detail === "workspaces") return <ScreenTransition direction="fromRight"><WorkspacesPage colors={colors} onBack={goBack} /></ScreenTransition>
