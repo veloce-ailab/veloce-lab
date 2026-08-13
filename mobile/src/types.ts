@@ -7,7 +7,8 @@ export interface Session {
   id: string; title: string; messages: SessionMessage[]; run_mode?: "chat" | "assistant" | "agent_group";
   model_name?: string; agent_id?: string; skill_ids?: string[]; mcp_server_ids?: string[];
   knowledge_base_ids?: string[]; max_tokens?: number; temperature?: number | null; reasoning_effort?: string;
-  auto_compress_context?: boolean; disabled_tool_groups?: string[]; created_at?: string; updated_at?: string
+  auto_compress_context?: boolean; disabled_tool_groups?: string[]; connector_device_id?: string; connector_workspace_path?: string;
+  connector_auto_approve?: boolean; connector_approval_mode?: "manual" | "safe" | "full_access"; user_channel_id?: number; created_at?: string; updated_at?: string
 }
 export interface Agent { id: string; name: string; prompt?: string; default_model?: string; stream?: boolean; created_at?: string }
 export interface KnowledgeBase { id: string; name: string; description?: string; document_count?: number; vectorized?: boolean; updated_at?: string }

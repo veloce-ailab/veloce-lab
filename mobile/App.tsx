@@ -17,8 +17,8 @@ import type { Agent, ThemeMode } from "./src/types"
 
 const preferencesKey = "veloce.mobile.preferences"
 type Tab = "chat" | "explore" | "library" | "settings"
-type Preferences = { theme: ThemeMode; language: "zh" | "en" }
-const defaults: Preferences = { theme: "system", language: "zh" }
+type Preferences = { theme: ThemeMode; language: "zh" | "en"; notifications: boolean; taskNotifications: boolean }
+const defaults: Preferences = { theme: "system", language: "zh", notifications: true, taskNotifications: true }
 
 export default function App() { return <SafeAreaProvider><VeloceApp /></SafeAreaProvider> }
 
@@ -45,7 +45,7 @@ function Main({ colors, preferences, savePreferences, onLogout }: { colors: Pale
   const changeTab = (next: Tab) => { if (next === tab) return; const order: Tab[] = ["chat", "explore", "library", "settings"]; setChatAgent(null); setNested(false); setTabDirection(order.indexOf(next) >= order.indexOf(tab) ? "fromRight" : "fromLeft"); setTab(next) }
   const openChat = (agent: Agent) => { setChatReturning(false); setChatAgent(agent) }
   const closeChat = () => { setChatReturning(true); setChatAgent(null) }
-  return <View style={[styles.safe, { paddingTop: Math.max(insets.top, Platform.OS === "android" ? NativeStatusBar.currentHeight || 24 : 0) }]}><View style={styles.content}><ScreenTransition key={tab} direction={tabDirection}>{tab === "chat" && (chatAgent ? <ScreenTransition direction="fromRight"><ChatPage colors={colors} agent={chatAgent} onBack={closeChat} /></ScreenTransition> : <ScreenTransition key={chatReturning ? "agents-return" : "agents-home"} direction="fromLeft" enabled={chatReturning}><AgentsHomePage colors={colors} onOpen={openChat} /></ScreenTransition>)}{tab === "explore" && <ExplorePage colors={colors} onNestedChange={setNested} />}{tab === "library" && <LibraryPage colors={colors} onNestedChange={setNested} />}{tab === "settings" && <SettingsPage colors={colors} preferences={preferences} savePreferences={savePreferences} onLogout={logout} />}</ScreenTransition></View>{!chatAgent && !nested ? <BottomTabs colors={colors} active={tab} onChange={changeTab} bottom={Math.max(insets.bottom, 8)} /> : null}</View>
+  return <View style={[styles.safe, { paddingTop: Math.max(insets.top, Platform.OS === "android" ? NativeStatusBar.currentHeight || 24 : 0) }]}><View style={styles.content}><ScreenTransition key={tab} direction={tabDirection}>{tab === "chat" && (chatAgent ? <ScreenTransition direction="fromRight"><ChatPage colors={colors} agent={chatAgent} onBack={closeChat} /></ScreenTransition> : <ScreenTransition key={chatReturning ? "agents-return" : "agents-home"} direction="fromLeft" enabled={chatReturning}><AgentsHomePage colors={colors} onOpen={openChat} /></ScreenTransition>)}{tab === "explore" && <ExplorePage colors={colors} onNestedChange={setNested} />}{tab === "library" && <LibraryPage colors={colors} onNestedChange={setNested} />}{tab === "settings" && <SettingsPage colors={colors} preferences={preferences} savePreferences={savePreferences} onLogout={logout} onNestedChange={setNested} />}</ScreenTransition></View>{!chatAgent && !nested ? <BottomTabs colors={colors} active={tab} onChange={changeTab} bottom={Math.max(insets.bottom, 8)} /> : null}</View>
 }
 
 function BottomTabs({ colors, active, onChange, bottom }: { colors: Palette; active: Tab; onChange: (tab: Tab) => void; bottom: number }) {
