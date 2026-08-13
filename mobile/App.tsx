@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react"
 import { Platform, Pressable, StatusBar as NativeStatusBar, StyleSheet, Text, useColorScheme, View } from "react-native"
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context"
 import { clearToken, restoreConnection } from "./src/api"
+import AgentsHomePage from "./src/pages/AgentsHomePage"
 import ChatPage from "./src/pages/ChatPage"
 import ExplorePage from "./src/pages/ExplorePage"
 import LibraryPage from "./src/pages/LibraryPage"
@@ -12,7 +13,7 @@ import LoginPage from "./src/pages/LoginPage"
 import SettingsPage from "./src/pages/SettingsPage"
 import ScreenTransition from "./src/components/ScreenTransition"
 import { paletteFor, type Palette } from "./src/theme"
-import type { ThemeMode } from "./src/types"
+import type { Agent, ThemeMode } from "./src/types"
 
 const preferencesKey = "veloce.mobile.preferences"
 type Tab = "chat" | "explore" | "library" | "settings"
@@ -36,14 +37,19 @@ function VeloceApp() {
 function Main({ colors, preferences, savePreferences, onLogout }: { colors: Palette; preferences: Preferences; savePreferences: (next: Preferences) => void; onLogout: () => void }) {
   const [tab, setTab] = useState<Tab>("chat")
   const [tabDirection, setTabDirection] = useState<"fromRight" | "fromLeft">("fromRight")
+  const [chatAgent, setChatAgent] = useState<Agent | null>(null)
+  const [chatReturning, setChatReturning] = useState(false)
+  const [nested, setNested] = useState(false)
   const insets = useSafeAreaInsets()
   const logout = async () => { await clearToken(); onLogout() }
-  const changeTab = (next: Tab) => { const order: Tab[] = ["chat", "explore", "library", "settings"]; setTabDirection(order.indexOf(next) >= order.indexOf(tab) ? "fromRight" : "fromLeft"); setTab(next) }
-  return <View style={[styles.safe, { paddingTop: Math.max(insets.top, Platform.OS === "android" ? NativeStatusBar.currentHeight || 24 : 0) }]}><View style={styles.content}><ScreenTransition key={tab} direction={tabDirection}>{tab === "chat" && <ChatPage colors={colors} />}{tab === "explore" && <ExplorePage colors={colors} />}{tab === "library" && <LibraryPage colors={colors} />}{tab === "settings" && <SettingsPage colors={colors} preferences={preferences} savePreferences={savePreferences} onLogout={logout} />}</ScreenTransition></View><BottomTabs colors={colors} active={tab} onChange={changeTab} bottom={Math.max(insets.bottom, 8)} /></View>
+  const changeTab = (next: Tab) => { if (next === tab) return; const order: Tab[] = ["chat", "explore", "library", "settings"]; setChatAgent(null); setNested(false); setTabDirection(order.indexOf(next) >= order.indexOf(tab) ? "fromRight" : "fromLeft"); setTab(next) }
+  const openChat = (agent: Agent) => { setChatReturning(false); setChatAgent(agent) }
+  const closeChat = () => { setChatReturning(true); setChatAgent(null) }
+  return <View style={[styles.safe, { paddingTop: Math.max(insets.top, Platform.OS === "android" ? NativeStatusBar.currentHeight || 24 : 0) }]}><View style={styles.content}><ScreenTransition key={tab} direction={tabDirection}>{tab === "chat" && (chatAgent ? <ScreenTransition direction="fromRight"><ChatPage colors={colors} agent={chatAgent} onBack={closeChat} /></ScreenTransition> : <ScreenTransition key={chatReturning ? "agents-return" : "agents-home"} direction="fromLeft" enabled={chatReturning}><AgentsHomePage colors={colors} onOpen={openChat} /></ScreenTransition>)}{tab === "explore" && <ExplorePage colors={colors} onNestedChange={setNested} />}{tab === "library" && <LibraryPage colors={colors} onNestedChange={setNested} />}{tab === "settings" && <SettingsPage colors={colors} preferences={preferences} savePreferences={savePreferences} onLogout={logout} />}</ScreenTransition></View>{!chatAgent && !nested ? <BottomTabs colors={colors} active={tab} onChange={changeTab} bottom={Math.max(insets.bottom, 8)} /> : null}</View>
 }
 
 function BottomTabs({ colors, active, onChange, bottom }: { colors: Palette; active: Tab; onChange: (tab: Tab) => void; bottom: number }) {
-  const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [{ key: "chat", label: "聊天", icon: "chatbubbles-outline" }, { key: "explore", label: "工作台", icon: "grid-outline" }, { key: "library", label: "资源", icon: "folder-outline" }, { key: "settings", label: "设置", icon: "settings-outline" }]
+  const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [{ key: "chat", label: "首页", icon: "home-outline" }, { key: "explore", label: "工作台", icon: "grid-outline" }, { key: "library", label: "资源", icon: "folder-outline" }, { key: "settings", label: "设置", icon: "settings-outline" }]
   return <View style={[styles.tabs, { borderColor: colors.border, backgroundColor: colors.card, paddingBottom: bottom }]}>{tabs.map(item => <Pressable key={item.key} onPress={() => onChange(item.key)} android_ripple={{ color: colors.input }} style={({ pressed }) => [styles.tab, pressed && styles.pressed]}><Ionicons name={item.icon} size={22} color={active === item.key ? colors.text : colors.muted} /><Text style={[styles.tabLabel, { color: active === item.key ? colors.text : colors.muted }]}>{item.label}</Text></Pressable>)}</View>
 }
 

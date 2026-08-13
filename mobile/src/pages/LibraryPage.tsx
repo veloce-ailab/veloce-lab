@@ -20,10 +20,11 @@ const entries: Array<{ id: Detail; label: string; icon: keyof typeof Ionicons.gl
   { id: "memories", label: "记忆", icon: "bulb-outline", endpoint: "/user/advanced-chat/memories", description: "长期记忆与智能体上下文" },
 ]
 
-export default function LibraryPage({ colors }: { colors: Palette }) {
+export default function LibraryPage({ colors, onNestedChange }: { colors: Palette; onNestedChange?: (nested: boolean) => void }) {
   const [detail, setDetail] = useState<Detail>(""); const [returning, setReturning] = useState(false); const [counts, setCounts] = useState<Record<string, number>>({}); const [loading, setLoading] = useState(false)
   const load = useCallback(async () => { setLoading(true); try { const values = await Promise.all(entries.map(async item => { const data = await request<any>(item.endpoint); const list = data?.files || data?.devices || data?.workspaces || data?.deliveries || data?.tasks || data?.memories || data; return [item.id, Array.isArray(list) ? list.length : 0] as const })); setCounts(Object.fromEntries(values)) } finally { setLoading(false) } }, [])
   useEffect(() => { void load() }, [load])
+  useEffect(() => { onNestedChange?.(Boolean(detail)); return () => onNestedChange?.(false) }, [detail, onNestedChange])
   useEffect(() => { if (!detail) return; const subscription = BackHandler.addEventListener("hardwareBackPress", () => { setReturning(true); setDetail(""); return true }); return () => subscription.remove() }, [detail])
   const goBack = () => { setReturning(true); setDetail("") }
   if (detail === "devices") return <ScreenTransition direction="fromRight"><DevicesPage colors={colors} onBack={goBack} /></ScreenTransition>
