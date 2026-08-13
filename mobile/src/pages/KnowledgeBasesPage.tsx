@@ -27,7 +27,7 @@ export default function KnowledgeBasesPage({ colors, onBack }: { colors: Palette
     } catch (cause) { setError(message(cause)) } finally { setLoading(false) }
   }, [])
   useEffect(() => { void load() }, [load])
-  useEffect(() => { if (!base) return; const subscription = BackHandler.addEventListener("hardwareBackPress", () => { setBase(null); setDocuments([]); return true }); return () => subscription.remove() }, [base])
+  useEffect(() => { const subscription = BackHandler.addEventListener("hardwareBackPress", () => { if (editor) { setEditor(null); return true } if (base) { setBase(null); setDocuments([]); return true } onBack(); return true }); return () => subscription.remove() }, [base, editor, onBack])
 
   const loadDocuments = async (next: Base) => {
     setLoading(true)
