@@ -20,7 +20,7 @@ const entries: Array<{ id: Detail; label: string; icon: keyof typeof Ionicons.gl
   { id: "workspaces", label: "工作区", icon: "folder-open-outline", endpoint: "/user/advanced-chat/workspaces", description: "Markdown 文件与 AI 工作区" },
   { id: "deliveries", label: "结果投递", icon: "send-outline", endpoint: "/user/advanced-chat/deliveries", description: "任务结果投递配置" },
   { id: "tasks", label: "定时任务", icon: "calendar-outline", endpoint: "/user/advanced-chat/scheduled-tasks", description: "自动和重复执行的任务" },
-  { id: "memories", label: "记忆", icon: "bulb-outline", endpoint: "/user/advanced-chat/memories", description: "长期记忆与智能体上下文" },
+  { id: "memories", label: "记忆", icon: "bulb-outline", endpoint: "/user/advanced-chat/memories", description: "长期记忆与代理上下文" },
 ]
 
 export default function LibraryPage({ colors, onNestedChange }: { colors: Palette; onNestedChange?: (nested: boolean) => void }) {
