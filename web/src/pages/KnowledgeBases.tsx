@@ -35,6 +35,7 @@ interface KnowledgeDocument {
   embedding_error: string
   chunk_count: number
   download_url: string
+  editable: boolean
   created_at: string
 }
 
@@ -71,6 +72,12 @@ export default function KnowledgeBases() {
   const [embeddingChannelID, setEmbeddingChannelID] = useState(0)
   const [embeddingSettingsEdited, setEmbeddingSettingsEdited] = useState(false)
   const [isVectorizing, setIsVectorizing] = useState(false)
+  const [isTextEditorOpen, setIsTextEditorOpen] = useState(false)
+  const [editingDocument, setEditingDocument] = useState<KnowledgeDocument | null>(null)
+  const [textDocumentName, setTextDocumentName] = useState("")
+  const [textDocumentContent, setTextDocumentContent] = useState("")
+  const [isTextEditorLoading, setIsTextEditorLoading] = useState(false)
+  const [isTextEditorSaving, setIsTextEditorSaving] = useState(false)
 
   const basesQuery = useQuery<KnowledgeBase[]>({
     queryKey: knowledgeBasesQueryKey,
@@ -178,6 +185,46 @@ export default function KnowledgeBases() {
     }
   }
 
+  const openTextEditor = async (document?: KnowledgeDocument) => {
+    if (!selectedBase) return
+    setEditingDocument(document || null)
+    setTextDocumentName(document?.name || "未命名文档.md")
+    setTextDocumentContent("")
+    setIsTextEditorOpen(true)
+    if (!document) return
+    setIsTextEditorLoading(true)
+    try {
+      const res = await api.get(`/user/advanced-chat/knowledge-bases/${encodeURIComponent(selectedBase.id)}/documents/${encodeURIComponent(document.id)}/content`)
+      setTextDocumentName(typeof res.data?.document?.name === "string" ? res.data.document.name : document.name)
+      setTextDocumentContent(typeof res.data?.content === "string" ? res.data.content : "")
+    } catch (err) {
+      error(apiErrorMessage(err, "读取文档失败"))
+      setIsTextEditorOpen(false)
+    } finally {
+      setIsTextEditorLoading(false)
+    }
+  }
+
+  const saveTextDocument = async () => {
+    if (!selectedBase || !textDocumentName.trim() || isTextEditorSaving) return
+    setIsTextEditorSaving(true)
+    try {
+      if (editingDocument) {
+        await api.put(`/user/advanced-chat/knowledge-bases/${encodeURIComponent(selectedBase.id)}/documents/${encodeURIComponent(editingDocument.id)}/content`, { name: textDocumentName.trim(), content: textDocumentContent })
+      } else {
+        await api.post(`/user/advanced-chat/knowledge-bases/${encodeURIComponent(selectedBase.id)}/documents/text`, { name: textDocumentName.trim(), content: textDocumentContent })
+      }
+      await queryClient.invalidateQueries({ queryKey: knowledgeBasesQueryKey })
+      await queryClient.invalidateQueries({ queryKey: ["knowledge-documents", selectedBase.id] })
+      success(editingDocument ? "文档已保存" : "文档已创建")
+      setIsTextEditorOpen(false)
+    } catch (err) {
+      error(apiErrorMessage(err, editingDocument ? "保存文档失败" : "创建文档失败"))
+    } finally {
+      setIsTextEditorSaving(false)
+    }
+  }
+
   const deleteDocument = async (document: KnowledgeDocument) => {
     if (!selectedBase || deletingID) return
     setDeletingID(document.id)
@@ -264,10 +311,20 @@ export default function KnowledgeBases() {
             <CardHeader><CardTitle className="text-base">{copy.embedding}</CardTitle></CardHeader>
             <CardContent className="grid gap-3 lg:grid-cols-[180px_minmax(0,1fr)_auto]"><label className="grid gap-2 text-sm"><span>{copy.embeddingChannel}</span><Select value={String((currentEmbeddingChannelID || "") || "__shadcn_empty__")} onValueChange={(value) => { setEmbeddingSettingsEdited(true); setEmbeddingChannelID(Number((value === "__shadcn_empty__" ? "" : value)) || 0); setEmbeddingModel("") }}><SelectTrigger className="h-10 rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__shadcn_empty__">{copy.autoChannel}</SelectItem>{catalog.map((channel) => <SelectItem key={channel.id} value={String(channel.id)}>{channel.name}</SelectItem>)}</SelectContent></Select></label><label className="grid gap-2 text-sm"><span>{copy.embeddingModel}</span><Select value={String((currentEmbeddingModel) || "__shadcn_empty__")} onValueChange={(value) => { setEmbeddingSettingsEdited(true); setEmbeddingModel((value === "__shadcn_empty__" ? "" : value)) }}><SelectTrigger className="h-10 rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__shadcn_empty__">{copy.selectEmbeddingModel}</SelectItem>{modelOptions.map((model) => <SelectItem key={model} value={String(model)}>{model}</SelectItem>)}</SelectContent></Select></label><div className="flex items-end"><Button disabled={isVectorizing || !currentEmbeddingModel.trim() || documents.length === 0} onClick={() => vectorizeKnowledgeBase(currentEmbeddingModel, currentEmbeddingChannelID)}>{isVectorizing ? copy.vectorizing : selectedBase.vectorized ? copy.revectorize : copy.vectorize}</Button></div><p className="lg:col-span-3 text-xs text-muted-foreground">{copy.embeddingHint}</p></CardContent>
           </Card>
-          <section className="border-t pt-5"><div className="mb-3 flex items-center gap-2"><FileText size={18} /><h2 className="text-base font-semibold">{copy.documents}</h2></div>
-            {documentsQuery.isLoading ? <div className="py-10 text-center text-sm text-muted-foreground">{copy.loading}</div> : documents.length === 0 ? <div className="flex min-h-64 flex-col items-center justify-center gap-3 border border-dashed text-center text-sm text-muted-foreground"><FileText className="h-8 w-8" />{copy.emptyDocuments}</div> : <div className="grid gap-2">{documents.map((document) => <div key={document.id} className="flex flex-col gap-3 border p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex items-center gap-2"><FileText className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="truncate text-sm font-medium">{document.name}</span>{document.text_available && <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">{copy.text}</span>}<span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">{knowledgeEmbeddingStatusLabel(document.embedding_status, copy)}</span></div><div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground"><span>{document.type || "application/octet-stream"}</span><span>{formatBytes(document.size)}</span><span>{document.chunk_count} {copy.chunkUnit}</span><span>{formatDate(document.created_at)}</span></div>{document.embedding_status === "failed" && document.embedding_error && <p className="mt-1 truncate text-xs text-destructive" title={document.embedding_error}>{document.embedding_error}</p>}</div><div className="flex shrink-0 gap-2"><Button variant="outline" size="icon" disabled={downloadingID === document.id} onClick={() => downloadDocument(document)} title={copy.download} aria-label={copy.download}><Download size={16} /></Button><Button variant="outline" size="icon" disabled={deletingID === document.id} onClick={() => deleteDocument(document)} title={copy.delete} aria-label={copy.delete}><Trash2 size={16} /></Button></div></div>)}</div>}
+          <section className="border-t pt-5"><div className="mb-3 flex items-center gap-2"><FileText size={18} /><h2 className="text-base font-semibold">{copy.documents}</h2><Button size="sm" className="ml-auto gap-2" onClick={() => openTextEditor()}><Plus size={15} />新建文档</Button></div>
+            {documentsQuery.isLoading ? <div className="py-10 text-center text-sm text-muted-foreground">{copy.loading}</div> : documents.length === 0 ? <div className="flex min-h-64 flex-col items-center justify-center gap-3 border border-dashed text-center text-sm text-muted-foreground"><FileText className="h-8 w-8" />{copy.emptyDocuments}</div> : <div className="grid gap-2">{documents.map((document) => <div key={document.id} className="flex flex-col gap-3 border p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex items-center gap-2"><FileText className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="truncate text-sm font-medium">{document.name}</span>{document.text_available && <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">{copy.text}</span>}<span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">{knowledgeEmbeddingStatusLabel(document.embedding_status, copy)}</span></div><div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground"><span>{document.type || "application/octet-stream"}</span><span>{formatBytes(document.size)}</span><span>{document.chunk_count} {copy.chunkUnit}</span><span>{formatDate(document.created_at)}</span></div>{document.embedding_status === "failed" && document.embedding_error && <p className="mt-1 truncate text-xs text-destructive" title={document.embedding_error}>{document.embedding_error}</p>}</div><div className="flex shrink-0 gap-2"><Button variant="outline" size="icon" disabled={downloadingID === document.id} onClick={() => downloadDocument(document)} title={copy.download} aria-label={copy.download}><Download size={16} /></Button>{document.editable && <Button variant="outline" size="icon" onClick={() => openTextEditor(document)} title="编辑" aria-label="编辑"><Pencil size={16} /></Button>}<Button variant="outline" size="icon" disabled={deletingID === document.id} onClick={() => deleteDocument(document)} title={copy.delete} aria-label={copy.delete}><Trash2 size={16} /></Button></div></div>)}</div>}
           </section>
         </>}
+        <Dialog open={isTextEditorOpen} onOpenChange={setIsTextEditorOpen}>
+          <DialogContent className="flex h-[min(84vh,760px)] max-w-4xl flex-col">
+            <DialogHeader><DialogTitle>{editingDocument ? "编辑文档" : "新建文档"}</DialogTitle><DialogDescription>文本内容会保存到知识库，并在保存后重新进入向量化队列。</DialogDescription></DialogHeader>
+            <div className="grid min-h-0 flex-1 gap-3">
+              <Input value={textDocumentName} maxLength={255} placeholder="文档名称，例如：产品说明.md" onChange={(event) => setTextDocumentName(event.target.value)} disabled={isTextEditorLoading} />
+              <textarea className="min-h-0 w-full flex-1 resize-none rounded-md border bg-background p-3 font-mono text-sm outline-none focus:ring-2 focus:ring-ring" value={textDocumentContent} onChange={(event) => setTextDocumentContent(event.target.value)} disabled={isTextEditorLoading} placeholder="开始编写知识库文档…" />
+            </div>
+            <DialogFooter><Button variant="ghost" onClick={() => setIsTextEditorOpen(false)}>取消</Button><Button disabled={isTextEditorLoading || isTextEditorSaving || !textDocumentName.trim()} onClick={saveTextDocument}>{isTextEditorSaving ? "保存中…" : "保存"}</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
         <PageInlineSlot slotKey="primary" /><PageInlineSlot slotKey="secondary" />
       </div>
     )
@@ -279,7 +336,7 @@ export default function KnowledgeBases() {
 function normalizeKnowledgeBases(value: unknown): KnowledgeBase[] { const source = isRecord(value) && Array.isArray(value.knowledge_bases) ? value.knowledge_bases : []; return source.map(normalizeKnowledgeBase).filter((base): base is KnowledgeBase => Boolean(base)) }
 function normalizeKnowledgeBase(value: unknown): KnowledgeBase | null { if (!isRecord(value) || typeof value.id !== "string" || !value.id) return null; return { id: value.id, name: typeof value.name === "string" ? value.name : value.id, description: typeof value.description === "string" ? value.description : "", document_count: Number(value.document_count || 0), storage_bytes: Number(value.storage_bytes || 0), embedding_model_name: typeof value.embedding_model_name === "string" ? value.embedding_model_name : "", embedding_user_channel_id: Number(value.embedding_user_channel_id || 0), vectorized: value.vectorized === true, created_at: typeof value.created_at === "string" ? value.created_at : "", updated_at: typeof value.updated_at === "string" ? value.updated_at : "" } }
 function normalizeKnowledgeDocuments(value: unknown): KnowledgeDocumentsResponse { const item = isRecord(value) ? value : {}; const documents = Array.isArray(item.documents) ? item.documents.map(normalizeKnowledgeDocument).filter((document): document is KnowledgeDocument => Boolean(document)) : []; return { documents, used_bytes: Number(item.used_bytes || 0), total_bytes: Number(item.total_bytes || 0), remaining_bytes: Number(item.remaining_bytes || 0) } }
-function normalizeKnowledgeDocument(value: unknown): KnowledgeDocument | null { if (!isRecord(value) || typeof value.id !== "string" || typeof value.file_id !== "string") return null; return { id: value.id, file_id: value.file_id, name: typeof value.name === "string" ? value.name : value.id, type: typeof value.type === "string" ? value.type : "", size: Number(value.size || 0), text_available: value.text_available === true, embedding_status: typeof value.embedding_status === "string" ? value.embedding_status : "pending", embedding_error: typeof value.embedding_error === "string" ? value.embedding_error : "", chunk_count: Number(value.chunk_count || 0), download_url: typeof value.download_url === "string" ? value.download_url : "", created_at: typeof value.created_at === "string" ? value.created_at : "" } }
+function normalizeKnowledgeDocument(value: unknown): KnowledgeDocument | null { if (!isRecord(value) || typeof value.id !== "string" || typeof value.file_id !== "string") return null; return { id: value.id, file_id: value.file_id, name: typeof value.name === "string" ? value.name : value.id, type: typeof value.type === "string" ? value.type : "", size: Number(value.size || 0), text_available: value.text_available === true, embedding_status: typeof value.embedding_status === "string" ? value.embedding_status : "pending", embedding_error: typeof value.embedding_error === "string" ? value.embedding_error : "", chunk_count: Number(value.chunk_count || 0), download_url: typeof value.download_url === "string" ? value.download_url : "", editable: value.editable === true, created_at: typeof value.created_at === "string" ? value.created_at : "" } }
 function normalizeStorageSettings(value: unknown): StorageSettings { const item = isRecord(value) ? value : {}; return { file_storage_enabled: item.file_storage_enabled !== false } }
 function normalizeCatalogItem(value: unknown): UserChannelCatalog { const item = isRecord(value) ? value : {}; return { id: Number(item.id || 0), name: typeof item.name === "string" ? item.name : `#${Number(item.id || 0)}`, models: Array.isArray(item.models) ? item.models.filter((model): model is string => typeof model === "string") : [] } }
 function knowledgeEmbeddingStatusLabel(status: string, copy: typeof zhCopy) { if (status === "ready") return copy.ready; if (status === "processing") return copy.processing; if (status === "failed") return copy.failed; if (status === "skipped") return copy.skipped; return copy.pending }
