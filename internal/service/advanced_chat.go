@@ -306,6 +306,9 @@ func initAdvancedChatFeatures() error {
 		&AdvancedChatPrivateMessage{},
 	)
 	if err == nil {
+		if err = migrateLegacyWorkspacesToKnowledgeBases(); err != nil {
+			return err
+		}
 		ensureAdvancedChatKnowledgePostgresVectorColumn()
 		startAdvancedChatScheduledTaskScheduler()
 		startAdvancedChatKnowledgeEmbeddingWorker()
@@ -348,14 +351,6 @@ func registerAdvancedChatUserRoutes(group *gin.RouterGroup) {
 	group.GET("/advanced-chat/files/:id/content", api.getFileContent)
 	group.GET("/advanced-chat/files/:id/download", api.downloadFile)
 	group.DELETE("/advanced-chat/files/:id", api.deleteFile)
-	group.GET("/advanced-chat/workspaces", api.listWorkspaces)
-	group.POST("/advanced-chat/workspaces", api.createWorkspace)
-	group.PUT("/advanced-chat/workspaces/:id", api.updateWorkspace)
-	group.DELETE("/advanced-chat/workspaces/:id", api.deleteWorkspace)
-	group.POST("/advanced-chat/workspaces/:id/files", api.createWorkspaceFile)
-	group.PUT("/advanced-chat/workspaces/:id/files/:file_id", api.updateWorkspaceFile)
-	group.DELETE("/advanced-chat/workspaces/:id/files/:file_id", api.deleteWorkspaceFile)
-	group.POST("/advanced-chat/workspaces/:id/ai", api.runWorkspaceAI)
 	group.GET("/advanced-chat/knowledge-bases", api.listKnowledgeBases)
 	group.POST("/advanced-chat/knowledge-bases", api.createKnowledgeBase)
 	group.POST("/advanced-chat/community/knowledge-bases/:id/import", api.importCommunityKnowledgeBase)
@@ -364,6 +359,9 @@ func registerAdvancedChatUserRoutes(group *gin.RouterGroup) {
 	group.DELETE("/advanced-chat/knowledge-bases/:id", api.deleteKnowledgeBase)
 	group.GET("/advanced-chat/knowledge-bases/:id/documents", api.listKnowledgeDocuments)
 	group.POST("/advanced-chat/knowledge-bases/:id/documents", api.uploadKnowledgeDocument)
+	group.POST("/advanced-chat/knowledge-bases/:id/documents/text", api.createKnowledgeTextDocument)
+	group.GET("/advanced-chat/knowledge-bases/:id/documents/:document_id/content", api.getKnowledgeDocumentContent)
+	group.PUT("/advanced-chat/knowledge-bases/:id/documents/:document_id/content", api.updateKnowledgeDocumentContent)
 	group.DELETE("/advanced-chat/knowledge-bases/:id/documents/:document_id", api.deleteKnowledgeDocument)
 	group.POST("/advanced-chat/knowledge-bases/:id/vectorize", api.vectorizeKnowledgeBase)
 	group.POST("/advanced-chat/knowledge-bases/:id/search", api.searchKnowledgeBase)

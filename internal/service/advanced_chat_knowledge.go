@@ -20,29 +20,31 @@ type AdvancedChatKnowledgeBase struct {
 	User                   model.User `gorm:"foreignKey:UserID" json:"-"`
 	Name                   string     `gorm:"uniqueIndex:idx_advanced_chat_knowledge_user_name;size:120;not null" json:"name"`
 	Description            string     `gorm:"type:text;not null;default:''" json:"description"`
-	EmbeddingModelName     string     `gorm:"size:100;not null;default:''" json:"embedding_model_name"`
-	EmbeddingUserChannelID uint       `gorm:"index" json:"embedding_user_channel_id"`
-	CreatedAt              time.Time  `json:"created_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
+	LegacyWorkspaceID      string
+	EmbeddingModelName     string    `gorm:"size:100;not null;default:''" json:"embedding_model_name"`
+	EmbeddingUserChannelID uint      `gorm:"index" json:"embedding_user_channel_id"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 type AdvancedChatKnowledgeDocument struct {
-	ID              string     `gorm:"primaryKey;size:80" json:"id"`
-	KnowledgeBaseID string     `gorm:"index;size:80;not null" json:"knowledge_base_id"`
-	UserID          uint       `gorm:"index;not null" json:"user_id"`
-	FileID          string     `gorm:"uniqueIndex;size:80;not null" json:"file_id"`
-	Name            string     `gorm:"size:255;not null" json:"name"`
-	MIMEType        string     `gorm:"size:120;not null" json:"mime_type"`
-	Size            int64      `gorm:"not null" json:"size"`
-	TextAvailable   bool       `gorm:"not null;default:false" json:"text_available"`
-	EmbeddingStatus string     `gorm:"index;size:20;not null;default:'pending'" json:"embedding_status"`
-	EmbeddingError  string     `gorm:"type:text;not null;default:''" json:"embedding_error,omitempty"`
-	EmbeddingModel  string     `gorm:"size:120;not null;default:''" json:"embedding_model,omitempty"`
-	EmbeddingDim    int        `gorm:"not null;default:0" json:"embedding_dimensions"`
-	ChunkCount      int        `gorm:"not null;default:0" json:"chunk_count"`
-	EmbeddedAt      *time.Time `json:"embedded_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID                    string `gorm:"primaryKey;size:80" json:"id"`
+	KnowledgeBaseID       string `gorm:"index;size:80;not null" json:"knowledge_base_id"`
+	UserID                uint   `gorm:"index;not null" json:"user_id"`
+	FileID                string `gorm:"uniqueIndex;size:80;not null" json:"file_id"`
+	LegacyWorkspaceFileID string
+	Name                  string     `gorm:"size:255;not null" json:"name"`
+	MIMEType              string     `gorm:"size:120;not null" json:"mime_type"`
+	Size                  int64      `gorm:"not null" json:"size"`
+	TextAvailable         bool       `gorm:"not null;default:false" json:"text_available"`
+	EmbeddingStatus       string     `gorm:"index;size:20;not null;default:'pending'" json:"embedding_status"`
+	EmbeddingError        string     `gorm:"type:text;not null;default:''" json:"embedding_error,omitempty"`
+	EmbeddingModel        string     `gorm:"size:120;not null;default:''" json:"embedding_model,omitempty"`
+	EmbeddingDim          int        `gorm:"not null;default:0" json:"embedding_dimensions"`
+	ChunkCount            int        `gorm:"not null;default:0" json:"chunk_count"`
+	EmbeddedAt            *time.Time `json:"embedded_at,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
 type advancedChatKnowledgeBaseInput struct {
@@ -74,6 +76,7 @@ type advancedChatKnowledgeDocumentResponse struct {
 	EmbeddingError  string    `json:"embedding_error,omitempty"`
 	ChunkCount      int       `json:"chunk_count"`
 	DownloadURL     string    `json:"download_url"`
+	Editable        bool      `json:"editable"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -352,7 +355,7 @@ func advancedChatKnowledgeBaseResponseFromModel(base AdvancedChatKnowledgeBase, 
 }
 
 func advancedChatKnowledgeDocumentResponseFromModel(document AdvancedChatKnowledgeDocument) advancedChatKnowledgeDocumentResponse {
-	return advancedChatKnowledgeDocumentResponse{ID: document.ID, FileID: document.FileID, Name: document.Name, Type: document.MIMEType, Size: document.Size, TextAvailable: document.TextAvailable, EmbeddingStatus: document.EmbeddingStatus, EmbeddingError: document.EmbeddingError, ChunkCount: document.ChunkCount, DownloadURL: "/api/user/advanced-chat/files/" + document.FileID + "/download", CreatedAt: document.CreatedAt}
+	return advancedChatKnowledgeDocumentResponse{ID: document.ID, FileID: document.FileID, Name: document.Name, Type: document.MIMEType, Size: document.Size, TextAvailable: document.TextAvailable, EmbeddingStatus: document.EmbeddingStatus, EmbeddingError: document.EmbeddingError, ChunkCount: document.ChunkCount, DownloadURL: "/api/user/advanced-chat/files/" + document.FileID + "/download", Editable: advancedChatFileTextLike(document.MIMEType, document.Name), CreatedAt: document.CreatedAt}
 }
 
 func deleteAdvancedChatKnowledgeFile(userID uint, fileID string) {
