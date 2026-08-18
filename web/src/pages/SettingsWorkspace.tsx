@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { BarChart3, Bell, Bot, ChevronDown, ChevronRight, Database, HardDrive, Home, KeyRound, Laptop, LogOut, MessageSquare, Palette, Settings as SettingsIcon, Shield, UserCircle } from "lucide-react"
+import { BarChart3, Bell, Bot, ChevronDown, ChevronRight, Database, Home, KeyRound, Laptop, LogOut, MessageSquare, Palette, Settings as SettingsIcon, Shield, UserCircle } from "lucide-react"
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useState } from "react"
 import Settings, { type SettingsSection } from "./Settings"
@@ -99,7 +99,6 @@ export default function SettingsWorkspace() {
                 <Route path="models" element={<Navigate to="../channels" replace />} />
                 <Route path="system" element={<SystemManagement section="proxy" />} />
                 <Route path="message-channel" element={<SystemManagement section="channels" />} />
-                <Route path="storage" element={<SystemManagement section="storage" />} />
                 <Route path="about" element={<SystemManagement section="about" />} />
                 <Route path="chat" element={<SystemManagement section="advancedChat" />} />
                 <Route path="advanced-chat" element={<Navigate to="../chat" replace />} />
@@ -162,7 +161,6 @@ function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate
       items: [
         { href: "/settings/system", label: copy.networkProxy, icon: SettingsIcon },
         { href: "/settings/message-channel", label: copy.messageChannel, icon: MessageSquare },
-        { href: "/settings/storage", label: copy.storage, icon: HardDrive },
         { href: "/settings/theme", label: copy.theme, icon: Palette },
         { href: "/settings/about", label: copy.about, icon: Shield },
       ],
@@ -215,9 +213,9 @@ function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate
 }
 
 function settingsWorkspaceCopy(language: string) {
-  if (language === "zh") return { title: "设置", statistics: "统计信息", account: "账户", notifications: "通知", assistant: "AI 助手", security: "安全", channels: "AI 服务商与模型", memory: "记忆设置", credentials: "凭据管理", devices: "设备管理", networkProxy: "网络代理", messageChannel: "消息通道", storage: "数据存储", theme: "主题设置", about: "软件信息", chatSettings: "聊天设置", general: "通用", aiCategory: "智能体", chatCategory: "聊天", systemCategory: "系统", chat: "聊天", signOut: "退出登录", openMenu: "打开设置菜单", closeMenu: "关闭设置菜单" }
-  if (language === "ja") return { title: "設定", statistics: "統計", account: "アカウント", notifications: "通知", assistant: "AIアシスタント", security: "セキュリティ", channels: "AIサービスとモデル", memory: "メモリ設定", credentials: "資格情報", devices: "デバイス管理", networkProxy: "ネットワークプロキシ", messageChannel: "メッセージチャンネル", storage: "データストレージ", theme: "テーマ", about: "ソフトウェア情報", chatSettings: "チャット設定", general: "一般", aiCategory: "エージェント", chatCategory: "チャット", systemCategory: "システム", chat: "チャット", signOut: "ログアウト", openMenu: "設定メニューを開く", closeMenu: "閉じる" }
-  return { title: "Settings", statistics: "Statistics", account: "Account", notifications: "Notifications", assistant: "AI assistant", security: "Security", channels: "AI providers and models", memory: "Memory", credentials: "Credentials", devices: "Device management", networkProxy: "Network proxy", messageChannel: "Message channels", storage: "Data storage", theme: "Theme", about: "About", chatSettings: "Chat settings", general: "General", aiCategory: "Agents", chatCategory: "Chat", systemCategory: "System", chat: "Chat", signOut: "Sign out", openMenu: "Open settings menu", closeMenu: "Close settings menu" }
+  if (language === "zh") return { title: "设置", statistics: "统计信息", account: "账户", notifications: "通知", assistant: "AI 助手", security: "安全", channels: "AI 服务商与模型", memory: "记忆设置", credentials: "凭据管理", devices: "设备管理", networkProxy: "网络代理", messageChannel: "消息通道", theme: "主题设置", about: "软件信息", chatSettings: "聊天设置", general: "通用", aiCategory: "智能体", chatCategory: "聊天", systemCategory: "系统", chat: "聊天", signOut: "退出登录", openMenu: "打开设置菜单", closeMenu: "关闭设置菜单" }
+  if (language === "ja") return { title: "設定", statistics: "統計", account: "アカウント", notifications: "通知", assistant: "AIアシスタント", security: "セキュリティ", channels: "AIサービスとモデル", memory: "メモリ設定", credentials: "資格情報", devices: "デバイス管理", networkProxy: "ネットワークプロキシ", messageChannel: "メッセージチャンネル", theme: "テーマ", about: "ソフトウェア情報", chatSettings: "チャット設定", general: "一般", aiCategory: "エージェント", chatCategory: "チャット", systemCategory: "システム", chat: "チャット", signOut: "ログアウト", openMenu: "設定メニューを開く", closeMenu: "閉じる" }
+  return { title: "Settings", statistics: "Statistics", account: "Account", notifications: "Notifications", assistant: "AI assistant", security: "Security", channels: "AI providers and models", memory: "Memory", credentials: "Credentials", devices: "Device management", networkProxy: "Network proxy", messageChannel: "Message channels", theme: "Theme", about: "About", chatSettings: "Chat settings", general: "General", aiCategory: "Agents", chatCategory: "Chat", systemCategory: "System", chat: "Chat", signOut: "Sign out", openMenu: "Open settings menu", closeMenu: "Close settings menu" }
 }
 
 function avatarInitials(value: string) {
@@ -238,7 +236,6 @@ function desktopSettingsTitle(pathname: string, language: string) {
   if (pathname === "/settings/notifications") return zh ? "通知" : "Notifications"
   if (pathname === "/settings/system") return zh ? "网络代理" : "Network proxy"
   if (pathname === "/settings/message-channel") return zh ? "消息通道" : "Message channels"
-  if (pathname === "/settings/storage") return zh ? "数据存储" : "Data storage"
   if (pathname === "/settings/about") return zh ? "软件信息" : "About"
   if (pathname === "/settings/chat") return zh ? "聊天设置" : "Chat settings"
   if (pathname === "/settings/memory") return zh ? "记忆设置" : "Memory settings"

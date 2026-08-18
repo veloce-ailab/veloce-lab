@@ -148,7 +148,7 @@ func (api *advancedChatAPI) importCommunityKnowledgeBase(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Community knowledge base has no importable text"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"knowledge_base": advancedChatKnowledgeBaseResponseFromModel(base, createdDocuments, 0, false)})
+	c.JSON(http.StatusOK, gin.H{"knowledge_base": advancedChatKnowledgeBaseResponseFromModel(base, createdDocuments, false)})
 }
 
 func fetchCommunityKnowledgeJSON(ctx context.Context, route string, output interface{}) error {

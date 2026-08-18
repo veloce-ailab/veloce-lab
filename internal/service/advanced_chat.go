@@ -152,7 +152,6 @@ type advancedChatAdminSettingsResponse struct {
 	AttachmentMaxMB                      int                     `json:"attachment_max_mb"`
 	AttachmentAllowedTypes               []string                `json:"attachment_allowed_types"`
 	FileStorageEnabled                   bool                    `json:"file_storage_enabled"`
-	FileStorageTotalMB                   int                     `json:"file_storage_total_mb"`
 	FileStorageAutoSaveImagesEnabled     bool                    `json:"file_storage_auto_save_images_enabled"`
 	FileStorageAutoSaveVideosEnabled     bool                    `json:"file_storage_auto_save_videos_enabled"`
 	BuiltinMCPServers                    []AdvancedChatMCPServer `json:"builtin_mcp_servers"`
@@ -176,8 +175,6 @@ type advancedChatUserSettingsResponse struct {
 	AttachmentMaxMB                      int                     `json:"attachment_max_mb"`
 	AttachmentAllowedTypes               []string                `json:"attachment_allowed_types"`
 	FileStorageEnabled                   bool                    `json:"file_storage_enabled"`
-	FileStorageTotalMB                   int                     `json:"file_storage_total_mb"`
-	FileStorageUsedBytes                 int64                   `json:"file_storage_used_bytes"`
 	FileStorageAutoSaveImagesEnabled     bool                    `json:"file_storage_auto_save_images_enabled"`
 	FileStorageAutoSaveVideosEnabled     bool                    `json:"file_storage_auto_save_videos_enabled"`
 	MCPServers                           []AdvancedChatMCPServer `json:"mcp_servers"`
@@ -1089,7 +1086,6 @@ func currentAdvancedChatAdminSettings() advancedChatAdminSettingsResponse {
 		AttachmentMaxMB:                      advancedChatAttachmentMaxMB(),
 		AttachmentAllowedTypes:               advancedChatAttachmentAllowedTypes(),
 		FileStorageEnabled:                   advancedChatFileStorageEnabled(),
-		FileStorageTotalMB:                   advancedChatFileStorageTotalMB(),
 		FileStorageAutoSaveImagesEnabled:     advancedChatFileStorageAutoSaveImagesEnabled(),
 		FileStorageAutoSaveVideosEnabled:     advancedChatFileStorageAutoSaveVideosEnabled(),
 		BuiltinMCPServers:                    advancedChatBuiltinMCPServers(true),
@@ -1129,8 +1125,6 @@ func currentAdvancedChatUserSettings(userID uint) advancedChatUserSettingsRespon
 		AttachmentMaxMB:                      advancedChatAttachmentMaxMB(),
 		AttachmentAllowedTypes:               advancedChatAttachmentAllowedTypes(),
 		FileStorageEnabled:                   advancedChatFileStorageEnabled(),
-		FileStorageTotalMB:                   advancedChatFileStorageTotalMB(),
-		FileStorageUsedBytes:                 advancedChatFileStorageUsedBytes(userID),
 		FileStorageAutoSaveImagesEnabled:     advancedChatFileStorageAutoSaveImagesEnabled(),
 		FileStorageAutoSaveVideosEnabled:     advancedChatFileStorageAutoSaveVideosEnabled(),
 		MCPServers:                           mergeAdvancedChatMCPServers(builtinServers, customServers),
@@ -1154,7 +1148,6 @@ func currentAdvancedChatUserSettings(userID uint) advancedChatUserSettingsRespon
 	}
 	if !advancedChatPremiumFeaturesAvailable() {
 		settings.FileStorageEnabled = false
-		settings.FileStorageUsedBytes = 0
 		settings.FileStorageAutoSaveImagesEnabled = false
 		settings.FileStorageAutoSaveVideosEnabled = false
 		settings.ScheduledTasksEnabled = false

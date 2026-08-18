@@ -78,12 +78,7 @@ func (api *advancedChatAPI) importCommunitySkill(c *gin.Context) {
 		c.JSON(status, gin.H{"error": message})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"package":         advancedChatSkillPackageResponseFromModel(pkg, skills),
-		"used_bytes":      advancedChatFileStorageUsedBytes(user.ID),
-		"total_bytes":     advancedChatFileStorageTotalBytes(),
-		"remaining_bytes": advancedChatFileStorageRemainingBytes(user.ID),
-	})
+	c.JSON(http.StatusOK, gin.H{"package": advancedChatSkillPackageResponseFromModel(pkg, skills)})
 }
 
 func fetchCommunitySkillArchive(ctx context.Context, skillID string) ([]byte, error) {

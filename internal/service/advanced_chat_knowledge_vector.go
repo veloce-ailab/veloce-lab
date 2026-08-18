@@ -16,9 +16,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gin-gonic/gin"
 	"github.com/veloce-ailab/veloce/internal/config"
 	"github.com/veloce-ailab/veloce/internal/model"
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -418,7 +418,7 @@ func (api *advancedChatAPI) vectorizeKnowledgeBase(c *gin.Context) {
 	for _, document := range documents {
 		queueAdvancedChatKnowledgeEmbedding(document.ID)
 	}
-	c.JSON(http.StatusOK, gin.H{"knowledge_base": advancedChatKnowledgeBaseResponseFromModel(*base, len(documents), 0, false), "queued_documents": len(documents)})
+	c.JSON(http.StatusOK, gin.H{"knowledge_base": advancedChatKnowledgeBaseResponseFromModel(*base, len(documents), false), "queued_documents": len(documents)})
 }
 
 func (api *advancedChatAPI) searchKnowledgeBase(c *gin.Context) {

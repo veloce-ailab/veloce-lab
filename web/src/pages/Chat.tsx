@@ -438,8 +438,6 @@ interface AdvancedChatSettings {
   attachment_max_mb: number
   attachment_allowed_types: string[]
   file_storage_enabled: boolean
-  file_storage_total_mb: number
-  file_storage_used_bytes: number
   file_storage_auto_save_images_enabled: boolean
   file_storage_auto_save_videos_enabled: boolean
   mcp_servers: MCPServer[]
@@ -490,9 +488,6 @@ interface StoredFile {
 
 interface StoredFileListResponse {
   files: StoredFile[]
-  used_bytes: number
-  total_bytes: number
-  remaining_bytes: number
 }
 
 interface StoredFileContent {
@@ -554,8 +549,6 @@ const defaultAdvancedChatSettings: AdvancedChatSettings = {
   attachment_max_mb: 10,
   attachment_allowed_types: ["text/plain", "text/markdown", "application/json", "text/csv", "image/png", "image/jpeg", "application/pdf"],
   file_storage_enabled: true,
-  file_storage_total_mb: 100,
-  file_storage_used_bytes: 0,
   file_storage_auto_save_images_enabled: true,
   file_storage_auto_save_videos_enabled: true,
   mcp_servers: [],
@@ -6366,8 +6359,6 @@ function normalizeAdvancedChatSettings(value: unknown): AdvancedChatSettings {
       ? item.attachment_allowed_types.filter((value): value is string => typeof value === "string")
       : defaultAdvancedChatSettings.attachment_allowed_types,
     file_storage_enabled: item.file_storage_enabled !== false,
-    file_storage_total_mb: Number(item.file_storage_total_mb || defaultAdvancedChatSettings.file_storage_total_mb),
-    file_storage_used_bytes: Number(item.file_storage_used_bytes || 0),
     file_storage_auto_save_images_enabled: item.file_storage_auto_save_images_enabled !== false,
     file_storage_auto_save_videos_enabled: item.file_storage_auto_save_videos_enabled !== false,
     mcp_servers: Array.isArray(item.mcp_servers) ? item.mcp_servers.map(normalizeMCPServer) : mergeMCPServers(builtin, custom),
@@ -6711,17 +6702,11 @@ function normalizeStoredFilesResponse(value: unknown): StoredFileListResponse {
   if (Array.isArray(value)) {
     return {
       files: value.map(normalizeStoredFile).filter((file): file is StoredFile => Boolean(file)),
-      used_bytes: 0,
-      total_bytes: 0,
-      remaining_bytes: 0,
     }
   }
   const item = isRecord(value) ? value : {}
   return {
     files: Array.isArray(item.files) ? item.files.map(normalizeStoredFile).filter((file): file is StoredFile => Boolean(file)) : [],
-    used_bytes: Number(item.used_bytes || 0),
-    total_bytes: Number(item.total_bytes || 0),
-    remaining_bytes: Number(item.remaining_bytes || 0),
   }
 }
 

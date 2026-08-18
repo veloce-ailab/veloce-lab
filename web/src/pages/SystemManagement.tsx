@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Bot, Globe2, HardDrive, Info, KeyRound, Paperclip, Save, Server, ShieldCheck, Wifi } from "lucide-react"
+import { Bot, Globe2, Info, KeyRound, Paperclip, Save, Server, ShieldCheck, Wifi } from "lucide-react"
 import AdvancedChatManagement from "./AdvancedChatManagement"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/toast"
 import api from "@/lib/api"
 
-type SystemSection = "general" | "proxy" | "channels" | "storage" | "about" | "advancedChat"
+type SystemSection = "general" | "proxy" | "channels" | "about" | "advancedChat"
 
 interface SystemSettings {
   message_channel_enabled: boolean
@@ -78,7 +78,7 @@ function GeneralSettings({ section }: { section: Exclude<SystemSection, "advance
     onError: (cause: unknown) => error(apiError(cause)),
   })
 
-  const page = section === "proxy" ? { title: "网络代理", description: "配置群组和模型上游请求使用的网络代理。" } : section === "channels" ? { title: "消息通道", description: "控制外部消息通道和群组消息的处理能力。" } : section === "storage" ? { title: "数据存储", description: "查看使用记录、记忆与会话数据的存储状态。" } : section === "about" ? { title: "软件信息", description: "查看当前服务端和桌面端构建版本。" } : { title: "系统设置", description: "管理网络、消息通道、存储与运行环境。" }
+  const page = section === "proxy" ? { title: "网络代理", description: "配置群组和模型上游请求使用的网络代理。" } : section === "channels" ? { title: "消息通道", description: "控制外部消息通道和群组消息的处理能力。" } : section === "about" ? { title: "软件信息", description: "查看当前服务端和桌面端构建版本。" } : { title: "系统设置", description: "管理网络、消息通道与运行环境。" }
   const shows = (name: Exclude<SystemSection, "advancedChat" | "general">) => section === "general" || section === name
   return (
     <div className="mx-auto max-w-5xl space-y-7 pb-10">
@@ -104,10 +104,6 @@ function GeneralSettings({ section }: { section: Exclude<SystemSection, "advance
         <SettingRow title="启用消息通道" description="允许通过已配置的消息平台收发消息"><Switch checked={form.message_channel_enabled} onCheckedChange={(checked) => setForm({ ...form, message_channel_enabled: checked })} /></SettingRow>
       </SettingGroup>}
 
-      {shows("storage") && <SettingGroup icon={<HardDrive size={18} />} title="数据与存储" description="运行日志、Token 记录和会话数据的保存策略。">
-        <SettingRow title="Token 使用记录" description="用于统计页面的用量与费用图表"><span className="text-sm text-emerald-600">已启用</span></SettingRow>
-        <SettingRow title="记忆模块" description="聊天记忆和助理上下文由系统统一管理"><span className="text-sm text-emerald-600">正常</span></SettingRow>
-      </SettingGroup>}
 
       {shows("about") && <SettingGroup icon={<ShieldCheck size={18} />} title="软件信息" description="当前服务端和桌面端构建版本。">
         <SettingRow title="后端版本" description="服务端 API 构建版本"><span className="font-mono text-sm">{form.backend_version || "dev"}</span></SettingRow>

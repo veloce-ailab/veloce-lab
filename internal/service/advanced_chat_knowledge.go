@@ -57,7 +57,6 @@ type advancedChatKnowledgeBaseResponse struct {
 	Name                   string    `json:"name"`
 	Description            string    `json:"description"`
 	DocumentCount          int       `json:"document_count"`
-	StorageBytes           int64     `json:"storage_bytes"`
 	EmbeddingModelName     string    `json:"embedding_model_name,omitempty"`
 	EmbeddingUserChannelID uint      `json:"embedding_user_channel_id,omitempty"`
 	Vectorized             bool      `json:"vectorized"`
@@ -97,14 +96,12 @@ func (api *advancedChatAPI) listKnowledgeBases(c *gin.Context) {
 		return
 	}
 	counts := make(map[string]int)
-	sizes := make(map[string]int64)
 	for _, document := range documents {
 		counts[document.KnowledgeBaseID]++
-		sizes[document.KnowledgeBaseID] += document.Size
 	}
 	result := make([]advancedChatKnowledgeBaseResponse, 0, len(bases))
 	for _, base := range bases {
-		result = append(result, advancedChatKnowledgeBaseResponseFromModel(base, counts[base.ID], sizes[base.ID], advancedChatKnowledgeBaseIsVectorized(base)))
+		result = append(result, advancedChatKnowledgeBaseResponseFromModel(base, counts[base.ID], advancedChatKnowledgeBaseIsVectorized(base)))
 	}
 	c.JSON(http.StatusOK, gin.H{"knowledge_bases": result})
 }
@@ -132,7 +129,7 @@ func (api *advancedChatAPI) createKnowledgeBase(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create knowledge base"})
 		return
 	}
-	c.JSON(http.StatusOK, advancedChatKnowledgeBaseResponseFromModel(base, 0, 0, false))
+	c.JSON(http.StatusOK, advancedChatKnowledgeBaseResponseFromModel(base, 0, false))
 }
 
 func (api *advancedChatAPI) updateKnowledgeBase(c *gin.Context) {
@@ -166,11 +163,7 @@ func (api *advancedChatAPI) updateKnowledgeBase(c *gin.Context) {
 	base.Description = next.Description
 	var documents []AdvancedChatKnowledgeDocument
 	_ = model.DB.Where("knowledge_base_id = ? AND user_id = ?", base.ID, user.ID).Find(&documents).Error
-	var size int64
-	for _, document := range documents {
-		size += document.Size
-	}
-	c.JSON(http.StatusOK, advancedChatKnowledgeBaseResponseFromModel(*base, len(documents), size, advancedChatKnowledgeBaseIsVectorized(*base)))
+	c.JSON(http.StatusOK, advancedChatKnowledgeBaseResponseFromModel(*base, len(documents), advancedChatKnowledgeBaseIsVectorized(*base)))
 }
 
 func (api *advancedChatAPI) deleteKnowledgeBase(c *gin.Context) {
@@ -203,7 +196,7 @@ func (api *advancedChatAPI) deleteKnowledgeBase(c *gin.Context) {
 	for _, document := range documents {
 		deleteAdvancedChatKnowledgeFile(user.ID, document.FileID)
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Knowledge base deleted", "used_bytes": advancedChatFileStorageUsedBytes(user.ID), "remaining_bytes": advancedChatFileStorageRemainingBytes(user.ID)})
+	c.JSON(http.StatusOK, gin.H{"message": "Knowledge base deleted"})
 }
 
 func (api *advancedChatAPI) listKnowledgeDocuments(c *gin.Context) {
@@ -225,7 +218,7 @@ func (api *advancedChatAPI) listKnowledgeDocuments(c *gin.Context) {
 	for _, document := range documents {
 		result = append(result, advancedChatKnowledgeDocumentResponseFromModel(document))
 	}
-	c.JSON(http.StatusOK, gin.H{"documents": result, "used_bytes": advancedChatFileStorageUsedBytes(user.ID), "total_bytes": advancedChatFileStorageTotalBytes(), "remaining_bytes": advancedChatFileStorageRemainingBytes(user.ID)})
+	c.JSON(http.StatusOK, gin.H{"documents": result})
 }
 
 func (api *advancedChatAPI) uploadKnowledgeDocument(c *gin.Context) {
@@ -292,7 +285,7 @@ func (api *advancedChatAPI) uploadKnowledgeDocument(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save knowledge document"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"document": advancedChatKnowledgeDocumentResponseFromModel(document), "used_bytes": advancedChatFileStorageUsedBytes(user.ID), "total_bytes": advancedChatFileStorageTotalBytes(), "remaining_bytes": advancedChatFileStorageRemainingBytes(user.ID)})
+	c.JSON(http.StatusOK, gin.H{"document": advancedChatKnowledgeDocumentResponseFromModel(document)})
 }
 
 func (api *advancedChatAPI) deleteKnowledgeDocument(c *gin.Context) {
@@ -320,7 +313,7 @@ func (api *advancedChatAPI) deleteKnowledgeDocument(c *gin.Context) {
 		return
 	}
 	deleteAdvancedChatKnowledgeFile(user.ID, document.FileID)
-	c.JSON(http.StatusOK, gin.H{"message": "Knowledge document deleted", "used_bytes": advancedChatFileStorageUsedBytes(user.ID), "remaining_bytes": advancedChatFileStorageRemainingBytes(user.ID)})
+	c.JSON(http.StatusOK, gin.H{"message": "Knowledge document deleted"})
 }
 
 func advancedChatKnowledgeBaseFromInput(c *gin.Context, userID uint, input advancedChatKnowledgeBaseInput) (AdvancedChatKnowledgeBase, bool) {
@@ -350,8 +343,8 @@ func loadAdvancedChatKnowledgeBase(c *gin.Context, userID uint, id string) (*Adv
 	return &base, true
 }
 
-func advancedChatKnowledgeBaseResponseFromModel(base AdvancedChatKnowledgeBase, documentCount int, storageBytes int64, vectorized bool) advancedChatKnowledgeBaseResponse {
-	return advancedChatKnowledgeBaseResponse{ID: base.ID, Name: base.Name, Description: base.Description, DocumentCount: documentCount, StorageBytes: storageBytes, EmbeddingModelName: base.EmbeddingModelName, EmbeddingUserChannelID: base.EmbeddingUserChannelID, Vectorized: vectorized, CreatedAt: base.CreatedAt, UpdatedAt: base.UpdatedAt}
+func advancedChatKnowledgeBaseResponseFromModel(base AdvancedChatKnowledgeBase, documentCount int, vectorized bool) advancedChatKnowledgeBaseResponse {
+	return advancedChatKnowledgeBaseResponse{ID: base.ID, Name: base.Name, Description: base.Description, DocumentCount: documentCount, EmbeddingModelName: base.EmbeddingModelName, EmbeddingUserChannelID: base.EmbeddingUserChannelID, Vectorized: vectorized, CreatedAt: base.CreatedAt, UpdatedAt: base.UpdatedAt}
 }
 
 func advancedChatKnowledgeDocumentResponseFromModel(document AdvancedChatKnowledgeDocument) advancedChatKnowledgeDocumentResponse {
