@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestResolveJWTSecretUsesConfiguredValue(t *testing.T) {
 	t.Setenv("JWT_SECRET", "a-real-secret")
@@ -28,6 +32,19 @@ func TestResolveJWTSecretGeneratesDistinctSecrets(t *testing.T) {
 	second := resolveJWTSecret("development")
 	if first == second {
 		t.Fatal("generated secrets must differ between calls")
+	}
+}
+
+func TestResolveJWTSecretWithDataPathPersistsDevelopmentSecret(t *testing.T) {
+	t.Setenv("JWT_SECRET", "")
+	dataPath := t.TempDir()
+	first := resolveJWTSecretWithDataPath("development", dataPath)
+	second := resolveJWTSecretWithDataPath("development", dataPath)
+	if first != second {
+		t.Fatal("development signing secret must survive a restart")
+	}
+	if _, err := os.Stat(filepath.Join(dataPath, ".jwt_secret")); err != nil {
+		t.Fatalf("persisted development secret: %v", err)
 	}
 }
 

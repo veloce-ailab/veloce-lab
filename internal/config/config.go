@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -53,7 +54,7 @@ func Init() {
 	DataPath = getEnv("DATA_PATH", "data")
 	// Identifies this instance when multi-node mode is on; see service.EnsureCurrentNodeRegistered.
 	NodeName = strings.TrimSpace(getEnv("NODE_NAME", ""))
-	JWTSecret = resolveJWTSecret(Environment)
+	JWTSecret = resolveJWTSecretWithDataPath(Environment, DataPath)
 	OIDCIssuer = os.Getenv("OIDC_ISSUER")
 	OIDCClientID = os.Getenv("OIDC_CLIENT_ID")
 	OIDCSecret = os.Getenv("OIDC_CLIENT_SECRET")
@@ -95,11 +96,9 @@ func getEnvNonNegativeInt(key string, fallback int) int {
 // the repository, so it must never be used to sign real sessions.
 const placeholderJWTSecret = "change-me-please"
 
-// resolveJWTSecret returns the configured signing secret. An unset or
-// placeholder secret is fatal outside development; in development it falls back
-// to a random per-process secret rather than the published placeholder, since
-// anyone could otherwise mint an admin token against such a deployment. The
-// tradeoff is that sessions do not survive a restart until JWT_SECRET is set.
+// resolveJWTSecret returns a generated secret for callers that do not have a
+// data directory. Server startup uses resolveJWTSecretWithDataPath instead so
+// development sessions survive restarts without weakening production checks.
 func resolveJWTSecret(env string) string {
 	secret := strings.TrimSpace(getEnv("JWT_SECRET", ""))
 	if secret != "" && secret != placeholderJWTSecret {
@@ -114,6 +113,52 @@ func resolveJWTSecret(env string) string {
 	}
 	log.Printf("WARNING: JWT_SECRET is not set; signing sessions with a random secret for this process only. Sessions will be invalidated on restart. Set JWT_SECRET to a strong value.")
 	return generated
+}
+
+func resolveJWTSecretWithDataPath(env, dataPath string) string {
+	secret := strings.TrimSpace(getEnv("JWT_SECRET", ""))
+	if secret != "" && secret != placeholderJWTSecret {
+		return secret
+	}
+	if requiresSecureSecrets(env) {
+		log.Fatal("JWT_SECRET must be set to a secure value outside development")
+	}
+	secret, err := developmentJWTSecret(dataPath)
+	if err == nil {
+		log.Printf("WARNING: JWT_SECRET is not set; using the development signing secret stored in %s. Set JWT_SECRET to a strong value before production.", filepath.Join(dataPath, ".jwt_secret"))
+		return secret
+	}
+	generated, err := randomSecret()
+	if err != nil {
+		log.Fatalf("failed to generate a development JWT secret: %v", err)
+	}
+	log.Printf("WARNING: JWT_SECRET is not set and the development signing secret could not be persisted: %v. Sessions will be invalidated on restart. Set JWT_SECRET to a strong value.", err)
+	return generated
+}
+
+// developmentJWTSecret gives local development a stable signing key without
+// weakening the production requirement for an explicitly managed JWT_SECRET.
+func developmentJWTSecret(dataPath string) (string, error) {
+	path := filepath.Join(dataPath, ".jwt_secret")
+	if existing, err := os.ReadFile(path); err == nil {
+		if secret := strings.TrimSpace(string(existing)); secret != "" {
+			return secret, nil
+		}
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+
+	secret, err := randomSecret()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(secret+"\n"), 0600); err != nil {
+		return "", err
+	}
+	return secret, nil
 }
 
 func randomSecret() (string, error) {

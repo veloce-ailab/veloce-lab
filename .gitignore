@@ -7,6 +7,7 @@ flai.exe~
 # Desktop Electron app is part of the repository.
 /data/
 .env
+.jwt_secret
 *.db-shm
 *.db-wal
 log/
