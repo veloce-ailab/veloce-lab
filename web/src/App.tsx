@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { PageTransition } from "./components/layout/PageTransition"
 import { ToastProvider } from "./components/ui/toast"
+import { TooltipProvider } from "./components/ui/tooltip"
 import api, { getAuthToken } from "./lib/api"
 import { resolvePostLoginPath } from "./lib/desktop-authorize"
 import { I18nProvider, useI18n } from "./lib/i18n"
@@ -65,10 +66,11 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <I18nProvider>
-          <ToastProvider>
-            <BrowserRouter>
-              <SetupGate>
-                <Routes>
+          <TooltipProvider>
+            <ToastProvider>
+              <BrowserRouter>
+                <SetupGate>
+                  <Routes>
                   <Route path="/setup" element={<PageTransition><Setup /></PageTransition>} />
                   <Route path="/desktop/authorize" element={<PageTransition><DesktopAuthorize /></PageTransition>} />
                   <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
@@ -78,10 +80,11 @@ function App() {
                   <Route path="/" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
                   <Route path="/dashboard" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
                   <Route path="*" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
-                </Routes>
-              </SetupGate>
-            </BrowserRouter>
-          </ToastProvider>
+                  </Routes>
+                </SetupGate>
+              </BrowserRouter>
+            </ToastProvider>
+          </TooltipProvider>
         </I18nProvider>
       </ThemeProvider>
     </QueryClientProvider>

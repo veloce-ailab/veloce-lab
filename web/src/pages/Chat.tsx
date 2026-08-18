@@ -696,11 +696,11 @@ export default function Chat() {
   const [loadedSharedSession, setLoadedSharedSession] = useState<ChatSession | null>(null)
 
   useEffect(() => {
-    const media = window.matchMedia("(min-width: 1024px)")
-    const updateHost = () => setDesktopSessionsSidebarHost(document.getElementById(media.matches ? "chat-sessions-sidebar-slot-desktop" : "chat-sessions-sidebar-slot-mobile"))
+    const updateHost = () => setDesktopSessionsSidebarHost(document.getElementById("chat-sessions-sidebar-slot"))
     updateHost()
-    media.addEventListener("change", updateHost)
-    return () => media.removeEventListener("change", updateHost)
+    const observer = new MutationObserver(updateHost)
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
   }, [])
   const { data: catalog = [] } = useQuery<UpstreamChannelCatalog[]>({
     queryKey: ["catalog"],
@@ -3317,6 +3317,61 @@ export default function Chat() {
     )
   }
 
+  const composerEnvironmentControls = () => {
+    const deviceLabel = currentConnectorDevice?.name || (language === "zh" ? "选择设备" : "Select device")
+    const workspaceLabel = currentSession?.connector_workspace_path || (language === "zh" ? "选择工作区" : "Select workspace")
+    return (
+      <div className="flex flex-wrap items-center gap-2 px-1">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" className="h-8 max-w-52 justify-start gap-1.5 rounded-lg px-2 text-xs" title={deviceLabel}>
+              <Monitor size={14} className="shrink-0 text-muted-foreground" />
+              <span className="truncate">{deviceLabel}</span>
+              <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="max-h-64 w-64 overflow-y-auto">
+            <DropdownMenuItem onSelect={() => setSessionConnectorDevice("")} className="min-h-9 justify-between">
+              <span>{language === "zh" ? "不使用设备" : "No device"}</span>
+              {!currentConnectorDeviceID && <Check size={14} />}
+            </DropdownMenuItem>
+            {selectableConnectorDevices.length === 0 ? (
+              <div className="px-2 py-3 text-center text-xs text-muted-foreground">{copy.noDevices}</div>
+            ) : selectableConnectorDevices.map((device) => (
+              <DropdownMenuItem key={device.id} onSelect={() => setSessionConnectorDevice(device.id)} className="min-h-10 justify-between gap-2">
+                <span className="min-w-0 truncate">{device.name}</span>
+                {device.id === currentConnectorDeviceID ? <Check size={14} className="shrink-0" /> : <span className={cn("shrink-0 text-[11px]", device.online ? "text-primary" : "text-muted-foreground")}>{device.online ? copy.deviceOnline : copy.deviceOffline}</span>}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" disabled={!currentConnectorDeviceID} className="h-8 max-w-72 justify-start gap-1.5 rounded-lg px-2 text-xs" title={workspaceLabel}>
+              <Folder size={14} className="shrink-0 text-muted-foreground" />
+              <span className="truncate font-mono">{workspaceLabel}</span>
+              <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="max-h-64 w-72 overflow-y-auto">
+            {recentWorkspacePaths.length === 0 ? (
+              <div className="px-2 py-3 text-center text-xs text-muted-foreground">{copy.noWorkspaces}</div>
+            ) : recentWorkspacePaths.map((workspacePath) => (
+              <DropdownMenuItem key={workspacePath} onSelect={() => setSessionWorkspacePath(workspacePath)} className="min-h-9 justify-between gap-2">
+                <span className="min-w-0 truncate font-mono text-xs">{workspacePath}</span>
+                {workspacePath === currentSession?.connector_workspace_path && <Check size={14} className="shrink-0" />}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem onSelect={() => openWorkspacePicker("session")} className="mt-1 min-h-9 border-t border-border pt-2">
+              <Folder size={14} />
+              {copy.selectWorkspace}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    )
+  }
+
   const advancedComposer = () => (
     <>
       <div className="rounded-xl border border-border bg-card p-1 shadow-md">
@@ -4039,6 +4094,7 @@ export default function Chat() {
                       </span>
                     </button>
                   )}
+                  {composerEnvironmentControls()}
                   {advancedComposer()}
                 </div>
               ) : (

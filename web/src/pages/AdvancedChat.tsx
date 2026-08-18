@@ -1,4 +1,4 @@
-import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, Home, Menu, MessageSquare, MessageSquareText, Search, Send, Settings as SettingsIcon, Sparkles, UserCircle, Users } from "lucide-react"
+import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, Home, MessageSquare, MessageSquareText, Search, Send, Settings as SettingsIcon, Sparkles, UserCircle, Users } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { PageTransition } from "@/components/layout/PageTransition"
-import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
 import api, { apiURL, isDesktopTarget } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
@@ -85,7 +85,6 @@ interface AdvancedChatSidebarGroup {
 }
 
 export default function AdvancedChat() {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
   const { language, t } = useI18n()
@@ -144,19 +143,15 @@ export default function AdvancedChat() {
   }
 
   return (
-    <div className={cn("flex flex-col overflow-hidden", isDesktop ? "desktop-acrylic-window" : "bg-background", viewportHeightClass)}>
+    <SidebarProvider className={cn("overflow-hidden", isDesktop ? "desktop-acrylic-window" : "bg-background", viewportHeightClass)}>
+      <Sidebar collapsible="offcanvas" className={cn(isFullHeightRoute && "bg-background")}>
+        <AdvancedChatSidebar className={cn("w-full", isFullHeightRoute && "bg-background")} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot" />
+        <SidebarRail />
+      </Sidebar>
+      <SidebarInset className="min-w-0 overflow-hidden">
       <header className={cn("z-30 flex shrink-0 items-center justify-between border-b border-border/70 bg-background/95 px-4 backdrop-blur sm:px-6", isDesktop ? "h-12" : "h-16")}>
         <div className="flex min-w-0 items-center gap-3">
-          <Button
-            className="lg:hidden"
-            variant="outline"
-            size="icon"
-            onClick={() => setIsSidebarOpen((open) => !open)}
-            aria-label={isSidebarOpen ? t("advancedChat.closeMenu") : t("advancedChat.openMenu")}
-            aria-expanded={isSidebarOpen}
-          >
-            <Menu size={18} />
-          </Button>
+          <SidebarTrigger className="h-8 w-8" aria-label={t("advancedChat.openMenu")} />
           <Link to="/" className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-semibold">Veloce</span>
           </Link>
@@ -186,23 +181,7 @@ export default function AdvancedChat() {
       </header>
 
       <div className={cn("flex min-h-0 flex-1", isFullHeightRoute && "bg-background")}>
-        <ResizableSidebar storageKey="advanced-chat-navigation" side="left" defaultWidth={224} minWidth={192} maxWidth={420} className="hidden lg:block lg:h-full">
-          <AdvancedChatSidebar className={cn("w-full", isFullHeightRoute && "bg-background")} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot-desktop" />
-        </ResizableSidebar>
-
-        <div className={cn("fixed inset-0 z-40 transition-opacity duration-200 lg:hidden", isDesktop ? "top-0" : "top-16", isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSidebarOpen}>
-            <button
-              type="button"
-              className="absolute inset-0 bg-black/35 backdrop-blur-sm transition-opacity duration-200"
-              aria-label={t("advancedChat.closeMenu")}
-              onClick={() => setIsSidebarOpen(false)}
-            />
-            <div className={cn("relative z-50 h-full w-64 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")}>
-              <AdvancedChatSidebar className={cn("w-full", isFullHeightRoute && "bg-background")} publicSettings={publicSettings} user={user} onNavigate={() => setIsSidebarOpen(false)} sessionSlotID="chat-sessions-sidebar-slot-mobile" />
-            </div>
-        </div>
-
-        <main className={cn("flex min-h-0 flex-1 flex-col transition-[filter] duration-200", isFullHeightRoute ? "overflow-hidden" : "overflow-y-auto", isSidebarOpen && "max-lg:blur-sm")}>
+        <main className={cn("flex min-h-0 flex-1 flex-col", isFullHeightRoute ? "overflow-hidden" : "overflow-y-auto")}>
           <div className={cn("w-full flex-1", isFullHeightRoute ? "min-h-0" : "mx-auto max-w-6xl p-4 sm:p-6 lg:p-8")}>
             <PageTransition transitionKey={transitionKey} className={cn("page-shell-transition", isFullHeightRoute && "h-full min-h-0")}>
               <div className={cn(isFullHeightRoute ? "h-full" : "space-y-6")}>
@@ -242,6 +221,7 @@ export default function AdvancedChat() {
           )}
         </main>
       </div>
+      </SidebarInset>
       <Dialog open={isGlobalSearchOpen} onOpenChange={(open) => { setIsGlobalSearchOpen(open); if (!open) setGlobalSearch("") }}>
         <DialogContent className="max-h-[75vh] max-w-lg overflow-hidden p-0">
           <DialogHeader className="border-b px-5 py-4 pr-12">
@@ -273,7 +253,7 @@ export default function AdvancedChat() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </SidebarProvider>
   )
 }
 
@@ -317,6 +297,7 @@ function AdvancedChatSidebar({
   sessionSlotID?: string
 }) {
   const location = useLocation()
+  const { isMobile, setOpenMobile } = useSidebar()
   const { language, t } = useI18n()
   const filesLabel = language === "zh" ? "文件库" : "Files"
   const knowledgeLabel = t("nav.knowledgeBases")
@@ -380,11 +361,18 @@ function AdvancedChatSidebar({
     setSelectedGroupID(routeGroup?.id || "")
   }, [homeItem.active, location.pathname, routeGroup?.id])
 
+  const handleNavigation = () => {
+    onNavigate?.()
+    if (isMobile) {
+      setOpenMobile(false)
+    }
+  }
+
   const renderSidebarLink = (item: AdvancedChatSidebarItem) => (
     <div key={item.href}>
       <Link
         to={item.href}
-        onClick={onNavigate}
+        onClick={handleNavigation}
         className={cn(
           "flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors",
           item.active ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted"
@@ -401,7 +389,7 @@ function AdvancedChatSidebar({
             <Link
               key={child.href}
               to={child.href}
-              onClick={onNavigate}
+              onClick={handleNavigation}
               className={cn(
                 "flex h-8 items-center rounded px-2 text-sm transition-colors",
                 location.pathname === child.href ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -416,11 +404,12 @@ function AdvancedChatSidebar({
   )
 
   return (
-    <aside className={cn("flex h-full min-h-0 w-56 flex-col overflow-hidden border-r bg-card", className)}>
-      <div className="shrink-0 px-3 py-3">
+    <div className={cn("flex h-full min-h-0 w-full flex-col overflow-hidden bg-sidebar", className)}>
+      <SidebarHeader className="shrink-0 px-3 py-3">
         {renderSidebarLink(homeItem)}
-      </div>
-      <nav className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+      </SidebarHeader>
+      <SidebarContent className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-0">
+      <nav className="relative min-h-0 flex-1">
         <div className={cn("transition-transform duration-200 ease-out", homeItem.active && "flex min-h-full flex-col", showingGroup && "-translate-x-full")}>
           <div className="flex flex-col gap-1 px-3 pb-3">
             {directItems.map((item) => renderSidebarLink(item))}
@@ -431,7 +420,7 @@ function AdvancedChatSidebar({
                 <Link
                   key={group.id}
                   to={firstItem.href}
-                  onClick={() => setSelectedGroupID(group.id)}
+                  onClick={() => { setSelectedGroupID(group.id); handleNavigation() }}
                   className={cn(
                     "flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors",
                     group.id === routeGroup?.id ? "bg-muted text-foreground" : "hover:bg-muted"
@@ -454,7 +443,7 @@ function AdvancedChatSidebar({
               <div className="mb-3 flex items-center gap-1 border-b pb-3 text-sm">
                 <Link
                   to="/chat"
-                  onClick={() => setSelectedGroupID("")}
+                  onClick={() => { setSelectedGroupID(""); handleNavigation() }}
                   className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-muted"
                   aria-label={t("nav.chat")}
                   title={t("nav.chat")}
@@ -469,10 +458,11 @@ function AdvancedChatSidebar({
           )}
         </div>
       </nav>
-      <div className="shrink-0 border-t border-border p-3">
+      </SidebarContent>
+      <SidebarFooter className="shrink-0 border-t border-sidebar-border p-3">
         <Link
           to={user?.is_admin ? "/settings/channels" : "/settings/profile"}
-          onClick={onNavigate}
+          onClick={handleNavigation}
           className={cn("flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors", location.pathname.startsWith("/settings") ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted")}
         >
           <span className={cn("flex size-6 shrink-0 items-center justify-center rounded", location.pathname.startsWith("/settings") ? "bg-primary-foreground/15 text-primary-foreground" : "bg-muted text-muted-foreground")}>
@@ -480,8 +470,8 @@ function AdvancedChatSidebar({
           </span>
           <span className="flex-1 truncate">{language === "zh" ? "设置" : language === "ja" ? "設定" : "Settings"}</span>
         </Link>
-      </div>
-    </aside>
+      </SidebarFooter>
+    </div>
   )
 }
 
