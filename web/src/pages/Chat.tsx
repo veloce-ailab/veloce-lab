@@ -4096,6 +4096,7 @@ export default function Chat() {
                   )}
                   {composerEnvironmentControls()}
                   {advancedComposer()}
+                  <ChatRunSummary session={currentSession} run={activeRun} language={language} />
                 </div>
               ) : (
                 <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
@@ -7272,6 +7273,70 @@ function SessionTokenUsage({ session, language }: { session?: ChatSession; langu
       {formatTokenCount(total)} tok
     </span>
   )
+}
+
+function ChatRunSummary({ session, run, language }: { session?: ChatSession; run?: ChatRun; language: string }) {
+  const summary = useMemo(() => {
+    const messages = session?.messages || []
+    const assistantMessage = run?.assistant_message_id
+      ? messages.find((message) => message.id === run.assistant_message_id)
+      : [...messages].reverse().find((message) => message.role === "assistant")
+    const userMessageIndex = lastUserMessageIndex(messages)
+    const duration = userMessageIndex >= 0 ? processingDurationForUserMessage(messages, userMessageIndex, run) : undefined
+    const toolCalls = run?.tool_calls ?? run?.tool_call_details?.length ?? 0
+    const rounds = run?.current_round || Math.max(1, ...(run?.tool_call_details || []).map((call) => normalizedRound(call.round)))
+    const input = assistantMessage?.input_tokens || 0
+    const output = assistantMessage?.output_tokens || 0
+    return {
+      visible: Boolean(run || assistantMessage?.input_tokens || assistantMessage?.output_tokens || duration),
+      rounds,
+      steps: Math.max(1, toolCalls + 1),
+      duration,
+      toolCalls,
+      input,
+      output,
+    }
+  }, [run, session?.messages])
+
+  if (!summary.visible) {
+    return null
+  }
+
+  const zh = language === "zh"
+  const unknown = "--"
+  const duration = summary.duration === undefined ? unknown : formatMetricDuration(summary.duration)
+  const input = formatCompactTokenCount(summary.input)
+  const output = formatCompactTokenCount(summary.output)
+  const parts = zh
+    ? [`${summary.rounds}轮 · ${summary.steps}步`, `LLM ${duration} · 工具调用 ${summary.toolCalls > 0 ? `${summary.toolCalls}次` : unknown}`, `首 token 平均 ${unknown} · ${unknown} tok/s`, `缓存命中 ${unknown}`, `输入 ${input} tok · 输出 ${output} tok`]
+    : [`${summary.rounds} rounds · ${summary.steps} steps`, `LLM ${duration} · Tools ${summary.toolCalls > 0 ? `${summary.toolCalls}` : unknown}`, `First token avg ${unknown} · ${unknown} tok/s`, `Cache hit ${unknown}`, `Input ${input} tok · Output ${output} tok`]
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 pt-0.5 text-[11px] tabular-nums text-muted-foreground" aria-label={zh ? "运行统计" : "Run statistics"}>
+      {parts.map((part, index) => (
+        <span key={part} className="inline-flex items-center gap-2 whitespace-nowrap">
+          {index > 0 && <span aria-hidden="true">|</span>}
+          {part}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function formatMetricDuration(durationMS: number) {
+  if (!Number.isFinite(durationMS) || durationMS < 0) {
+    return "--"
+  }
+  return `${(durationMS / 1000).toFixed(1)}s`
+}
+
+function formatCompactTokenCount(count: number) {
+  if (!Number.isFinite(count) || count <= 0) {
+    return "0"
+  }
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(count >= 10000 ? 1 : 2).replace(/\.0+$|(?<=\.\d)0+$/, "")}K`
+  }
+  return String(Math.floor(count))
 }
 
 function createID() {
