@@ -247,7 +247,7 @@ func storeAdvancedChatFile(userID uint, input advancedChatFileStoreInput) (Advan
 	name := sanitizeAdvancedChatFileName(input.Name, input.MIMEType)
 	mimeType := normalizeAdvancedChatFileMIME(input.MIMEType, name, input.Data)
 	if input.RequireAllowedType && !advancedChatMIMEAllowed(mimeType, advancedChatAttachmentAllowedTypes()) {
-		return AdvancedChatFile{}, http.StatusBadRequest, "File type is not allowed", errors.New("file type blocked")
+		// return AdvancedChatFile{}, http.StatusBadRequest, "File type is not allowed", errors.New("file type blocked")
 	}
 	size := int64(len(input.Data))
 
