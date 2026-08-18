@@ -20,9 +20,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/veloce-ailab/veloce/internal/model"
 	"github.com/gin-gonic/gin"
 	"github.com/goccy/go-yaml"
+	"github.com/veloce-ailab/veloce/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -218,12 +218,7 @@ func (api *advancedChatAPI) listSkillPackages(c *gin.Context) {
 	for _, pkg := range packages {
 		responses = append(responses, advancedChatSkillPackageResponseFromModel(pkg, skillsByPackage[pkg.ID]))
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"packages":        responses,
-		"used_bytes":      advancedChatFileStorageUsedBytes(user.ID),
-		"total_bytes":     advancedChatFileStorageTotalBytes(),
-		"remaining_bytes": advancedChatFileStorageRemainingBytes(user.ID),
-	})
+	c.JSON(http.StatusOK, gin.H{"packages": responses})
 }
 
 func (api *advancedChatAPI) getSkillPackage(c *gin.Context) {
@@ -428,12 +423,7 @@ func (api *advancedChatAPI) uploadSkillPackage(c *gin.Context) {
 			skills[i].OrganizationID, skills[i].WorkspaceID, skills[i].OwnerUserID, skills[i].Visibility = organizationID, workspaceID, user.ID, visibility
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"package":         advancedChatSkillPackageResponseFromModel(pkg, skills),
-		"used_bytes":      advancedChatFileStorageUsedBytes(user.ID),
-		"total_bytes":     advancedChatFileStorageTotalBytes(),
-		"remaining_bytes": advancedChatFileStorageRemainingBytes(user.ID),
-	})
+	c.JSON(http.StatusOK, gin.H{"package": advancedChatSkillPackageResponseFromModel(pkg, skills)})
 }
 
 func (api *advancedChatAPI) deleteSkillPackage(c *gin.Context) {
@@ -458,12 +448,7 @@ func (api *advancedChatAPI) deleteSkillPackage(c *gin.Context) {
 		return
 	}
 	_ = removeAdvancedChatStorageDir(pkg.StoragePath)
-	c.JSON(http.StatusOK, gin.H{
-		"message":         "Skill package deleted",
-		"used_bytes":      advancedChatFileStorageUsedBytes(user.ID),
-		"total_bytes":     advancedChatFileStorageTotalBytes(),
-		"remaining_bytes": advancedChatFileStorageRemainingBytes(user.ID),
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "Skill package deleted"})
 }
 
 func storeAdvancedChatSkillPackage(userID uint, sourceName string, archiveData []byte) (AdvancedChatSkillPackage, []AdvancedChatPackagedSkill, int, string, error) {

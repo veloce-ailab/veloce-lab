@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Activity, Check, FolderOpen, Globe2, HardDrive, LogOut, PanelTop, Plus, Server, Settings, UserCircle } from "lucide-react"
+import { Activity, Check, FolderOpen, Globe2, LogOut, PanelTop, Plus, Server, Settings, UserCircle } from "lucide-react"
 import Login from "@/pages/Login"
 import Setup from "@/pages/Setup"
 import AdvancedChat from "@/pages/AdvancedChat"
@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import logoURL from "@/assets/logo.png"
-import type { BuiltinServerStatus, DesktopCurrentUser, DesktopStorageSettings, DesktopTab, SetupStatus } from "@/desktop/types"
+import type { BuiltinServerStatus, DesktopCurrentUser, DesktopTab, SetupStatus } from "@/desktop/types"
 import { newDesktopTab, normalizeDesktopTabPath, readActiveDesktopTabID, readDesktopTabs, readServerList, serverAccountKey, writeActiveDesktopTabID, writeDesktopTabs, writeServerList } from "@/desktop/storage"
 import { hasAuthToken } from "@/desktop/auth"
 import { DesktopApprovalDecisionBridge, DesktopConnectorBridge, DesktopNavigationBridge, DesktopTransparency, TokenBridge } from "@/desktop/bridges"
@@ -146,23 +146,13 @@ function DesktopTitleBar({
   const activeTab = tabs.find((tab) => tab.id === activeTabID) || tabs[0]
   const currentServer = normalizeServerURL(activeTab?.serverURL || getDesktopServerURL())
   const copy = language === "zh"
-    ? { title: "Veloce Lab", file: "文件", edit: "编辑", help: "帮助", newWindow: "新窗口", quit: "退出", closeWindow: "关闭", home: "返回主页", copyText: "复制", paste: "粘贴", cut: "剪切", deleteText: "删除", undo: "撤销", redo: "还原", officialSite: "官网", github: "GitHub", label: "服务器", settings: "设置", status: "服务状态", browser: "浏览器", account: "账户", recharge: "充值", storage: "存储", signOut: "退出登录", placeholder: "http://localhost:8080", save: "保存", close: "关闭", browse: "选择", current: "当前", anonymous: "未登录", builtin: "运行内置服务器", connector: "连接器", running: "运行中", stopped: "未运行", terminate: "终止", pid: "进程", version: "版本", mode: "模式", noProcess: "暂无运行中的受管进程", httpProxy: "全局 HTTP 代理", httpProxyPlaceholder: "http://127.0.0.1:7890", builtinPath: "内置服务器文件路径", connectorPath: "内置连接器文件路径", checkUpdate: "检查更新", checkingUpdate: "正在检查...", updateReady: "更新已准备", updateReadyDescription: "点击确定将退出当前应用并运行安装程序。", installNow: "确定", cancel: "取消", noUpdate: "没有可用更新", settingsSaved: "设置已保存", builtinStarting: "正在准备内置服务器...", builtinWaiting: "正在等待内置服务器就绪...", builtinUnavailable: "桌面桥接未就绪", newTab: "新标签页", closeTab: "关闭标签页" }
-    : { title: "Veloce Lab", file: "File", edit: "Edit", help: "Help", newWindow: "New window", quit: "Quit", closeWindow: "Close", home: "Home", copyText: "Copy", paste: "Paste", cut: "Cut", deleteText: "Delete", undo: "Undo", redo: "Redo", officialSite: "Official website", github: "GitHub", label: "Server", settings: "Settings", status: "Service status", browser: "Browser", account: "Account", recharge: "Recharge", storage: "Storage", signOut: "Sign out", placeholder: "http://localhost:8080", save: "Save", close: "Close", browse: "Choose", current: "Current", anonymous: "Not signed in", builtin: "Run built-in server", connector: "Connector", running: "Running", stopped: "Stopped", terminate: "Terminate", pid: "PID", version: "Version", mode: "Mode", noProcess: "No managed process is running", httpProxy: "Global HTTP proxy", httpProxyPlaceholder: "http://127.0.0.1:7890", builtinPath: "Built-in server file path", connectorPath: "Built-in connector file path", checkUpdate: "Check for updates", checkingUpdate: "Checking...", updateReady: "Update is ready", updateReadyDescription: "Confirm to quit this app and run the installer.", installNow: "OK", cancel: "Cancel", noUpdate: "No update available", settingsSaved: "Settings saved", builtinStarting: "Preparing built-in server...", builtinWaiting: "Waiting for built-in server...", builtinUnavailable: "Desktop bridge is not ready", newTab: "New tab", closeTab: "Close tab" }
+    ? { title: "Veloce Lab", file: "文件", edit: "编辑", help: "帮助", newWindow: "新窗口", quit: "退出", closeWindow: "关闭", home: "返回主页", copyText: "复制", paste: "粘贴", cut: "剪切", deleteText: "删除", undo: "撤销", redo: "还原", officialSite: "官网", github: "GitHub", label: "服务器", settings: "设置", status: "服务状态", browser: "浏览器", account: "账户", recharge: "充值", signOut: "退出登录", placeholder: "http://localhost:8080", save: "保存", close: "关闭", browse: "选择", current: "当前", anonymous: "未登录", builtin: "运行内置服务器", connector: "连接器", running: "运行中", stopped: "未运行", terminate: "终止", pid: "进程", version: "版本", mode: "模式", noProcess: "暂无运行中的受管进程", httpProxy: "全局 HTTP 代理", httpProxyPlaceholder: "http://127.0.0.1:7890", builtinPath: "内置服务器文件路径", connectorPath: "内置连接器文件路径", checkUpdate: "检查更新", checkingUpdate: "正在检查...", updateReady: "更新已准备", updateReadyDescription: "点击确定将退出当前应用并运行安装程序。", installNow: "确定", cancel: "取消", noUpdate: "没有可用更新", settingsSaved: "设置已保存", builtinStarting: "正在准备内置服务器...", builtinWaiting: "正在等待内置服务器就绪...", builtinUnavailable: "桌面桥接未就绪", newTab: "新标签页", closeTab: "关闭标签页" }
+    : { title: "Veloce Lab", file: "File", edit: "Edit", help: "Help", newWindow: "New window", quit: "Quit", closeWindow: "Close", home: "Home", copyText: "Copy", paste: "Paste", cut: "Cut", deleteText: "Delete", undo: "Undo", redo: "Redo", officialSite: "Official website", github: "GitHub", label: "Server", settings: "Settings", status: "Service status", browser: "Browser", account: "Account", recharge: "Recharge", signOut: "Sign out", placeholder: "http://localhost:8080", save: "Save", close: "Close", browse: "Choose", current: "Current", anonymous: "Not signed in", builtin: "Run built-in server", connector: "Connector", running: "Running", stopped: "Stopped", terminate: "Terminate", pid: "PID", version: "Version", mode: "Mode", noProcess: "No managed process is running", httpProxy: "Global HTTP proxy", httpProxyPlaceholder: "http://127.0.0.1:7890", builtinPath: "Built-in server file path", connectorPath: "Built-in connector file path", checkUpdate: "Check for updates", checkingUpdate: "Checking...", updateReady: "Update is ready", updateReadyDescription: "Confirm to quit this app and run the installer.", installNow: "OK", cancel: "Cancel", noUpdate: "No update available", settingsSaved: "Settings saved", builtinStarting: "Preparing built-in server...", builtinWaiting: "Waiting for built-in server...", builtinUnavailable: "Desktop bridge is not ready", newTab: "New tab", closeTab: "Close tab" }
 
   const { data: user } = useQuery<DesktopCurrentUser>({
     queryKey: ["desktop-me", currentServer, getAuthToken()],
     queryFn: async () => {
       const res = await api.get("/user/me")
-      return res.data
-    },
-    enabled: Boolean(getAuthToken()),
-    retry: false,
-  })
-
-  const { data: storageSettings } = useQuery<DesktopStorageSettings>({
-    queryKey: ["desktop-storage-settings", currentServer, getAuthToken()],
-    queryFn: async () => {
-      const res = await api.get("/user/advanced-chat/settings")
       return res.data
     },
     enabled: Boolean(getAuthToken()),
@@ -348,10 +338,6 @@ function DesktopTitleBar({
 
   const accountLabel = user?.username || user?.email || copy.anonymous
   const accountInitial = accountLabel.trim().slice(0, 1).toUpperCase() || "U"
-  const storageUsed = Math.max(0, Number(storageSettings?.file_storage_used_bytes || 0))
-  const storageTotal = Math.max(0, Number(storageSettings?.file_storage_total_mb || 0)) * 1024 * 1024
-  const storagePercent = storageTotal > 0 ? Math.min(100, Math.round((storageUsed / storageTotal) * 100)) : 0
-
   return (
     <>
     <div className="desktop-acrylic-surface fixed inset-x-0 top-0 z-50 h-9 select-none border-b [-webkit-app-region:drag]">
@@ -617,17 +603,6 @@ function DesktopTitleBar({
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold">{accountLabel}</div>
                   {user?.email && <div className="truncate text-xs text-muted-foreground">{user.email}</div>}
-                </div>
-              </div>
-              <div className="mt-3 space-y-3 border-t pt-3 text-xs">
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between gap-3">
-                    <span className="flex items-center gap-1.5 text-muted-foreground"><HardDrive size={13} />{copy.storage}</span>
-                    <span>{storageTotal > 0 ? `${formatDesktopBytes(storageUsed)} / ${formatDesktopBytes(storageTotal)}` : "-"}</span>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${storagePercent}%` }} />
-                  </div>
                 </div>
               </div>
               <div className="mt-3">
@@ -918,14 +893,6 @@ function DesktopRoutes() {
   }
 
   return <DesktopSingleWindow />
-}
-
-function formatDesktopBytes(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "0 B"
-  if (value < 1024) return `${value} B`
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
-  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`
-  return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`
 }
 
 function DesktopPageRoutes({ className }: { className: string }) {

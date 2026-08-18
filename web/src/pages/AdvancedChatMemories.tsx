@@ -27,9 +27,6 @@ interface MemoryDocument {
 
 interface MemoryListResponse {
   memories: MemoryDocument[]
-  used_bytes: number
-  total_bytes: number
-  remaining_bytes: number
 }
 
 interface MemoryContentResponse extends MemoryDocument {
@@ -108,12 +105,6 @@ export default function AdvancedChatMemories() {
     }
     return counts
   }, [memoriesQuery.data?.memories])
-  const usage = useMemo(() => {
-    const used = memoriesQuery.data?.used_bytes || 0
-    const total = memoriesQuery.data?.total_bytes || 0
-    return { used, total, percent: total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0 }
-  }, [memoriesQuery.data?.total_bytes, memoriesQuery.data?.used_bytes])
-
   useEffect(() => {
     if (selectedID || filteredMemories.length === 0) {
       return
@@ -235,7 +226,6 @@ export default function AdvancedChatMemories() {
               return <MemoryTypeButton key={kind} icon={meta.icon} label={language === "zh" ? meta.zh : meta.en} count={kindCounts[kind]} active={selectedFilter === kind} onClick={() => selectFilter(kind)} />
             })}
           </div>
-          <div className="mt-4 hidden rounded-md border bg-background p-3 lg:block"><div className="flex items-center justify-between text-xs text-muted-foreground"><span>{copy.storage}</span><span>{usage.percent}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{ width: `${usage.percent}%` }} /></div><div className="mt-2 text-xs text-muted-foreground">{formatBytes(usage.used)} / {formatBytes(usage.total)}</div></div>
         </aside>
 
         <section className="min-h-0 flex flex-col border-b lg:border-b-0 lg:border-r">
@@ -291,9 +281,6 @@ function normalizeMemoryList(value: unknown): MemoryListResponse {
   const item = value && typeof value === "object" ? value as Record<string, unknown> : {}
   return {
     memories: Array.isArray(item.memories) ? item.memories.map(normalizeMemory).filter((memory): memory is MemoryDocument => Boolean(memory)) : [],
-    used_bytes: Number(item.used_bytes || 0),
-    total_bytes: Number(item.total_bytes || 0),
-    remaining_bytes: Number(item.remaining_bytes || 0),
   }
 }
 
@@ -373,14 +360,13 @@ function apiErrorMessage(err: unknown, fallback: string) {
 
 const zhCopy = {
   title: "记忆",
-  subtitle: "管理全局记忆和助理记忆。记忆以 Markdown 文件保存，并计入文件存储额度。",
+  subtitle: "管理全局记忆和助理记忆。",
   refresh: "刷新",
   newMemory: "新建记忆",
   memories: "记忆文档",
   memoryTypes: "记忆类型",
   allMemories: "首页",
   items: "条",
-  storage: "存储空间",
   details: "详情",
   loading: "加载中",
   empty: "暂无记忆",
@@ -418,14 +404,13 @@ const zhCopy = {
 
 const enCopy = {
   title: "Memory",
-  subtitle: "Manage global and assistant-scoped memories. Memories are stored as Markdown files and count toward file storage.",
+  subtitle: "Manage global and assistant-scoped memories.",
   refresh: "Refresh",
   newMemory: "New memory",
   memories: "Memory documents",
   memoryTypes: "Memory types",
   allMemories: "Home",
   items: "items",
-  storage: "Storage",
   details: "Details",
   loading: "Loading",
   empty: "No memories",

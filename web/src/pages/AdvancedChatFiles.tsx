@@ -14,8 +14,6 @@ import { withPublicSettingsDefaults } from "@/lib/public-settings"
 
 interface AdvancedChatSettings {
   file_storage_enabled: boolean
-  file_storage_total_mb: number
-  file_storage_used_bytes: number
 }
 
 interface StoredFile {
@@ -31,9 +29,6 @@ interface StoredFile {
 
 interface FileListResponse {
   files: StoredFile[]
-  used_bytes: number
-  total_bytes: number
-  remaining_bytes: number
 }
 
 interface EnterpriseSharedPool {
@@ -257,8 +252,6 @@ function normalizeSettings(value: unknown): AdvancedChatSettings {
   const item = isRecord(value) ? value : {}
   return {
     file_storage_enabled: item.file_storage_enabled !== false,
-    file_storage_total_mb: Number(item.file_storage_total_mb || 0),
-    file_storage_used_bytes: Number(item.file_storage_used_bytes || 0),
   }
 }
 
@@ -266,9 +259,6 @@ function normalizeFileListResponse(value: unknown): FileListResponse {
   const item = isRecord(value) ? value : {}
   return {
     files: Array.isArray(item.files) ? item.files.map(normalizeFile).filter((file): file is StoredFile => Boolean(file)) : [],
-    used_bytes: Number(item.used_bytes || 0),
-    total_bytes: Number(item.total_bytes || 0),
-    remaining_bytes: Number(item.remaining_bytes || 0),
   }
 }
 

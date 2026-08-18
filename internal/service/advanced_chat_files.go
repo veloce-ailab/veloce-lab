@@ -113,12 +113,7 @@ func (api *advancedChatAPI) listFiles(c *gin.Context) {
 	for _, file := range files {
 		result = append(result, advancedChatFileResponseFromModel(file))
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"files":           result,
-		"used_bytes":      advancedChatFileStorageUsedBytes(user.ID),
-		"total_bytes":     advancedChatFileStorageTotalBytes(),
-		"remaining_bytes": advancedChatFileStorageRemainingBytes(user.ID),
-	})
+	c.JSON(http.StatusOK, gin.H{"files": result})
 }
 
 func (api *advancedChatAPI) uploadFile(c *gin.Context) {
@@ -164,11 +159,8 @@ func (api *advancedChatAPI) uploadFile(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"file":            advancedChatFileResponseFromModel(file),
-		"content":         advancedChatFileContentFromModel(file),
-		"used_bytes":      advancedChatFileStorageUsedBytes(user.ID),
-		"total_bytes":     advancedChatFileStorageTotalBytes(),
-		"remaining_bytes": advancedChatFileStorageRemainingBytes(user.ID),
+		"file":    advancedChatFileResponseFromModel(file),
+		"content": advancedChatFileContentFromModel(file),
 	})
 }
 
@@ -242,12 +234,7 @@ func (api *advancedChatAPI) deleteFile(c *gin.Context) {
 		return
 	}
 	_ = removeAdvancedChatStoragePath(file.StoragePath)
-	c.JSON(http.StatusOK, gin.H{
-		"message":         "File deleted",
-		"used_bytes":      advancedChatFileStorageUsedBytes(user.ID),
-		"total_bytes":     advancedChatFileStorageTotalBytes(),
-		"remaining_bytes": advancedChatFileStorageRemainingBytes(user.ID),
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "File deleted"})
 }
 
 func storeAdvancedChatFile(userID uint, input advancedChatFileStoreInput) (AdvancedChatFile, int, string, error) {

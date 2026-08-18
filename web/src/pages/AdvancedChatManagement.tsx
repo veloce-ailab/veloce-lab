@@ -30,7 +30,6 @@ interface AdvancedChatSettings {
   attachment_max_mb: number
   attachment_allowed_types: string[]
   file_storage_enabled: boolean
-  file_storage_total_mb: number
   file_storage_auto_save_images_enabled: boolean
   file_storage_auto_save_videos_enabled: boolean
   builtin_mcp_servers: MCPServer[]
@@ -54,7 +53,6 @@ const defaultAdvancedChatSettings: AdvancedChatSettings = {
   attachment_max_mb: 10,
   attachment_allowed_types: ["text/plain", "text/markdown", "application/json", "text/csv", "image/png", "image/jpeg", "application/pdf"],
   file_storage_enabled: true,
-  file_storage_total_mb: 100,
   file_storage_auto_save_images_enabled: true,
   file_storage_auto_save_videos_enabled: true,
   builtin_mcp_servers: [],
@@ -113,7 +111,6 @@ export default function AdvancedChatManagement({ mode = "attachments" }: { mode?
       const res = await api.put("/advanced-chat/settings", {
         attachment_max_mb: Number(form.attachment_max_mb) || 10,
         attachment_allowed_types: allowedTypes,
-        file_storage_total_mb: Number(form.file_storage_total_mb) || 100,
       })
       return normalizeAdvancedChatSettings(res.data)
     },
@@ -469,7 +466,6 @@ function normalizeAdvancedChatSettings(value: unknown): AdvancedChatSettings {
       ? item.attachment_allowed_types.filter((value): value is string => typeof value === "string")
       : defaultAdvancedChatSettings.attachment_allowed_types,
     file_storage_enabled: item.file_storage_enabled !== false,
-    file_storage_total_mb: Number(item.file_storage_total_mb || defaultAdvancedChatSettings.file_storage_total_mb),
     file_storage_auto_save_images_enabled: item.file_storage_auto_save_images_enabled !== false,
     file_storage_auto_save_videos_enabled: item.file_storage_auto_save_videos_enabled !== false,
     builtin_mcp_servers: Array.isArray(item.builtin_mcp_servers) ? item.builtin_mcp_servers.map(normalizeMCPServer) : [],

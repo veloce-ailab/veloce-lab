@@ -28,8 +28,3 @@ export interface DesktopCurrentUser {
 export interface DesktopUserStats {
   balance?: string | number
 }
-
-export interface DesktopStorageSettings {
-  file_storage_total_mb?: number
-  file_storage_used_bytes?: number
-}

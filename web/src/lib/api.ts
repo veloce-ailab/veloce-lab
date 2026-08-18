@@ -247,7 +247,7 @@ const demoAdapter: AxiosAdapter = async (config) => {
   if (path === "/user/advanced-chat/sessions/folders") return demoResponse(config, []);
   if (path === "/user/advanced-chat/agents") return demoResponse(config, demoAgents);
   if (path === "/user/advanced-chat/devices") return demoResponse(config, [{ id: "demo-device", name: "Demo Workspace", hostname: "demo-runner", os: "linux", arch: "amd64", kind: "cli", status: "online", online: true, last_seen_at: demoNow }]);
-  if (path === "/user/advanced-chat/files") return demoResponse(config, { files: [{ id: "demo-library-file", name: "requirements.md", type: "text/markdown", size: 2480, source: "upload", text_available: true, created_at: demoNow, updated_at: demoNow }], used_bytes: 2480, total_bytes: 0, remaining_bytes: 0 });
+  if (path === "/user/advanced-chat/files") return demoResponse(config, { files: [{ id: "demo-library-file", name: "requirements.md", type: "text/markdown", size: 2480, source: "upload", text_available: true, created_at: demoNow, updated_at: demoNow }] });
   if (path === "/user/advanced-chat/knowledge-bases") return demoResponse(config, { knowledge_bases: [{ id: "demo-kb", name: "产品资料", description: "演示知识库", vectorized: true }] });
   if (["/user/advanced-chat/skills", "/user/advanced-chat/agent-groups", "/user/advanced-chat/cloud-sandboxes"].includes(path)) return demoResponse(config, []);
   if (path === "/user/advanced-chat/chat-groups" && method === "get") return demoResponse(config, demoChatGroups);

@@ -159,12 +159,7 @@ func (api *memoryAPI) list(c *gin.Context) {
 	for _, memory := range memories {
 		result = append(result, memoryResponseFromModel(memory))
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"memories":        result,
-		"used_bytes":      AdvancedChatFileStorageUsedBytes(user.ID),
-		"total_bytes":     AdvancedChatFileStorageTotalBytes(),
-		"remaining_bytes": AdvancedChatFileStorageRemainingBytes(user.ID),
-	})
+	c.JSON(http.StatusOK, gin.H{"memories": result})
 }
 
 func (api *memoryAPI) get(c *gin.Context) {
