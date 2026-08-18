@@ -4,7 +4,7 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
 import api, { apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
 import { ConnectorTerminalWindow, type ConnectorTerminalCopy } from "@/components/chat/ConnectorTerminalWindow"
@@ -518,6 +518,7 @@ type SessionCapabilityPicker = "skills" | "knowledge" | "mcp" | null
 type AttachmentTarget = "composer" | "editor"
 type ComposerControlMenu = "" | "mode" | "device" | "workspace" | "agent" | "agent_group" | "approval"
 type WorkspacePickerTarget = "session" | "pending"
+type SessionGroupMode = "time" | "workspace"
 
 interface ChatStoreKeys {
   sessions: string
@@ -535,6 +536,7 @@ const selectedAgentStoreKey = "windypear.advanced_chat.selected_agent.v1"
 const recentAgentStoreKey = "windypear.advanced_chat.recent_agents.v1"
 const sessionFoldersStorageKey = "windypear.chat.session_folders.v1"
 const sessionFolderAssignmentsStorageKey = "windypear.chat.session_folder_assignments.v1"
+const sessionGroupModeStorageKey = "windypear.chat.session_group_mode.v1"
 const defaultAgentID = "default"
 const agentsQueryKey = ["advanced-chat-agents"] as const
 const skillsQueryKey = ["advanced-chat-skills"] as const
@@ -619,6 +621,7 @@ export default function Chat() {
   const [isDesktopSessionsSidebarVisible, setIsDesktopSessionsSidebarVisible] = useState(true)
   const [desktopSessionsSidebarHost, setDesktopSessionsSidebarHost] = useState<HTMLElement | null>(null)
   const [visibleSessionCount, setVisibleSessionCount] = useState(20)
+  const [sessionGroupMode, setSessionGroupMode] = useState<SessionGroupMode>(readSessionGroupMode)
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>(readSessionFolders)
   const [sessionFolderAssignments, setSessionFolderAssignments] = useState<Record<string, string>>(readSessionFolderAssignments)
   const [isSessionFolderDialogOpen, setIsSessionFolderDialogOpen] = useState(false)
@@ -846,6 +849,18 @@ export default function Chat() {
     const groups = new Map<string, { label: string; sessions: ChatSession[] }>()
 
     searchedSessions.slice(0, visibleSessionCount).forEach((session) => {
+      if (sessionGroupMode === "workspace") {
+        const workspacePath = session.connector_workspace_path?.trim() || ""
+        const key = workspacePath || "__no_workspace__"
+        const label = workspacePath || (language === "zh" ? "未选择工作区" : "No workspace")
+        const group = groups.get(key)
+        if (group) {
+          group.sessions.push(session)
+        } else {
+          groups.set(key, { label, sessions: [session] })
+        }
+        return
+      }
       const timestamp = Date.parse(session.updated_at || session.created_at)
       const date = Number.isFinite(timestamp) ? new Date(timestamp) : new Date(0)
       let key: string
@@ -873,7 +888,7 @@ export default function Chat() {
       }
     })
     return Array.from(groups.values())
-  }, [language, searchedSessions, visibleSessionCount])
+  }, [language, searchedSessions, sessionGroupMode, visibleSessionCount])
   const currentSessionRaw = activeSession || (isAdvanced && routeSessionID ? undefined : draftSession)
   const currentSession = currentSessionRaw ? normalizeRuntimeSession(currentSessionRaw) : undefined
   const isSharedSession = Boolean(currentSession?.id && currentSession.id === sharedSessionID && sharedSessionPoolID)
@@ -1242,6 +1257,10 @@ export default function Chat() {
     }
     localStorage.setItem(sessionFolderAssignmentsStorageKey, JSON.stringify(sessionFolderAssignments))
   }, [isAdvanced, sessionFolderAssignments])
+
+  useEffect(() => {
+    localStorage.setItem(sessionGroupModeStorageKey, sessionGroupMode)
+  }, [sessionGroupMode])
 
   const recentWorkspacePaths = useMemo(() => {
     if (!currentConnectorDeviceID) {
@@ -3436,6 +3455,19 @@ export default function Chat() {
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/80 px-3">
         <div className="truncate text-xs font-semibold uppercase text-muted-foreground">{copy.sessions}</div>
         <div className="flex items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={sessionSidebarCopy.groupMode} title={sessionSidebarCopy.groupMode}>
+                <ListFilter size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuRadioGroup value={sessionGroupMode} onValueChange={(value) => setSessionGroupMode(value === "workspace" ? "workspace" : "time")}>
+                <DropdownMenuRadioItem value="time">{sessionSidebarCopy.groupByTime}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="workspace">{sessionSidebarCopy.groupByWorkspace}</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="ghost"
             size="icon"
@@ -3468,7 +3500,7 @@ export default function Chat() {
         )}
         {visibleSessionGroups.map((group) => (
           <div key={group.label} className="pb-2">
-            <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">{group.label}</div>
+            <div className={cn("px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground", sessionGroupMode === "workspace" && group.label !== (language === "zh" ? "未选择工作区" : "No workspace") && "truncate font-mono")} title={sessionGroupMode === "workspace" ? group.label : undefined}>{group.label}</div>
             {group.sessions.map(sessionSidebarItem)}
           </div>
         ))}
@@ -6251,6 +6283,13 @@ function readSessionFolderAssignments(): Record<string, string> {
   }
 }
 
+function readSessionGroupMode(): SessionGroupMode {
+  if (typeof window === "undefined") {
+    return "time"
+  }
+  return localStorage.getItem(sessionGroupModeStorageKey) === "workspace" ? "workspace" : "time"
+}
+
 async function responseErrorMessage(response: Response) {
   const text = await response.text().catch(() => "")
   try {
@@ -8635,6 +8674,9 @@ const zhSessionSidebarCopy = {
   noSessions: "没有匹配的会话",
   createFolderFailed: "创建会话文件夹失败",
   moveFailed: "移动会话失败",
+  groupMode: "会话分组方式",
+  groupByTime: "按时间分组",
+  groupByWorkspace: "按工作区分组",
 }
 
 const enSessionSidebarCopy: typeof zhSessionSidebarCopy = {
@@ -8648,6 +8690,9 @@ const enSessionSidebarCopy: typeof zhSessionSidebarCopy = {
   noSessions: "No matching sessions",
   createFolderFailed: "Failed to create session folder",
   moveFailed: "Failed to move session",
+  groupMode: "Session grouping",
+  groupByTime: "Group by time",
+  groupByWorkspace: "Group by workspace",
 }
 
 function VSCodeIcon({ size = 16 }: { size?: number }) {
