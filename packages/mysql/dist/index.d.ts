@@ -1,4 +1,4 @@
-import { Context, Schema } from 'yumeri';
+import { Context, Schema } from "yumeri";
 export interface MysqlConfig {
     host: string;
     port: number;

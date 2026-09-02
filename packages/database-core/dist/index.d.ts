@@ -1,6 +1,6 @@
-import type { Database, IndexDefinition, Query, Schema, Tables, UpdateData } from '@yumerijs/types';
+import type { Database, IndexDefinition, Query, Schema, Tables, UpdateData } from "@yumerijs/types";
 export interface SqlDriver {
-    dialect: 'sqlite' | 'mysql' | 'pgsql';
+    dialect: "sqlite" | "mysql" | "pgsql";
     execute(sql: string, params?: unknown[]): Promise<{
         changes?: number;
         insertId?: number | bigint;
