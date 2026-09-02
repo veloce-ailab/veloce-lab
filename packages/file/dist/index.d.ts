@@ -1,4 +1,4 @@
-import { Context, Schema } from 'yumeri';
+import { Context, Schema } from "yumeri";
 export interface FileOptions {
     root: string;
 }
@@ -10,7 +10,7 @@ export interface FileService {
 export declare const depend: string[];
 export declare const provide: string[];
 export declare const config: Schema<FileOptions>;
-declare module 'yumeri' {
+declare module "yumeri" {
     interface Components {
         file: FileService;
     }

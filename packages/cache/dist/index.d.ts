@@ -1,4 +1,4 @@
-import { Context } from 'yumeri';
+import { Context } from "yumeri";
 export declare const depend: string[];
 export declare const provide: string[];
 export interface CacheService {
@@ -6,7 +6,7 @@ export interface CacheService {
     set<T>(key: string, value: T): void;
     delete(key: string): void;
 }
-declare module 'yumeri' {
+declare module "yumeri" {
     interface Components {
         cache: CacheService;
     }

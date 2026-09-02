@@ -1,10 +1,10 @@
-import { Context } from 'yumeri';
+import { Context } from "yumeri";
 export declare const depend: string[];
 export declare const provide: string[];
 export interface ChannelService {
     list(): string[];
 }
-declare module 'yumeri' {
+declare module "yumeri" {
     interface Components {
         channel: ChannelService;
     }
