@@ -1,5 +1,5 @@
 {
-  "name": "@velocelab/app",
+  "name": "@velocelab/mysql",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -7,7 +7,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
+  "dependencies": {
+    "@velocelab/database-core": "workspace:*",
+    "mysql2": "^3.15.3"
+  },
   "peerDependencies": {
+    "yumeri": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
     "yumeri": "^3.0.0"
   }
 }

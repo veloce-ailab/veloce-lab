@@ -8,6 +8,7 @@
     "@velocelab/core": {},
     "@velocelab/config": {},
     "@velocelab/cache": {},
+    "@velocelab/sqlite": { "path": "./data/veloce.db" },
     "@velocelab/model": {},
     "@velocelab/adapters": {},
     "@velocelab/channel": {},
@@ -16,7 +17,6 @@
     "@velocelab/middleware": {},
     "@velocelab/api": {},
     "@velocelab/file": { "root": "./data" },
-    "@velocelab/http": {},
-    "@velocelab/app": {}
+    "@velocelab/http": {}
   }
 }
