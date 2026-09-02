@@ -1,0 +1,22 @@
+{
+  "name": "@velocelab/pgsql",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@velocelab/database-core": "workspace:*",
+    "pg": "^8.16.3"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "@types/pg": "^8.15.5",
+    "yumeri": "^3.0.0"
+  }
+}
