@@ -1,6 +1,6 @@
 import { Context, Session } from 'yumeri';
 
-export const depend = ['velocelab-core', 'file'];
+export const depend = ['velocelab-core', 'file', 'api'];
 export const provide = ['http'];
 export const usage = 'Registers the Veloce Lab HTTP API routes.';
 
