@@ -1,0 +1,12 @@
+{
+  "core": {
+    "host": "0.0.0.0",
+    "port": 3000,
+    "enableCors": true
+  },
+  "plugins": {
+    "@velocelab/core": {},
+    "@velocelab/file": { "root": "./data" },
+    "@velocelab/http": {}
+  }
+}

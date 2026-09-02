@@ -12,4 +12,7 @@ flai.exe~
 *.db-wal
 log/
 /original/
+/old/
 /.cache/
+node_modules/
+.yarn/install-state.gz
