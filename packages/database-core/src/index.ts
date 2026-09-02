@@ -1,89 +1,261 @@
-import type { Database, FieldDefinition, FieldType, IndexDefinition, Query, Schema, Tables, UpdateData } from '@yumerijs/types';
+import type {
+  Database,
+  FieldDefinition,
+  FieldType,
+  IndexDefinition,
+  Query,
+  Schema,
+  Tables,
+  UpdateData,
+} from "@yumerijs/types";
 
 export interface SqlDriver {
-  dialect: 'sqlite' | 'mysql' | 'pgsql';
-  execute(sql: string, params?: unknown[]): Promise<{ changes?: number; insertId?: number | bigint }>;
-  one(sql: string, params?: unknown[]): Promise<Record<string, unknown> | undefined>;
+  dialect: "sqlite" | "mysql" | "pgsql";
+  execute(
+    sql: string,
+    params?: unknown[],
+  ): Promise<{ changes?: number; insertId?: number | bigint }>;
+  one(
+    sql: string,
+    params?: unknown[],
+  ): Promise<Record<string, unknown> | undefined>;
   many(sql: string, params?: unknown[]): Promise<Record<string, unknown>[]>;
   close(): Promise<void>;
 }
 
 const identifier = (value: string) => {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) throw new Error(`Invalid SQL identifier: ${value}`);
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value))
+    throw new Error(`Invalid SQL identifier: ${value}`);
   return `"${value}"`;
 };
 
 function fieldType(type: FieldType): string {
-  return ({ string: 'TEXT', text: 'TEXT', json: 'TEXT', integer: 'INTEGER', unsigned: 'INTEGER', bigint: 'BIGINT', float: 'REAL', double: 'DOUBLE PRECISION', decimal: 'DECIMAL', boolean: 'BOOLEAN', date: 'DATETIME', time: 'TIME', timestamp: 'DATETIME' } as Record<FieldType, string>)[type];
+  return (
+    {
+      string: "TEXT",
+      text: "TEXT",
+      json: "TEXT",
+      integer: "INTEGER",
+      unsigned: "INTEGER",
+      bigint: "BIGINT",
+      float: "REAL",
+      double: "DOUBLE PRECISION",
+      decimal: "DECIMAL",
+      boolean: "BOOLEAN",
+      date: "DATETIME",
+      time: "TIME",
+      timestamp: "DATETIME",
+    } as Record<FieldType, string>
+  )[type];
 }
 
 function where(query: Query<any>, params: unknown[]): string {
   const parts: string[] = [];
   for (const [key, value] of Object.entries(query)) {
-    if (key === '$or' || key === '$and') {
-      const expressions = (value as Query<any>[]).map((item) => where(item, params)).filter(Boolean);
-      if (expressions.length) parts.push(`(${expressions.join(key === '$or' ? ' OR ' : ' AND ')})`);
+    if (key === "$or" || key === "$and") {
+      const expressions = (value as Query<any>[])
+        .map((item) => where(item, params))
+        .filter(Boolean);
+      if (expressions.length)
+        parts.push(`(${expressions.join(key === "$or" ? " OR " : " AND ")})`);
       continue;
     }
     if (value === undefined || value === null) continue;
     const column = identifier(key);
-    if (typeof value === 'object' && !Array.isArray(value)) {
-      for (const [operator, operand] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof value === "object" && !Array.isArray(value)) {
+      for (const [operator, operand] of Object.entries(
+        value as Record<string, unknown>,
+      )) {
         if (operand === undefined || operand === null) continue;
-        if (operator === '$in' || operator === '$nin') {
+        if (operator === "$in" || operator === "$nin") {
           const values = operand as unknown[];
-          if (!values.length) { parts.push(operator === '$in' ? '1 = 0' : '1 = 1'); continue; }
-          parts.push(`${column} ${operator === '$in' ? 'IN' : 'NOT IN'} (${values.map(() => '?').join(', ')})`);
+          if (!values.length) {
+            parts.push(operator === "$in" ? "1 = 0" : "1 = 1");
+            continue;
+          }
+          parts.push(
+            `${column} ${operator === "$in" ? "IN" : "NOT IN"} (${values.map(() => "?").join(", ")})`,
+          );
           params.push(...values);
           continue;
         }
-        const symbols: Record<string, string> = { $eq: '=', $ne: '!=', $gt: '>', $gte: '>=', $lt: '<', $lte: '<=' };
-        if (symbols[operator]) { parts.push(`${column} ${symbols[operator]} ?`); params.push(operand); }
+        const symbols: Record<string, string> = {
+          $eq: "=",
+          $ne: "!=",
+          $gt: ">",
+          $gte: ">=",
+          $lt: "<",
+          $lte: "<=",
+        };
+        if (symbols[operator]) {
+          parts.push(`${column} ${symbols[operator]} ?`);
+          params.push(operand);
+        }
       }
-    } else { parts.push(`${column} = ?`); params.push(value); }
+    } else {
+      parts.push(`${column} = ?`);
+      params.push(value);
+    }
   }
-  return parts.join(' AND ');
+  return parts.join(" AND ");
 }
 
 export class SqlDatabase implements Database {
   constructor(private readonly driver: SqlDriver) {}
 
-  async extend<K extends keyof Tables>(table: K, schema: Schema<Partial<Tables[K]>>, indexes?: IndexDefinition<Tables[K]>): Promise<void> {
+  async extend<K extends keyof Tables>(
+    table: K,
+    schema: Schema<Partial<Tables[K]>>,
+    indexes?: IndexDefinition<Tables[K]>,
+  ): Promise<void> {
     const columns = Object.entries(schema).map(([name, input]) => {
-      const definition: FieldDefinition = typeof input === 'string' ? { type: input } : input;
+      const definition: FieldDefinition =
+        typeof input === "string" ? { type: input } : input;
       let sql = `${identifier(name)} ${fieldType(definition.type)}`;
-      if (definition.nullable === false) sql += ' NOT NULL';
-      if (definition.autoIncrement) sql += this.driver.dialect === 'mysql' ? ' AUTO_INCREMENT PRIMARY KEY' : this.driver.dialect === 'pgsql' ? ' GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY' : ' PRIMARY KEY AUTOINCREMENT';
-      if (definition.initial !== undefined) sql += ' DEFAULT ' + (typeof definition.initial === 'string' ? `'${definition.initial.replace(/'/g, "''")}'` : String(definition.initial));
+      if (definition.nullable === false) sql += " NOT NULL";
+      if (definition.autoIncrement)
+        sql +=
+          this.driver.dialect === "mysql"
+            ? " AUTO_INCREMENT PRIMARY KEY"
+            : this.driver.dialect === "pgsql"
+              ? " GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY"
+              : " PRIMARY KEY AUTOINCREMENT";
+      if (definition.initial !== undefined)
+        sql +=
+          " DEFAULT " +
+          (typeof definition.initial === "string"
+            ? `'${definition.initial.replace(/'/g, "''")}'`
+            : String(definition.initial));
       return sql;
     });
-    await this.driver.execute(`CREATE TABLE IF NOT EXISTS ${identifier(String(table))} (${columns.join(', ')})`);
+    await this.driver.execute(
+      `CREATE TABLE IF NOT EXISTS ${identifier(String(table))} (${columns.join(", ")})`,
+    );
     for (const key of indexes?.unique ?? []) {
-      const fields = (Array.isArray(key) ? key : [key]).map((field) => identifier(String(field))).join(', ');
-      await this.driver.execute(`CREATE UNIQUE INDEX IF NOT EXISTS ${identifier(`${String(table)}_${Array.isArray(key) ? key.join('_') : String(key)}_unique`)} ON ${identifier(String(table))} (${fields})`);
+      const fields = (Array.isArray(key) ? key : [key])
+        .map((field) => identifier(String(field)))
+        .join(", ");
+      await this.driver.execute(
+        `CREATE UNIQUE INDEX IF NOT EXISTS ${identifier(`${String(table)}_${Array.isArray(key) ? key.join("_") : String(key)}_unique`)} ON ${identifier(String(table))} (${fields})`,
+      );
     }
   }
 
-  async create<K extends keyof Tables>(table: K, data: Partial<Tables[K]>): Promise<Tables[K]> {
-    const keys = Object.keys(data); const values = Object.values(data);
-    const result = await this.driver.execute(`INSERT INTO ${identifier(String(table))} (${keys.map(identifier).join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`, values);
-    return { ...data, ...(result.insertId === undefined ? {} : { id: Number(result.insertId) }) } as Tables[K];
+  async create<K extends keyof Tables>(
+    table: K,
+    data: Partial<Tables[K]>,
+  ): Promise<Tables[K]> {
+    const keys = Object.keys(data);
+    const values = Object.values(data);
+    const result = await this.driver.execute(
+      `INSERT INTO ${identifier(String(table))} (${keys.map(identifier).join(", ")}) VALUES (${keys.map(() => "?").join(", ")})`,
+      values,
+    );
+    return {
+      ...data,
+      ...(result.insertId === undefined ? {} : { id: Number(result.insertId) }),
+    } as Tables[K];
   }
-  async select<K extends keyof Tables, F extends keyof Tables[K]>(table: K, query: Query<Tables[K]>, fields?: F[]): Promise<Pick<Tables[K], F>[]> {
-    const params: unknown[] = []; const condition = where(query, params);
-    const selected = fields?.length ? fields.map((field) => identifier(String(field))).join(', ') : '*';
-    return await this.driver.many(`SELECT ${selected} FROM ${identifier(String(table))}${condition ? ` WHERE ${condition}` : ''}`, params) as Pick<Tables[K], F>[];
+  async select<K extends keyof Tables, F extends keyof Tables[K]>(
+    table: K,
+    query: Query<Tables[K]>,
+    fields?: F[],
+  ): Promise<Pick<Tables[K], F>[]> {
+    const params: unknown[] = [];
+    const condition = where(query, params);
+    const selected = fields?.length
+      ? fields.map((field) => identifier(String(field))).join(", ")
+      : "*";
+    return (await this.driver.many(
+      `SELECT ${selected} FROM ${identifier(String(table))}${condition ? ` WHERE ${condition}` : ""}`,
+      params,
+    )) as Pick<Tables[K], F>[];
   }
-  async selectOne<K extends keyof Tables, F extends keyof Tables[K]>(table: K, query: Query<Tables[K]>, fields?: F[]): Promise<Pick<Tables[K], F> | undefined> { return (await this.select(table, query, fields))[0]; }
-  async update<K extends keyof Tables>(table: K, query: Query<Tables[K]>, data: UpdateData<Partial<Tables[K]>>): Promise<number> {
-    const params: unknown[] = []; const assignments = Object.entries(data).map(([key, value]) => { if (typeof value === 'object' && value && '$inc' in value) { params.push((value as { $inc: number }).$inc); return `${identifier(key)} = ${identifier(key)} + ?`; } params.push(value); return `${identifier(key)} = ?`; });
-    const condition = where(query, params); const result = await this.driver.execute(`UPDATE ${identifier(String(table))} SET ${assignments.join(', ')}${condition ? ` WHERE ${condition}` : ''}`, params); return result.changes ?? 0;
+  async selectOne<K extends keyof Tables, F extends keyof Tables[K]>(
+    table: K,
+    query: Query<Tables[K]>,
+    fields?: F[],
+  ): Promise<Pick<Tables[K], F> | undefined> {
+    return (await this.select(table, query, fields))[0];
   }
-  async remove<K extends keyof Tables>(table: K, query: Query<Tables[K]>): Promise<number> { const params: unknown[] = []; const condition = where(query, params); const result = await this.driver.execute(`DELETE FROM ${identifier(String(table))}${condition ? ` WHERE ${condition}` : ''}`, params); return result.changes ?? 0; }
-  async upsert<K extends keyof Tables>(table: K, data: Partial<Tables[K]>[], key: keyof Tables[K] | (keyof Tables[K])[], update?: UpdateData<Partial<Tables[K]>>): Promise<void> { for (const row of data) { const existing = await this.selectOne(table, Object.fromEntries((Array.isArray(key) ? key : [key]).map((field) => [field, row[field]])) as Query<Tables[K]>); if (existing) await this.update(table, Object.fromEntries((Array.isArray(key) ? key : [key]).map((field) => [field, row[field]])) as Query<Tables[K]>, update ?? row); else await this.create(table, row); } }
-  async drop<K extends keyof Tables>(table: K): Promise<void> { await this.driver.execute(`DROP TABLE IF EXISTS ${identifier(String(table))}`); }
-  run(sql: string, params?: any[]): Promise<any> { return this.driver.execute(sql, params); }
-  get(sql: string, params?: any[]): Promise<any> { return this.driver.one(sql, params); }
-  all(sql: string, params?: any[]): Promise<any[]> { return this.driver.many(sql, params); }
-  close(): Promise<void> { return this.driver.close(); }
+  async update<K extends keyof Tables>(
+    table: K,
+    query: Query<Tables[K]>,
+    data: UpdateData<Partial<Tables[K]>>,
+  ): Promise<number> {
+    const params: unknown[] = [];
+    const assignments = Object.entries(data).map(([key, value]) => {
+      if (typeof value === "object" && value && "$inc" in value) {
+        params.push((value as { $inc: number }).$inc);
+        return `${identifier(key)} = ${identifier(key)} + ?`;
+      }
+      params.push(value);
+      return `${identifier(key)} = ?`;
+    });
+    const condition = where(query, params);
+    const result = await this.driver.execute(
+      `UPDATE ${identifier(String(table))} SET ${assignments.join(", ")}${condition ? ` WHERE ${condition}` : ""}`,
+      params,
+    );
+    return result.changes ?? 0;
+  }
+  async remove<K extends keyof Tables>(
+    table: K,
+    query: Query<Tables[K]>,
+  ): Promise<number> {
+    const params: unknown[] = [];
+    const condition = where(query, params);
+    const result = await this.driver.execute(
+      `DELETE FROM ${identifier(String(table))}${condition ? ` WHERE ${condition}` : ""}`,
+      params,
+    );
+    return result.changes ?? 0;
+  }
+  async upsert<K extends keyof Tables>(
+    table: K,
+    data: Partial<Tables[K]>[],
+    key: keyof Tables[K] | (keyof Tables[K])[],
+    update?: UpdateData<Partial<Tables[K]>>,
+  ): Promise<void> {
+    for (const row of data) {
+      const existing = await this.selectOne(
+        table,
+        Object.fromEntries(
+          (Array.isArray(key) ? key : [key]).map((field) => [
+            field,
+            row[field],
+          ]),
+        ) as Query<Tables[K]>,
+      );
+      if (existing)
+        await this.update(
+          table,
+          Object.fromEntries(
+            (Array.isArray(key) ? key : [key]).map((field) => [
+              field,
+              row[field],
+            ]),
+          ) as Query<Tables[K]>,
+          update ?? row,
+        );
+      else await this.create(table, row);
+    }
+  }
+  async drop<K extends keyof Tables>(table: K): Promise<void> {
+    await this.driver.execute(
+      `DROP TABLE IF EXISTS ${identifier(String(table))}`,
+    );
+  }
+  run(sql: string, params?: any[]): Promise<any> {
+    return this.driver.execute(sql, params);
+  }
+  get(sql: string, params?: any[]): Promise<any> {
+    return this.driver.one(sql, params);
+  }
+  all(sql: string, params?: any[]): Promise<any[]> {
+    return this.driver.many(sql, params);
+  }
+  close(): Promise<void> {
+    return this.driver.close();
+  }
 }
