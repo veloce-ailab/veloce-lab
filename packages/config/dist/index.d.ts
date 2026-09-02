@@ -1,4 +1,4 @@
-import { Context, Schema } from 'yumeri';
+import { Context, Schema } from "yumeri";
 export interface AppConfig {
     siteName: string;
     baseUrl: string;
@@ -22,7 +22,7 @@ export interface ConfigService {
 export declare const depend: string[];
 export declare const provide: string[];
 export declare const config: Schema<AppConfig>;
-declare module 'yumeri' {
+declare module "yumeri" {
     interface Components {
         config: ConfigService;
     }

@@ -1,14 +1,14 @@
-import { Context } from 'yumeri';
+import { Context } from "yumeri";
 export declare const depend: string[];
 export declare const provide: string[];
 export declare const usage = "Registers the Veloce Lab HTTP API routes.";
 export interface HttpService {
     health(): {
-        status: 'ok';
+        status: "ok";
         service: string;
     };
 }
-declare module 'yumeri' {
+declare module "yumeri" {
     interface Components {
         http: HttpService;
     }
