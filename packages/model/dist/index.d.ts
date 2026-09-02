@@ -1,12 +1,29 @@
-import { Context } from 'yumeri';
-export declare const depend: string[];
-export declare const provide: string[];
-export interface ModelService {
-    ready(): boolean;
+import { Context } from "yumeri";
+export interface User {
+    id?: number;
+    username: string;
+    email: string;
+    password_hash: string;
+    is_admin: boolean;
+    email_verified: boolean;
+    created_at: string;
+    updated_at: string;
 }
-declare module 'yumeri' {
+export interface ModelService {
+    users: {
+        findByIdentifier(identifier: string): Promise<User | undefined>;
+        findAdmin(): Promise<User | undefined>;
+        create(user: Omit<User, "id" | "created_at" | "updated_at">): Promise<User>;
+    };
+}
+declare module "yumeri" {
+    interface Tables {
+        users: User;
+    }
     interface Components {
         model: ModelService;
     }
 }
-export declare function apply(ctx: Context): void;
+export declare const depend: string[];
+export declare const provide: string[];
+export declare function apply(ctx: Context): Promise<void>;

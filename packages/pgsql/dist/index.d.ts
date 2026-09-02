@@ -1,4 +1,4 @@
-import { Context, Schema } from 'yumeri';
+import { Context, Schema } from "yumeri";
 export interface PgsqlConfig {
     host: string;
     port: number;
