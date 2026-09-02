@@ -261,6 +261,30 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@velocelab/adapters@workspace:packages/adapters":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/adapters@workspace:packages/adapters"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/api@workspace:packages/api":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/api@workspace:packages/api"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/app@workspace:packages/app":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/app@workspace:packages/app"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/backend@workspace:.":
   version: 0.0.0-use.local
   resolution: "@velocelab/backend@workspace:."
@@ -268,6 +292,30 @@ __metadata:
     "@types/node": "npm:^24.3.1"
     typescript: "npm:^5.9.2"
     yumeri: "npm:^3.0.0"
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/cache@workspace:packages/cache":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/cache@workspace:packages/cache"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/channel@workspace:packages/channel":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/channel@workspace:packages/channel"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/config@workspace:packages/config":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/config@workspace:packages/config"
+  peerDependencies:
+    yumeri: ^3.0.0
   languageName: unknown
   linkType: soft
 
@@ -290,6 +338,38 @@ __metadata:
 "@velocelab/http@workspace:packages/http":
   version: 0.0.0-use.local
   resolution: "@velocelab/http@workspace:packages/http"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/middleware@workspace:packages/middleware":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/middleware@workspace:packages/middleware"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/model@workspace:packages/model":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/model@workspace:packages/model"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/ratelimit@workspace:packages/ratelimit":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/ratelimit@workspace:packages/ratelimit"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/service@workspace:packages/service":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/service@workspace:packages/service"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown

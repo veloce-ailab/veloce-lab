@@ -6,7 +6,17 @@
   },
   "plugins": {
     "@velocelab/core": {},
+    "@velocelab/config": {},
+    "@velocelab/cache": {},
+    "@velocelab/model": {},
+    "@velocelab/adapters": {},
+    "@velocelab/channel": {},
+    "@velocelab/ratelimit": {},
+    "@velocelab/service": {},
+    "@velocelab/middleware": {},
+    "@velocelab/api": {},
     "@velocelab/file": { "root": "./data" },
-    "@velocelab/http": {}
+    "@velocelab/http": {},
+    "@velocelab/app": {}
   }
 }
