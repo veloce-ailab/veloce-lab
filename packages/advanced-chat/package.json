@@ -1,5 +1,5 @@
 {
-  "name": "@velocelab/api",
+  "name": "@velocelab/advanced-chat",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -8,8 +8,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@velocelab/advanced-chat": "workspace:*",
-    "@velocelab/service": "workspace:*"
+    "@velocelab/model": "workspace:*"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

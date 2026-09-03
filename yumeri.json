@@ -42,6 +42,10 @@
       "passwordRegistrationEnabled": false,
       "passwordHCaptchaEnabled": false
     },
+    "@velocelab/advanced-chat": {
+      "enabled": true,
+      "connectorOnlineWindowSeconds": "60"
+    },
     "@velocelab/middleware": {},
     "@velocelab/api": {
       "siteName": "Veloce",
