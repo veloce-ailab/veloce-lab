@@ -332,6 +332,41 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
 
   ctx
     .getCore()
+    .route("/api/user/advanced-chat/completions", ctx)
+    .methods("POST")
+    .action(async (session: Session) => {
+      const user = await currentUser(session);
+      if (!user?.id) return;
+      try {
+        const body = await objectBody(session);
+        const rawMessages = Array.isArray(body.messages) ? body.messages : [];
+        const messages = rawMessages
+          .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+          .map((item) => ({
+            role: String(item.role ?? "user"),
+            content: String(item.content ?? ""),
+            tool_calls: Array.isArray(item.tool_calls) ? item.tool_calls : undefined,
+            tool_call_id: typeof item.tool_call_id === "string" ? item.tool_call_id : undefined,
+          }));
+        const result = await advancedChat.complete(user.id, {
+          sessionId: typeof body.session_id === "string" ? body.session_id : undefined,
+          model: String(body.model ?? ""),
+          messages,
+          userChannelId: Number(body.channel_id ?? body.user_channel_id ?? 0) || undefined,
+          stream: body.stream === true,
+          maxTokens: Number(body.max_tokens ?? 0) || undefined,
+          temperature: typeof body.temperature === "number" ? body.temperature : undefined,
+          reasoningEffort: typeof body.reasoning_effort === "string" ? body.reasoning_effort : undefined,
+        });
+        session.respond(result, "json");
+      } catch (error) {
+        session.status = 502;
+        session.respond({ error: error instanceof Error ? error.message : String(error) }, "json");
+      }
+    });
+
+  ctx
+    .getCore()
     .route("/api/advanced-chat/connectors/register", ctx)
     .methods("POST")
     .action(async (session: Session) => {
