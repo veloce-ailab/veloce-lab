@@ -6,16 +6,47 @@
   },
   "plugins": {
     "@velocelab/core": {},
-    "@velocelab/config": {},
-    "@velocelab/cache": {},
+    "@velocelab/cache": {
+      "enabled": false,
+      "address": "127.0.0.1:6379",
+      "username": "",
+      "password": "",
+      "database": "0",
+      "tls": false
+    },
     "@velocelab/sqlite": { "path": "./data/veloce.db" },
     "@velocelab/model": {},
     "@velocelab/adapters": {},
-    "@velocelab/channel": {},
-    "@velocelab/ratelimit": {},
-    "@velocelab/service": {},
+    "@velocelab/channel": {
+      "enabled": true,
+      "contextMessageCount": "12",
+      "webhookPayloadMaxBytes": "1048576"
+    },
+    "@velocelab/ratelimit": {
+      "enabled": true,
+      "requestsPerMinute": "60",
+      "burst": "10"
+    },
+    "@velocelab/service": {
+      "environment": "development",
+      "dataPath": "./data",
+      "jwtSecret": "",
+      "nodeName": "",
+      "oidcIssuer": "",
+      "oidcClientId": "",
+      "oidcClientSecret": "",
+      "oidcRedirectUrl": "",
+      "bootstrapAdminEmails": "",
+      "bootstrapAdminOidcSubs": ""
+    },
     "@velocelab/middleware": {},
-    "@velocelab/api": {},
+    "@velocelab/api": {
+      "siteName": "Veloce",
+      "baseUrl": "",
+      "edition": "community",
+      "systemMode": "operation",
+      "communityEnabled": true
+    },
     "@velocelab/file": { "root": "./data" },
     "@velocelab/http": {}
   }

@@ -9,7 +9,7 @@ export interface PgsqlConfig {
   password: string;
   database: string;
 }
-export const depend = ["velocelab-core", "config"];
+export const depend = ["velocelab-core"];
 export const provide = ["database"];
 export const config: Schema<PgsqlConfig> = Schema.object({
   host: Schema.string("PostgreSQL host").default("127.0.0.1"),

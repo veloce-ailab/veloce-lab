@@ -1,6 +1,17 @@
-export const depend = ["velocelab-core", "config", "service", "middleware"];
+import { Schema } from "yumeri";
+export const depend = ["velocelab-core", "service", "middleware"];
 export const provide = ["api"];
-export function apply(ctx) {
+export const config = Schema.object({
+    siteName: Schema.string("Site name").default("Veloce"),
+    baseUrl: Schema.string("Public base URL").default(""),
+    edition: Schema.string("Build edition").default("community"),
+    systemMode: Schema.string("System mode").default("operation"),
+    communityEnabled: Schema.boolean("Community features enabled").default(true),
+    rateLimitEnabled: Schema.boolean("Rate limiting enabled").default(true),
+});
+export function apply(ctx, pluginConfig) {
+    const service = ctx.component
+        .service;
     ctx.registerComponent("api", { version: "0.1.0" });
     // Context.route() uses platform path joining; Core.route preserves HTTP slashes on Windows.
     ctx
@@ -8,10 +19,16 @@ export function apply(ctx) {
         .route("/api/public/settings", ctx)
         .methods("GET")
         .action((session) => {
-        session.respond(ctx.component.config.publicSettings(), "json");
+        session.respond({
+            backend_version: "0.1.0",
+            site_name: pluginConfig.siteName,
+            base_url: pluginConfig.baseUrl,
+            edition: pluginConfig.edition,
+            system_mode: pluginConfig.systemMode,
+            community_enabled: pluginConfig.communityEnabled,
+            rate_limit_enabled: pluginConfig.rateLimitEnabled,
+        }, "json");
     });
-    const service = ctx.component
-        .service;
     ctx
         .getCore()
         .route("/api/setup/status", ctx)

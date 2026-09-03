@@ -18,6 +18,7 @@ export interface ServiceRegistry {
         user: User;
         token: string;
     }>;
+    verifyToken(token: string): Promise<User | undefined>;
 }
 declare module "yumeri" {
     interface Components {

@@ -1,8 +1,10 @@
-import { Context } from "yumeri";
+import { Context, Session } from "yumeri";
 export declare const depend: string[];
 export declare const provide: string[];
 export interface MiddlewareService {
     installed(): boolean;
+    authenticate(session: Session): Promise<boolean>;
+    isAdmin(session: Session): boolean;
 }
 declare module "yumeri" {
     interface Components {
