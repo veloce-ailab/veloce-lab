@@ -37,15 +37,17 @@
       "oidcClientSecret": "",
       "oidcRedirectUrl": "",
       "bootstrapAdminEmails": "",
-      "bootstrapAdminOidcSubs": ""
+      "bootstrapAdminOidcSubs": "",
+      "authAgreementMode": "notice",
+      "passwordRegistrationEnabled": false,
+      "passwordHCaptchaEnabled": false
     },
     "@velocelab/middleware": {},
     "@velocelab/api": {
       "siteName": "Veloce",
       "baseUrl": "",
       "edition": "community",
-      "systemMode": "operation",
-      "communityEnabled": true
+      "communityEnabled": true,
     },
     "@velocelab/file": { "root": "./data" },
     "@velocelab/http": {}
