@@ -7,6 +7,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
+  "dependencies": {
+    "@velocelab/model": "workspace:*",
+    "bcryptjs": "^3.0.2"
+  },
   "peerDependencies": {
     "yumeri": "^3.0.0"
   }

@@ -9,7 +9,7 @@ export interface MysqlConfig {
   password: string;
   database: string;
 }
-export const depend = ["velocelab-core", "config"];
+export const depend = ["velocelab-core"];
 export const provide = ["database"];
 export const config: Schema<MysqlConfig> = Schema.object({
   host: Schema.string("MySQL host").default("127.0.0.1"),

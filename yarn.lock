@@ -292,14 +292,8 @@ __metadata:
 "@velocelab/api@workspace:packages/api":
   version: 0.0.0-use.local
   resolution: "@velocelab/api@workspace:packages/api"
-  peerDependencies:
-    yumeri: ^3.0.0
-  languageName: unknown
-  linkType: soft
-
-"@velocelab/app@workspace:packages/app":
-  version: 0.0.0-use.local
-  resolution: "@velocelab/app@workspace:packages/app"
+  dependencies:
+    "@velocelab/service": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -326,14 +320,6 @@ __metadata:
 "@velocelab/channel@workspace:packages/channel":
   version: 0.0.0-use.local
   resolution: "@velocelab/channel@workspace:packages/channel"
-  peerDependencies:
-    yumeri: ^3.0.0
-  languageName: unknown
-  linkType: soft
-
-"@velocelab/config@workspace:packages/config":
-  version: 0.0.0-use.local
-  resolution: "@velocelab/config@workspace:packages/config"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -374,12 +360,14 @@ __metadata:
 "@velocelab/middleware@workspace:packages/middleware":
   version: 0.0.0-use.local
   resolution: "@velocelab/middleware@workspace:packages/middleware"
+  dependencies:
+    "@velocelab/service": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
   linkType: soft
 
-"@velocelab/model@workspace:packages/model":
+"@velocelab/model@workspace:*, @velocelab/model@workspace:packages/model":
   version: 0.0.0-use.local
   resolution: "@velocelab/model@workspace:packages/model"
   peerDependencies:
@@ -422,9 +410,11 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/service@workspace:packages/service":
+"@velocelab/service@workspace:*, @velocelab/service@workspace:packages/service":
   version: 0.0.0-use.local
   resolution: "@velocelab/service@workspace:packages/service"
+  dependencies:
+    "@velocelab/model": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown

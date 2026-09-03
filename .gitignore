@@ -16,3 +16,4 @@ log/
 /.cache/
 node_modules/
 .yarn/install-state.gz
+dist/
