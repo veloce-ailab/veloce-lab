@@ -1,4 +1,4 @@
-export const depend = ["velocelab-core", "config"];
+export const depend = ["velocelab-core"];
 export const provide = ["cache"];
 export function apply(ctx) {
     const store = new Map();

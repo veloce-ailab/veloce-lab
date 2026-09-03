@@ -1,4 +1,4 @@
-export const depend = ["velocelab-core", "config", "database"];
+export const depend = ["velocelab-core", "database"];
 export const provide = ["model"];
 export async function apply(ctx) {
     const db = ctx.component.database;
@@ -12,7 +12,14 @@ export async function apply(ctx) {
         created_at: "timestamp",
         updated_at: "timestamp",
     }, { unique: ["username"] });
+    await db.extend("system_settings", {
+        key: { type: "string", nullable: false },
+        value: { type: "text", nullable: false },
+        created_at: "timestamp",
+        updated_at: "timestamp",
+    }, { unique: ["key"] });
     const users = {
+        findById: (id) => db.selectOne("users", { id }),
         findByIdentifier: (identifier) => db.selectOne("users", {
             $or: [{ username: identifier }, { email: identifier.toLowerCase() }],
         }),
@@ -22,5 +29,25 @@ export async function apply(ctx) {
             return db.create("users", { ...data, created_at: now, updated_at: now });
         },
     };
-    ctx.registerComponent("model", { users });
+    const settings = {
+        async get(key, fallback) {
+            const setting = await db.selectOne("system_settings", { key });
+            return setting?.value ?? fallback;
+        },
+        async set(key, value) {
+            const existing = await db.selectOne("system_settings", { key });
+            const now = new Date().toISOString();
+            if (existing) {
+                await db.update("system_settings", { key }, { value, updated_at: now });
+                return;
+            }
+            await db.create("system_settings", {
+                key,
+                value,
+                created_at: now,
+                updated_at: now,
+            });
+        },
+    };
+    ctx.registerComponent("model", { users, settings });
 }

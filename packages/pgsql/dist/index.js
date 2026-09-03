@@ -1,7 +1,7 @@
 import { Pool } from "pg";
 import { Schema } from "yumeri";
 import { SqlDatabase } from "@velocelab/database-core";
-export const depend = ["velocelab-core", "config"];
+export const depend = ["velocelab-core"];
 export const provide = ["database"];
 export const config = Schema.object({
     host: Schema.string("PostgreSQL host").default("127.0.0.1"),
