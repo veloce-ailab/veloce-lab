@@ -330,6 +330,77 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
       session.respond(created, "json");
     });
 
+  ctx.getCore().route("/api/user/advanced-chat/sessions/:id", ctx).methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    const result = await advancedChat.getSession(user.id, id);
+    if (!result) { session.status = 404; session.respond({ error: "Session not found" }, "json"); return; }
+    session.respond(result, "json");
+  });
+
+  ctx.getCore().route("/api/user/advanced-chat/sessions/:id", ctx).methods("PUT").action(async (session: Session, _params: URLSearchParams, id: string) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    const body = await objectBody(session);
+    const result = await advancedChat.updateSession(user.id, id, {
+      title: typeof body.title === "string" ? body.title : undefined,
+      modelName: typeof body.model_name === "string" ? body.model_name : undefined,
+      agentId: typeof body.agent_id === "string" ? body.agent_id : undefined,
+      userChannelId: Number(body.user_channel_id ?? 0) || undefined,
+    });
+    if (!result) { session.status = 404; session.respond({ error: "Session not found" }, "json"); return; }
+    session.respond(result, "json");
+  });
+
+  ctx.getCore().route("/api/user/advanced-chat/sessions/:id", ctx).methods("DELETE").action(async (session: Session, _params: URLSearchParams, id: string) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    session.respond({ success: await advancedChat.deleteSession(user.id, id) }, "json");
+  });
+
+  ctx.getCore().route("/api/user/advanced-chat/sessions/:id/folder", ctx).methods("PUT").action(async (session: Session, _params: URLSearchParams, id: string) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    const body = await objectBody(session);
+    const result = await advancedChat.updateSession(user.id, id, { folderId: typeof body.folder_id === "string" ? body.folder_id : "" });
+    if (!result) { session.status = 404; session.respond({ error: "Session not found" }, "json"); return; }
+    session.respond(result, "json");
+  });
+
+  ctx.getCore().route("/api/user/advanced-chat/sessions/:id/tasks", ctx).methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    session.respond(await advancedChat.listSessionTasks(user.id, id), "json");
+  });
+
+  ctx.getCore().route("/api/user/advanced-chat/runs/:id", ctx).methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    const result = await advancedChat.getRun(user.id, id);
+    if (!result) { session.status = 404; session.respond({ error: "Run not found" }, "json"); return; }
+    session.respond(result, "json");
+  });
+
+  ctx.getCore().route("/api/user/advanced-chat/runs/:id/stop", ctx).methods("POST").action(async (session: Session, _params: URLSearchParams, id: string) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    const result = await advancedChat.stopRun(user.id, id);
+    if (!result) { session.status = 404; session.respond({ error: "Run not found" }, "json"); return; }
+    session.respond(result, "json");
+  });
+
+  ctx.getCore().route("/api/user/advanced-chat/runs/:id/events", ctx).methods("GET").action(async (session: Session, params: URLSearchParams, id: string) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    session.respond(await advancedChat.listRunEvents(user.id, id, Number(params.get("after") ?? 0) || 0), "json");
+  });
+
+  ctx.getCore().route("/api/user/advanced-chat/runs/:id/connector-tasks/pending", ctx).methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    session.respond(await advancedChat.listPendingConnectorTasks(user.id, id), "json");
+  });
+
   ctx
     .getCore()
     .route("/api/user/advanced-chat/completions", ctx)
