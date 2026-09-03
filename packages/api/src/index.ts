@@ -131,6 +131,18 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     };
   };
 
+  const connectorToken = (session: Session) => {
+    const headers = session.client.req?.headers;
+    const explicit = headers?.["x-connector-token"];
+    const raw = Array.isArray(explicit) ? explicit[0] : explicit;
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+    const authorization = headers?.authorization;
+    const bearer = Array.isArray(authorization) ? authorization[0] : authorization;
+    return typeof bearer === "string" && /^bearer\s+/i.test(bearer)
+      ? bearer.replace(/^bearer\s+/i, "").trim()
+      : "";
+  };
+
   ctx
     .getCore()
     .route("/api/setup", ctx)
@@ -316,6 +328,81 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
       });
       session.status = 201;
       session.respond(created, "json");
+    });
+
+  ctx
+    .getCore()
+    .route("/api/advanced-chat/connectors/register", ctx)
+    .methods("POST")
+    .action(async (session: Session) => {
+      const body = await objectBody(session);
+      const device = await advancedChat.heartbeatConnector(connectorToken(session), {
+        name: typeof body.name === "string" ? body.name : undefined,
+        hostname: typeof body.hostname === "string" ? body.hostname : undefined,
+        os: typeof body.os === "string" ? body.os : undefined,
+        arch: typeof body.arch === "string" ? body.arch : undefined,
+        version: typeof body.version === "string" ? body.version : undefined,
+        mode: typeof body.mode === "string" ? body.mode : undefined,
+        kind: typeof body.kind === "string" ? body.kind : undefined,
+        desktopInstanceId: typeof body.desktop_instance_id === "string" ? body.desktop_instance_id : undefined,
+      });
+      if (!device) {
+        session.status = 401;
+        session.respond({ error: "Invalid connector token" }, "json");
+        return;
+      }
+      const { token_hash: _tokenHash, ...response } = device;
+      session.respond(response, "json");
+    });
+
+  ctx
+    .getCore()
+    .route("/api/advanced-chat/connectors/heartbeat", ctx)
+    .methods("POST")
+    .action(async (session: Session) => {
+      const body = await objectBody(session);
+      const device = await advancedChat.heartbeatConnector(connectorToken(session), {
+        hostname: typeof body.hostname === "string" ? body.hostname : undefined,
+        os: typeof body.os === "string" ? body.os : undefined,
+        arch: typeof body.arch === "string" ? body.arch : undefined,
+        version: typeof body.version === "string" ? body.version : undefined,
+      });
+      if (!device) {
+        session.status = 401;
+        session.respond({ error: "Invalid connector token" }, "json");
+        return;
+      }
+      session.respond({ ok: true, device_id: device.id }, "json");
+    });
+
+  ctx
+    .getCore()
+    .route("/api/advanced-chat/connectors/tasks/next", ctx)
+    .methods("GET")
+    .action(async (session: Session) => {
+      const task = await advancedChat.nextConnectorTask(connectorToken(session));
+      if (!task && !(await advancedChat.authenticateConnector(connectorToken(session)))) {
+        session.status = 401;
+        session.respond({ error: "Invalid connector token" }, "json");
+        return;
+      }
+      session.respond({ task: task ?? null }, "json");
+    });
+
+  ctx
+    .getCore()
+    .route("/api/advanced-chat/connectors/tasks/:id/result", ctx)
+    .methods("POST")
+    .action(async (session: Session, _params: URLSearchParams, id: string) => {
+      const body = await objectBody(session);
+      const saved = await advancedChat.completeConnectorTask(
+        connectorToken(session),
+        id,
+        body.success === true,
+        typeof body.result === "string" ? body.result : "",
+        typeof body.error_message === "string" ? body.error_message : "",
+      );
+      session.respond({ ok: true, ignored: !saved }, "json");
     });
 
   ctx
