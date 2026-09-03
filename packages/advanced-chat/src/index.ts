@@ -6,7 +6,7 @@ import type {
   HarnessSession,
 } from "@velocelab/model";
 
-export const depend = ["velocelab-core", "database", "model", "file"];
+export const depend = ["velocelab-core", "database", "model", "file", "adapters"];
 export const provide = ["advanced-chat"];
 
 export interface AdvancedChatConfig {
@@ -29,6 +29,27 @@ export interface AdvancedChatService {
   heartbeatConnector(token: string, input: ConnectorRegistration): Promise<HarnessConnectorDevice | undefined>;
   nextConnectorTask(token: string): Promise<import("@velocelab/model").HarnessConnectorTask | undefined>;
   completeConnectorTask(token: string, taskId: string, success: boolean, result: string, errorMessage: string): Promise<boolean>;
+  complete(userId: number, input: ChatInput): Promise<ChatResult>;
+}
+
+export interface ChatInput {
+  sessionId?: string;
+  model: string;
+  messages: Array<{ role: string; content: string; tool_calls?: unknown[]; tool_call_id?: string }>;
+  userChannelId?: number;
+  stream?: boolean;
+  maxTokens?: number;
+  temperature?: number;
+  reasoningEffort?: string;
+}
+
+export interface ChatResult {
+  sessionId: string;
+  runId: string;
+  message: { id: string; role: string; content: string; tool_calls?: unknown[] };
+  finishReason: string;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 export interface AgentInput {
@@ -92,6 +113,7 @@ function hashToken(token: string) {
 
 export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const db = ctx.component.database as Database;
+  const adapters = ctx.component.adapters as import("@velocelab/adapters").AdapterRegistry;
   const service: AdvancedChatService = {
     async createConnector(userId, name, remark) {
       if (!pluginConfig.enabled) throw Error("personal Harness is disabled");
@@ -302,6 +324,109 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         updated_at: new Date().toISOString(),
       });
       return changed > 0;
+    },
+    async complete(userId, input) {
+      if (!pluginConfig.enabled) throw Error("personal Harness is disabled");
+      const modelName = input.model.trim();
+      if (!modelName || !input.messages.length) throw Error("model and messages are required");
+      const session = input.sessionId
+        ? await db.selectOne("advanced_chat_sessions", { id: input.sessionId, user_id: userId })
+        : await db.create("advanced_chat_sessions", {
+          id: newID("acs"), user_id: userId, folder_id: "", title: "", run_mode: "assistant", agent_id: "", agent_group_id: "",
+          skill_ids: "[]", mcp_server_ids: "[]", knowledge_base_ids: "[]", connector_device_id: "", connector_workspace_path: "",
+          connector_auto_approve: false, connector_approval_mode: "manual", connector_command_prefixes: "[]", model_name: modelName,
+          user_channel_id: input.userChannelId || null, max_tokens: input.maxTokens || 0, temperature: input.temperature ?? null,
+          reasoning_effort: input.reasoningEffort || "", auto_compress_context: true, disabled_tool_groups: "[]",
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        });
+      if (!session) throw Error("session not found");
+      const sessionId = String(session.id);
+      const now = new Date().toISOString();
+      const prior = await db.select("advanced_chat_messages", { session_id: sessionId, user_id: userId });
+      const userMessage = await db.create("advanced_chat_messages", {
+        id: newID("acm"), session_id: sessionId, user_id: userId, role: "user", content: input.messages[input.messages.length - 1].content,
+        content_parts: "[]", tool_calls: "[]", input_tokens: 0, output_tokens: 0, sort_order: prior.length, created_at: now, updated_at: now,
+      });
+      const runId = newID("acr");
+      await db.create("advanced_chat_runs", {
+        id: runId, session_id: sessionId, user_id: userId, status: "running", assistant_message_id: "", mode: "chat", status_message: "", current_round: 0,
+        error_message: "", cost: 0, tool_calls: 0, tool_call_details: "[]", started_at: now, created_at: now, finished_at: null, updated_at: now,
+      });
+      const channelRows = await db.select("channels", { enabled: true });
+      const configs = await db.select("model_configs", { enabled: true });
+      const requestedChannel = input.userChannelId ? channelRows.filter((row: any) => row.user_channel_id === input.userChannelId) : channelRows;
+      const selected = configs.find((config: any) => String(config.upstream_model_name || "") === modelName && requestedChannel.some((channel: any) => channel.id === config.channel_id && channel.enabled));
+      const channel = selected ? channelRows.find((row: any) => row.id === selected.channel_id) : requestedChannel.find((row: any) => row.enabled);
+      if (!channel) throw Error("no enabled upstream channel");
+      const upstreamModel = selected?.upstream_model_name || modelName;
+      const protocol = adapters.protocolFor(channel.type);
+      const endpoint = protocol === "claude" ? "claude_messages" : protocol === "gemini" ? "gemini_generate" : protocol === "responses" ? "responses" : "chat";
+      const request = adapters.request(channel.type, endpoint, upstreamModel, channel.api_key || "");
+      const payload: Record<string, unknown> = {
+        model: upstreamModel,
+        messages: [...prior.map((message: any) => ({ role: message.role, content: message.content })), ...input.messages],
+        stream: input.stream === true,
+      };
+      if (input.maxTokens) payload.max_tokens = input.maxTokens;
+      if (input.temperature !== undefined) payload.temperature = input.temperature;
+      if (input.reasoningEffort) payload.reasoning_effort = input.reasoningEffort;
+      const prepared = adapters.applyPayload(channel.type, endpoint, payload);
+      const headers = { ...request.headers, ...(input.stream ? { Accept: "text/event-stream" } : {}) };
+      const response = await fetch(`${String(channel.base_url).replace(/\\\/$/, "")}${request.path || ""}`, { method: "POST", headers, body: JSON.stringify(prepared) });
+      const text = await response.text();
+      if (!response.ok) {
+        await db.update("advanced_chat_runs", { id: runId }, { status: "failed", error_message: text.slice(0, 10000), finished_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+        throw Error(text || `upstream request failed (${response.status})`);
+      }
+      let data: any;
+      if (input.stream && text.includes("data:")) {
+        const chunks = text.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).filter((line) => line && line !== "[DONE]");
+        const parsed = chunks.map((chunk) => { try { return JSON.parse(chunk); } catch { return {}; } });
+        const content = parsed.map((item) => item.choices?.[0]?.delta?.content || item.delta?.text || item.candidates?.[0]?.content?.parts?.map((part: any) => part.text || "").join("") || "").join("");
+        data = { choices: [{ message: { content }, finish_reason: "stop" }] };
+      } else {
+        try { data = JSON.parse(text); } catch { data = {}; }
+      }
+      const content = protocol === "claude"
+        ? String(data.content?.find((part: any) => part.type === "text")?.text || "")
+        : protocol === "gemini"
+          ? String(data.candidates?.[0]?.content?.parts?.map((part: any) => part.text || "").join("") || "")
+          : String(data.choices?.[0]?.message?.content || data.output_text || "");
+      const toolCalls = data.choices?.[0]?.message?.tool_calls || [];
+      const finishReason = String(data.choices?.[0]?.finish_reason || "stop");
+      const assistant = await db.create("advanced_chat_messages", {
+        id: newID("acm"),
+        session_id: sessionId,
+        user_id: userId,
+        role: "assistant",
+        content,
+        content_parts: "[]",
+        tool_calls: JSON.stringify(toolCalls),
+        input_tokens: Number(data.usage?.prompt_tokens || 0),
+        output_tokens: Number(data.usage?.completion_tokens || 0),
+        sort_order: prior.length + 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      await db.create("advanced_chat_run_events", {
+        run_id: runId,
+        session_id: sessionId,
+        user_id: userId,
+        seq: 1,
+        event: "completed",
+        payload: JSON.stringify({ content, finish_reason: finishReason, tool_calls: toolCalls }),
+        created_at: new Date().toISOString(),
+      });
+      await db.update("advanced_chat_runs", { id: runId }, { status: "completed", assistant_message_id: assistant.id, finished_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      await db.update("advanced_chat_sessions", { id: sessionId }, { updated_at: new Date().toISOString(), model_name: modelName });
+      return {
+        sessionId,
+        runId,
+        message: { id: String(assistant.id), role: "assistant", content, tool_calls: toolCalls },
+        finishReason,
+        inputTokens: Number(data.usage?.prompt_tokens || 0),
+        outputTokens: Number(data.usage?.completion_tokens || 0),
+      };
     },
   };
   ctx.registerComponent("advanced-chat", service);
