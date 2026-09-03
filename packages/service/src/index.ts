@@ -1,5 +1,4 @@
 import {
-  createHash,
   createHmac,
   randomBytes,
   timingSafeEqual,
@@ -36,6 +35,9 @@ export interface ServiceConfig {
   oidcRedirectUrl: string;
   bootstrapAdminEmails: string;
   bootstrapAdminOidcSubs: string;
+  authAgreementMode: string;
+  passwordRegistrationEnabled: boolean;
+  passwordHCaptchaEnabled: boolean;
 }
 export interface ServiceRegistry {
   names(): string[];
@@ -46,8 +48,7 @@ export interface ServiceRegistry {
     password: string,
   ): Promise<{ user: User; token: string }>;
   verifyToken(token: string): Promise<User | undefined>;
-  createApiKey(userId: number, name: string): Promise<{ apiKey: string; record: import("@velocelab/model").APIKey }>;
-  findUserByApiKey(raw: string): Promise<User | undefined>;
+  publicConfiguration(): Pick<ServiceConfig, "authAgreementMode" | "passwordRegistrationEnabled" | "passwordHCaptchaEnabled">;
 }
 
 declare module "yumeri" {
@@ -66,6 +67,9 @@ export const config: Schema<ServiceConfig> = Schema.object({
   oidcRedirectUrl: Schema.string("OIDC redirect URL").default(""),
   bootstrapAdminEmails: Schema.string("Bootstrap admin emails").default(""),
   bootstrapAdminOidcSubs: Schema.string("Bootstrap admin OIDC subjects").default(""),
+  authAgreementMode: Schema.string("Authentication agreement mode").default("notice"),
+  passwordRegistrationEnabled: Schema.boolean("Enable password registration").default(false),
+  passwordHCaptchaEnabled: Schema.boolean("Require hCaptcha for password authentication").default(false),
 });
 
 const placeholderJwtSecret = "change-me-please";
@@ -99,18 +103,6 @@ async function resolveJwtSecret(config: ServiceConfig) {
 
 function hashPassword(password: string) {
   return bcrypt.hashSync(password, bcrypt.genSaltSync(10));
-}
-
-function generateApiKey() {
-  return `sk-${randomBytes(32).toString("base64url")}`;
-}
-
-function hashApiKey(raw: string) {
-  return createHash("sha256").update(raw).digest("hex");
-}
-
-function apiKeyPrefix(raw: string) {
-  return raw.length <= 12 ? raw : `${raw.slice(0, 8)}...${raw.slice(-4)}`;
 }
 
 function generateReferralCode() {
@@ -207,7 +199,6 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
         avatar_url: "",
         balance: "0",
         group_id: defaultGroup.id ?? 0,
-        api_key: generateApiKey(),
         referral_code: generateReferralCode(),
         referrer_id: null,
       });
@@ -225,34 +216,11 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
       const userId = verifyJwt(authToken, jwtSecret);
       return userId ? model.users.findById(userId) : undefined;
     },
-    async createApiKey(userId, name) {
-      const user = await model.users.findById(userId);
-      if (!user) throw Error("user not found");
-      const apiKey = generateApiKey();
-      const record = await model.apiKeys.create({
-        user_id: userId,
-        name: name.trim() || "API key",
-        api_key: apiKey,
-        key_hash: hashApiKey(apiKey),
-        key_prefix: apiKeyPrefix(apiKey),
-        allowed_models: "",
-        allowed_user_channels: "",
-        allowed_ips: "",
-        quota_limit: "0",
-        enabled: true,
-        last_used_at: null,
-        usage_reset_at: null,
-      });
-      return { apiKey, record };
-    },
-    async findUserByApiKey(raw) {
-      const normalized = raw.trim();
-      if (!normalized) return undefined;
-      const record = await model.apiKeys.findByRaw(normalized) ?? await model.apiKeys.findByHash(hashApiKey(normalized));
-      if (!record?.enabled) return undefined;
-      await model.apiKeys.markUsed(record.id ?? 0);
-      return model.users.findById(record.user_id);
-    },
+    publicConfiguration: () => ({
+      authAgreementMode: cfg.authAgreementMode,
+      passwordRegistrationEnabled: cfg.passwordRegistrationEnabled,
+      passwordHCaptchaEnabled: cfg.passwordHCaptchaEnabled,
+    }),
   };
   ctx.registerComponent("service", service);
 }

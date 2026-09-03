@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { Context, Database } from "yumeri";
 
 export interface User {
@@ -11,7 +12,6 @@ export interface User {
   avatar_url: string;
   balance: string;
   group_id: number;
-  api_key: string;
   referral_code?: string | null;
   referrer_id?: number | null;
   is_admin: boolean;
@@ -39,24 +39,6 @@ export interface UserGroupMembership {
   user_id: number;
   group_id: number;
   expires_at?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface APIKey {
-  id?: number;
-  user_id: number;
-  name: string;
-  api_key: string;
-  key_hash: string;
-  key_prefix: string;
-  allowed_models: string;
-  allowed_user_channels: string;
-  allowed_ips: string;
-  quota_limit: string;
-  enabled: boolean;
-  last_used_at?: string | null;
-  usage_reset_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -525,17 +507,30 @@ export interface ModelService {
     findByIdentifier(identifier: string): Promise<User | undefined>;
     findAdmin(): Promise<User | undefined>;
     create(user: Omit<User, "id" | "created_at" | "updated_at">): Promise<User>;
+    update(id: number, data: Partial<User>): Promise<User | undefined>;
   };
   groups: {
     findByName(name: string): Promise<Group | undefined>;
     create(group: Omit<Group, "id" | "created_at" | "updated_at">): Promise<Group>;
     ensureDefault(): Promise<Group>;
   };
-  apiKeys: {
-    findByRaw(apiKey: string): Promise<APIKey | undefined>;
-    findByHash(keyHash: string): Promise<APIKey | undefined>;
-    create(apiKey: Omit<APIKey, "id" | "created_at" | "updated_at">): Promise<APIKey>;
-    markUsed(id: number): Promise<void>;
+  userChannels: {
+    findById(id: number): Promise<UserChannel | undefined>;
+    ensureDefault(): Promise<UserChannel>;
+  };
+  models: {
+    findByName(modelName: string): Promise<Model | undefined>;
+    list(): Promise<Model[]>;
+    create(data: Omit<Model, "id" | "created_at" | "updated_at">): Promise<Model>;
+    update(id: number, data: Partial<Model>): Promise<Model | undefined>;
+    delete(id: number): Promise<void>;
+  };
+  channels: {
+    list(): Promise<Channel[]>;
+    findById(id: number): Promise<Channel | undefined>;
+    create(data: Omit<Channel, "id" | "created_at" | "updated_at">): Promise<Channel>;
+    update(id: number, data: Partial<Channel>): Promise<Channel | undefined>;
+    delete(id: number): Promise<void>;
   };
 }
 
@@ -545,7 +540,6 @@ declare module "yumeri" {
     user_avatars: UserAvatar;
     groups: Group;
     user_group_memberships: UserGroupMembership;
-    api_keys: APIKey;
     check_in_records: CheckInRecord;
     payment_orders: PaymentOrder;
     wallet_transactions: WalletTransaction;
@@ -601,14 +595,13 @@ export async function apply(ctx: Context) {
       avatar_url: { type: "string", initial: "" },
       balance: { type: "decimal", initial: 0 },
       group_id: { type: "integer", initial: 0 },
-      api_key: { type: "string", initial: "" },
       referral_code: "string",
       referrer_id: "integer",
       is_admin: { type: "boolean", nullable: false },
       created_at: "timestamp",
       updated_at: "timestamp",
     },
-    { unique: ["username", "email", "phone", "oidc_sub", "api_key", "referral_code"] },
+    { unique: ["username", "email", "phone", "oidc_sub", "referral_code"] },
   );
 
   await db.extend(
@@ -645,28 +638,6 @@ export async function apply(ctx: Context) {
       updated_at: "timestamp",
     },
     { unique: [["user_id", "group_id"]] },
-  );
-
-  await db.extend(
-    "api_keys",
-    {
-      id: { type: "integer", autoIncrement: true },
-      user_id: { type: "integer", nullable: false },
-      name: { type: "string", nullable: false },
-      api_key: "string",
-      key_hash: { type: "string", nullable: false },
-      key_prefix: "string",
-      allowed_models: "text",
-      allowed_user_channels: "text",
-      allowed_ips: "text",
-      quota_limit: { type: "decimal", initial: 0 },
-      enabled: { type: "boolean", initial: true },
-      last_used_at: "timestamp",
-      usage_reset_at: "timestamp",
-      created_at: "timestamp",
-      updated_at: "timestamp",
-    },
-    { unique: ["key_hash"] },
   );
 
   await db.extend(
@@ -1208,12 +1179,16 @@ export async function apply(ctx: Context) {
   });
 
   const users = {
-    findById: (id: number) => db.selectOne("users", { id } as any),
+    findById: (id: number) => {
+      return db.selectOne("users", { id } as any);
+    },
     findByIdentifier: (identifier: string) =>
       db.selectOne("users", {
         $or: [{ username: identifier }, { email: identifier.toLowerCase() }],
       } as any),
-    findAdmin: () => db.selectOne("users", { is_admin: true } as any),
+    findAdmin: () => {
+      return db.selectOne("users", { is_admin: true } as any);
+    },
     async create(data: Omit<User, "id" | "created_at" | "updated_at">) {
       const existingUsers = await db.select("users", {});
       if (existingUsers.length > 0) {
@@ -1234,6 +1209,10 @@ export async function apply(ctx: Context) {
       });
       return user;
     },
+    async update(id: number, data: Partial<User>) {
+      await db.update("users", { id } as any, { ...data, updated_at: new Date().toISOString() } as any);
+      return db.selectOne("users", { id } as any);
+    },
   };
 
   const groups = {
@@ -1249,15 +1228,68 @@ export async function apply(ctx: Context) {
     },
   };
 
-  const apiKeys = {
-    findByRaw: (api_key: string) => db.selectOne("api_keys", { api_key } as any),
-    findByHash: (key_hash: string) => db.selectOne("api_keys", { key_hash } as any),
-    async create(data: Omit<APIKey, "id" | "created_at" | "updated_at">) {
-      const now = new Date().toISOString();
-      return db.create("api_keys", { ...data, created_at: now, updated_at: now });
+  const userChannels = {
+    findById: (id: number) => {
+      return db.selectOne("user_channels", { id } as any);
     },
-    async markUsed(id: number) {
-      await db.update("api_keys", { id } as any, { last_used_at: new Date().toISOString() } as any);
+    async ensureDefault() {
+      const existing = await db.selectOne("user_channels", { name: "default" } as any);
+      if (existing) return existing;
+      const now = new Date().toISOString();
+      return db.create("user_channels", {
+        name: "default",
+        description: "Default user-facing channel",
+        multiplier: "1",
+        routing_algorithm: "priority",
+        enabled: true,
+        rate_limit_enabled: false,
+        rate_limit_requests_per_minute: 0,
+        rate_limit_burst: 0,
+        created_at: now,
+        updated_at: now,
+      });
+    },
+  };
+
+  const models = {
+    findByName: (model_name: string) => {
+      return db.selectOne("models", { model_name } as any);
+    },
+    async list() {
+      const rows = await db.select("models", {});
+      return rows.sort((left, right) => left.model_name.localeCompare(right.model_name));
+    },
+    async create(data: Omit<Model, "id" | "created_at" | "updated_at">) {
+      const now = new Date().toISOString();
+      return db.create("models", { ...data, created_at: now, updated_at: now });
+    },
+    async update(id: number, data: Partial<Model>) {
+      await db.update("models", { id } as any, { ...data, updated_at: new Date().toISOString() } as any);
+      return db.selectOne("models", { id } as any);
+    },
+    async delete(id: number) {
+      await db.remove("models", { id } as any);
+    },
+  };
+
+  const channels = {
+    async list() {
+      const rows = await db.select("channels", {});
+      return rows.sort((left, right) => left.name.localeCompare(right.name));
+    },
+    findById: (id: number) => {
+      return db.selectOne("channels", { id } as any);
+    },
+    async create(data: Omit<Channel, "id" | "created_at" | "updated_at">) {
+      const now = new Date().toISOString();
+      return db.create("channels", { ...data, created_at: now, updated_at: now });
+    },
+    async update(id: number, data: Partial<Channel>) {
+      await db.update("channels", { id } as any, { ...data, updated_at: new Date().toISOString() } as any);
+      return db.selectOne("channels", { id } as any);
+    },
+    async delete(id: number) {
+      await db.remove("channels", { id } as any);
     },
   };
 
@@ -1285,5 +1317,34 @@ export async function apply(ctx: Context) {
     });
   }
 
-  ctx.registerComponent("model", { users, groups, apiKeys });
+  for (const user of existingUsers) {
+    if (user.oidc_sub === "") {
+      await db.update("users", { id: user.id } as any, { oidc_sub: null } as any);
+    }
+    if (!user.referral_code?.trim()) {
+      let referralCode = "";
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        const candidate = randomBytes(8).toString("base64")
+          .replaceAll("=", "")
+          .replaceAll("+", "A")
+          .replaceAll("/", "B")
+          .slice(0, 13)
+          .toUpperCase();
+        if (!(await db.selectOne("users", { referral_code: candidate } as any))) {
+          referralCode = candidate;
+          break;
+        }
+      }
+      if (!referralCode) throw Error("failed to create unique referral code");
+      await db.update("users", { id: user.id } as any, { referral_code: referralCode } as any);
+    }
+  }
+
+  const defaultUserChannel = await userChannels.ensureDefault();
+  const unassignedChannels = await db.select("channels", { user_channel_id: null } as any);
+  for (const channel of unassignedChannels) {
+    await db.update("channels", { id: channel.id } as any, { user_channel_id: defaultUserChannel.id ?? 0 } as any);
+  }
+
+  ctx.registerComponent("model", { users, groups, userChannels, models, channels });
 }
