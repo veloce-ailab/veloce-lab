@@ -23,6 +23,14 @@ export interface AdvancedChatService {
   deleteAgent(userId: number, id: string): Promise<void>;
   listSessions(userId: number): Promise<HarnessSession[]>;
   createSession(userId: number, input: SessionInput): Promise<HarnessSession>;
+  getSession(userId: number, sessionId: string): Promise<Record<string, unknown> | undefined>;
+  updateSession(userId: number, sessionId: string, input: Partial<SessionInput> & { folderId?: string }): Promise<Record<string, unknown> | undefined>;
+  deleteSession(userId: number, sessionId: string): Promise<boolean>;
+  getRun(userId: number, runId: string): Promise<Record<string, unknown> | undefined>;
+  stopRun(userId: number, runId: string): Promise<Record<string, unknown> | undefined>;
+  listRunEvents(userId: number, runId: string, after: number): Promise<Record<string, unknown>[]>;
+  listSessionTasks(userId: number, sessionId: string): Promise<Record<string, unknown>[]>;
+  listPendingConnectorTasks(userId: number, runId: string): Promise<Record<string, unknown>[]>;
   listScheduledTasks(userId: number): Promise<import("@velocelab/model").AdvancedChatScheduledTask[]>;
   createScheduledTask(userId: number, input: ScheduledTaskInput): Promise<import("@velocelab/model").AdvancedChatScheduledTask>;
   authenticateConnector(token: string): Promise<HarnessConnectorDevice | undefined>;
@@ -111,6 +119,19 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function decodeList(value: unknown) {
+  try {
+    const parsed = JSON.parse(String(value || "[]"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function decodeObject(value: unknown) {
+  try { return JSON.parse(String(value || "{}")); } catch { return {}; }
+}
+
 export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const db = ctx.component.database as Database;
   const adapters = ctx.component.adapters as import("@velocelab/adapters").AdapterRegistry;
@@ -191,7 +212,8 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
     },
     async listSessions(userId) {
       const sessions = await db.select("advanced_chat_sessions", { user_id: userId });
-      return sessions.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+      const hydrated = await Promise.all(sessions.map(async (session) => service.getSession(userId, session.id)));
+      return hydrated.filter(Boolean) as unknown as HarnessSession[];
     },
     async createSession(userId, input) {
       const now = new Date().toISOString();
@@ -221,6 +243,69 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         created_at: now,
         updated_at: now,
       });
+    },
+    async getSession(userId, sessionId) {
+      const session = await db.selectOne("advanced_chat_sessions", { id: sessionId, user_id: userId });
+      if (!session) return undefined;
+      const messages = await db.select("advanced_chat_messages", { session_id: sessionId, user_id: userId });
+      const runs = await db.select("advanced_chat_runs", { session_id: sessionId, user_id: userId });
+      const latestRun = runs.sort((left, right) => right.created_at.localeCompare(left.created_at))[0];
+      return {
+        ...session,
+        skill_ids: decodeList(session.skill_ids),
+        mcp_server_ids: decodeList(session.mcp_server_ids),
+        knowledge_base_ids: decodeList(session.knowledge_base_ids),
+        connector_command_prefixes: decodeList(session.connector_command_prefixes),
+        disabled_tool_groups: decodeList(session.disabled_tool_groups),
+        messages: messages.sort((left, right) => left.sort_order - right.sort_order).map((message) => ({ ...message, content_parts: decodeList(message.content_parts), tool_calls: decodeList(message.tool_calls) })),
+        latest_run: latestRun ? { ...latestRun, tool_call_details: decodeList(latestRun.tool_call_details) } : undefined,
+      };
+    },
+    async updateSession(userId, sessionId, input) {
+      const existing = await db.selectOne("advanced_chat_sessions", { id: sessionId, user_id: userId });
+      if (!existing) return undefined;
+      await db.update("advanced_chat_sessions", { id: sessionId, user_id: userId }, {
+        ...(input.title !== undefined ? { title: input.title.trim().slice(0, 160) } : {}),
+        ...(input.modelName !== undefined ? { model_name: input.modelName.trim() } : {}),
+        ...(input.userChannelId !== undefined ? { user_channel_id: input.userChannelId || null } : {}),
+        ...(input.agentId !== undefined ? { agent_id: input.agentId } : {}),
+        ...(input.folderId !== undefined ? { folder_id: input.folderId } : {}),
+        updated_at: new Date().toISOString(),
+      });
+      return service.getSession(userId, sessionId);
+    },
+    async deleteSession(userId, sessionId) {
+      const runs = await db.select("advanced_chat_runs", { session_id: sessionId, user_id: userId });
+      for (const run of runs) await db.remove("advanced_chat_run_events", { run_id: run.id, user_id: userId });
+      await db.remove("advanced_chat_runs", { session_id: sessionId, user_id: userId });
+      await db.remove("advanced_chat_messages", { session_id: sessionId, user_id: userId });
+      await db.remove("advanced_chat_sessions", { id: sessionId, user_id: userId });
+      return true;
+    },
+    async getRun(userId, runId) {
+      const run = await db.selectOne("advanced_chat_runs", { id: runId, user_id: userId });
+      return run ? { ...run, tool_call_details: decodeList(run.tool_call_details) } : undefined;
+    },
+    async stopRun(userId, runId) {
+      const existing = await db.selectOne("advanced_chat_runs", { id: runId, user_id: userId });
+      if (!existing) return undefined;
+      if (["completed", "failed", "cancelled"].includes(existing.status)) return service.getRun(userId, runId);
+      const now = new Date().toISOString();
+      await db.update("advanced_chat_runs", { id: runId, user_id: userId }, { status: "cancelled", status_message: "cancelled", finished_at: now, updated_at: now });
+      await db.create("advanced_chat_run_events", { run_id: runId, session_id: existing.session_id, user_id: userId, seq: 999999, event: "cancelled", payload: "{}", created_at: now });
+      return service.getRun(userId, runId);
+    },
+    async listRunEvents(userId, runId, after) {
+      const events = await db.select("advanced_chat_run_events", { run_id: runId, user_id: userId });
+      return events.filter((event) => event.seq > after).sort((left, right) => left.seq - right.seq).slice(0, 200).map((event) => ({ ...event, payload: decodeObject(event.payload) }));
+    },
+    async listSessionTasks(userId, sessionId) {
+      const tasks = await db.select("advanced_chat_session_tasks", { user_id: userId, session_id: sessionId });
+      return tasks.sort((left, right) => left.position - right.position);
+    },
+    async listPendingConnectorTasks(userId, runId) {
+      const tasks = await db.select("advanced_chat_connector_tasks", { user_id: userId, run_id: runId });
+      return tasks.filter((task) => ["queued", "pending_approval", "running"].includes(task.status)).sort((left, right) => left.created_at.localeCompare(right.created_at));
     },
     async listScheduledTasks(userId) {
       const tasks = await db.select("advanced_chat_scheduled_tasks", { user_id: userId });
