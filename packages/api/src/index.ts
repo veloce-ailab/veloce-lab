@@ -1,6 +1,6 @@
 import { Context, Schema, Session } from "yumeri";
 
-export const depend = ["velocelab-core", "model", "service", "middleware", "ratelimit"];
+export const depend = ["velocelab-core", "model", "service", "middleware", "ratelimit", "advanced-chat"];
 export const provide = ["api"];
 
 export interface ApiConfig {
@@ -35,6 +35,7 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
   const middleware = ctx.component
     .middleware as import("@velocelab/middleware").MiddlewareService;
   const model = ctx.component.model as import("@velocelab/model").ModelService;
+  const advancedChat = ctx.component["advanced-chat"] as import("@velocelab/advanced-chat").AdvancedChatService;
 
   ctx.registerComponent("api", { version: "0.1.0" });
 
@@ -113,6 +114,23 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     return undefined;
   };
 
+  const objectBody = async (session: Session) => {
+    return (await session.parseRequestBody()) as Record<string, unknown>;
+  };
+
+  const stringList = (value: unknown) => {
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string")
+      : [];
+  };
+
+  const agentResponse = (agent: import("@velocelab/model").HarnessAgent) => {
+    return {
+      ...agent,
+      id: agent.stable_id || String(agent.id ?? ""),
+    };
+  };
+
   ctx
     .getCore()
     .route("/api/setup", ctx)
@@ -163,6 +181,179 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
       if (!(await requireAdmin(session))) return;
       const models = await model.models.list();
       session.respond(models, "json");
+    });
+
+  ctx
+    .getCore()
+    .route("/api/user/advanced-chat/devices", ctx)
+    .methods("GET")
+    .action(async (session: Session) => {
+      const user = await currentUser(session);
+      if (!user?.id) return;
+      const devices = await advancedChat.listConnectors(user.id);
+      session.respond(devices.map(({ token_hash: _tokenHash, ...device }) => device), "json");
+    });
+
+  ctx
+    .getCore()
+    .route("/api/user/advanced-chat/devices/token", ctx)
+    .methods("POST")
+    .action(async (session: Session) => {
+      const user = await currentUser(session);
+      if (!user?.id) return;
+      try {
+        const body = await session.parseRequestBody();
+        const created = await advancedChat.createConnector(user.id, value(body, "name"), value(body, "remark"));
+        const { token_hash: _tokenHash, ...device } = created.device;
+        session.respond({ ...device, token: created.token }, "json");
+      } catch (error) {
+        session.status = 400;
+        session.respond({ error: error instanceof Error ? error.message : String(error) }, "json");
+      }
+    });
+
+  ctx
+    .getCore()
+    .route("/api/user/advanced-chat/agents", ctx)
+    .methods("GET")
+    .action(async (session: Session) => {
+      const user = await currentUser(session);
+      if (!user?.id) return;
+      const agents = await advancedChat.listAgents(user.id);
+      session.respond(agents.map(agentResponse), "json");
+    });
+
+  ctx
+    .getCore()
+    .route("/api/user/advanced-chat/agents", ctx)
+    .methods("POST")
+    .action(async (session: Session) => {
+      const user = await currentUser(session);
+      if (!user?.id) return;
+      try {
+        const body = await objectBody(session);
+        const agent = await advancedChat.createAgent(user.id, {
+          name: String(body.name ?? ""),
+          prompt: String(body.prompt ?? ""),
+          defaultModel: String(body.default_model ?? ""),
+          userChannelId: Number(body.user_channel_id ?? 0) || undefined,
+          stream: body.stream === true,
+          skillIds: stringList(body.skill_ids),
+          mcpServerIds: stringList(body.mcp_server_ids),
+        });
+        session.status = 201;
+        session.respond(agentResponse(agent), "json");
+      } catch (error) {
+        session.status = 400;
+        session.respond({ error: error instanceof Error ? error.message : String(error) }, "json");
+      }
+    });
+
+  ctx
+    .getCore()
+    .route("/api/user/advanced-chat/agents/:id", ctx)
+    .methods("PUT")
+    .action(async (session: Session, _params: URLSearchParams, id: string) => {
+      const user = await currentUser(session);
+      if (!user?.id) return;
+      try {
+        const body = await objectBody(session);
+        const agent = await advancedChat.updateAgent(user.id, id, {
+          name: String(body.name ?? ""),
+          prompt: String(body.prompt ?? ""),
+          defaultModel: String(body.default_model ?? ""),
+          userChannelId: Number(body.user_channel_id ?? 0) || undefined,
+          stream: body.stream === true,
+          skillIds: stringList(body.skill_ids),
+          mcpServerIds: stringList(body.mcp_server_ids),
+        });
+        if (!agent) {
+          session.status = 404;
+          session.respond({ error: "Agent not found" }, "json");
+          return;
+        }
+        session.respond(agentResponse(agent), "json");
+      } catch (error) {
+        session.status = 400;
+        session.respond({ error: error instanceof Error ? error.message : String(error) }, "json");
+      }
+    });
+
+  ctx
+    .getCore()
+    .route("/api/user/advanced-chat/agents/:id", ctx)
+    .methods("DELETE")
+    .action(async (session: Session, _params: URLSearchParams, id: string) => {
+      const user = await currentUser(session);
+      if (!user?.id) return;
+      await advancedChat.deleteAgent(user.id, id);
+      session.respond({ success: true }, "json");
+    });
+
+  ctx
+    .getCore()
+    .route("/api/user/advanced-chat/sessions", ctx)
+    .methods("GET")
+    .action(async (session: Session) => {
+      const user = await currentUser(session);
+      if (!user?.id) return;
+      session.respond(await advancedChat.listSessions(user.id), "json");
+    });
+
+  ctx
+    .getCore()
+    .route("/api/user/advanced-chat/sessions", ctx)
+    .methods("POST")
+    .action(async (session: Session) => {
+      const user = await currentUser(session);
+      if (!user?.id) return;
+      const body = await objectBody(session);
+      const created = await advancedChat.createSession(user.id, {
+        agentId: typeof body.agent_id === "string" ? body.agent_id : undefined,
+        title: typeof body.title === "string" ? body.title : undefined,
+        modelName: typeof body.model_name === "string" ? body.model_name : undefined,
+        userChannelId: Number(body.user_channel_id ?? 0) || undefined,
+      });
+      session.status = 201;
+      session.respond(created, "json");
+    });
+
+  ctx
+    .getCore()
+    .route("/api/user/advanced-chat/scheduled-tasks", ctx)
+    .methods("GET")
+    .action(async (session: Session) => {
+      const user = await currentUser(session);
+      if (!user?.id) return;
+      session.respond(await advancedChat.listScheduledTasks(user.id), "json");
+    });
+
+  ctx
+    .getCore()
+    .route("/api/user/advanced-chat/scheduled-tasks", ctx)
+    .methods("POST")
+    .action(async (session: Session) => {
+      const user = await currentUser(session);
+      if (!user?.id) return;
+      try {
+        const body = await objectBody(session);
+        const task = await advancedChat.createScheduledTask(user.id, {
+          name: String(body.name ?? ""),
+          description: String(body.description ?? ""),
+          agentId: String(body.agent_id ?? ""),
+          scheduleType: String(body.schedule_type ?? "manual"),
+          message: String(body.message ?? ""),
+          modelName: String(body.model_name ?? ""),
+          userChannelId: Number(body.user_channel_id ?? 0) || undefined,
+          intervalSeconds: Number(body.interval_seconds ?? 0) || undefined,
+          runAt: typeof body.run_at === "string" ? body.run_at : undefined,
+        });
+        session.status = 201;
+        session.respond(task, "json");
+      } catch (error) {
+        session.status = 400;
+        session.respond({ error: error instanceof Error ? error.message : String(error) }, "json");
+      }
     });
 
   ctx
