@@ -25,6 +25,10 @@ export interface AdvancedChatService {
   createSession(userId: number, input: SessionInput): Promise<HarnessSession>;
   listScheduledTasks(userId: number): Promise<import("@velocelab/model").AdvancedChatScheduledTask[]>;
   createScheduledTask(userId: number, input: ScheduledTaskInput): Promise<import("@velocelab/model").AdvancedChatScheduledTask>;
+  authenticateConnector(token: string): Promise<HarnessConnectorDevice | undefined>;
+  heartbeatConnector(token: string, input: ConnectorRegistration): Promise<HarnessConnectorDevice | undefined>;
+  nextConnectorTask(token: string): Promise<import("@velocelab/model").HarnessConnectorTask | undefined>;
+  completeConnectorTask(token: string, taskId: string, success: boolean, result: string, errorMessage: string): Promise<boolean>;
 }
 
 export interface AgentInput {
@@ -54,6 +58,17 @@ export interface ScheduledTaskInput {
   userChannelId?: number;
   intervalSeconds?: number;
   runAt?: string;
+}
+
+export interface ConnectorRegistration {
+  name?: string;
+  hostname?: string;
+  os?: string;
+  arch?: string;
+  version?: string;
+  mode?: string;
+  kind?: string;
+  desktopInstanceId?: string;
 }
 
 export const config: Schema<AdvancedChatConfig> = Schema.object({
@@ -228,6 +243,65 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         created_at: now,
         updated_at: now,
       });
+    },
+    async authenticateConnector(token) {
+      const normalized = token.trim();
+      if (!normalized) return undefined;
+      return db.selectOne("advanced_chat_connector_devices", { token_hash: hashToken(normalized) });
+    },
+    async heartbeatConnector(token, input) {
+      const device = await service.authenticateConnector(token);
+      if (!device) return undefined;
+      const now = new Date().toISOString();
+      await db.update("advanced_chat_connector_devices", { id: device.id }, {
+        name: input.name?.trim().slice(0, 120) || device.name,
+        hostname: input.hostname?.trim().slice(0, 120) || "",
+        os: input.os?.trim().slice(0, 40) || "",
+        arch: input.arch?.trim().slice(0, 40) || "",
+        version: input.version?.trim().slice(0, 80) || "",
+        mode: input.mode?.trim() || "platform",
+        kind: input.kind?.trim() || device.kind,
+        desktop_instance_id: input.desktopInstanceId?.trim() || "",
+        status: "online",
+        last_seen_at: now,
+        updated_at: now,
+      });
+      return db.selectOne("advanced_chat_connector_devices", { id: device.id });
+    },
+    async nextConnectorTask(token) {
+      const device = await service.authenticateConnector(token);
+      if (!device) return undefined;
+      const task = await db.selectOne("advanced_chat_connector_tasks", {
+        device_id: device.id,
+        user_id: device.user_id,
+        status: "queued",
+      });
+      if (!task) return undefined;
+      const now = new Date().toISOString();
+      const changed = await db.update("advanced_chat_connector_tasks", { id: task.id, status: "queued" }, {
+        status: "running",
+        started_at: now,
+        updated_at: now,
+      });
+      if (!changed) return undefined;
+      return db.selectOne("advanced_chat_connector_tasks", { id: task.id });
+    },
+    async completeConnectorTask(token, taskId, success, result, errorMessage) {
+      const device = await service.authenticateConnector(token);
+      if (!device || !taskId.trim()) return false;
+      const changed = await db.update("advanced_chat_connector_tasks", {
+        id: taskId,
+        device_id: device.id,
+        user_id: device.user_id,
+        status: "running",
+      }, {
+        status: success ? "completed" : "failed",
+        result: result.slice(0, 1_000_000),
+        error_message: errorMessage.slice(0, 100_000),
+        finished_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      return changed > 0;
     },
   };
   ctx.registerComponent("advanced-chat", service);
