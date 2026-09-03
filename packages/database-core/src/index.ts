@@ -60,8 +60,12 @@ function where(query: Query<any>, params: unknown[]): string {
         parts.push(`(${expressions.join(key === "$or" ? " OR " : " AND ")})`);
       continue;
     }
-    if (value === undefined || value === null) continue;
     const column = identifier(key);
+    if (value === undefined) continue;
+    if (value === null) {
+      parts.push(`${column} IS NULL`);
+      continue;
+    }
     if (typeof value === "object" && !Array.isArray(value)) {
       for (const [operator, operand] of Object.entries(
         value as Record<string, unknown>,
