@@ -30,6 +30,10 @@ export interface AdvancedChatService {
   stopRun(userId: number, runId: string): Promise<Record<string, unknown> | undefined>;
   listRunEvents(userId: number, runId: string, after: number): Promise<Record<string, unknown>[]>;
   listSessionTasks(userId: number, sessionId: string): Promise<Record<string, unknown>[]>;
+  listSessionFolders(userId: number): Promise<Record<string, unknown>[]>;
+  createSessionFolder(userId: number, name: string): Promise<Record<string, unknown>>;
+  getUserSettings(userId: number): Promise<Record<string, unknown>>;
+  updateUserSettings(userId: number, input: Record<string, unknown>): Promise<Record<string, unknown>>;
   listPendingConnectorTasks(userId: number, runId: string): Promise<Record<string, unknown>[]>;
   listScheduledTasks(userId: number): Promise<import("@velocelab/model").AdvancedChatScheduledTask[]>;
   createScheduledTask(userId: number, input: ScheduledTaskInput): Promise<import("@velocelab/model").AdvancedChatScheduledTask>;
@@ -302,6 +306,48 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
     async listSessionTasks(userId, sessionId) {
       const tasks = await db.select("advanced_chat_session_tasks", { user_id: userId, session_id: sessionId });
       return tasks.sort((left, right) => left.position - right.position);
+    },
+    async listSessionFolders(userId) {
+      const folders = await db.select("advanced_chat_session_folders", { user_id: userId });
+      return folders.sort((left, right) => left.created_at.localeCompare(right.created_at));
+    },
+    async createSessionFolder(userId, name) {
+      const value = name.trim();
+      if (!value || value.length > 80) throw Error("Folder name must be between 1 and 80 characters");
+      const now = new Date().toISOString();
+      return db.create("advanced_chat_session_folders", { id: newID("acf"), user_id: userId, name: value, created_at: now, updated_at: now });
+    },
+    async getUserSettings(userId) {
+      let settings = await db.selectOne("advanced_chat_user_settings", { user_id: userId });
+      if (!settings) {
+        settings = await db.create("advanced_chat_user_settings", {
+          user_id: userId,
+          file_storage_enabled: true,
+          assistant_mode_enabled: true,
+          custom_mcp_servers: "[]",
+          title_model_name: "",
+          title_user_channel_id: null,
+          updated_at: new Date().toISOString(),
+        });
+      }
+      return {
+        ...settings,
+        custom_mcp_servers: decodeList(settings.custom_mcp_servers),
+        title_model_name: settings.title_model_name || "",
+        title_generation_scope: settings.title_generation_scope || "recent",
+        connector_approval_agent_id: settings.connector_approval_agent_id || "",
+      };
+    },
+    async updateUserSettings(userId, input) {
+      await service.getUserSettings(userId);
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (typeof input.title_model_name === "string") updates.title_model_name = input.title_model_name.trim().slice(0, 100);
+      if (typeof input.title_user_channel_id === "number") updates.title_user_channel_id = input.title_user_channel_id || null;
+      if (input.title_generation_scope === "all" || input.title_generation_scope === "recent") updates.title_generation_scope = input.title_generation_scope;
+      if (typeof input.connector_approval_agent_id === "string") updates.connector_approval_agent_id = input.connector_approval_agent_id.trim();
+      if (Array.isArray(input.custom_mcp_servers)) updates.custom_mcp_servers = JSON.stringify(input.custom_mcp_servers);
+      await db.update("advanced_chat_user_settings", { user_id: userId }, updates);
+      return service.getUserSettings(userId);
     },
     async listPendingConnectorTasks(userId, runId) {
       const tasks = await db.select("advanced_chat_connector_tasks", { user_id: userId, run_id: runId });
