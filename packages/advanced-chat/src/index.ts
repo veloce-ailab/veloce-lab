@@ -6,7 +6,7 @@ import type {
   HarnessSession,
 } from "@velocelab/model";
 
-export const depend = ["velocelab-core", "database", "model", "file", "adapters"];
+export const depend = ["database", "model", "file", "adapters"];
 export const provide = ["advanced-chat"];
 
 export interface AdvancedChatConfig {

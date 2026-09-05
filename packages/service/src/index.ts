@@ -10,7 +10,6 @@ import bcrypt from "bcryptjs";
 import type { ModelService, User } from "@velocelab/model";
 
 export const depend = [
-  "velocelab-core",
   "cache",
   "model",
   "adapters",
