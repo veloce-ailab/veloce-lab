@@ -373,6 +373,43 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     session.respond(await advancedChat.listSessionTasks(user.id, id), "json");
   });
 
+  ctx.getCore().route("/api/user/advanced-chat/sessions/folders", ctx).methods("GET").action(async (session: Session) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    session.respond(await advancedChat.listSessionFolders(user.id), "json");
+  });
+
+  ctx.getCore().route("/api/user/advanced-chat/sessions/folders", ctx).methods("POST").action(async (session: Session) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    try {
+      const body = await objectBody(session);
+      const folder = await advancedChat.createSessionFolder(user.id, String(body.name ?? ""));
+      session.status = 201;
+      session.respond(folder, "json");
+    } catch (error) {
+      session.status = 400;
+      session.respond({ error: error instanceof Error ? error.message : String(error) }, "json");
+    }
+  });
+
+  ctx.getCore().route("/api/user/advanced-chat/settings", ctx).methods("GET").action(async (session: Session) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    session.respond(await advancedChat.getUserSettings(user.id), "json");
+  });
+
+  ctx.getCore().route("/api/user/advanced-chat/settings", ctx).methods("PUT").action(async (session: Session) => {
+    const user = await currentUser(session);
+    if (!user?.id) return;
+    try {
+      session.respond(await advancedChat.updateUserSettings(user.id, await objectBody(session)), "json");
+    } catch (error) {
+      session.status = 400;
+      session.respond({ error: error instanceof Error ? error.message : String(error) }, "json");
+    }
+  });
+
   ctx.getCore().route("/api/user/advanced-chat/runs/:id", ctx).methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
     const user = await currentUser(session);
     if (!user?.id) return;
