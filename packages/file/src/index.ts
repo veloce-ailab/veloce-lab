@@ -11,7 +11,7 @@ export interface FileService {
   exists(name: string): Promise<boolean>;
 }
 
-export const depend = ["velocelab-core"];
+export const depend: string[] = [];
 export const provide = ["file"];
 export const config: Schema<FileOptions> = Schema.object({
   root: Schema.string("File storage root").default("./data"),

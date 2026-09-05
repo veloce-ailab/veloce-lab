@@ -900,7 +900,7 @@ declare module "yumeri" {
   }
 }
 
-export const depend = ["velocelab-core", "database"];
+export const depend = ["database"];
 export const provide = ["model"];
 
 export async function apply(ctx: Context) {

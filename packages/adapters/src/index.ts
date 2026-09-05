@@ -1,6 +1,6 @@
 import { Context } from "yumeri";
 
-export const depend = ["velocelab-core", "model"];
+export const depend = ["model"];
 export const provide = ["adapters"];
 
 export type Protocol = "openai" | "responses" | "openai-video" | "kling" | "midjourney" | "claude" | "gemini";
