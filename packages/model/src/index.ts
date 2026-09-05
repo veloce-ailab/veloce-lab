@@ -622,6 +622,8 @@ export interface HarnessUserSettings {
   custom_mcp_servers: string;
   title_model_name: string;
   title_user_channel_id?: number | null;
+  title_generation_scope?: string;
+  connector_approval_agent_id?: string;
   updated_at: string;
 }
 
@@ -791,6 +793,7 @@ export interface AdvancedChatDelivery { id: string; user_id: number; name: strin
 export interface AdvancedChatWorkspace { id: string; user_id: number; name: string; location: string; device_id: string; path: string; model: string; agent: string; created_at: string; updated_at: string; }
 export interface AdvancedChatWorkspaceFile { id: string; workspace_id: string; user_id: number; name: string; content: string; storage_path: string; created_at: string; updated_at: string; }
 export interface AdvancedChatSessionTask { id: string; user_id: number; session_id: string; position: number; title: string; description: string; status: string; note: string; created_at: string; updated_at: string; }
+export interface AdvancedChatSessionFolder { id: string; user_id: number; name: string; created_at: string; updated_at: string; }
 
 export interface ModelService {
   users: {
@@ -890,6 +893,7 @@ declare module "yumeri" {
     advanced_chat_workspaces: AdvancedChatWorkspace;
     advanced_chat_workspace_files: AdvancedChatWorkspaceFile;
     advanced_chat_session_tasks: AdvancedChatSessionTask;
+    advanced_chat_session_folders: AdvancedChatSessionFolder;
   }
   interface Components {
     model: ModelService;
@@ -1594,6 +1598,18 @@ export async function apply(ctx: Context) {
   );
 
   await db.extend(
+    "advanced_chat_session_folders",
+    {
+      id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      name: { type: "string", nullable: false },
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+    { unique: ["id", ["user_id", "name"]] },
+  );
+
+  await db.extend(
     "advanced_chat_messages",
     {
     id: { type: "string", nullable: false },
@@ -1641,9 +1657,11 @@ export async function apply(ctx: Context) {
     user_id: { type: "integer", nullable: false },
     file_storage_enabled: { type: "boolean", initial: true },
     assistant_mode_enabled: { type: "boolean", initial: true },
-    custom_mcp_servers: { type: "text", initial: "[]" },
-    title_model_name: "string",
-    title_user_channel_id: "integer",
+      custom_mcp_servers: { type: "text", initial: "[]" },
+      title_model_name: "string",
+      title_user_channel_id: "integer",
+      title_generation_scope: { type: "string", initial: "recent" },
+      connector_approval_agent_id: { type: "string", initial: "" },
     updated_at: "timestamp",
     },
     { unique: ["user_id"] },
