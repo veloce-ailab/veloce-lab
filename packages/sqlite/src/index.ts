@@ -8,7 +8,7 @@ export interface SqliteConfig {
   path: string;
 }
 
-export const depend = ["velocelab-core"];
+export const depend: string[] = [];
 export const provide = ["database"];
 
 export const config: Schema<SqliteConfig> = Schema.object({
