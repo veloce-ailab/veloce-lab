@@ -1,6 +1,6 @@
 import { Context, Schema, Session } from "yumeri";
 
-export const depend = ["velocelab-core", "model", "service", "middleware", "ratelimit", "advanced-chat"];
+export const depend = ["model", "service", "middleware", "ratelimit", "advanced-chat"];
 export const provide = ["api"];
 
 export interface ApiConfig {
@@ -39,10 +39,10 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
 
   ctx.registerComponent("api", { version: "0.1.0" });
 
-  // Context.route() uses platform path joining; Core.route preserves HTTP slashes on Windows.
+  // Routes are registered directly on the plugin context.
   ctx
-    .getCore()
-    .route("/api/public/settings", ctx)
+
+    .route("/api/public/settings")
     .methods("GET")
     .action((session: Session) => {
       session.respond(
@@ -62,8 +62,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/configuration", ctx)
+
+    .route("/api/configuration")
     .methods("GET")
     .action((session: Session) => {
       session.respond({
@@ -78,8 +78,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/setup/status", ctx)
+
+    .route("/api/setup/status")
     .methods("GET")
     .action(async (session: Session) => {
       session.respond(
@@ -144,8 +144,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
   };
 
   ctx
-    .getCore()
-    .route("/api/setup", ctx)
+
+    .route("/api/setup")
     .methods("POST")
     .action(async (session: Session) => {
       try {
@@ -166,8 +166,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/user/me", ctx)
+
+    .route("/api/user/me")
     .methods("GET")
     .action(async (session: Session) => {
       const user = await currentUser(session);
@@ -176,8 +176,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
 
 
   ctx
-    .getCore()
-    .route("/api/channels", ctx)
+
+    .route("/api/channels")
     .methods("GET")
     .action(async (session: Session) => {
       if (!(await requireAdmin(session))) return;
@@ -186,8 +186,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/models", ctx)
+
+    .route("/api/models")
     .methods("GET")
     .action(async (session: Session) => {
       if (!(await requireAdmin(session))) return;
@@ -196,8 +196,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/user/advanced-chat/devices", ctx)
+
+    .route("/api/user/advanced-chat/devices")
     .methods("GET")
     .action(async (session: Session) => {
       const user = await currentUser(session);
@@ -207,8 +207,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/user/advanced-chat/devices/token", ctx)
+
+    .route("/api/user/advanced-chat/devices/token")
     .methods("POST")
     .action(async (session: Session) => {
       const user = await currentUser(session);
@@ -225,8 +225,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/user/advanced-chat/agents", ctx)
+
+    .route("/api/user/advanced-chat/agents")
     .methods("GET")
     .action(async (session: Session) => {
       const user = await currentUser(session);
@@ -236,8 +236,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/user/advanced-chat/agents", ctx)
+
+    .route("/api/user/advanced-chat/agents")
     .methods("POST")
     .action(async (session: Session) => {
       const user = await currentUser(session);
@@ -262,8 +262,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/user/advanced-chat/agents/:id", ctx)
+
+    .route("/api/user/advanced-chat/agents/:id")
     .methods("PUT")
     .action(async (session: Session, _params: URLSearchParams, id: string) => {
       const user = await currentUser(session);
@@ -292,8 +292,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/user/advanced-chat/agents/:id", ctx)
+
+    .route("/api/user/advanced-chat/agents/:id")
     .methods("DELETE")
     .action(async (session: Session, _params: URLSearchParams, id: string) => {
       const user = await currentUser(session);
@@ -303,8 +303,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/user/advanced-chat/sessions", ctx)
+
+    .route("/api/user/advanced-chat/sessions")
     .methods("GET")
     .action(async (session: Session) => {
       const user = await currentUser(session);
@@ -313,8 +313,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/user/advanced-chat/sessions", ctx)
+
+    .route("/api/user/advanced-chat/sessions")
     .methods("POST")
     .action(async (session: Session) => {
       const user = await currentUser(session);
@@ -330,7 +330,7 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
       session.respond(created, "json");
     });
 
-  ctx.getCore().route("/api/user/advanced-chat/sessions/:id", ctx).methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
+  ctx.route("/api/user/advanced-chat/sessions/:id").methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     const result = await advancedChat.getSession(user.id, id);
@@ -338,7 +338,7 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     session.respond(result, "json");
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/sessions/:id", ctx).methods("PUT").action(async (session: Session, _params: URLSearchParams, id: string) => {
+  ctx.route("/api/user/advanced-chat/sessions/:id").methods("PUT").action(async (session: Session, _params: URLSearchParams, id: string) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     const body = await objectBody(session);
@@ -352,13 +352,13 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     session.respond(result, "json");
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/sessions/:id", ctx).methods("DELETE").action(async (session: Session, _params: URLSearchParams, id: string) => {
+  ctx.route("/api/user/advanced-chat/sessions/:id").methods("DELETE").action(async (session: Session, _params: URLSearchParams, id: string) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     session.respond({ success: await advancedChat.deleteSession(user.id, id) }, "json");
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/sessions/:id/folder", ctx).methods("PUT").action(async (session: Session, _params: URLSearchParams, id: string) => {
+  ctx.route("/api/user/advanced-chat/sessions/:id/folder").methods("PUT").action(async (session: Session, _params: URLSearchParams, id: string) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     const body = await objectBody(session);
@@ -367,19 +367,19 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     session.respond(result, "json");
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/sessions/:id/tasks", ctx).methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
+  ctx.route("/api/user/advanced-chat/sessions/:id/tasks").methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     session.respond(await advancedChat.listSessionTasks(user.id, id), "json");
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/sessions/folders", ctx).methods("GET").action(async (session: Session) => {
+  ctx.route("/api/user/advanced-chat/sessions/folders").methods("GET").action(async (session: Session) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     session.respond(await advancedChat.listSessionFolders(user.id), "json");
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/sessions/folders", ctx).methods("POST").action(async (session: Session) => {
+  ctx.route("/api/user/advanced-chat/sessions/folders").methods("POST").action(async (session: Session) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     try {
@@ -393,13 +393,13 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     }
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/settings", ctx).methods("GET").action(async (session: Session) => {
+  ctx.route("/api/user/advanced-chat/settings").methods("GET").action(async (session: Session) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     session.respond(await advancedChat.getUserSettings(user.id), "json");
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/settings", ctx).methods("PUT").action(async (session: Session) => {
+  ctx.route("/api/user/advanced-chat/settings").methods("PUT").action(async (session: Session) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     try {
@@ -410,7 +410,7 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     }
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/runs/:id", ctx).methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
+  ctx.route("/api/user/advanced-chat/runs/:id").methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     const result = await advancedChat.getRun(user.id, id);
@@ -418,7 +418,7 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     session.respond(result, "json");
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/runs/:id/stop", ctx).methods("POST").action(async (session: Session, _params: URLSearchParams, id: string) => {
+  ctx.route("/api/user/advanced-chat/runs/:id/stop").methods("POST").action(async (session: Session, _params: URLSearchParams, id: string) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     const result = await advancedChat.stopRun(user.id, id);
@@ -426,21 +426,21 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     session.respond(result, "json");
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/runs/:id/events", ctx).methods("GET").action(async (session: Session, params: URLSearchParams, id: string) => {
+  ctx.route("/api/user/advanced-chat/runs/:id/events").methods("GET").action(async (session: Session, params: URLSearchParams, id: string) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     session.respond(await advancedChat.listRunEvents(user.id, id, Number(params.get("after") ?? 0) || 0), "json");
   });
 
-  ctx.getCore().route("/api/user/advanced-chat/runs/:id/connector-tasks/pending", ctx).methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
+  ctx.route("/api/user/advanced-chat/runs/:id/connector-tasks/pending").methods("GET").action(async (session: Session, _params: URLSearchParams, id: string) => {
     const user = await currentUser(session);
     if (!user?.id) return;
     session.respond(await advancedChat.listPendingConnectorTasks(user.id, id), "json");
   });
 
   ctx
-    .getCore()
-    .route("/api/user/advanced-chat/completions", ctx)
+
+    .route("/api/user/advanced-chat/completions")
     .methods("POST")
     .action(async (session: Session) => {
       const user = await currentUser(session);
@@ -474,8 +474,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/advanced-chat/connectors/register", ctx)
+
+    .route("/api/advanced-chat/connectors/register")
     .methods("POST")
     .action(async (session: Session) => {
       const body = await objectBody(session);
@@ -499,8 +499,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/advanced-chat/connectors/heartbeat", ctx)
+
+    .route("/api/advanced-chat/connectors/heartbeat")
     .methods("POST")
     .action(async (session: Session) => {
       const body = await objectBody(session);
@@ -519,8 +519,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/advanced-chat/connectors/tasks/next", ctx)
+
+    .route("/api/advanced-chat/connectors/tasks/next")
     .methods("GET")
     .action(async (session: Session) => {
       const task = await advancedChat.nextConnectorTask(connectorToken(session));
@@ -533,8 +533,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/advanced-chat/connectors/tasks/:id/result", ctx)
+
+    .route("/api/advanced-chat/connectors/tasks/:id/result")
     .methods("POST")
     .action(async (session: Session, _params: URLSearchParams, id: string) => {
       const body = await objectBody(session);
@@ -549,8 +549,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/user/advanced-chat/scheduled-tasks", ctx)
+
+    .route("/api/user/advanced-chat/scheduled-tasks")
     .methods("GET")
     .action(async (session: Session) => {
       const user = await currentUser(session);
@@ -559,8 +559,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/api/user/advanced-chat/scheduled-tasks", ctx)
+
+    .route("/api/user/advanced-chat/scheduled-tasks")
     .methods("POST")
     .action(async (session: Session) => {
       const user = await currentUser(session);
@@ -587,8 +587,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
     });
 
   ctx
-    .getCore()
-    .route("/auth/password/login", ctx)
+
+    .route("/auth/password/login")
     .methods("POST")
     .action(async (session: Session) => {
       try {

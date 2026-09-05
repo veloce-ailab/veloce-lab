@@ -1,6 +1,6 @@
 import { Context, Schema } from "yumeri";
 
-export const depend = ["velocelab-core"];
+export const depend: string[] = [];
 export const provide = ["cache"];
 
 export interface CacheConfig {
