@@ -918,6 +918,32 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       const content = parsed?.content || streamedContent;
       const toolCalls = parsed?.toolCalls || [];
       const finishReason = parsed?.finishReason || "stop";
+      const toolResults: unknown[] = [];
+      const toolRegistry = (ctx.component as any).tools;
+      if (toolRegistry && Array.isArray(toolCalls)) {
+        for (const call of toolCalls as any[]) {
+          const name = String(call.function?.name ?? call.name ?? "");
+          const definition = toolRegistry.get?.(name);
+          if (!definition?.execute) continue;
+          let args: unknown = {};
+          try {
+            args = JSON.parse(String(call.function?.arguments ?? call.arguments ?? "{}"));
+          } catch {
+            args = {};
+          }
+          try {
+            toolResults.push({
+              id: String(call.id ?? ""),
+              result: await definition.execute(args, { userId, sessionId, runId }),
+            });
+          } catch (error) {
+            toolResults.push({
+              id: String(call.id ?? ""),
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
       const assistant = await db.create("advanced_chat_messages", {
         id: newID("acm"),
         session_id: sessionId,
@@ -942,6 +968,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           content,
           finish_reason: finishReason,
           tool_calls: toolCalls,
+          tool_results: toolResults,
         }),
         created_at: new Date().toISOString(),
       });
