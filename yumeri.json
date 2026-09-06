@@ -52,6 +52,8 @@
       "enabled": true,
       "connectorOnlineWindowSeconds": "60"
     },
+    "@velocelab/knowledge": { "enabled": true },
+    "@velocelab/workspace": { "enabled": true },
     "@velocelab/middleware": {},
     "@velocelab/file": { "root": "./data" }
   }
