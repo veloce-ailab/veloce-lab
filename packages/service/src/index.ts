@@ -11,10 +11,7 @@ import type { ModelService, User } from "@velocelab/model";
 import type { MiddlewareService } from "@velocelab/middleware";
 
 export const depend = [
-  "cache",
   "model",
-  "adapters",
-  "channel",
 ];
 export const provide = ["service"];
 
@@ -237,7 +234,7 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     const header = session.client.req?.headers?.authorization;
     const value = Array.isArray(header) ? header[0] : header;
     const token = typeof value === "string" ? value.replace(/^bearer\s+/i, "").trim() : "";
-    const user = token ? await service.verifyToken(token) : (session.properties.user as User | undefined) ?? await model.users.findAdmin();
+    const user = token ? await service.verifyToken(token) : session.properties.user as User | undefined;
     if (!user) {
       session.status = 401;
       session.respond({ error: "Authorization is required" }, "json");

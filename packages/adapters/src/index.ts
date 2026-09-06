@@ -1,6 +1,6 @@
 import { Context } from "yumeri";
 
-export const depend = ["model"];
+export const depend: string[] = [];
 export const provide = ["adapters"];
 
 export type Protocol = "openai" | "responses" | "openai-video" | "kling" | "midjourney" | "claude" | "gemini";

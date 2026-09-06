@@ -1,6 +1,6 @@
 import { Context, Session } from "yumeri";
 import type { ServiceRegistry } from "@velocelab/service";
-export const depend = ["ratelimit", "service"];
+export const depend = ["service"];
 export const provide = ["middleware"];
 export interface MiddlewareService {
   installed(): boolean;

@@ -9,7 +9,7 @@ export function registerAdvancedChatRoutes(ctx: Context, service: AdvancedChatSe
       session.respond({ error: "Authorization is required" }, "json");
       return undefined;
     }
-    return (session.properties.user as { id?: number } | undefined) ?? (middleware ? undefined : { id: 1 });
+    return session.properties.user as { id?: number } | undefined;
   };
   const body = async (session: Session) => (await session.parseRequestBody()) as Record<string, unknown>;
   const token = (session: Session) => {
