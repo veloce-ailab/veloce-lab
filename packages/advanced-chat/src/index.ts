@@ -5,8 +5,10 @@ import type {
   HarnessConnectorDevice,
   HarnessSession,
 } from "@velocelab/model";
+import type { MiddlewareService } from "@velocelab/middleware";
+import { registerAdvancedChatRoutes } from "./routes.js";
 
-export const depend = ["database", "model", "file", "adapters"];
+export const depend = ["database", "model", "file", "adapters", "middleware"];
 export const provide = ["advanced-chat"];
 
 export interface AdvancedChatConfig {
@@ -561,4 +563,5 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
     },
   };
   ctx.registerComponent("advanced-chat", service);
+  registerAdvancedChatRoutes(ctx, service, ctx.component.middleware as MiddlewareService);
 }
