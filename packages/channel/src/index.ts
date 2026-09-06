@@ -1,6 +1,7 @@
-import { Context, Schema } from "yumeri";
+import { Context, Database, Schema, Session } from "yumeri";
+import { randomUUID } from "node:crypto";
 
-export const depend: string[] = [];
+export const depend = ["database"];
 export const provide = ["channel"];
 
 export interface ChannelConfig {
@@ -88,10 +89,186 @@ function summary(provider: string, payload: unknown): WebhookSummary {
 }
 
 export function apply(ctx: Context, pluginConfig: ChannelConfig) {
+  const db = ctx.component.database as Database;
   ctx.registerComponent("channel", {
     enabled: () => pluginConfig.enabled,
     providers: () => providers.map((provider) => ({ ...provider })),
     normalizeProvider: (provider) => provider.trim().toLowerCase().replaceAll("-", "_"),
     webhookSummary: summary,
   });
+
+  const currentUser = (session: Session) =>
+    session.properties.user as { id?: number; is_admin?: boolean } | undefined;
+  const body = async (session: Session) =>
+    (await session.parseRequestBody()) as Record<string, unknown>;
+
+  ctx.route("/api/user/message-channels/settings").methods("GET").action((session) => {
+    session.respond({ enabled: pluginConfig.enabled, providers }, "json");
+  });
+  ctx.route("/api/user/message-channels").methods("GET").action(async (session) => {
+    const user = currentUser(session);
+    if (!user?.id) return;
+    const rows = await db.select("message_channel_integrations", { user_id: user.id });
+    session.respond(rows.map(({ bot_token: _token, ...row }) => row), "json");
+  });
+  ctx.route("/api/user/message-channels").methods("POST").action(async (session) => {
+    const user = currentUser(session);
+    if (!user?.id) return;
+    const input = await body(session);
+    const provider = (input.provider ? String(input.provider) : "").trim().toLowerCase();
+    if (!providers.some((item) => item.id === provider)) {
+      session.status = 400;
+      session.respond({ error: "Unsupported provider" }, "json");
+      return;
+    }
+    const now = new Date().toISOString();
+    const row = await db.create("message_channel_integrations", {
+      user_id: user.id,
+      name: String(input.name ?? provider).trim().slice(0, 120),
+      provider,
+      bot_token: String(input.bot_token ?? ""),
+      webhook_secret: randomUUID().replaceAll("-", ""),
+      enabled: input.enabled !== false,
+      default_device_id: "",
+      default_workspace_path: "",
+      default_workspace_unrestricted: false,
+      default_connector_auto_approve: false,
+      default_connector_command_prefixes: "[]",
+      default_model: String(input.default_model ?? ""),
+      default_agent_key: "default",
+      default_agent_group_id: "",
+      default_skill_ids: "[]",
+      default_context_message_count: Number(pluginConfig.contextMessageCount) || 12,
+      reply_mode: "mention",
+      trigger_mode: "mention",
+      system_prompt: "",
+      group_configs: "[]",
+      advanced_options: "{}",
+      created_at: now,
+      updated_at: now,
+    });
+    const { bot_token: _token, ...response } = row;
+    session.status = 201;
+    session.respond(response, "json");
+  });
+  ctx.route("/api/user/message-channels/:id").methods("PUT").action(async (session, _params, id) => {
+    const user = currentUser(session);
+    if (!user?.id) return;
+    const existing = await db.selectOne("message_channel_integrations", {
+      id: Number(id),
+      user_id: user.id,
+    });
+    if (!existing) {
+      session.status = 404;
+      session.respond({ error: "Message channel not found" }, "json");
+      return;
+    }
+    const input = await body(session);
+    const updates: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    for (const key of [
+      "name",
+      "default_device_id",
+      "default_workspace_path",
+      "default_model",
+      "default_agent_key",
+      "default_agent_group_id",
+      "reply_mode",
+      "trigger_mode",
+      "system_prompt",
+      "group_configs",
+      "advanced_options",
+    ]) {
+      if (input[key] !== undefined) updates[key] = String(input[key] ?? "");
+    }
+    if (input.bot_token !== undefined) updates.bot_token = String(input.bot_token ?? "");
+    if (typeof input.enabled === "boolean") updates.enabled = input.enabled;
+    await db.update("message_channel_integrations", { id: Number(id), user_id: user.id }, updates as any);
+    const row = await db.selectOne("message_channel_integrations", { id: Number(id), user_id: user.id });
+    if (!row) return;
+    const { bot_token: _token, ...response } = row;
+    session.respond(response, "json");
+  });
+  for (const [method, enabled] of [
+    ["enable", true],
+    ["disable", false],
+  ] as const) {
+    ctx
+      .route(`/api/user/message-channels/:id/${method}`)
+      .methods("POST")
+      .action(async (session, _params, id) => {
+      const user = currentUser(session);
+      if (!user?.id) return;
+      await db.update(
+        "message_channel_integrations",
+        { id: Number(id), user_id: user.id },
+        { enabled, updated_at: new Date().toISOString() },
+      );
+      session.respond({ success: true, enabled }, "json");
+      });
+  }
+  ctx.route("/api/user/message-channels/:id").methods("DELETE").action(async (session, _params, id) => {
+    const user = currentUser(session);
+    if (!user?.id) return;
+    await db.remove("message_channel_messages", { integration_id: Number(id), user_id: user.id });
+    const removed = await db.remove("message_channel_integrations", { id: Number(id), user_id: user.id });
+    if (!removed) session.status = 404;
+    session.respond({ success: removed > 0 }, "json");
+  });
+  ctx.route("/api/user/message-channels/:id/messages").methods("GET").action(async (session, params, id) => {
+    const user = currentUser(session);
+    if (!user?.id) return;
+    const limit = Math.min(200, Math.max(1, Number(params.get("limit") ?? 50) || 50));
+    const rows = await db.select("message_channel_messages", {
+      integration_id: Number(id),
+      user_id: user.id,
+    });
+    session.respond(rows.slice(-limit), "json");
+  });
+  ctx
+    .route("/api/message-channels/:provider/:id/webhook")
+    .methods("POST")
+    .action(async (session, _params, provider, id) => {
+    if (!pluginConfig.enabled) {
+      session.status = 403;
+      session.respond({ error: "Message channel is disabled" }, "json");
+      return;
+    }
+    const integration = await db.selectOne("message_channel_integrations", {
+      id: Number(id),
+      provider,
+    });
+    if (!integration || !integration.enabled) {
+      session.status = 404;
+      session.respond({ error: "Message channel not found" }, "json");
+      return;
+    }
+    const payload = await body(session);
+    const item = summary(provider, payload);
+    await db.create("message_channel_messages", {
+      integration_id: Number(id),
+      user_id: integration.user_id,
+      provider,
+      external_chat_id: item.external_chat_id,
+      external_user_id: item.external_user_id,
+      external_user_name: item.external_user_name,
+      external_message_id: item.external_message_id,
+      direction: "inbound",
+      status: "received",
+      content: item.content,
+      payload: JSON.stringify(payload),
+      error: "",
+      created_at: new Date().toISOString(),
+    });
+    await db.update(
+      "message_channel_integrations",
+      { id: Number(id) },
+      {
+        last_event_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    );
+    session.respond({ ok: true }, "json");
+    });
 }
