@@ -239,11 +239,6 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
   ctx.route("/api/configuration").methods("GET").action((session) => {
     session.respond({ auth_agreement_mode: cfg.authAgreementMode, password_registration_enabled: cfg.passwordRegistrationEnabled, password_hcaptcha_enabled: cfg.passwordHCaptchaEnabled }, "json");
   });
-  ctx.route("/api/setup/status").methods("GET").action(async (session) => { session.respond({ required: await service.initialSetupRequired() }, "json"); });
-  ctx.route("/api/setup").methods("POST").action(async (session) => {
-    try { const body = await session.parseRequestBody(); session.respond(await service.setupInitialAdmin({ username: String(body.username ?? ""), email: String(body.email ?? ""), password: String(body.password ?? "") }), "json"); }
-    catch (error) { session.status = 400; session.respond({ error: error instanceof Error ? error.message : String(error) }, "json"); }
-  });
   ctx.route("/api/user/me").methods("GET").action(async (session) => { const user = await authenticate(session); if (user) session.respond(user, "json"); });
   ctx.route("/api/channels").methods("GET").action(async (session) => {
     const user = await authenticate(session);
