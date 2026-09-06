@@ -2,7 +2,6 @@ import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bot, Globe2, Info, KeyRound, Paperclip, Save, Server, ShieldCheck, Wifi } from "lucide-react"
-import AdvancedChatManagement from "./AdvancedChatManagement"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -25,10 +24,12 @@ const defaults: SystemSettings = {
 
 export default function SystemManagement({ section = "general" }: { section?: SystemSection }) {
   if (section === "advancedChat") {
-    return <AdvancedChatSettings />
+    return <PluginSettingsSlot />
   }
   return <GeneralSettings section={section} />
 }
+
+function PluginSettingsSlot() { return <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">Advanced Chat settings are provided by the Advanced Chat plugin.</div> }
 
 function GeneralSettings({ section }: { section: Exclude<SystemSection, "advancedChat"> }) {
   const queryClient = useQueryClient()
