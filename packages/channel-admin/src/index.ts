@@ -31,7 +31,7 @@ export function apply(ctx: Context) {
     if (!channel) { session.status = 404; session.respond({ error: "Channel not found" }, "json"); return; }
     const checkedAt = new Date().toISOString();
     try {
-      const response = await fetch(channel.base_url.replace(/\\/$/, ""), {
+      const response = await fetch(channel.base_url.replace(/\/$/, ""), {
         headers: channel.api_key ? { Authorization: `Bearer ${channel.api_key}` } : {},
         signal: AbortSignal.timeout(10_000),
       });
