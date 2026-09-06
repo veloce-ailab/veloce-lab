@@ -1,6 +1,7 @@
 import { Database, MessageSquare, Settings } from "lucide-react"
 import { NavLink } from "react-router-dom"
 import { cn } from "@/lib/utils"
+import { DashboardSlot } from "@/lib/slots"
 
 const items = [
   { to: "/chat", label: "聊天", icon: MessageSquare },
@@ -12,6 +13,7 @@ export function Sidebar({ className, onNavigate }: { className?: string; onNavig
   return (
     <aside className={cn("flex h-full w-60 flex-col border-r bg-card p-3", className)}>
       <nav className="space-y-1">
+        <DashboardSlot name="sidebar.navigation.before" />
         {items.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -26,7 +28,9 @@ export function Sidebar({ className, onNavigate }: { className?: string; onNavig
             <span>{label}</span>
           </NavLink>
         ))}
+        <DashboardSlot name="sidebar.navigation.after" />
       </nav>
+      <DashboardSlot name="sidebar.footer" className="mt-auto" />
     </aside>
   )
 }

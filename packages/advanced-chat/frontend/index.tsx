@@ -1,5 +1,6 @@
 import React from "react";
 import AdvancedChat from "./pages/AdvancedChat";
+import { defineExtension } from "@velocelab/dashboard/frontend";
 
 declare global {
   interface Window {
@@ -7,8 +8,6 @@ declare global {
   }
 }
 
-window.__VELOCE_DASHBOARD__?.registerPlugin({
-  id: "advanced-chat",
-  routes: [{ path: "/chat/*", component: AdvancedChat }],
-  slots: [{ name: "dashboard.nav.primary", id: "advanced-chat", order: 10 }],
+defineExtension((api) => {
+  api.route({ path: "/chat/*", component: AdvancedChat, protected: true });
 });
