@@ -5,7 +5,7 @@ import {
 } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { Context, Schema } from "yumeri";
+import { Context, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
 import type { ModelService, User } from "@velocelab/model";
 
@@ -222,4 +222,46 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     }),
   };
   ctx.registerComponent("service", service);
+
+  const authenticate = async (session: Session) => {
+    const header = session.client.req?.headers?.authorization;
+    const value = Array.isArray(header) ? header[0] : header;
+    const token = typeof value === "string" ? value.replace(/^bearer\s+/i, "").trim() : "";
+    const user = token ? await service.verifyToken(token) : undefined;
+    if (!user) {
+      session.status = 401;
+      session.respond({ error: "Authorization is required" }, "json");
+      return undefined;
+    }
+    return user;
+  };
+
+  ctx.route("/api/public/settings").methods("GET").action((session) => {
+    session.respond({ backend_version: "0.1.0", site_name: "Veloce", edition: "community", community_enabled: true }, "json");
+  });
+  ctx.route("/api/configuration").methods("GET").action((session) => {
+    session.respond({ auth_agreement_mode: cfg.authAgreementMode, password_registration_enabled: cfg.passwordRegistrationEnabled, password_hcaptcha_enabled: cfg.passwordHCaptchaEnabled }, "json");
+  });
+  ctx.route("/api/setup/status").methods("GET").action(async (session) => { session.respond({ required: await service.initialSetupRequired() }, "json"); });
+  ctx.route("/api/setup").methods("POST").action(async (session) => {
+    try { const body = await session.parseRequestBody(); session.respond(await service.setupInitialAdmin({ username: String(body.username ?? ""), email: String(body.email ?? ""), password: String(body.password ?? "") }), "json"); }
+    catch (error) { session.status = 400; session.respond({ error: error instanceof Error ? error.message : String(error) }, "json"); }
+  });
+  ctx.route("/auth/password/login").methods("POST").action(async (session) => {
+    try { const body = await session.parseRequestBody(); session.respond(await service.loginWithPassword(String(body.identifier ?? ""), String(body.password ?? "")), "json"); }
+    catch (error) { session.status = 401; session.respond({ error: error instanceof Error ? error.message : String(error) }, "json"); }
+  });
+  ctx.route("/api/user/me").methods("GET").action(async (session) => { const user = await authenticate(session); if (user) session.respond(user, "json"); });
+  ctx.route("/api/channels").methods("GET").action(async (session) => {
+    const user = await authenticate(session);
+    if (!user) return;
+    if (!user.is_admin) { session.status = 403; session.respond({ error: "Admin access required" }, "json"); return; }
+    session.respond(await model.channels.list(), "json");
+  });
+  ctx.route("/api/models").methods("GET").action(async (session) => {
+    const user = await authenticate(session);
+    if (!user) return;
+    if (!user.is_admin) { session.status = 403; session.respond({ error: "Admin access required" }, "json"); return; }
+    session.respond(await model.models.list(), "json");
+  });
 }
