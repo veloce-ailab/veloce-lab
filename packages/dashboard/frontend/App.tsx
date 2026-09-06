@@ -8,6 +8,7 @@ import api, { getAuthToken } from "./lib/api"
 import { resolvePostLoginPath } from "./lib/desktop-authorize"
 import { I18nProvider, useI18n } from "./lib/i18n"
 import { ThemeProvider } from "./lib/theme"
+import { DashboardSlot, DashboardSlotProvider } from "./lib/slots"
 import DesktopAuthorize from "./pages/DesktopAuthorize"
 import Login from "./pages/Login"
 import SettingsWorkspace from "./pages/SettingsWorkspace"
@@ -63,6 +64,8 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <DashboardSlotProvider>
+      <DashboardSlot name="app.before" />
       <ThemeProvider>
         <I18nProvider>
           <TooltipProvider>
@@ -86,6 +89,8 @@ function App() {
           </TooltipProvider>
         </I18nProvider>
       </ThemeProvider>
+      <DashboardSlot name="app.after" />
+      </DashboardSlotProvider>
     </QueryClientProvider>
   )
 }
