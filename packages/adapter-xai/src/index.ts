@@ -32,6 +32,24 @@ const adapter: AdapterDefinition = {
       body,
     };
   },
+  parse: (body) => {
+    const value = (body ?? {}) as any;
+    const message = value.choices?.[0]?.message ?? {};
+    return {
+      content: typeof message.content === "string" ? message.content : "",
+      toolCalls: Array.isArray(message.tool_calls) ? message.tool_calls : [],
+      inputTokens: Number(value.usage?.prompt_tokens ?? 0),
+      outputTokens: Number(
+        value.usage?.completion_tokens ??
+          value.usage?.completion_tokens_details?.reasoning_tokens ??
+          0,
+      ),
+      finishReason:
+        typeof value.choices?.[0]?.finish_reason === "string"
+          ? value.choices[0].finish_reason
+          : "stop",
+    };
+  },
 };
 export function apply(ctx: Context) {
   (ctx.component.adapters as AdapterRegistry).register(adapter);

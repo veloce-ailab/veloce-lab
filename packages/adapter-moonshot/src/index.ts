@@ -9,10 +9,9 @@ export const provide: string[] = [];
 const adapter: AdapterDefinition = {
   types: ["moonshot", "kimi"],
   build: (input: AdapterInput) => ({
-    urlPath:
-      input.model.toLowerCase() === "kimi-k2.6"
-        ? "/v1/chat/completions"
-        : "/v1/chat/completions",
+    urlPath: input.model.toLowerCase().includes("claude")
+      ? "/anthropic/v1/messages"
+      : "/v1/chat/completions",
     headers: {
       "Content-Type": "application/json",
       Accept: input.stream ? "text/event-stream" : "application/json",
@@ -25,6 +24,20 @@ const adapter: AdapterDefinition = {
       ...(input.stream ? { stream: true } : {}),
     },
   }),
+  parse: (body) => {
+    const value = (body ?? {}) as any;
+    const message = value.choices?.[0]?.message ?? {};
+    return {
+      content: typeof message.content === "string" ? message.content : "",
+      toolCalls: Array.isArray(message.tool_calls) ? message.tool_calls : [],
+      inputTokens: Number(value.usage?.prompt_tokens ?? 0),
+      outputTokens: Number(value.usage?.completion_tokens ?? 0),
+      finishReason:
+        typeof value.choices?.[0]?.finish_reason === "string"
+          ? value.choices[0].finish_reason
+          : "stop",
+    };
+  },
 };
 export function apply(ctx: Context) {
   (ctx.component.adapters as AdapterRegistry).register(adapter);

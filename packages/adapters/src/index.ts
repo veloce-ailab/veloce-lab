@@ -18,6 +18,12 @@ export interface ChatTool {
 }
 
 export interface AdapterInput {
+  operation?:
+    | "chat"
+    | "image_generate"
+    | "image_edit"
+    | "video_generate"
+    | "video_status";
   channelType: string;
   model: string;
   apiKey: string;
@@ -45,6 +51,7 @@ export interface AdapterDefinition {
     toolCalls?: unknown[];
     inputTokens?: number;
     outputTokens?: number;
+    finishReason?: string;
   };
   stream?(response: Response, onDelta: (delta: string) => void): Promise<void>;
 }
