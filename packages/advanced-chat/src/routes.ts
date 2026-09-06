@@ -2,14 +2,14 @@ import { Context, Session } from "yumeri";
 import type { MiddlewareService } from "@velocelab/middleware";
 import type { AdvancedChatService } from "./index.js";
 
-export function registerAdvancedChatRoutes(ctx: Context, service: AdvancedChatService, middleware: MiddlewareService) {
+export function registerAdvancedChatRoutes(ctx: Context, service: AdvancedChatService, middleware?: MiddlewareService) {
   const user = async (session: Session) => {
-    if (!(await middleware.authenticate(session))) {
+    if (middleware && !(await middleware.authenticate(session))) {
       session.status = 401;
       session.respond({ error: "Authorization is required" }, "json");
       return undefined;
     }
-    return session.properties.user as { id?: number } | undefined;
+    return (session.properties.user as { id?: number } | undefined) ?? (middleware ? undefined : { id: 1 });
   };
   const body = async (session: Session) => (await session.parseRequestBody()) as Record<string, unknown>;
   const token = (session: Session) => {

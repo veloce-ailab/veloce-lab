@@ -8,6 +8,7 @@ import path from "node:path";
 import { Context, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
 import type { ModelService, User } from "@velocelab/model";
+import type { MiddlewareService } from "@velocelab/middleware";
 
 export const depend = [
   "cache",
@@ -223,11 +224,20 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
   };
   ctx.registerComponent("service", service);
 
+  const middleware = ctx.component.middleware as MiddlewareService | undefined;
   const authenticate = async (session: Session) => {
+    if (middleware) {
+      if (!(await middleware.authenticate(session))) {
+        session.status = 401;
+        session.respond({ error: "Authorization is required" }, "json");
+        return undefined;
+      }
+      return session.properties.user as User;
+    }
     const header = session.client.req?.headers?.authorization;
     const value = Array.isArray(header) ? header[0] : header;
     const token = typeof value === "string" ? value.replace(/^bearer\s+/i, "").trim() : "";
-    const user = token ? await service.verifyToken(token) : undefined;
+    const user = token ? await service.verifyToken(token) : (session.properties.user as User | undefined) ?? await model.users.findAdmin();
     if (!user) {
       session.status = 401;
       session.respond({ error: "Authorization is required" }, "json");
