@@ -4,6 +4,10 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "scripts": { "build": "tsc -p tsconfig.json" },
-  "peerDependencies": { "yumeri": "^3.0.0" }
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  }
 }

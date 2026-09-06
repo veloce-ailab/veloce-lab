@@ -1,1 +1,16 @@
-{"name":"@velocelab/adapter-openai-compatible","version":"0.1.0","type":"module","main":"dist/index.js","types":"dist/index.d.ts","scripts":{"build":"tsc -p tsconfig.json"},"dependencies":{"@velocelab/adapters":"workspace:*"},"peerDependencies":{"yumeri":"^3.0.0"}}
+{
+  "name": "@velocelab/adapter-openai-compatible",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@velocelab/adapters": "workspace:*"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  }
+}
