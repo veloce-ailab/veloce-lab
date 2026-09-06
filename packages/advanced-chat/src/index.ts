@@ -1012,6 +1012,8 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         "advanced_chat_runs",
         { id: runId },
         {
+          tool_calls: toolCalls.length,
+          current_round: toolCalls.length > 0 ? 1 : 0,
           status: "completed",
           assistant_message_id: assistant.id,
           finished_at: new Date().toISOString(),
