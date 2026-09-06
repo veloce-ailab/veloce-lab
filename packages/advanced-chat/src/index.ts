@@ -816,6 +816,20 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           : {}),
         ...(message.tool_call_id ? { toolCallId: String(message.tool_call_id) } : {}),
       }));
+      const optionalSkills = (ctx.component as any).skill
+        ? await (ctx.component as any).skill.list(userId)
+        : [];
+      const optionalMcp = (ctx.component as any).mcp
+        ? await (ctx.component as any).mcp.list(userId)
+        : [];
+      const optionalContext = [
+        optionalSkills.length
+          ? `Enabled skills:\n${optionalSkills.map((skill: any) => `- ${skill.name}: ${skill.description}`).join("\n")}`
+          : "",
+        optionalMcp.length
+          ? `Enabled MCP servers:\n${optionalMcp.map((server: any) => `- ${server.name}: ${server.url}`).join("\n")}`
+          : "",
+      ].filter(Boolean).join("\n\n");
       const request = adapters.build({
         channelType: channel.type,
         model: upstreamModel,
@@ -825,6 +839,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         maxTokens: input.maxTokens,
         temperature: input.temperature,
         reasoningEffort: input.reasoningEffort,
+        system: optionalContext || undefined,
         tools: (ctx.component as any).tools?.list?.()
           ?.filter((tool: any) => tool?.name)
           ?.map((tool: any) => ({
