@@ -27,4 +27,15 @@ export function apply(ctx: Context) {
     }
     await next();
   });
+  ctx.route("/api/user/me").methods("GET").action(async (session) => {
+    const current =
+      (session.properties.user as User | undefined) ??
+      (await service.current(session));
+    if (!current) {
+      session.status = 401;
+      session.respond({ error: "Authorization is required" }, "json");
+      return;
+    }
+    session.respond(current, "json");
+  });
 }
