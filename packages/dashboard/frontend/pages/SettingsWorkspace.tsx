@@ -8,7 +8,6 @@ import SystemManagement from "./SystemManagement"
 import SettingsStatistics from "./SettingsStatistics"
 import ConnectorCredentials from "./ConnectorCredentials"
 import DesktopNotifications from "./DesktopNotifications"
-import AdvancedChatDevices, { AdvancedChatDeviceDetail } from "./AdvancedChatDevices"
 import ThemeSettings from "./ThemeSettings"
 import { AppHeader } from "@/components/layout/Layout"
 import { PageTransition } from "@/components/layout/PageTransition"
@@ -104,8 +103,8 @@ export default function SettingsWorkspace() {
                 <Route path="advanced-chat" element={<Navigate to="../chat" replace />} />
                 <Route path="memory" element={<Navigate to="/chat/memories" replace />} />
                 <Route path="credentials" element={<ConnectorCredentials />} />
-                <Route path="devices" element={<AdvancedChatDevices />} />
-                <Route path="devices/:id" element={<AdvancedChatDeviceDetail />} />
+                <Route path="devices" element={<PluginSettingsSlot />} />
+                <Route path="devices/:id" element={<PluginSettingsSlot />} />
                 <Route path="theme" element={<ThemeSettings />} />
                 <Route path="notifications" element={<DesktopNotifications />} />
                 <Route path="*" element={<Navigate to="profile" replace />} />
@@ -116,6 +115,10 @@ export default function SettingsWorkspace() {
       </div>
     </div>
   )
+}
+
+function PluginSettingsSlot() {
+  return <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">This settings section is provided by an optional plugin.</div>
 }
 
 function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate }: {
