@@ -8,7 +8,6 @@ import api, { getAuthToken } from "./lib/api"
 import { resolvePostLoginPath } from "./lib/desktop-authorize"
 import { I18nProvider, useI18n } from "./lib/i18n"
 import { ThemeProvider } from "./lib/theme"
-import AdvancedChat from "./pages/AdvancedChat"
 import DesktopAuthorize from "./pages/DesktopAuthorize"
 import Login from "./pages/Login"
 import SettingsWorkspace from "./pages/SettingsWorkspace"
@@ -74,7 +73,7 @@ function App() {
                   <Route path="/setup" element={<PageTransition><Setup /></PageTransition>} />
                   <Route path="/desktop/authorize" element={<PageTransition><DesktopAuthorize /></PageTransition>} />
                   <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
-                  <Route path="/chat/*" element={<ProtectedRoute authenticated={authenticated}><AdvancedChat /></ProtectedRoute>} />
+                  <Route path="/chat/*" element={<ProtectedRoute authenticated={authenticated}><div className="p-6">Advanced Chat plugin is loading…</div></ProtectedRoute>} />
                   <Route path="/settings/*" element={<ProtectedRoute authenticated={authenticated}><SettingsWorkspace /></ProtectedRoute>} />
                   <Route path="/admin/*" element={<Navigate to="/settings/statistics" replace />} />
                   <Route path="/" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
