@@ -14,6 +14,17 @@ export function apply(ctx: Context) {
   ctx.registerComponent("channel-admin", {
     list: () => model.channels.list(),
   });
+  ctx.route("/api/channel-usage").methods("GET").action(async (session) => {
+    if (!admin(session)) return;
+    const channels = await model.channels.list();
+    const logs = await db.select("token_logs", {} as any);
+    session.respond({ upstream_channels: channels.map((channel) => {
+      const rows = logs.filter((row: any) => row.channel_id === channel.id);
+      const input = rows.reduce((sum: number, row: any) => sum + Number(row.input_tokens || 0), 0);
+      const output = rows.reduce((sum: number, row: any) => sum + Number(row.output_tokens || 0), 0);
+      return { id: channel.id, name: channel.name, request_count: rows.length, input_tokens: input, output_tokens: output, total_tokens: input + output, total_cost: rows.reduce((sum: number, row: any) => sum + Number(row.cost || 0), 0).toString() };
+    }) }, "json");
+  });
   ctx.route("/api/channels").methods("GET").action(async (session) => {
     if (!admin(session)) return;
     session.respond(await model.channels.list(), "json");
