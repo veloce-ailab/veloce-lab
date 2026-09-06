@@ -16,6 +16,7 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
   const assets: DashboardAsset[] = [];
   const service: DashboardService = { registerSlot(slot) { slots.push(slot); return () => { const i = slots.indexOf(slot); if (i >= 0) slots.splice(i, 1); }; }, slots: () => [...slots].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), registerAsset(asset) { const value = { ...asset, id: asset.id || createHash("md5").update(asset.file).digest("hex") }; assets.push(value); return () => { const i = assets.indexOf(value); if (i >= 0) assets.splice(i, 1); }; }, assets: () => [...assets] };
   ctx.registerComponent("dashboard", service);
+  ctx.route("/api/dashboard/manifest").methods("GET").action(async (session: Session) => { session.respond({ assets: service.assets().map(({ id, mime, plugin }) => ({ id, mime, plugin, url: `/api/static/plugin?file=${encodeURIComponent(id)}` })) }, "json"); });
   ctx.route("/api/static/plugin").methods("GET").action(async (session: Session) => { const id = String(session.query?.file ?? ""); const asset = assets.find(item => item.id === id); if (!asset || !existsSync(asset.file)) { session.status = 404; session.respond({ error: "Static plugin file not found" }, "json"); return; } if (asset.mime) session.setMime(asset.mime); session.sendFile(asset.file); });
   ctx.route("root").methods("GET").action(async (session: Session) => {
     const requested = session.pathname === "/" ? "index.html" : session.pathname.replace(/^\//, "");
