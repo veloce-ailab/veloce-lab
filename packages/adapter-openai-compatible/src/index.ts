@@ -1,7 +1,16 @@
 import { Context } from "yumeri";
-import type { AdapterRegistry } from "@velocelab/adapters";
+import type { AdapterInput, AdapterRegistry } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
+function mapMessages(input: AdapterInput) {
+  return input.messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+    ...(message.toolCalls ? { tool_calls: message.toolCalls } : {}),
+    ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
+    ...(message.name ? { name: message.name } : {}),
+  }));
+}
 const types = [
   "openrouter",
   "open_router",
@@ -29,16 +38,16 @@ const types = [
 export function apply(ctx: Context) {
   (ctx.component.adapters as AdapterRegistry).register({
     types,
-    request: (input) => ({
-      path: "/v1/chat/completions",
+    build: (input: AdapterInput) => ({
+      urlPath: "/v1/chat/completions",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
         ...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {}),
       },
-      payload: {
+      body: {
         model: input.model,
-        messages: input.messages,
+        messages: mapMessages(input),
         ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
         ...(input.temperature === undefined
           ? {}
@@ -46,5 +55,17 @@ export function apply(ctx: Context) {
         ...(input.stream ? { stream: true } : {}),
       },
     }),
+    parse: (body) => {
+      const value = (body ?? {}) as any;
+      const choice = value.choices?.[0] ?? {};
+      const message = choice.message ?? {};
+      return {
+        content: typeof message.content === "string" ? message.content : "",
+        toolCalls: Array.isArray(message.tool_calls) ? message.tool_calls : [],
+        inputTokens: Number(value.usage?.prompt_tokens ?? 0),
+        outputTokens: Number(value.usage?.completion_tokens ?? 0),
+        finishReason: typeof choice.finish_reason === "string" ? choice.finish_reason : "stop",
+      };
+    },
   });
 }
