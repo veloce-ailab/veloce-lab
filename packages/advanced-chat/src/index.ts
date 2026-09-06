@@ -868,11 +868,9 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         }
       }
       const parsed = adapters.parse(channel.type, data);
-      const content =
-        parsed?.content ||
-        String(data.choices?.[0]?.message?.content || data.output_text || "");
-      const toolCalls = data.choices?.[0]?.message?.tool_calls || [];
-      const finishReason = String(data.choices?.[0]?.finish_reason || "stop");
+      const content = parsed?.content || "";
+      const toolCalls = parsed?.toolCalls || [];
+      const finishReason = parsed?.finishReason || "stop";
       const assistant = await db.create("advanced_chat_messages", {
         id: newID("acm"),
         session_id: sessionId,
@@ -925,8 +923,8 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           tool_calls: toolCalls,
         },
         finishReason,
-        inputTokens: Number(data.usage?.prompt_tokens || 0),
-        outputTokens: Number(data.usage?.completion_tokens || 0),
+        inputTokens: parsed?.inputTokens || 0,
+        outputTokens: parsed?.outputTokens || 0,
       };
     },
   };

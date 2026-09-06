@@ -37,7 +37,22 @@ function build(input: AdapterInput) {
     body: payload,
   };
 }
-const adapter: AdapterDefinition = { types: ["deepseek", "deep_seek"], build };
+const adapter: AdapterDefinition = {
+  types: ["deepseek", "deep_seek"],
+  build,
+  parse: (body) => {
+    const value = (body ?? {}) as any;
+    const choice = value.choices?.[0] ?? {};
+    const message = choice.message ?? {};
+    return {
+      content: typeof message.content === "string" ? message.content : "",
+      toolCalls: Array.isArray(message.tool_calls) ? message.tool_calls : [],
+      inputTokens: Number(value.usage?.prompt_tokens ?? 0),
+      outputTokens: Number(value.usage?.completion_tokens ?? 0),
+      finishReason: typeof choice.finish_reason === "string" ? choice.finish_reason : "stop",
+    };
+  },
+};
 export function apply(ctx: Context) {
   (ctx.component.adapters as AdapterRegistry).register(adapter);
 }

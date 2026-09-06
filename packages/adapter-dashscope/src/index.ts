@@ -11,7 +11,9 @@ const adapter: AdapterDefinition = {
   build: (input: AdapterInput) => {
     const body: Record<string, unknown> = {
       model: input.model,
-      messages: input.messages,
+      ...(input.operation === "image_generate" || input.operation === "image_edit"
+        ? { ...(input.media ?? {}) }
+        : { messages: input.messages }),
       ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
       ...(input.temperature === undefined
         ? {}
@@ -21,7 +23,16 @@ const adapter: AdapterDefinition = {
         : {}),
     };
     return {
-      urlPath: "/compatible-mode/v1/chat/completions",
+      urlPath:
+        input.operation === "image_generate"
+          ? "/api/v1/services/aigc/text2image/image-synthesis"
+          : input.operation === "image_edit"
+            ? "/api/v1/services/aigc/image2image/image-synthesis"
+            : input.model.toLowerCase().includes("claude")
+              ? "/apps/anthropic/v1/messages"
+              : input.operation === "chat"
+                ? "/compatible-mode/v1/chat/completions"
+                : "/api/v2/apps/protocols/compatible-mode/v1/responses",
       headers: {
         "Content-Type": "application/json",
         Accept: input.stream ? "text/event-stream" : "application/json",
@@ -29,6 +40,18 @@ const adapter: AdapterDefinition = {
         ...(input.stream ? { "X-DashScope-SSE": "enable" } : {}),
       },
       body,
+    };
+  },
+  parse: (body) => {
+    const value = (body ?? {}) as any;
+    const choice = value.choices?.[0] ?? {};
+    const message = choice.message ?? {};
+    return {
+      content: typeof message.content === "string" ? message.content : "",
+      toolCalls: Array.isArray(message.tool_calls) ? message.tool_calls : [],
+      inputTokens: Number(value.usage?.prompt_tokens ?? 0),
+      outputTokens: Number(value.usage?.completion_tokens ?? 0),
+      finishReason: typeof choice.finish_reason === "string" ? choice.finish_reason : "stop",
     };
   },
 };
