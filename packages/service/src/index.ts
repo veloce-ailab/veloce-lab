@@ -406,4 +406,70 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
       "json",
     );
   });
+  ctx.route("/api/models/sync/apply").methods("POST").action(async (session) => {
+    const user = await authenticate(session);
+    if (!user?.is_admin) return;
+    const input = (await session.parseRequestBody()) as Record<string, unknown>;
+    const channelId = Number(input.channel_id);
+    const selected = Array.isArray(input.models) ? input.models : [];
+    let created = 0;
+    let updated = 0;
+    for (const value of selected as any[]) {
+      const modelName = String(value.model_name ?? value.id ?? "").trim();
+      if (!modelName) continue;
+      let catalogModel = await model.models.findByName(modelName);
+      if (!catalogModel) {
+        catalogModel = await model.models.create({
+          model_name: modelName,
+          provider: String(value.provider ?? ""),
+          provider_icon_url: String(value.provider_icon_url ?? ""),
+          quota_type: 0,
+          input_price: String(value.input_price ?? "0"),
+          output_price: String(value.output_price ?? "0"),
+          cached_input_price: "0",
+          cache_write_input_price: "0",
+          cache_write_1h_input_price: "0",
+          image_input_price: "0",
+          image_output_price: "0",
+          audio_input_price: "0",
+          audio_output_price: "0",
+          input_price_tiers: "[]",
+          output_price_tiers: "[]",
+          cached_input_price_tiers: "[]",
+          cache_write_input_price_tiers: "[]",
+          cache_write_1h_input_price_tiers: "[]",
+          image_input_price_tiers: "[]",
+          image_output_price_tiers: "[]",
+          audio_input_price_tiers: "[]",
+          audio_output_price_tiers: "[]",
+          video_billing_config: "{}",
+          enabled: true,
+        } as any);
+        created++;
+      }
+      const existing = await db.selectOne("model_configs", {
+        channel_id: channelId,
+        model_id: catalogModel.id,
+      });
+      const data = {
+        channel_id: channelId,
+        model_id: catalogModel.id,
+        upstream_model_name: String(value.upstream_model_name ?? modelName),
+        input_price: String(value.input_price ?? catalogModel.input_price ?? "0"),
+        output_price: String(value.output_price ?? catalogModel.output_price ?? "0"),
+        enabled: value.enabled !== false,
+        updated_at: new Date().toISOString(),
+      } as any;
+      if (existing) {
+        await db.update("model_configs", { id: existing.id }, data);
+        updated++;
+      } else {
+        await db.create("model_configs", {
+          ...data,
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
+    session.respond({ channel_id: channelId, created, updated }, "json");
+  });
 }
