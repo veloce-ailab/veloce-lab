@@ -1,0 +1,59 @@
+import { Context, Session } from "yumeri";
+import type { ModelService } from "@velocelab/model";
+
+export const depend = ["model"];
+export const provide = ["channel-admin"];
+
+export function apply(ctx: Context) {
+  const model = ctx.component.model as ModelService;
+  const admin = (session: Session) =>
+    (session.properties.user as { is_admin?: boolean } | undefined)?.is_admin;
+  const body = async (session: Session) =>
+    (await session.parseRequestBody()) as Record<string, unknown>;
+  ctx.registerComponent("channel-admin", {
+    list: () => model.channels.list(),
+  });
+  ctx.route("/api/channels").methods("GET").action(async (session) => {
+    if (!admin(session)) return;
+    session.respond(await model.channels.list(), "json");
+  });
+  ctx.route("/api/channels").methods("POST").action(async (session) => {
+    if (!admin(session)) return;
+    const input = await body(session);
+    const channel = await model.channels.create({
+      user_channel_id: Number(input.user_channel_id ?? 0) || null,
+      name: String(input.name ?? "").trim(),
+      type: String(input.type ?? "openai").trim(),
+      base_url: String(input.base_url ?? "").trim(),
+      api_key: String(input.api_key ?? ""),
+      plugin_config: String(input.plugin_config ?? "{}"),
+      multiplier: String(input.multiplier ?? "1"),
+      priority: Number(input.priority ?? 1),
+      weight: Number(input.weight ?? 1),
+      enabled: input.enabled !== false,
+      price_sync_enabled: input.price_sync_enabled === true,
+      price_sync_cron: String(input.price_sync_cron ?? ""),
+      consecutive_failures: 0,
+      last_failure_reason: "",
+      auto_disabled_reason: "",
+      last_health_status: "unknown",
+    } as any);
+    session.status = 201;
+    session.respond(channel, "json");
+  });
+  ctx.route("/api/channels/:id").methods("PUT").action(async (session, _params, id) => {
+    if (!admin(session)) return;
+    const input = await body(session);
+    const updates = Object.fromEntries(
+      ["name", "type", "base_url", "api_key", "plugin_config", "multiplier", "priority", "weight", "enabled", "price_sync_enabled", "price_sync_cron"]
+        .filter((key) => input[key] !== undefined)
+        .map((key) => [key, input[key]]),
+    );
+    session.respond(await model.channels.update(Number(id), updates as any), "json");
+  });
+  ctx.route("/api/channels/:id").methods("DELETE").action(async (session, _params, id) => {
+    if (!admin(session)) return;
+    await model.channels.delete(Number(id));
+    session.respond({ success: true }, "json");
+  });
+}
