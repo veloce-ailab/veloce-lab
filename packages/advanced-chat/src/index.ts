@@ -825,6 +825,13 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         maxTokens: input.maxTokens,
         temperature: input.temperature,
         reasoningEffort: input.reasoningEffort,
+        tools: (ctx.component as any).tools?.list?.()
+          ?.filter((tool: any) => tool?.name)
+          ?.map((tool: any) => ({
+            name: String(tool.name),
+            description: String(tool.description ?? ""),
+            parameters: tool.parameters ?? {},
+          })),
       });
       if (!request) throw Error("no adapter registered for upstream channel");
       const headers = {
