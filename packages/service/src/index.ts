@@ -380,10 +380,13 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
       session.respond({ error: "Channel not found" }, "json");
       return;
     }
+    const syncPath = String(input.path ?? "/v1/models").trim() || "/v1/models";
     const response = await fetch(
-      `${channel.base_url.replace(/\\/$/, "")}/v1/models`,
+      `${channel.base_url.replace(/\\/$/, "")}${syncPath.startsWith("/") ? syncPath : `/${syncPath}`}`,
       {
-      headers: channel.api_key ? { Authorization: `Bearer ${channel.api_key}` } : {},
+        headers: channel.api_key
+          ? { Authorization: `Bearer ${channel.api_key}` }
+          : {},
       },
     );
     const data = (await response.json().catch(() => ({}))) as any;
@@ -392,19 +395,47 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
       : Array.isArray(data.models)
         ? data.models
         : [];
+    const existing = await model.models.list();
     session.respond(
       {
         channel_id: channel.id,
         channel_name: channel.name,
         source: "upstream",
-        models: items.map((item: any) => ({
-          model_name: String(item.id ?? item.name ?? ""),
+        models: items.map((item: any) => {
+          const modelName = String(item.id ?? item.name ?? "");
+          return {
+          model_name: modelName,
           provider: channel.type,
-          exists: false,
-        })),
+          exists: existing.some((entry) => entry.model_name === modelName),
+          };
+        }),
       },
       "json",
     );
+  });
+  ctx.route("/api/models/sync/preview/browser").methods("POST").action(async (session) => {
+    const user = await authenticate(session);
+    if (!user?.is_admin) return;
+    const input = (await session.parseRequestBody()) as Record<string, unknown>;
+    const payload = (input.payload ?? {}) as any;
+    const items = Array.isArray(payload.data)
+      ? payload.data
+      : Array.isArray(payload.models)
+        ? payload.models
+        : Array.isArray(payload)
+          ? payload
+          : [];
+    const channel = await model.channels.findById(Number(input.channel_id));
+    session.respond({
+      channel_id: channel?.id ?? Number(input.channel_id),
+      channel_name: channel?.name ?? "",
+      source: String(input.source ?? "browser"),
+      models: items.map((item: any) => ({
+        model_name: String(item.id ?? item.name ?? item.model_name ?? ""),
+        provider: channel?.type ?? "",
+        exists: false,
+      })),
+    }, "json");
   });
   ctx.route("/api/models/sync/apply").methods("POST").action(async (session) => {
     const user = await authenticate(session);
@@ -470,6 +501,8 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
         });
       }
     }
-    session.respond({ channel_id: channelId, created, updated }, "json");
+    session.respond({
+      results: [{ channel_id: channelId, source: "upstream", created, updated }],
+    }, "json");
   });
 }
