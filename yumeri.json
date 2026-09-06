@@ -5,7 +5,6 @@
     "enableCors": true
   },
   "plugins": {
-    "@velocelab/core": {},
     "@velocelab/cache": {
       "enabled": false,
       "address": "127.0.0.1:6379",
@@ -16,6 +15,10 @@
     },
     "@velocelab/sqlite": { "path": "./data/veloce.db" },
     "@velocelab/model": {},
+    "@velocelab/user": {},
+    "@velocelab/auth": { "enabled": true },
+    "@velocelab/model-catalog": {},
+    "@velocelab/channel-admin": {},
     "@velocelab/adapters": {},
     "@velocelab/channel": {
       "enabled": true,
@@ -47,13 +50,6 @@
       "connectorOnlineWindowSeconds": "60"
     },
     "@velocelab/middleware": {},
-    "@velocelab/api": {
-      "siteName": "Veloce",
-      "baseUrl": "",
-      "edition": "community",
-      "communityEnabled": true,
-    },
-    "@velocelab/file": { "root": "./data" },
-    "@velocelab/http": {}
+    "@velocelab/file": { "root": "./data" }
   }
 }
