@@ -21,6 +21,29 @@ export function apply(ctx: Context) {
   };
   ctx.registerComponent("oobe", oobe);
 
+  ctx.route("/api/public/settings").methods("GET").action((session) => {
+    session.respond(
+      {
+        backend_version: "0.1.0",
+        site_name: "Veloce",
+        edition: "community",
+        community_enabled: true,
+      },
+      "json",
+    );
+  });
+  ctx.route("/api/configuration").methods("GET").action((session) => {
+    const configuration = service.publicConfiguration();
+    session.respond(
+      {
+        auth_agreement_mode: configuration.authAgreementMode,
+        password_registration_enabled: configuration.passwordRegistrationEnabled,
+        password_hcaptcha_enabled: configuration.passwordHCaptchaEnabled,
+      },
+      "json",
+    );
+  });
+
   ctx.route("/api/setup/status").methods("GET").action(async (session) => {
     session.respond({ required: await oobe.required() }, "json");
   });

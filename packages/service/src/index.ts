@@ -233,12 +233,6 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     return user;
   };
 
-  ctx.route("/api/public/settings").methods("GET").action((session) => {
-    session.respond({ backend_version: "0.1.0", site_name: "Veloce", edition: "community", community_enabled: true }, "json");
-  });
-  ctx.route("/api/configuration").methods("GET").action((session) => {
-    session.respond({ auth_agreement_mode: cfg.authAgreementMode, password_registration_enabled: cfg.passwordRegistrationEnabled, password_hcaptcha_enabled: cfg.passwordHCaptchaEnabled }, "json");
-  });
   ctx.route("/api/user/me").methods("GET").action(async (session) => { const user = await authenticate(session); if (user) session.respond(user, "json"); });
   ctx.route("/api/channels").methods("GET").action(async (session) => {
     const user = await authenticate(session);
