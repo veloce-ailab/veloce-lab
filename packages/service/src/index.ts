@@ -351,4 +351,59 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     await db.remove("model_configs", { id: Number(id) });
     session.respond({ success: true }, "json");
   });
+  ctx.route("/api/channel-usage").methods("GET").action(async (session) => {
+    const user = await authenticate(session);
+    if (!user?.is_admin) return;
+    const channels = await model.channels.list();
+    const logs = await db.select("token_logs", {} as any);
+    const usage = channels.map((channel) => {
+      const rows = logs.filter((row: any) => row.channel_id === channel.id);
+      return {
+        id: channel.id,
+        name: channel.name,
+        request_count: rows.length,
+        input_tokens: rows.reduce((sum: number, row: any) => sum + Number(row.input_tokens || 0), 0),
+        output_tokens: rows.reduce((sum: number, row: any) => sum + Number(row.output_tokens || 0), 0),
+        total_tokens: rows.reduce((sum: number, row: any) => sum + Number(row.input_tokens || 0) + Number(row.output_tokens || 0), 0),
+        total_cost: rows.reduce((sum: number, row: any) => sum + Number(row.cost || 0), 0).toString(),
+      };
+    });
+    session.respond({ upstream_channels: usage }, "json");
+  });
+  ctx.route("/api/models/sync/preview").methods("POST").action(async (session) => {
+    const user = await authenticate(session);
+    if (!user?.is_admin) return;
+    const input = (await session.parseRequestBody()) as Record<string, unknown>;
+    const channel = await model.channels.findById(Number(input.channel_id));
+    if (!channel) {
+      session.status = 404;
+      session.respond({ error: "Channel not found" }, "json");
+      return;
+    }
+    const response = await fetch(
+      `${channel.base_url.replace(/\\/$/, "")}/v1/models`,
+      {
+      headers: channel.api_key ? { Authorization: `Bearer ${channel.api_key}` } : {},
+      },
+    );
+    const data = (await response.json().catch(() => ({}))) as any;
+    const items = Array.isArray(data.data)
+      ? data.data
+      : Array.isArray(data.models)
+        ? data.models
+        : [];
+    session.respond(
+      {
+        channel_id: channel.id,
+        channel_name: channel.name,
+        source: "upstream",
+        models: items.map((item: any) => ({
+          model_name: String(item.id ?? item.name ?? ""),
+          provider: channel.type,
+          exists: false,
+        })),
+      },
+      "json",
+    );
+  });
 }
