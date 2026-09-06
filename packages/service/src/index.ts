@@ -233,25 +233,6 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     return user;
   };
 
-  ctx.route("/api/channel-usage").methods("GET").action(async (session) => {
-    const user = await authenticate(session);
-    if (!user?.is_admin) return;
-    const channels = await model.channels.list();
-    const logs = await db.select("token_logs", {} as any);
-    const usage = channels.map((channel) => {
-      const rows = logs.filter((row: any) => row.channel_id === channel.id);
-      return {
-        id: channel.id,
-        name: channel.name,
-        request_count: rows.length,
-        input_tokens: rows.reduce((sum: number, row: any) => sum + Number(row.input_tokens || 0), 0),
-        output_tokens: rows.reduce((sum: number, row: any) => sum + Number(row.output_tokens || 0), 0),
-        total_tokens: rows.reduce((sum: number, row: any) => sum + Number(row.input_tokens || 0) + Number(row.output_tokens || 0), 0),
-        total_cost: rows.reduce((sum: number, row: any) => sum + Number(row.cost || 0), 0).toString(),
-      };
-    });
-    session.respond({ upstream_channels: usage }, "json");
-  });
   ctx.route("/api/channels/:id/health").methods("POST").action(async (session, _params, id) => {
     const user = await authenticate(session);
     if (!user?.is_admin) return;
