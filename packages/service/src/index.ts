@@ -244,10 +244,6 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     try { const body = await session.parseRequestBody(); session.respond(await service.setupInitialAdmin({ username: String(body.username ?? ""), email: String(body.email ?? ""), password: String(body.password ?? "") }), "json"); }
     catch (error) { session.status = 400; session.respond({ error: error instanceof Error ? error.message : String(error) }, "json"); }
   });
-  ctx.route("/auth/password/login").methods("POST").action(async (session) => {
-    try { const body = await session.parseRequestBody(); session.respond(await service.loginWithPassword(String(body.identifier ?? ""), String(body.password ?? "")), "json"); }
-    catch (error) { session.status = 401; session.respond({ error: error instanceof Error ? error.message : String(error) }, "json"); }
-  });
   ctx.route("/api/user/me").methods("GET").action(async (session) => { const user = await authenticate(session); if (user) session.respond(user, "json"); });
   ctx.route("/api/channels").methods("GET").action(async (session) => {
     const user = await authenticate(session);
