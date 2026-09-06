@@ -33,4 +33,27 @@ export function apply(ctx: Context) {
       ),
   };
   ctx.registerComponent("middleware", middleware);
+  ctx.use("authentication", async (session: Session, next: () => Promise<void>) => {
+    const path = session.pathname || "";
+    const publicRoute = path === "/api/public/settings" ||
+      path === "/api/configuration" ||
+      path === "/api/setup/status" ||
+      path === "/api/setup" ||
+      path === "/auth/password/login" ||
+      path.startsWith("/api/advanced-chat/connectors/");
+    if (!path.startsWith("/api/") && !path.startsWith("/auth/")) {
+      await next();
+      return;
+    }
+    if (publicRoute) {
+      await next();
+      return;
+    }
+    if (!(await middleware.authenticate(session))) {
+      session.status = 401;
+      session.respond({ error: "Authorization is required" }, "json");
+      return;
+    }
+    await next();
+  });
 }

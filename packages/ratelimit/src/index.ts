@@ -1,6 +1,6 @@
 import { Context, Schema } from "yumeri";
 
-export const depend = ["cache"];
+export const depend: string[] = [];
 export const provide = ["ratelimit"];
 
 export interface RateLimitConfig {
