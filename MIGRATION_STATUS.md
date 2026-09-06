@@ -12,6 +12,7 @@ used.
 - authentication middleware and password routes
 - channel administration and health/model-config routes
 - advanced-chat sessions, runs, tools and connector routes
+- model catalog listing and upstream synchronization routes
 - provider adapter registry and independently removable adapters
 - cache, rate limiting, file storage, MCP, skills, uptime and OOBE
 
@@ -35,6 +36,12 @@ here to keep the migration incremental and reviewable:
   `advanced_chat_tasks.go`)
 - inbound/outbound message-channel provider runtimes
   (`message_channel_assistant.go` and provider-specific legacy handlers)
+
+## Route ownership completed in this pass
+
+Model listing and synchronization endpoints are now owned by
+`@velocelab/model-catalog`. The plugin declares its `database` dependency and
+can be removed without introducing routes through a generic API package.
 
 When migrating an item, place its routes in that plugin's `apply` function and
 make all dependencies optional through `ctx.component` lookups. Do not add
