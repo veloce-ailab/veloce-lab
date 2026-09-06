@@ -2,6 +2,16 @@ import { Context } from "yumeri";
 import type { AdapterInput, AdapterRegistry } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
+async function stream(response: Response, onDelta: (delta: string) => void) {
+  const text = await response.text();
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    try {
+      const value = JSON.parse(line.slice(5));
+      if (value.type === "response.output_text.delta" && typeof value.delta === "string") onDelta(value.delta);
+    } catch {}
+  }
+}
 export function apply(ctx: Context) {
   (ctx.component.adapters as AdapterRegistry).register({
     types: ["responses", "response", "openai_responses"],
@@ -40,5 +50,6 @@ export function apply(ctx: Context) {
         outputTokens: Number(value.usage?.output_tokens ?? 0),
       };
     },
+    stream,
   });
 }
