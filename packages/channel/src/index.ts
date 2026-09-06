@@ -1,6 +1,6 @@
 import { Context, Schema } from "yumeri";
 
-export const depend = ["model", "adapters"];
+export const depend: string[] = [];
 export const provide = ["channel"];
 
 export interface ChannelConfig {

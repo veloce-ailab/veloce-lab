@@ -8,7 +8,7 @@ import type {
 import type { MiddlewareService } from "@velocelab/middleware";
 import { registerAdvancedChatRoutes } from "./routes.js";
 
-export const depend = ["database", "model", "file", "adapters"];
+export const depend = ["database", "model", "adapters"];
 export const provide = ["advanced-chat"];
 
 export interface AdvancedChatConfig {
