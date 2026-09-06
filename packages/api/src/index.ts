@@ -195,6 +195,7 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
       session.respond(models, "json");
     });
 
+  if (false) {
   ctx
 
     .route("/api/user/advanced-chat/devices")
@@ -585,6 +586,8 @@ export function apply(ctx: Context, pluginConfig: ApiConfig) {
         session.respond({ error: error instanceof Error ? error.message : String(error) }, "json");
       }
     });
+
+  }
 
   ctx
 
