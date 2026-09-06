@@ -820,6 +820,16 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         `${String(channel.base_url).replace(/\\\/$/, "")}${request.urlPath}`,
         { method: "POST", headers, body: JSON.stringify(request.body) },
       );
+      let streamedContent = "";
+      if (input.stream && response.ok && response.headers.get("content-type")?.includes("text/event-stream")) {
+        await adapters.stream(
+          channel.type,
+          response.clone(),
+          (delta) => {
+            streamedContent += delta;
+          },
+        );
+      }
       const text = await response.text();
       if (!response.ok) {
         await db.update(
@@ -868,7 +878,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         }
       }
       const parsed = adapters.parse(channel.type, data);
-      const content = parsed?.content || "";
+      const content = parsed?.content || streamedContent;
       const toolCalls = parsed?.toolCalls || [];
       const finishReason = parsed?.finishReason || "stop";
       const assistant = await db.create("advanced_chat_messages", {
