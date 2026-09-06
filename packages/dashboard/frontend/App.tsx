@@ -9,6 +9,7 @@ import { resolvePostLoginPath } from "./lib/desktop-authorize"
 import { I18nProvider, useI18n } from "./lib/i18n"
 import { ThemeProvider } from "./lib/theme"
 import { DashboardSlot, DashboardSlotProvider } from "./lib/slots"
+import { routes as extensionRoutes, subscribeExtensions } from "./extension"
 import DesktopAuthorize from "./pages/DesktopAuthorize"
 import Login from "./pages/Login"
 import SettingsWorkspace from "./pages/SettingsWorkspace"
@@ -51,6 +52,8 @@ function SetupGate({ children }: { children: React.ReactNode }) {
 
 function App() {
   const [authenticated] = useState(() => Boolean(getAuthToken()))
+  const [, refreshExtensions] = useState(0)
+  useEffect(() => subscribeExtensions(() => refreshExtensions((value) => value + 1)), [])
 
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get("token")
@@ -73,6 +76,7 @@ function App() {
               <BrowserRouter>
                 <SetupGate>
                   <Routes>
+                  {extensionRoutes().map((route) => { const Component = route.component; return <Route key={route.path} path={route.path} element={<ProtectedRoute authenticated={!route.protected || authenticated}><Component /></ProtectedRoute>} /> })}
                   <Route path="/setup" element={<PageTransition><Setup /></PageTransition>} />
                   <Route path="/desktop/authorize" element={<PageTransition><DesktopAuthorize /></PageTransition>} />
                   <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
