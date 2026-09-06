@@ -13,6 +13,7 @@ import { useI18n } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
 import { parseTopNavItems, withPublicSettingsDefaults } from "@/lib/public-settings"
 import { cn } from "@/lib/utils"
+import { DashboardSlot } from "@/lib/slots"
 
 interface CurrentUser {
   username?: string
@@ -44,16 +45,20 @@ export function Layout() {
   const publicSettings = withPublicSettingsDefaults(settings)
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
+      <DashboardSlot name="header.before" />
       <AppHeader
         publicSettings={publicSettings}
         user={user}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
       />
+      <DashboardSlot name="header.after" />
 
       <div className="flex min-h-0 flex-1">
         {!isChatWorkspace && <ResizableSidebar storageKey="main-navigation" side="left" defaultWidth={240} minWidth={192} maxWidth={420} className="hidden lg:block lg:h-full">
+          <DashboardSlot name="sidebar.before" />
           <Sidebar className="w-full" />
+          <DashboardSlot name="sidebar.after" />
         </ResizableSidebar>}
 
         <div className={cn("fixed inset-0 top-16 z-40 transition-opacity duration-200 lg:hidden", isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSidebarOpen}>
@@ -69,6 +74,7 @@ export function Layout() {
         </div>
 
         <main className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto transition-[filter] duration-200", isSidebarOpen && "max-lg:blur-sm")}>
+          <DashboardSlot name="content.before" />
           {publicSettings.sms_binding_required && user && !user.phone && (
             <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 sm:px-6 lg:px-8 dark:text-amber-300">
               <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2">
@@ -82,10 +88,13 @@ export function Layout() {
           <div className={cn("mx-auto w-full flex-1", isChatWorkspace ? "min-h-0 max-w-none p-0" : "max-w-6xl p-4 sm:p-6 lg:p-8")}>
             <PageTransition className="page-shell-transition">
               <div className={cn(isChatWorkspace ? "h-full min-h-0" : "space-y-6")}>
+                <DashboardSlot name="content.header" />
+                <DashboardSlot name="content.toolbar" />
                 <Outlet />
               </div>
             </PageTransition>
           </div>
+          <DashboardSlot name="content.after" />
           {publicSettings.footer_text && (
             <footer className="border-t px-4 py-4 text-center text-sm text-muted-foreground sm:px-6 lg:px-8">
               {publicSettings.footer_text}
@@ -126,6 +135,7 @@ export function AppHeader({
   return (
     <header className="z-30 flex h-16 shrink-0 items-center justify-between border-b bg-background/95 px-4 backdrop-blur sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
+        <DashboardSlot name="header.brand.after" />
         <Button
           className="lg:hidden"
           variant="outline"
@@ -139,6 +149,7 @@ export function AppHeader({
         <Brand />
       </div>
       <div className="flex min-w-0 items-center gap-3">
+        <DashboardSlot name="header.nav" />
         {publicSettings.top_nav_enabled && topNavItems.length > 0 && (
           <div className="hidden min-w-0 items-center gap-4 text-sm text-muted-foreground lg:flex">
             {topNavItems.map((item) => (
@@ -147,6 +158,7 @@ export function AppHeader({
           </div>
         )}
         {extra}
+        <DashboardSlot name="header.actions" />
         <ThemeSwitcher />
         <LanguageSwitcher compact />
         <UserAvatar user={user} />
