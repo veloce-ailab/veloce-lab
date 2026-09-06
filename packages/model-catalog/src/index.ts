@@ -1,7 +1,7 @@
-import { Context, Session } from "yumeri";
+import { Context, Database, Session } from "yumeri";
 import type { ModelService } from "@velocelab/model";
 
-export const depend = ["model"];
+export const depend = ["model", "database"];
 export const provide = ["model-catalog"];
 
 export interface ModelCatalogService {
@@ -16,6 +16,7 @@ declare module "yumeri" {
 
 export function apply(ctx: Context) {
   const model = ctx.component.model as ModelService;
+  const db = ctx.component.database as Database;
   const catalog: ModelCatalogService = {
     list: () => model.models.list(),
   };
@@ -33,5 +34,31 @@ export function apply(ctx: Context) {
       return;
     }
     session.respond(await catalog.list(), "json");
+  });
+
+  // Model synchronization belongs to the catalog plugin, not the service
+  // bootstrap/authentication plugin.
+  ctx.route("/api/models/sync/preview").methods("POST").action(async (session) => {
+    const user = session.properties.user as { is_admin?: boolean } | undefined;
+    if (!user?.is_admin) return;
+    const input = (await session.parseRequestBody()) as Record<string, unknown>;
+    const channel = await model.channels.findById(Number(input.channel_id));
+    if (!channel) { session.status = 404; session.respond({ error: "Channel not found" }, "json"); return; }
+    const path = String(input.path ?? "/v1/models").trim() || "/v1/models";
+    const response = await fetch(`${channel.base_url.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`, { headers: channel.api_key ? { Authorization: `Bearer ${channel.api_key}` } : {} });
+    const payload = await response.json().catch(() => ({})) as any;
+    const items = Array.isArray(payload.data) ? payload.data : Array.isArray(payload.models) ? payload.models : [];
+    const existing = await catalog.list();
+    session.respond({ channel_id: channel.id, channel_name: channel.name, source: "upstream", models: items.map((item: any) => ({ model_name: String(item.id ?? item.name ?? ""), provider: channel.type, exists: existing.some((entry: any) => entry.model_name === String(item.id ?? item.name ?? "")) })) }, "json");
+  });
+
+  ctx.route("/api/models/sync/preview/browser").methods("POST").action(async (session) => {
+    const user = session.properties.user as { is_admin?: boolean } | undefined;
+    if (!user?.is_admin) return;
+    const input = (await session.parseRequestBody()) as any;
+    const channel = await model.channels.findById(Number(input.channel_id));
+    const payload = input.payload ?? {};
+    const items = Array.isArray(payload.data) ? payload.data : Array.isArray(payload.models) ? payload.models : Array.isArray(payload) ? payload : [];
+    session.respond({ channel_id: channel?.id ?? Number(input.channel_id), channel_name: channel?.name ?? "", source: String(input.source ?? "browser"), models: items.map((item: any) => ({ model_name: String(item.id ?? item.name ?? item.model_name ?? ""), provider: channel?.type ?? "", exists: false })) }, "json");
   });
 }
