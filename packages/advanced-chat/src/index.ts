@@ -492,9 +492,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       const channel = selected ? channelRows.find((row: any) => row.id === selected.channel_id) : requestedChannel.find((row: any) => row.enabled);
       if (!channel) throw Error("no enabled upstream channel");
       const upstreamModel = selected?.upstream_model_name || modelName;
-      const protocol = adapters.protocolFor(channel.type);
-      const endpoint = protocol === "claude" ? "claude_messages" : protocol === "gemini" ? "gemini_generate" : protocol === "responses" ? "responses" : "chat";
-      const request = adapters.request(channel.type, endpoint, upstreamModel, channel.api_key || "");
+      const endpoint = "chat" as const;
       const payload: Record<string, unknown> = {
         model: upstreamModel,
         messages: [...prior.map((message: any) => ({ role: message.role, content: message.content })), ...input.messages],
@@ -503,9 +501,11 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       if (input.maxTokens) payload.max_tokens = input.maxTokens;
       if (input.temperature !== undefined) payload.temperature = input.temperature;
       if (input.reasoningEffort) payload.reasoning_effort = input.reasoningEffort;
-      const prepared = adapters.applyPayload(channel.type, endpoint, payload);
+      const request = adapters.request({ channelType: channel.type, endpoint, model: upstreamModel, apiKey: channel.api_key || "", stream: input.stream === true, payload });
+      if (!request) throw Error("no adapter registered for upstream channel");
+      const protocol = request.protocol;
       const headers = { ...request.headers, ...(input.stream ? { Accept: "text/event-stream" } : {}) };
-      const response = await fetch(`${String(channel.base_url).replace(/\\\/$/, "")}${request.path || ""}`, { method: "POST", headers, body: JSON.stringify(prepared) });
+      const response = await fetch(`${String(channel.base_url).replace(/\\\/$/, "")}${request.path || ""}`, { method: "POST", headers, body: JSON.stringify(request.payload) });
       const text = await response.text();
       if (!response.ok) {
         await db.update("advanced_chat_runs", { id: runId }, { status: "failed", error_message: text.slice(0, 10000), finished_at: new Date().toISOString(), updated_at: new Date().toISOString() });
