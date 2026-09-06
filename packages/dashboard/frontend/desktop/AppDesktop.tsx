@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tan
 import { Activity, Check, FolderOpen, Globe2, LogOut, PanelTop, Plus, Server, Settings, UserCircle } from "lucide-react"
 import Login from "@/pages/Login"
 import Setup from "@/pages/Setup"
-import AdvancedChat from "@/pages/AdvancedChat"
+
 import SettingsWorkspace from "@/pages/SettingsWorkspace"
 import api, {
   apiURL,
@@ -909,7 +909,7 @@ function DesktopPageRoutes({ className }: { className: string }) {
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
             <Route path="/setup" element={<Setup />} />
-            <Route path="/chat/*" element={<ProtectedRoute><AdvancedChat /></ProtectedRoute>} />
+            <Route path="/chat/*" element={<ProtectedRoute><div className="p-6">Advanced Chat plugin is loading…</div></ProtectedRoute>} />
             <Route path="/dashboard/*" element={<Navigate to="/settings/statistics" replace />} />
             <Route path="/settings/*" element={<ProtectedRoute><SettingsWorkspace /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to={hasAuthToken() ? "/chat" : "/login"} replace />} />
@@ -1182,3 +1182,4 @@ function App() {
 }
 
 export default App
+
