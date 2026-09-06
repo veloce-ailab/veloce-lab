@@ -25,6 +25,37 @@ export function apply(ctx: Context) {
       return { id: channel.id, name: channel.name, request_count: rows.length, input_tokens: input, output_tokens: output, total_tokens: input + output, total_cost: rows.reduce((sum: number, row: any) => sum + Number(row.cost || 0), 0).toString() };
     }) }, "json");
   });
+  ctx.route("/api/channels/:id/health").methods("POST").action(async (session, _params, id) => {
+    if (!admin(session)) return;
+    const channel = await model.channels.findById(Number(id));
+    if (!channel) { session.status = 404; session.respond({ error: "Channel not found" }, "json"); return; }
+    const checkedAt = new Date().toISOString();
+    try {
+      const response = await fetch(channel.base_url.replace(/\\/$/, ""), {
+        headers: channel.api_key ? { Authorization: `Bearer ${channel.api_key}` } : {},
+        signal: AbortSignal.timeout(10_000),
+      });
+      const status = response.ok ? "up" : "down";
+      await model.channels.update(channel.id!, {
+        last_health_checked_at: checkedAt,
+        last_health_status: status,
+        consecutive_failures: response.ok ? 0 : (channel.consecutive_failures ?? 0) + 1,
+        last_failure_at: response.ok ? null : checkedAt,
+        last_failure_reason: response.ok ? "" : `health check returned HTTP ${response.status}`,
+      } as any);
+      session.respond({ ok: response.ok, status: response.status, health_status: status }, "json");
+    } catch (error) {
+      await model.channels.update(channel.id!, {
+        last_health_checked_at: checkedAt,
+        last_health_status: "down",
+        consecutive_failures: (channel.consecutive_failures ?? 0) + 1,
+        last_failure_at: checkedAt,
+        last_failure_reason: error instanceof Error ? error.message : String(error),
+      } as any);
+      session.status = 502;
+      session.respond({ error: "Health check failed", health_status: "down" }, "json");
+    }
+  });
   ctx.route("/api/channels").methods("GET").action(async (session) => {
     if (!admin(session)) return;
     session.respond(await model.channels.list(), "json");
