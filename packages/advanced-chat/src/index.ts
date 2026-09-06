@@ -915,7 +915,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         }
       }
       const parsed = adapters.parse(channel.type, data);
-      const content = parsed?.content || streamedContent;
+      let content = parsed?.content || streamedContent;
       const toolCalls = parsed?.toolCalls || [];
       const finishReason = parsed?.finishReason || "stop";
       const toolResults: unknown[] = [];
@@ -941,6 +941,42 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
               id: String(call.id ?? ""),
               error: error instanceof Error ? error.message : String(error),
             });
+          }
+        }
+      }
+      if (toolResults.length > 0 && toolCalls.length > 0) {
+        const followupMessages: any[] = [
+          ...messages,
+          { role: "assistant", content, toolCalls },
+          ...toolResults.map((item: any) => ({
+            role: "tool",
+            content: JSON.stringify(item.result ?? { error: item.error }),
+            toolCallId: item.id,
+          })),
+        ];
+        const followup = adapters.build({
+          channelType: channel.type,
+          model: upstreamModel,
+          apiKey: channel.api_key || "",
+          stream: false,
+          messages: followupMessages,
+          maxTokens: input.maxTokens,
+          temperature: input.temperature,
+          reasoningEffort: input.reasoningEffort,
+        });
+        if (followup) {
+          const followupResponse = await fetch(
+            `${String(channel.base_url).replace(/\\\/$/, "")}${followup.urlPath}`,
+            {
+              method: "POST",
+              headers: followup.headers,
+              body: JSON.stringify(followup.body),
+            },
+          );
+          if (followupResponse.ok) {
+            const followupData = await followupResponse.json().catch(() => ({}));
+            const followupParsed = adapters.parse(channel.type, followupData);
+            if (followupParsed?.content) content = followupParsed.content;
           }
         }
       }
