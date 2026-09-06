@@ -370,6 +370,49 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     });
     session.respond({ upstream_channels: usage }, "json");
   });
+  ctx.route("/api/channels/:id/health").methods("POST").action(async (session, _params, id) => {
+    const user = await authenticate(session);
+    if (!user?.is_admin) return;
+    const channel = await model.channels.findById(Number(id));
+    if (!channel) {
+      session.status = 404;
+      session.respond({ error: "Channel not found" }, "json");
+      return;
+    }
+    const checkedAt = new Date().toISOString();
+    try {
+      const response = await fetch(channel.base_url.replace(/\\/$/, ""), {
+        method: "GET",
+        headers: channel.api_key
+          ? { Authorization: `Bearer ${channel.api_key}` }
+          : {},
+        signal: AbortSignal.timeout(10_000),
+      });
+      const status = response.ok ? "up" : "down";
+      await model.channels.update(channel.id!, {
+        last_health_checked_at: checkedAt,
+        last_health_status: status,
+        ...(response.ok
+          ? { consecutive_failures: 0, last_failure_reason: "" }
+          : {
+              consecutive_failures: (channel.consecutive_failures ?? 0) + 1,
+              last_failure_at: checkedAt,
+              last_failure_reason: `health check returned HTTP ${response.status}`,
+            }),
+      });
+      session.respond({ ok: response.ok, status: response.status, health_status: status }, "json");
+    } catch (error) {
+      await model.channels.update(channel.id!, {
+        last_health_checked_at: checkedAt,
+        last_health_status: "down",
+        consecutive_failures: (channel.consecutive_failures ?? 0) + 1,
+        last_failure_at: checkedAt,
+        last_failure_reason: error instanceof Error ? error.message : String(error),
+      });
+      session.status = 502;
+      session.respond({ error: "Health check failed", health_status: "down" }, "json");
+    }
+  });
   ctx.route("/api/models/sync/preview").methods("POST").action(async (session) => {
     const user = await authenticate(session);
     if (!user?.is_admin) return;
