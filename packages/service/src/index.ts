@@ -233,7 +233,6 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     return user;
   };
 
-  ctx.route("/api/user/me").methods("GET").action(async (session) => { const user = await authenticate(session); if (user) session.respond(user, "json"); });
   ctx.route("/api/channels").methods("GET").action(async (session) => {
     const user = await authenticate(session);
     if (!user) return;
