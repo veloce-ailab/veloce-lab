@@ -17,6 +17,7 @@
     "@velocelab/model": {},
     "@velocelab/billing": { "enabled": true },
     "@velocelab/scheduler": { "enabled": true },
+    "@velocelab/audit": { "enabled": true },
     "@velocelab/user": {},
     "@velocelab/auth": { "enabled": true },
     "@velocelab/model-catalog": {},
