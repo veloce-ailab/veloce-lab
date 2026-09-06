@@ -413,22 +413,6 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
       session.respond({ error: "Health check failed", health_status: "down" }, "json");
     }
   });
-  ctx.route("/api/status").methods("GET").action(async (session) => {
-    const monitors = await db.select("status_monitors", { enabled: true } as any);
-    session.respond({
-      enabled: monitors.length > 0,
-      generated_at: new Date().toISOString(),
-      monitors: monitors.map((monitor: any) => ({
-        id: monitor.id,
-        name: monitor.name,
-        status: monitor.last_status || "pending",
-        latency_ms: Number(monitor.last_latency_ms || 0),
-        last_checked_at: monitor.last_checked_at || null,
-        uptime: monitor.last_status === "up" ? 100 : 0,
-        recent_checks: [],
-      })),
-    }, "json");
-  });
   ctx.route("/api/models/sync/preview").methods("POST").action(async (session) => {
     const user = await authenticate(session);
     if (!user?.is_admin) return;
