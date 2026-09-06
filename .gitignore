@@ -13,6 +13,7 @@ flai.exe~
 log/
 /original/
 /old/
+transfer.md
 /.cache/
 node_modules/
 .yarn/install-state.gz
