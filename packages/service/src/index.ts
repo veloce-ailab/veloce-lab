@@ -233,55 +233,6 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     return user;
   };
 
-  ctx.route("/api/channels").methods("GET").action(async (session) => {
-    const user = await authenticate(session);
-    if (!user) return;
-    if (!user.is_admin) { session.status = 403; session.respond({ error: "Admin access required" }, "json"); return; }
-    session.respond(await model.channels.list(), "json");
-  });
-  ctx.route("/api/channels").methods("POST").action(async (session) => {
-    const user = await authenticate(session);
-    if (!user?.is_admin) return;
-    const input = (await session.parseRequestBody()) as Record<string, unknown>;
-    const now = new Date().toISOString();
-    const channel = await model.channels.create({
-      user_channel_id: Number(input.user_channel_id ?? 0) || null,
-      name: String(input.name ?? "").trim(),
-      type: String(input.type ?? "openai").trim(),
-      base_url: String(input.base_url ?? "").trim(),
-      api_key: String(input.api_key ?? ""),
-      plugin_config: String(input.plugin_config ?? "{}"),
-      multiplier: String(input.multiplier ?? "1"),
-      priority: Number(input.priority ?? 1),
-      weight: Number(input.weight ?? 1),
-      enabled: input.enabled !== false,
-      price_sync_enabled: input.price_sync_enabled === true,
-      price_sync_cron: String(input.price_sync_cron ?? ""),
-      consecutive_failures: 0,
-      last_failure_reason: "",
-      auto_disabled_reason: "",
-      last_health_status: "unknown",
-    } as any);
-    session.status = 201;
-    session.respond(channel, "json");
-  });
-  ctx.route("/api/channels/:id").methods("PUT").action(async (session, _params, id) => {
-    const user = await authenticate(session);
-    if (!user?.is_admin) return;
-    const input = (await session.parseRequestBody()) as Record<string, unknown>;
-    const updates = Object.fromEntries(
-      ["name", "type", "base_url", "api_key", "plugin_config", "multiplier", "priority", "weight", "enabled", "price_sync_enabled", "price_sync_cron"]
-        .filter((key) => input[key] !== undefined)
-        .map((key) => [key, input[key]]),
-    );
-    session.respond(await model.channels.update(Number(id), updates as any), "json");
-  });
-  ctx.route("/api/channels/:id").methods("DELETE").action(async (session, _params, id) => {
-    const user = await authenticate(session);
-    if (!user?.is_admin) return;
-    await model.channels.delete(Number(id));
-    session.respond({ success: true }, "json");
-  });
   ctx.route("/api/channels/:id/models").methods("GET").action(async (session, _params, id) => {
     const user = await authenticate(session);
     if (!user?.is_admin) return;
