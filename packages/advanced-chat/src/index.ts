@@ -5,10 +5,9 @@ import type {
   HarnessConnectorDevice,
   HarnessSession,
 } from "@velocelab/model";
-import type { MiddlewareService } from "@velocelab/middleware";
 import { registerAdvancedChatRoutes } from "./routes.js";
 
-export const depend = ["database", "model", "adapters"];
+export const depend = ["database", "model"];
 export const provide = ["advanced-chat"];
 
 export interface AdvancedChatConfig {
@@ -140,10 +139,11 @@ function decodeObject(value: unknown) {
 
 export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const db = ctx.component.database as Database;
-  const adapters = ctx.component.adapters as import("@velocelab/adapters").AdapterRegistry;
+  const adapters = ctx.component.adapters as import("@velocelab/adapters").AdapterRegistry | undefined;
   const service: AdvancedChatService = {
     async createConnector(userId, name, remark) {
       if (!pluginConfig.enabled) throw Error("personal Harness is disabled");
+      if (!adapters) throw Error("upstream adapters are not enabled");
       const trimmedName = name.trim();
       if (!userId || !trimmedName) throw Error("connector name is required");
       const token = randomBytes(32).toString("base64url");
@@ -563,5 +563,5 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
     },
   };
   ctx.registerComponent("advanced-chat", service);
-  registerAdvancedChatRoutes(ctx, service, ctx.component.middleware as MiddlewareService | undefined);
+  registerAdvancedChatRoutes(ctx, service);
 }

@@ -8,8 +8,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@velocelab/model": "workspace:*",
-    "@velocelab/middleware": "workspace:*"
+    "@velocelab/model": "workspace:*"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"
