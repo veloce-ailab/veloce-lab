@@ -27,6 +27,7 @@ export function apply(ctx: Context) {
 
   ctx.route("/api/status").methods("GET").action(async (session) => {
     const monitors = await db.select("status_monitors", { enabled: true } as any);
+    const checks = await db.select("status_checks", {} as any);
     session.respond({
       enabled: monitors.length > 0,
       generated_at: new Date().toISOString(),
@@ -36,15 +37,25 @@ export function apply(ctx: Context) {
         status: monitor.last_status || "pending",
         latency_ms: Number(monitor.last_latency_ms || 0),
         last_checked_at: monitor.last_checked_at || null,
-        uptime: monitor.last_status === "up" ? 100 : 0,
-        recent_checks: [],
+        uptime: (() => {
+          const recent = checks.filter((check: any) => check.monitor_id === monitor.id).slice(-60);
+          return recent.length
+            ? (recent.filter((check: any) => check.status === "up").length / recent.length) * 100
+            : monitor.last_status === "up" ? 100 : 0;
+        })(),
+        recent_checks: checks.filter((check: any) => check.monitor_id === monitor.id).slice(-60),
       })),
     }, "json");
   });
 
   ctx.route("/api/admin/status-monitors").methods("GET").action(async (session) => {
     if (!admin(session)?.is_admin) return;
-    session.respond(await service.list(), "json");
+    const monitors = await service.list();
+    const result = await Promise.all(monitors.map(async (monitor: any) => ({
+      ...monitor,
+      recent_checks: await db.select("status_checks", { monitor_id: monitor.id } as any),
+    })));
+    session.respond(result, "json");
   });
   ctx.route("/api/admin/status-monitors").methods("POST").action(async (session) => {
     if (!admin(session)?.is_admin) return;
@@ -84,5 +95,49 @@ export function apply(ctx: Context) {
     await db.remove("status_checks", { monitor_id: Number(id) } as any);
     await db.remove("status_monitors", { id: Number(id) } as any);
     session.respond({ success: true }, "json");
+  });
+  ctx.route("/api/admin/status-monitors/:id/check").methods("POST").action(async (session, _params, id) => {
+    if (!admin(session)?.is_admin) return;
+    const monitor = await db.selectOne("status_monitors", { id: Number(id) } as any) as any;
+    if (!monitor) {
+      session.status = 404;
+      session.respond({ error: "Status monitor not found" }, "json");
+      return;
+    }
+    const started = Date.now();
+    let status = "down";
+    let statusCode = 0;
+    let message = "Request failed";
+    try {
+      const response = await fetch(String(monitor.target_url), {
+        method: String(monitor.method || "GET").toUpperCase() === "HEAD" ? "HEAD" : "GET",
+        signal: AbortSignal.timeout(15_000),
+      });
+      statusCode = response.status;
+      status = response.ok ? "up" : "down";
+      message = `HTTP ${response.status}`;
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    const now = new Date().toISOString();
+    const latency = Date.now() - started;
+    await db.update("status_monitors", { id: Number(id) } as any, {
+      last_status: status,
+      last_latency_ms: latency,
+      last_status_code: statusCode,
+      last_message: message,
+      last_checked_at: now,
+      updated_at: now,
+    } as any);
+    const check = await db.create("status_checks", {
+      monitor_id: Number(id),
+      status,
+      latency_ms: latency,
+      status_code: statusCode,
+      message,
+      checked_at: now,
+      created_at: now,
+    } as any);
+    session.respond(check, "json");
   });
 }
