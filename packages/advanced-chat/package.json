@@ -5,11 +5,12 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && vite build"
   },
   "dependencies": {
     "@velocelab/model": "workspace:*"
   },
+  "devDependencies": { "vite": "^8.0.12", "@vitejs/plugin-react": "^6.0.1", "react": "^19.2.6", "react-dom": "^19.2.6", "react-router-dom": "^7.15.1", "@tanstack/react-query": "^5.100.14", "lucide-react": "^1.16.0", "axios": "^1.16.1" },
   "peerDependencies": {
     "yumeri": "^3.0.0"
   }
