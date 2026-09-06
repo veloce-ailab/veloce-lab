@@ -4,7 +4,14 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "scripts": { "build": "tsc -p tsconfig.json" },
-  "dependencies": { "@velocelab/tools": "workspace:*", "@velocelab/connector": "workspace:*" },
-  "peerDependencies": { "yumeri": "^3.0.0" }
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@velocelab/connector": "workspace:*",
+    "@velocelab/tools": "workspace:*"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  }
 }

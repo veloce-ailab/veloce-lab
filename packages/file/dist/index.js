@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Schema } from "yumeri";
-export const depend = ["velocelab-core"];
+export const depend = [];
 export const provide = ["file"];
 export const config = Schema.object({
     root: Schema.string("File storage root").default("./data"),

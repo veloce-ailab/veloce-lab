@@ -31,9 +31,13 @@ function where(query, params) {
                 parts.push(`(${expressions.join(key === "$or" ? " OR " : " AND ")})`);
             continue;
         }
-        if (value === undefined || value === null)
-            continue;
         const column = identifier(key);
+        if (value === undefined)
+            continue;
+        if (value === null) {
+            parts.push(`${column} IS NULL`);
+            continue;
+        }
         if (typeof value === "object" && !Array.isArray(value)) {
             for (const [operator, operand] of Object.entries(value)) {
                 if (operand === undefined || operand === null)
@@ -96,6 +100,25 @@ export class SqlDatabase {
             return sql;
         });
         await this.driver.execute(`CREATE TABLE IF NOT EXISTS ${identifier(String(table))} (${columns.join(", ")})`);
+        for (const [name, input] of Object.entries(schema)) {
+            if (name === "id")
+                continue;
+            const definition = typeof input === "string" ? { type: input } : input;
+            let column = `${identifier(name)} ${fieldType(definition.type)}`;
+            if (definition.initial !== undefined) {
+                column +=
+                    " DEFAULT " +
+                        (typeof definition.initial === "string"
+                            ? `'${definition.initial.replace(/'/g, "''")}'`
+                            : String(definition.initial));
+            }
+            try {
+                await this.driver.execute(`ALTER TABLE ${identifier(String(table))} ADD COLUMN ${column}`);
+            }
+            catch {
+                // Existing columns are expected during every startup migration.
+            }
+        }
         for (const key of indexes?.unique ?? []) {
             const fields = (Array.isArray(key) ? key : [key])
                 .map((field) => identifier(String(field)))
