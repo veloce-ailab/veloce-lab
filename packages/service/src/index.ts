@@ -239,12 +239,6 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     if (!user.is_admin) { session.status = 403; session.respond({ error: "Admin access required" }, "json"); return; }
     session.respond(await model.channels.list(), "json");
   });
-  ctx.route("/api/models").methods("GET").action(async (session) => {
-    const user = await authenticate(session);
-    if (!user) return;
-    if (!user.is_admin) { session.status = 403; session.respond({ error: "Admin access required" }, "json"); return; }
-    session.respond(await model.models.list(), "json");
-  });
   ctx.route("/api/channels").methods("POST").action(async (session) => {
     const user = await authenticate(session);
     if (!user?.is_admin) return;
