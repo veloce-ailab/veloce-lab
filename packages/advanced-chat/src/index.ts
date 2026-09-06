@@ -800,7 +800,22 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           content: message.content,
         })),
         ...input.messages,
-      ];
+      ].map((message: any) => ({
+        role: ["system", "user", "assistant", "tool"].includes(message.role)
+          ? message.role
+          : "user",
+        content: String(message.content ?? ""),
+        ...(Array.isArray(message.tool_calls)
+          ? {
+              toolCalls: message.tool_calls.map((call: any) => ({
+                id: String(call.id ?? ""),
+                name: String(call.function?.name ?? call.name ?? ""),
+                arguments: String(call.function?.arguments ?? call.arguments ?? "{}"),
+              })),
+            }
+          : {}),
+        ...(message.tool_call_id ? { toolCallId: String(message.tool_call_id) } : {}),
+      }));
       const request = adapters.build({
         channelType: channel.type,
         model: upstreamModel,
