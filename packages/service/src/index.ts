@@ -245,7 +245,7 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     }
     const syncPath = String(input.path ?? "/v1/models").trim() || "/v1/models";
     const response = await fetch(
-      `${channel.base_url.replace(/\\/$/, "")}${syncPath.startsWith("/") ? syncPath : `/${syncPath}`}`,
+      `${channel.base_url.replace(/\/$/, "")}${syncPath.startsWith("/") ? syncPath : `/${syncPath}`}`,
       {
         headers: channel.api_key
           ? { Authorization: `Bearer ${channel.api_key}` }
