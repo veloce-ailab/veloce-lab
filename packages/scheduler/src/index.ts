@@ -150,6 +150,7 @@ export function apply(ctx: Context, cfg: SchedulerConfig) {
         return;
       }
       try {
+        const startedAt = new Date().toISOString();
         const result = await chat.complete(id, {
           model: String(task.model_name ?? ""),
           messages: [{ role: "user", content: String(task.message ?? "") }],
@@ -167,6 +168,16 @@ export function apply(ctx: Context, cfg: SchedulerConfig) {
             updated_at: new Date().toISOString(),
           },
         );
+        await db.create("scheduled_task_runs", {
+          task_name: String(task.name ?? taskId),
+          status: "completed",
+          trigger: "manual",
+          node_name: "",
+          message: String(task.message ?? ""),
+          duration_ms: 0,
+          started_at: startedAt,
+          created_at: new Date().toISOString(),
+        } as any);
         s.respond(result, "json");
       } catch (error) {
         await db.update(
@@ -179,9 +190,39 @@ export function apply(ctx: Context, cfg: SchedulerConfig) {
             updated_at: new Date().toISOString(),
           },
         );
+        await db.create("scheduled_task_runs", {
+          task_name: String(task.name ?? taskId),
+          status: "failed",
+          trigger: "manual",
+          node_name: "",
+          message: String(task.message ?? ""),
+          duration_ms: 0,
+          started_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        } as any);
         s.status = 500;
         s.respond(
           { error: error instanceof Error ? error.message : String(error) },
+          "json",
+        );
+      }
+    });
+  ctx
+    .route("/api/user/advanced-chat/scheduled-tasks/:id/runs")
+    .methods("GET")
+    .action(async (s, _p, taskId) => {
+      const id = user(s);
+      if (id) {
+        const task: any = await db.selectOne("advanced_chat_scheduled_tasks", {
+          id: taskId,
+          user_id: id,
+        });
+        s.respond(
+          task
+            ? await db.select("scheduled_task_runs", {
+                task_name: String(task.name ?? taskId),
+              })
+            : [],
           "json",
         );
       }
