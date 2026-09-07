@@ -67,6 +67,48 @@ export function apply(ctx: Context) {
     parameters: { type: "object", properties: {} },
     execute: (_input, context) => service.list(context.userId),
   });
+  chat.registerTool({
+    name: "mcp_call",
+    description: "Call a configured MCP server endpoint",
+    parameters: {
+      type: "object",
+      properties: {
+        server_id: { type: "string" },
+        method: { type: "string" },
+        params: { type: "object" },
+      },
+      required: ["server_id", "method"],
+    },
+    execute: async (input, context) => {
+      const value = input as any;
+      const server: any = await db.selectOne("advanced_chat_mcp_servers", {
+        id: String(value.server_id),
+        user_id: context.userId,
+      });
+      if (!server || server.enabled === false)
+        throw Error("MCP server is not available");
+      const response = await fetch(String(server.url), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: randomUUID(),
+          method: String(value.method),
+          params: value.params ?? {},
+        }),
+      });
+      const text = await response.text();
+      if (!response.ok)
+        throw Error(
+          `MCP request failed (${response.status}): ${text.slice(0, 500)}`,
+        );
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    },
+  });
   const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
   ctx
     .route("/api/user/advanced-chat/mcp-servers")
