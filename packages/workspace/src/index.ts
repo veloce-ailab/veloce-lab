@@ -31,9 +31,11 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
   const service: WorkspaceService = {
     list: (userId) =>
       db.select("advanced_chat_workspaces", { user_id: userId }),
-    create: (userId, input) =>
-      db.create("advanced_chat_workspaces", {
-        id: randomUUID(),
+    create: async (userId, input) => {
+      const now = new Date().toISOString();
+      const workspaceId = randomUUID();
+      const workspace = await db.create("advanced_chat_workspaces", {
+        id: workspaceId,
         user_id: userId,
         name: String(input.name ?? "Workspace"),
         location: String(input.location ?? "server"),
@@ -41,9 +43,25 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
         model: String(input.model ?? ""),
         agent: String(input.agent ?? ""),
         device_id: String(input.device_id ?? ""),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      } as any),
+        created_at: now,
+        updated_at: now,
+      } as any);
+      const fileId = randomUUID();
+      const content = `# ${String(input.name ?? "Workspace")}\n\n`;
+      const storagePath = `workspaces/${userId}/${workspaceId}/${fileId}.md`;
+      await files.write(storagePath, content);
+      await db.create("advanced_chat_workspace_files", {
+        id: fileId,
+        workspace_id: workspaceId,
+        user_id: userId,
+        name: "欢迎使用.md",
+        content,
+        storage_path: storagePath,
+        created_at: now,
+        updated_at: now,
+      } as any);
+      return workspace;
+    },
     files: (userId, workspaceId) =>
       db.select("advanced_chat_workspace_files", {
         user_id: userId,
@@ -134,147 +152,127 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
       if (id) s.respond(await service.files(id, workspaceId), "json");
     });
   ctx
-    .route("/api/user/advanced-chat/files")
-    .methods("GET")
-    .action(async (s) => {
-      const id = user(s);
-      if (id)
-        s.respond(
-          await db.select("advanced_chat_files", { user_id: id }),
-          "json",
-        );
-    });
-  ctx
-    .route("/api/user/advanced-chat/files")
+    .route("/api/user/advanced-chat/workspaces/:id/files")
     .methods("POST")
-    .action(async (s) => {
+    .action(async (s, _p, workspaceId) => {
       const id = user(s);
       if (!id) return;
-      const input = (await s.parseRequestBody()) as any;
-      const data = String(input.data ?? input.content ?? "");
-      const now = new Date().toISOString();
-      const fileId = randomUUID();
-      const storagePath = `workspace-files/${id}/${fileId}`;
-      await files.write(storagePath, data);
-      const row = await db.create("advanced_chat_files", {
-        id: fileId,
+      const workspace: any = await db.selectOne("advanced_chat_workspaces", {
+        id: workspaceId,
         user_id: id,
-        name: String(input.name ?? "file"),
-        mime_type: String(input.mime_type ?? "text/plain"),
-        size: Buffer.byteLength(data),
-        data: "",
+      });
+      if (!workspace) {
+        s.status = 404;
+        s.respond({ error: "Workspace not found" }, "json");
+        return;
+      }
+      const input = (await s.parseRequestBody()) as any;
+      const name = String(input.name ?? "").trim();
+      const content = String(input.content ?? "");
+      if (!name || /[\\/\0]/.test(name) || name === "." || name === "..") {
+        s.status = 400;
+        s.respond({ error: "Invalid file name" }, "json");
+        return;
+      }
+      if (Buffer.byteLength(content) > 2 * 1024 * 1024) {
+        s.status = 413;
+        s.respond({ error: "file content exceeds 2 MiB" }, "json");
+        return;
+      }
+      const exists = await db.selectOne("advanced_chat_workspace_files", {
+        workspace_id: workspaceId,
+        user_id: id,
+        name,
+      });
+      if (exists) {
+        s.status = 409;
+        s.respond({ error: "A file with this name already exists" }, "json");
+        return;
+      }
+      const fileId = randomUUID();
+      const storagePath = `workspaces/${id}/${workspaceId}/${fileId}.md`;
+      await files.write(storagePath, content);
+      const row = await db.create("advanced_chat_workspace_files", {
+        id: fileId,
+        workspace_id: workspaceId,
+        user_id: id,
+        name,
+        content,
         storage_path: storagePath,
-        text_extract: data,
-        hash: "",
-        source: "upload",
-        source_key: "",
-        created_at: now,
-        updated_at: now,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       } as any);
       s.status = 201;
       s.respond(row, "json");
     });
   ctx
-    .route("/api/user/advanced-chat/files/:id/content")
-    .methods("GET")
-    .action(async (s, _p, fileId) => {
-      const id = user(s);
-      const row = id
-        ? await db.selectOne("advanced_chat_files", { id: fileId, user_id: id })
-        : undefined;
-      if (!row) {
-        s.status = 404;
-        s.respond({ error: "File not found" }, "json");
-        return;
-      }
-      s.respond(
-        {
-          content: row.storage_path
-            ? (await files.read(String(row.storage_path))).toString("utf8")
-            : (row.data ?? row.text_extract ?? ""),
-        },
-        "json",
-      );
-    });
-  ctx
-    .route("/api/user/advanced-chat/files/:id/download")
-    .methods("GET")
-    .action(async (s, _p, fileId) => {
-      const id = user(s);
-      const row = id
-        ? await db.selectOne("advanced_chat_files", { id: fileId, user_id: id })
-        : undefined;
-      if (!row) {
-        s.status = 404;
-        s.respond({ error: "File not found" }, "json");
-        return;
-      }
-      s.respond(
-        {
-          name: row.name,
-          mime_type: row.mime_type,
-          data: row.storage_path
-            ? (await files.read(String(row.storage_path))).toString("base64")
-            : (row.data ?? ""),
-        },
-        "json",
-      );
-    });
-  ctx
-    .route("/api/user/advanced-chat/files/:id")
+    .route("/api/user/advanced-chat/workspaces/:id/files/:file_id")
     .methods("PUT")
-    .action(async (s, _p, fileId) => {
+    .action(async (s, _p, workspaceId, fileId) => {
       const id = user(s);
       if (!id) return;
-      const existing: any = await db.selectOne("advanced_chat_files", {
+      const row: any = await db.selectOne("advanced_chat_workspace_files", {
         id: fileId,
+        workspace_id: workspaceId,
         user_id: id,
       });
-      if (!existing) {
+      if (!row) {
         s.status = 404;
         s.respond({ error: "File not found" }, "json");
         return;
       }
       const input = (await s.parseRequestBody()) as any;
-      const data =
-        input.content === undefined
-          ? existing.storage_path
-            ? (await files.read(String(existing.storage_path))).toString("utf8")
-            : existing.data
-          : String(input.content);
-      if (existing.storage_path)
-        await files.write(String(existing.storage_path), data);
+      const content = String(input.content ?? row.content ?? "");
+      if (Buffer.byteLength(content) > 2 * 1024 * 1024) {
+        s.status = 413;
+        s.respond({ error: "file content exceeds 2 MiB" }, "json");
+        return;
+      }
+      const name = String(input.name ?? row.name).trim();
+      if (!name || /[\\/\0]/.test(name)) {
+        s.status = 400;
+        s.respond({ error: "Invalid file name" }, "json");
+        return;
+      }
+      if (row.storage_path)
+        await files.write(String(row.storage_path), content);
       await db.update(
-        "advanced_chat_files",
-        { id: fileId, user_id: id },
-        {
-          name: String(input.name ?? existing.name),
-          data: "",
-          text_extract: data,
-          size: Buffer.byteLength(data),
-          updated_at: new Date().toISOString(),
-        },
+        "advanced_chat_workspace_files",
+        { id: fileId, workspace_id: workspaceId, user_id: id },
+        { name, content, updated_at: new Date().toISOString() },
       );
       s.respond(
-        await db.selectOne("advanced_chat_files", { id: fileId, user_id: id }),
+        await db.selectOne("advanced_chat_workspace_files", {
+          id: fileId,
+          workspace_id: workspaceId,
+          user_id: id,
+        }),
         "json",
       );
     });
   ctx
-    .route("/api/user/advanced-chat/files/:id")
+    .route("/api/user/advanced-chat/workspaces/:id/files/:file_id")
     .methods("DELETE")
-    .action(async (s, _p, fileId) => {
+    .action(async (s, _p, workspaceId, fileId) => {
       const id = user(s);
-      if (id) {
-        const existing: any = await db.selectOne("advanced_chat_files", {
-          id: fileId,
-          user_id: id,
-        });
-        if (existing?.storage_path)
-          await files.remove(String(existing.storage_path));
-        await db.remove("advanced_chat_files", { id: fileId, user_id: id });
-        s.respond({ success: true }, "json");
+      if (!id) return;
+      const row: any = await db.selectOne("advanced_chat_workspace_files", {
+        id: fileId,
+        workspace_id: workspaceId,
+        user_id: id,
+      });
+      if (!row) {
+        s.status = 404;
+        s.respond({ error: "File not found" }, "json");
+        return;
       }
+      if (row.storage_path) await files.remove(String(row.storage_path));
+      await db.remove("advanced_chat_workspace_files", {
+        id: fileId,
+        workspace_id: workspaceId,
+        user_id: id,
+      });
+      s.respond({ success: true }, "json");
     });
   ctx
     .route("/api/user/advanced-chat/workspace/git/status")
