@@ -27,6 +27,21 @@ function similarity(left: number[], right: number[]) {
     0,
   );
 }
+function normalizeDocumentName(raw: unknown) {
+  let name = String(raw ?? "").trim();
+  if (!name) throw Error("document name is required");
+  if (
+    /[\\/\0]/.test(name) ||
+    name === "." ||
+    name === ".." ||
+    [...name].length > 255
+  )
+    throw Error("invalid document name");
+  if (!name.includes(".")) name += ".md";
+  if (!/\.(md|markdown|txt|json|csv|yaml|yml)$/i.test(name))
+    throw Error("only text documents can be created online");
+  return name;
+}
 async function embedTexts(
   db: Database,
   userId: number,
@@ -300,7 +315,18 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
       return;
     }
     const input = (await s.parseRequestBody()) as any;
-    const content = String(input.content ?? input.data ?? "");
+    let name: string;
+    try {
+      name = normalizeDocumentName(input.name ?? "Document.md");
+    } catch (error) {
+      s.status = 400;
+      s.respond(
+        { error: error instanceof Error ? error.message : String(error) },
+        "json",
+      );
+      return;
+    }
+    const content = String(input.content ?? input.data ?? "") || "\n";
     const documentId = randomUUID();
     const fileId = randomUUID();
     const storage = `knowledge/${userId}/${baseId}/${documentId}.txt`;
@@ -311,8 +337,8 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
       knowledge_base_id: baseId,
       user_id: userId,
       file_id: fileId,
-      name: String(input.name ?? "Document"),
-      mime_type: String(input.mime_type ?? "text/plain"),
+      name,
+      mime_type: "text/markdown",
       size: Buffer.byteLength(content),
       text_available: true,
       embedding_status: "pending",
@@ -381,12 +407,27 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
       }
       const input = (await s.parseRequestBody()) as any;
       const content = String(input.content ?? "");
+      let name = String(row.name);
+      if (String(input.name ?? "").trim()) {
+        try {
+          name = normalizeDocumentName(input.name);
+        } catch (error) {
+          s.status = 400;
+          s.respond(
+            { error: error instanceof Error ? error.message : String(error) },
+            "json",
+          );
+          return;
+        }
+      }
       if (row.storage_path)
         await files.write(String(row.storage_path), content);
       await db.update(
         "advanced_chat_knowledge_documents",
         { id: documentId, user_id: userId },
         {
+          name,
+          mime_type: "text/markdown",
           size: Buffer.byteLength(content),
           hash: createHash("sha256").update(content).digest("hex"),
           embedding_status: "pending",
