@@ -2,7 +2,8 @@ import { Context, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
 import type { ModelService } from "@velocelab/model";
 import type { ServiceRegistry } from "@velocelab/service";
-export const depend = ["service", "user", "model"];
+import "@velocelab/dashboard";
+export const depend = ["service", "user", "model", "dashboard"];
 export const provide = ["auth"];
 export interface AuthConfig {
   enabled: boolean;
@@ -18,6 +19,7 @@ declare module "yumeri" {
 }
 
 export function apply(ctx: Context, cfg: AuthConfig) {
+  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/auth.js", import.meta.url).pathname, plugin: "auth" });
   const service = ctx.component.service as ServiceRegistry;
   const model = ctx.component.model as ModelService;
   const auth: AuthService = { enabled: () => cfg.enabled };
