@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
+import "@velocelab/dashboard";
 import { Context, Database, Schema, Session } from "yumeri";
-export const depend = ["database"];
+export const depend = ["database", "dashboard"];
 export const provide = ["workspace"];
 export interface WorkspaceService { list(userId: number): Promise<any[]>; create(userId: number, input: Record<string, unknown>): Promise<any>; files(userId: number, workspaceId: string): Promise<any[]>; }
 export const config: Schema<{ enabled: boolean }> = Schema.object({ enabled: Schema.boolean("Enable workspaces").default(true) });
 declare module "yumeri" { interface Components { workspace: WorkspaceService; } }
 export function apply(ctx: Context, cfg: { enabled: boolean }) {
+  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/workspace.js", import.meta.url).pathname, plugin: "workspace" });
   const db = ctx.component.database as Database;
   const service: WorkspaceService = { list: userId => db.select("advanced_chat_workspaces", { user_id: userId }), create: (userId, input) => db.create("advanced_chat_workspaces", { id: randomUUID(), user_id: userId, name: String(input.name ?? "Workspace"), location: String(input.location ?? "server"), path: String(input.path ?? ""), model: String(input.model ?? ""), agent: String(input.agent ?? ""), device_id: String(input.device_id ?? ""), created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as any), files: (userId, workspaceId) => db.select("advanced_chat_workspace_files", { user_id: userId, workspace_id: workspaceId }) };
   ctx.registerComponent("workspace", service);
