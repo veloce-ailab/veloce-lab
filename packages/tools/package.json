@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
+  "dependencies": {
+    "@velocelab/advanced-chat": "workspace:*"
+  },
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json"
