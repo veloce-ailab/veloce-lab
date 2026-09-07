@@ -287,7 +287,17 @@ export function apply(ctx: Context) {
       const id = user(s);
       if (id)
         s.respond(
-          await db.select("advanced_chat_skill_packages", { user_id: id }),
+          await Promise.all(
+            (
+              await db.select("advanced_chat_skill_packages", { user_id: id })
+            ).map(async (row: any) => ({
+              ...row,
+              skills: await db.select("advanced_chat_packaged_skills", {
+                package_id: row.id,
+                user_id: id,
+              }),
+            })),
+          ),
           "json",
         );
     });
@@ -307,7 +317,42 @@ export function apply(ctx: Context) {
         s.respond({ error: "Skill package not found" }, "json");
         return;
       }
-      s.respond(row, "json");
+      const skills = await db.select("advanced_chat_packaged_skills", {
+        package_id: packageId,
+        user_id: id,
+      });
+      s.respond({ ...row, skills }, "json");
+    });
+  ctx
+    .route("/api/user/advanced-chat/skill-packages/:id/archive")
+    .methods("GET")
+    .action(async (s, _p, packageId) => {
+      const id = user(s);
+      const row: any = id
+        ? await db.selectOne("advanced_chat_skill_packages", {
+            id: packageId,
+            user_id: id,
+          })
+        : undefined;
+      if (!row) {
+        s.status = 404;
+        s.respond({ error: "Skill package not found" }, "json");
+        return;
+      }
+      try {
+        const archive = await files.read(String(row.storage_path));
+        s.respond(
+          {
+            id: row.id,
+            source_name: row.source_name,
+            content: archive.toString("base64"),
+          },
+          "json",
+        );
+      } catch {
+        s.status = 404;
+        s.respond({ error: "Skill package archive not found" }, "json");
+      }
     });
   ctx
     .route("/api/user/advanced-chat/skill-packages/:id")
@@ -315,6 +360,20 @@ export function apply(ctx: Context) {
     .action(async (s, _p, packageId) => {
       const id = user(s);
       if (id) {
+        const row: any = await db.selectOne("advanced_chat_skill_packages", {
+          id: packageId,
+          user_id: id,
+        });
+        if (!row) {
+          s.status = 404;
+          s.respond({ error: "Skill package not found" }, "json");
+          return;
+        }
+        await files.remove(String(row.storage_path)).catch(() => undefined);
+        await db.remove("advanced_chat_packaged_skills", {
+          package_id: packageId,
+          user_id: id,
+        });
         await db.remove("advanced_chat_skill_packages", {
           id: packageId,
           user_id: id,
