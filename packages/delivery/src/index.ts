@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Context, Database, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/model";
-export const depend = ["dashboard", "database"];
+export const depend = ["dashboard", "database", "model"];
 export const provide = ["delivery"];
 export function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
