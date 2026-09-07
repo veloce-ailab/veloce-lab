@@ -8,16 +8,16 @@ export interface DashboardExtensionApi {
   nav(item: DashboardNavItem): () => void
   slot(name: DashboardSlotName, component: ComponentType<Record<string, unknown>>, id: string, order?: number): () => void
 }
-const routes: DashboardRoute[] = []
+const registeredRoutes: DashboardRoute[] = []
 const navItems: DashboardNavItem[] = []
 const extensionListeners = new Set<() => void>()
 const notifyExtensions = () => extensionListeners.forEach((listener) => listener())
 export const dashboardExtension: DashboardExtensionApi = {
-  route(route) { routes.push(route); notifyExtensions(); return () => { const i = routes.indexOf(route); if (i >= 0) routes.splice(i, 1); notifyExtensions() } },
+  route(route) { registeredRoutes.push(route); notifyExtensions(); return () => { const i = registeredRoutes.indexOf(route); if (i >= 0) registeredRoutes.splice(i, 1); notifyExtensions() } },
   nav(item) { navItems.push(item); notifyExtensions(); return () => { const i = navItems.indexOf(item); if (i >= 0) navItems.splice(i, 1); notifyExtensions() } },
   slot(name, component, id, order = 0) { return dashboardSlots.register({ id, slot: name, component, order }) },
 }
-export function routes() { return [...routes] }
+export function routes() { return [...registeredRoutes] }
 export function nav() { return [...navItems].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) }
 export function subscribeExtensions(listener: () => void) { extensionListeners.add(listener); return () => extensionListeners.delete(listener) }
 export function defineExtension(setup: (api: DashboardExtensionApi) => void) {
