@@ -86,6 +86,85 @@ export function registerAdvancedChatRoutes(
       session.respond(agent(value), "json");
     });
   ctx
+    .route("/api/user/advanced-chat/agents/generate")
+    .methods("POST")
+    .action(async (session) => {
+      const current = await user(session);
+      if (!current?.id) return;
+      const input = await body(session);
+      const requirements = String(input.requirements ?? "").trim();
+      const sourceId = String(input.source_agent_id ?? "");
+      if (!requirements || requirements.length > 4000 || !sourceId) {
+        session.status = 400;
+        session.respond(
+          { error: "Agent requirements and source agent are required" },
+          "json",
+        );
+        return;
+      }
+      const source: any = await db.selectOne("advanced_chat_agents", {
+        stable_id: sourceId,
+        user_id: current.id,
+      });
+      if (!source || !source.default_model) {
+        session.status = 400;
+        session.respond(
+          { error: "Selected agent not found or has no default model" },
+          "json",
+        );
+        return;
+      }
+      try {
+        const result = await service.complete(current.id, {
+          model: source.default_model,
+          userChannelId: source.user_channel_id || undefined,
+          stream: false,
+          messages: [
+            {
+              role: "user",
+              content: JSON.stringify({
+                source_agent: {
+                  name: source.name,
+                  prompt: source.prompt,
+                  default_model: source.default_model,
+                },
+                requirements,
+              }),
+            },
+          ],
+        });
+        let generated: any = {};
+        try {
+          generated = JSON.parse(
+            result.message.content
+              .replace(/^```json\s*/i, "")
+              .replace(/```$/i, "")
+              .trim(),
+          );
+        } catch {}
+        const name = String(generated.name ?? `${source.name} Agent`).slice(
+          0,
+          100,
+        );
+        const value = await service.createAgent(current.id, {
+          name,
+          prompt: String(generated.prompt ?? requirements).slice(0, 20000),
+          defaultModel: source.default_model,
+          userChannelId: source.user_channel_id || undefined,
+          stream: source.stream === true,
+          skillIds: JSON.parse(source.skill_ids || "[]"),
+          mcpServerIds: JSON.parse(source.mcp_server_ids || "[]"),
+        });
+        session.respond(agent(value), "json");
+      } catch (error) {
+        session.status = 502;
+        session.respond(
+          { error: error instanceof Error ? error.message : String(error) },
+          "json",
+        );
+      }
+    });
+  ctx
     .route("/api/user/advanced-chat/agents/:id")
     .methods("DELETE")
     .action(async (session, _params, id) => {
