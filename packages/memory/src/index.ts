@@ -46,8 +46,27 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
           !agentId ||
           row.agent_id === agentId,
       );
+      let attached = 0;
+      const details: string[] = [];
+      for (const row of visible) {
+        let content = "";
+        if (
+          ["profile", "preferences", "facts", "projects", "rules"].includes(
+            String(row.kind),
+          ) &&
+          row.storage_path &&
+          attached < 32 * 1024
+        )
+          content = (
+            await readFile(String(row.storage_path), "utf8").catch(() => "")
+          ).slice(0, Math.min(8 * 1024, 32 * 1024 - attached));
+        attached += Buffer.byteLength(content);
+        details.push(
+          `- ${row.title} (${row.kind})${content ? `\n  ${content}` : ""}`,
+        );
+      }
       return visible.length
-        ? `Available memories:\n${visible.map((row: any) => `- ${row.title} (${row.kind})`).join("\n")}`
+        ? `Available memories:\n${details.join("\n")}`
         : undefined;
     },
   });
@@ -60,6 +79,47 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
         user_id: context.userId,
         enabled: true,
       }),
+  });
+  chat.registerTool({
+    name: "memory_patch",
+    description: "Replace exact text in a saved memory",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        old_text: { type: "string" },
+        new_text: { type: "string" },
+      },
+      required: ["id", "old_text", "new_text"],
+    },
+    execute: async (input, context) => {
+      const value = input as any;
+      const row: any = await db.selectOne("advanced_chat_memory_documents", {
+        id: String(value.id),
+        user_id: context.userId,
+      });
+      if (!row) throw Error("Memory not found");
+      const content = row.storage_path
+        ? await readFile(String(row.storage_path), "utf8").catch(() => "")
+        : "";
+      const oldText = String(value.old_text);
+      if (!oldText || !content.includes(oldText))
+        throw Error("old_text was not found in memory");
+      const next = content.replace(oldText, String(value.new_text ?? ""));
+      if (row.storage_path)
+        await writeFile(String(row.storage_path), next, "utf8");
+      await db.update(
+        "advanced_chat_memory_documents",
+        { id: row.id, user_id: context.userId },
+        {
+          size: Buffer.byteLength(next),
+          hash: createHash("sha256").update(next).digest("hex"),
+          updated_by: "assistant",
+          updated_at: new Date().toISOString(),
+        },
+      );
+      return { id: row.id, patched: true };
+    },
   });
   chat.registerTool({
     name: "memory_upsert",
@@ -78,6 +138,15 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
       const value = input as any;
       const id = String(value.id ?? randomUUID());
       const content = String(value.content ?? "");
+      const scope = String(value.scope ?? "global")
+        .trim()
+        .toLowerCase();
+      if (
+        !["global", "agent"].includes(scope) ||
+        (scope === "agent" &&
+          !String(value.agent_id ?? context.agentId ?? "").trim())
+      )
+        throw Error("Memory scope is invalid");
       if (Buffer.byteLength(content) > 512 * 1024)
         throw Error("Memory is too large");
       const now = new Date().toISOString();
@@ -86,8 +155,11 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
       const row = {
         id,
         user_id: context.userId,
-        scope: "global",
-        agent_id: "",
+        scope,
+        agent_id:
+          scope === "agent"
+            ? String(value.agent_id ?? context.agentId ?? "").trim()
+            : "",
         group_id: "",
         kind: kinds.has(String(value.kind)) ? String(value.kind) : "facts",
         title: String(value.title ?? "").slice(0, 200),
@@ -214,6 +286,17 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
       s.respond({ error: "Invalid memory kind" }, "json");
       return;
     }
+    const scope = String(input.scope ?? "global")
+      .trim()
+      .toLowerCase();
+    if (
+      !["global", "agent"].includes(scope) ||
+      (scope === "agent" && !String(input.agent_id ?? "").trim())
+    ) {
+      s.status = 400;
+      s.respond({ error: "Memory scope is invalid" }, "json");
+      return;
+    }
     const now = new Date().toISOString();
     const id = memoryId ?? randomUUID();
     const content = String(input.content ?? "");
@@ -227,8 +310,8 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
     const value = {
       id,
       user_id: uid,
-      scope: String(input.scope ?? "global"),
-      agent_id: String(input.agent_id ?? ""),
+      scope,
+      agent_id: scope === "agent" ? String(input.agent_id).trim() : "",
       group_id: String(input.group_id ?? ""),
       kind,
       title: String(input.title ?? ""),
