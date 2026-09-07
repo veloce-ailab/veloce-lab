@@ -1,10 +1,12 @@
 import { Context, Database, Session } from "yumeri";
 import type { ModelService } from "@velocelab/model";
+import "@velocelab/dashboard";
 
-export const depend = ["model"];
+export const depend = ["model", "dashboard"];
 export const provide = ["channel-admin"];
 
 export function apply(ctx: Context) {
+  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/channel-admin.js", import.meta.url).pathname, plugin: "channel-admin" });
   const model = ctx.component.model as ModelService;
   const db = ctx.component.database as Database;
   const admin = (session: Session) =>
