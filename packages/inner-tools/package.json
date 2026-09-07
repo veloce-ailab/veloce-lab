@@ -8,8 +8,8 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@velocelab/connector": "workspace:*",
-    "@velocelab/advanced-chat": "workspace:*"
+    "@velocelab/advanced-chat": "workspace:*",
+    "@velocelab/connector": "workspace:*"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"
