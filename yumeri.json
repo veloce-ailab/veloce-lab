@@ -16,6 +16,7 @@
     "@velocelab/sqlite": { "path": "./data/veloce.db" },
     "@velocelab/model": {},
     "@velocelab/dashboard": { "enabled": true },
+    "@velocelab/community": { "enabled": true },
     "@velocelab/billing": { "enabled": true },
     "@velocelab/scheduler": { "enabled": true },
     "@velocelab/audit": { "enabled": true },

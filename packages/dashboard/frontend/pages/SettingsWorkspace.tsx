@@ -5,7 +5,6 @@ import { useEffect, useState } from "react"
 import Settings, { type SettingsSection } from "./Settings"
 import SystemManagement from "./SystemManagement"
 import SettingsStatistics from "./SettingsStatistics"
-import ConnectorCredentials from "./ConnectorCredentials"
 import DesktopNotifications from "./DesktopNotifications"
 import ThemeSettings from "./ThemeSettings"
 import { AppHeader } from "@/components/layout/Layout"
@@ -101,7 +100,7 @@ export default function SettingsWorkspace() {
                 <Route path="chat" element={<SystemManagement section="advancedChat" />} />
                 <Route path="advanced-chat" element={<Navigate to="../chat" replace />} />
                 <Route path="memory" element={<Navigate to="/chat/memories" replace />} />
-                <Route path="credentials" element={<ConnectorCredentials />} />
+                <Route path="credentials" element={<PluginSettingsSlot />} />
                 <Route path="devices" element={<PluginSettingsSlot />} />
                 <Route path="devices/:id" element={<PluginSettingsSlot />} />
                 <Route path="theme" element={<ThemeSettings />} />
