@@ -3,6 +3,7 @@ import { Context, Database, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/model";
+import { McpClient } from "./client.js";
 export const depend = ["dashboard", "advanced-chat", "database", "model"];
 export const provide = ["mcp"];
 export interface McpServer {
@@ -87,26 +88,26 @@ export function apply(ctx: Context) {
       });
       if (!server || server.enabled === false)
         throw Error("MCP server is not available");
-      const response = await fetch(String(server.url), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: randomUUID(),
-          method: String(value.method),
-          params: value.params ?? {},
-        }),
-      });
-      const text = await response.text();
-      if (!response.ok)
-        throw Error(
-          `MCP request failed (${response.status}): ${text.slice(0, 500)}`,
+      const config = JSON.parse(String(server.config ?? "{}"));
+      const headers =
+        config.headers && typeof config.headers === "object"
+          ? Object.fromEntries(
+              Object.entries(config.headers).map(([key, item]) => [
+                key,
+                String(item),
+              ]),
+            )
+          : {};
+      const client = new McpClient(String(server.url), headers);
+      if (String(value.method) === "tools/list") return client.listTools();
+      if (String(value.method) === "tools/call") {
+        const result = await client.callTool(
+          String((value.params as any)?.name ?? ""),
+          ((value.params as any)?.arguments ?? {}) as Record<string, unknown>,
         );
-      try {
-        return JSON.parse(text);
-      } catch {
-        return text;
+        return result;
       }
+      throw Error("MCP only supports tools/list and tools/call");
     },
   });
   const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
