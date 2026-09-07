@@ -269,6 +269,13 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       if (index >= 0) tools.splice(index, 1);
     };
   });
+  contextProviders.push({
+    id: "ask-user",
+    provide: ({ sessionId }) =>
+      sessionId
+        ? "When the request is ambiguous or requires a user decision, call ask_user with one clear question and preset options. After calling it, end the turn and wait for the user's next message."
+        : undefined,
+  });
   const service: AdvancedChatService = {
     registerTool(tool) {
       tools.push(tool);
