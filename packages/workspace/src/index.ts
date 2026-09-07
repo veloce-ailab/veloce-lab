@@ -273,6 +273,30 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
       }
     });
   ctx
+    .route("/api/user/advanced-chat/workspace/directories")
+    .methods("GET")
+    .action(async (s) => {
+      const id = user(s);
+      if (!id) return;
+      const query = s.client.req?.url?.split("?")[1] ?? "";
+      const params = new URLSearchParams(query);
+      try {
+        s.respond(
+          await connector.execute(id, "list_directories", {
+            device_id: params.get("connector_device_id") ?? "",
+            workspace_path: params.get("connector_workspace_path") ?? "",
+          }),
+          "json",
+        );
+      } catch (error) {
+        s.status = 502;
+        s.respond(
+          { error: error instanceof Error ? error.message : String(error) },
+          "json",
+        );
+      }
+    });
+  ctx
     .route("/api/user/advanced-chat/workspace/git/action")
     .methods("POST")
     .action(async (s) => {

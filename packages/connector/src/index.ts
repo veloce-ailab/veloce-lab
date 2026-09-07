@@ -108,6 +108,149 @@ export function apply(ctx: Context) {
         s.respond({ success: true }, "json");
       }
     });
+  ctx
+    .route("/api/user/advanced-chat/devices/:id")
+    .methods("GET")
+    .action(async (s, _p, deviceId) => {
+      const id = uid(s);
+      const device = id
+        ? await db.selectOne("advanced_chat_connector_devices", {
+            id: deviceId,
+            user_id: id,
+          })
+        : undefined;
+      if (!device) {
+        s.status = 404;
+        s.respond({ error: "Device not found" }, "json");
+        return;
+      }
+      const { token_hash: _hash, ...safe } = device;
+      s.respond(safe, "json");
+    });
+  ctx
+    .route("/api/user/advanced-chat/devices/:id")
+    .methods("PUT")
+    .action(async (s, _p, deviceId) => {
+      const id = uid(s);
+      if (!id) return;
+      const existing = await db.selectOne("advanced_chat_connector_devices", {
+        id: deviceId,
+        user_id: id,
+      });
+      if (!existing) {
+        s.status = 404;
+        s.respond({ error: "Device not found" }, "json");
+        return;
+      }
+      const input = (await s.parseRequestBody()) as any;
+      await db.update(
+        "advanced_chat_connector_devices",
+        { id: deviceId, user_id: id },
+        {
+          name: String(input.name ?? existing.name).slice(0, 120),
+          remark: String(input.remark ?? existing.remark).slice(0, 200),
+          mode: String(input.mode ?? existing.mode),
+          updated_at: new Date().toISOString(),
+        },
+      );
+      s.respond(
+        await db.selectOne("advanced_chat_connector_devices", {
+          id: deviceId,
+          user_id: id,
+        }),
+        "json",
+      );
+    });
+  ctx
+    .route("/api/user/advanced-chat/devices/:id/tasks")
+    .methods("GET")
+    .action(async (s, _p, deviceId) => {
+      const id = uid(s);
+      if (id)
+        s.respond(
+          await db.select("advanced_chat_connector_tasks", {
+            device_id: deviceId,
+            user_id: id,
+          }),
+          "json",
+        );
+    });
+  ctx
+    .route("/api/user/advanced-chat/devices/:id/tasks/:task_id/cancel")
+    .methods("POST")
+    .action(async (s, _p, deviceId, taskId) => {
+      const id = uid(s);
+      const task = id
+        ? await db.selectOne("advanced_chat_connector_tasks", {
+            id: taskId,
+            device_id: deviceId,
+            user_id: id,
+          })
+        : undefined;
+      if (!task) {
+        s.status = 404;
+        s.respond({ error: "Task not found" }, "json");
+        return;
+      }
+      await db.update(
+        "advanced_chat_connector_tasks",
+        { id: taskId, user_id: id },
+        {
+          status: "cancelled",
+          finished_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      );
+      s.respond({ success: true }, "json");
+    });
+  ctx
+    .route("/api/user/advanced-chat/devices/:id/credentials")
+    .methods("GET")
+    .action(async (s, _p, deviceId) => {
+      const id = uid(s);
+      if (!id) return;
+      const bindings = await db.select(
+        "advanced_chat_connector_credential_bindings",
+        { device_id: deviceId, user_id: id },
+      );
+      const values = await Promise.all(
+        bindings.map((binding: any) =>
+          db.selectOne("advanced_chat_connector_credentials", {
+            id: binding.credential_id,
+            user_id: id,
+          }),
+        ),
+      );
+      s.respond(
+        values
+          .filter(Boolean)
+          .map((row: any) => ({ ...row, value: undefined })),
+        "json",
+      );
+    });
+  ctx
+    .route("/api/user/advanced-chat/devices/:id/credentials")
+    .methods("PUT")
+    .action(async (s, _p, deviceId) => {
+      const id = uid(s);
+      if (!id) return;
+      const input = (await s.parseRequestBody()) as any;
+      await db.remove("advanced_chat_connector_credential_bindings", {
+        device_id: deviceId,
+        user_id: id,
+      });
+      for (const credentialId of Array.isArray(input.credential_ids)
+        ? input.credential_ids.map(String)
+        : [])
+        await db.create("advanced_chat_connector_credential_bindings", {
+          id: randomUUID(),
+          user_id: id,
+          device_id: deviceId,
+          credential_id: credentialId,
+          created_at: new Date().toISOString(),
+        } as any);
+      s.respond({ success: true }, "json");
+    });
   const heartbeat = async (s: Session) => {
     const token = connectorToken(s);
     const device: any = await deviceByToken(token);
