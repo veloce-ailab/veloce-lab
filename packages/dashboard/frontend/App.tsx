@@ -51,6 +51,17 @@ function App() {
   const [authenticated] = useState(() => Boolean(getAuthToken()))
   const [, refreshExtensions] = useState(0)
   useEffect(() => subscribeExtensions(() => refreshExtensions((value) => value + 1)), [])
+  useEffect(() => {
+    fetch("/api/dashboard/manifest").then((response) => response.json()).then((manifest: { assets?: Array<{ url: string; mime?: string }> }) => {
+      manifest.assets?.filter((asset) => asset.mime?.includes("javascript")).forEach((asset) => {
+        const script = document.createElement("script")
+        script.type = "module"
+        script.src = asset.url
+        script.dataset.dashboardPlugin = "true"
+        document.head.appendChild(script)
+      })
+    }).catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get("token")

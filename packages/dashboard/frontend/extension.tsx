@@ -20,4 +20,14 @@ export const dashboardExtension: DashboardExtensionApi = {
 export function routes() { return [...routes] }
 export function nav() { return [...navItems].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) }
 export function subscribeExtensions(listener: () => void) { extensionListeners.add(listener); return () => extensionListeners.delete(listener) }
-export function defineExtension(setup: (api: DashboardExtensionApi) => void) { setup(dashboardExtension); return dashboardExtension }
+export function defineExtension(setup: (api: DashboardExtensionApi) => void) {
+  if (typeof window !== "undefined" && window.__VELOCE_DASHBOARD_EXTENSION__ && window.__VELOCE_DASHBOARD_EXTENSION__.defineExtension !== defineExtension) {
+    window.__VELOCE_DASHBOARD_EXTENSION__.defineExtension(setup)
+  } else setup(dashboardExtension)
+  return dashboardExtension
+}
+
+declare global { interface Window { __VELOCE_DASHBOARD_EXTENSION__?: { defineExtension(setup: (api: DashboardExtensionApi) => void): void } } }
+if (typeof window !== "undefined") {
+  window.__VELOCE_DASHBOARD_EXTENSION__ = { defineExtension: (setup) => setup(dashboardExtension) }
+}
