@@ -87,6 +87,9 @@ export function apply(ctx: Context, cfg: AuthConfig) {
       );
     }
   });
+  ctx.route("/auth/logout").methods("POST", "GET").action(async (session) => {
+    session.respond({ success: true }, "json");
+  });
   ctx.use("authentication", async (session: Session, next: () => Promise<void>) => {
     if (!cfg.enabled) return next();
     const path = session.pathname || "";
