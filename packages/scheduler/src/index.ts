@@ -61,6 +61,74 @@ export function apply(ctx: Context, cfg: SchedulerConfig) {
   const db = ctx.component.database as Database;
   const chat = ctx.component["advanced-chat"];
   const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
+  const dispatchDue = async () => {
+    if (!cfg.enabled) return;
+    const now = new Date();
+    const tasks: any[] = await db.select("advanced_chat_scheduled_tasks", {
+      enabled: true,
+    });
+    for (const task of tasks) {
+      if (
+        !task.next_run_at ||
+        new Date(String(task.next_run_at)) > now ||
+        ["queued", "running"].includes(String(task.last_status))
+      )
+        continue;
+      await db.update(
+        "advanced_chat_scheduled_tasks",
+        { id: task.id, user_id: task.user_id },
+        {
+          last_status: "running",
+          last_run_at: now.toISOString(),
+          updated_at: now.toISOString(),
+        },
+      );
+      try {
+        const result = await chat.complete(Number(task.user_id), {
+          model: String(task.model_name ?? ""),
+          messages: [{ role: "user", content: String(task.message ?? "") }],
+          userChannelId: Number(task.user_channel_id ?? 0) || undefined,
+          stream: false,
+        });
+        const next =
+          task.schedule_type === "interval"
+            ? new Date(
+                Date.now() +
+                  Math.max(60, Number(task.interval_seconds ?? 60)) * 1000,
+              ).toISOString()
+            : null;
+        await db.update(
+          "advanced_chat_scheduled_tasks",
+          { id: task.id, user_id: task.user_id },
+          {
+            last_status: "completed",
+            last_run_id: result.runId,
+            next_run_at: next,
+            enabled: task.schedule_type === "once" ? false : true,
+            updated_at: new Date().toISOString(),
+          },
+        );
+      } catch (error) {
+        await db.update(
+          "advanced_chat_scheduled_tasks",
+          { id: task.id, user_id: task.user_id },
+          {
+            last_status: "failed",
+            last_error: error instanceof Error ? error.message : String(error),
+            next_run_at:
+              task.schedule_type === "interval"
+                ? new Date(
+                    Date.now() +
+                      Math.max(60, Number(task.interval_seconds ?? 60)) * 1000,
+                  ).toISOString()
+                : null,
+            updated_at: new Date().toISOString(),
+          },
+        );
+      }
+    }
+  };
+  setInterval(() => void dispatchDue(), 30_000);
   ctx
     .route("/api/user/advanced-chat/scheduled-tasks")
     .methods("GET")
@@ -79,6 +147,20 @@ export function apply(ctx: Context, cfg: SchedulerConfig) {
       const id = user(s);
       if (!id) return;
       const input = (await s.parseRequestBody()) as any;
+      const scheduleType = String(
+        input.schedule_type ?? "manual",
+      ).toLowerCase();
+      const intervalSeconds = Number(input.interval_seconds ?? 0);
+      if (
+        !["manual", "once", "interval"].includes(scheduleType) ||
+        (scheduleType === "once" && !input.run_at) ||
+        (scheduleType === "interval" && intervalSeconds < 60) ||
+        !String(input.message ?? "").trim()
+      ) {
+        s.status = 400;
+        s.respond({ error: "Invalid scheduled task configuration" }, "json");
+        return;
+      }
       const now = new Date().toISOString();
       s.status = 201;
       s.respond(
@@ -88,13 +170,20 @@ export function apply(ctx: Context, cfg: SchedulerConfig) {
           name: String(input.name ?? "Task"),
           description: String(input.description ?? ""),
           agent_id: String(input.agent_id ?? ""),
-          schedule_type: String(input.schedule_type ?? "manual"),
+          schedule_type: scheduleType,
           run_at: input.run_at ?? null,
-          interval_seconds: Number(input.interval_seconds ?? 0),
+          interval_seconds: intervalSeconds,
           session_mode: String(input.session_mode ?? "auto"),
           session_id: String(input.session_id ?? ""),
           auto_delete_session: input.auto_delete_session === true,
-          status: "idle",
+          message: String(input.message).slice(0, 20000),
+          last_status: "idle",
+          next_run_at:
+            scheduleType === "once"
+              ? input.run_at
+              : scheduleType === "interval"
+                ? new Date(Date.now() + intervalSeconds * 1000).toISOString()
+                : null,
           created_at: now,
           updated_at: now,
         } as any),
