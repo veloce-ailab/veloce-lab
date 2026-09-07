@@ -1,6 +1,6 @@
 import { Context } from "yumeri";
 import "@velocelab/dashboard";
-export const depend: string[] = [];
+export const depend = ["dashboard"];
 export const provide = ["connector"];
 export interface ConnectorService {
   execute(userId: number, action: string, input: Record<string, unknown>): Promise<unknown>;
