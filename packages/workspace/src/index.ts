@@ -202,6 +202,40 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
     });
   ctx
     .route("/api/user/advanced-chat/files/:id")
+    .methods("PUT")
+    .action(async (s, _p, fileId) => {
+      const id = user(s);
+      if (!id) return;
+      const existing: any = await db.selectOne("advanced_chat_files", {
+        id: fileId,
+        user_id: id,
+      });
+      if (!existing) {
+        s.status = 404;
+        s.respond({ error: "File not found" }, "json");
+        return;
+      }
+      const input = (await s.parseRequestBody()) as any;
+      const data =
+        input.content === undefined ? existing.data : String(input.content);
+      await db.update(
+        "advanced_chat_files",
+        { id: fileId, user_id: id },
+        {
+          name: String(input.name ?? existing.name),
+          data,
+          text_extract: data,
+          size: Buffer.byteLength(data),
+          updated_at: new Date().toISOString(),
+        },
+      );
+      s.respond(
+        await db.selectOne("advanced_chat_files", { id: fileId, user_id: id }),
+        "json",
+      );
+    });
+  ctx
+    .route("/api/user/advanced-chat/files/:id")
     .methods("DELETE")
     .action(async (s, _p, fileId) => {
       const id = user(s);
