@@ -11,9 +11,11 @@ import { registerAdvancedChatRoutes } from "./routes.js";
 import { registerStudioTools } from "./studio.js";
 import { registerAskUserTool } from "./ask-user.js";
 import { filterToolsByDisabledGroups } from "./tool-groups.js";
+import { registerChatFileRoutes } from "./files.js";
 import "@velocelab/dashboard";
+import "@velocelab/file";
 
-export const depend = ["database", "model", "dashboard"];
+export const depend = ["database", "model", "dashboard", "file"];
 export const provide = ["advanced-chat"];
 
 export interface AdvancedChatConfig {
@@ -255,6 +257,11 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const tools: ChatToolDefinition[] = [];
   const contextProviders: ChatContextProvider[] = [];
   const db = ctx.component.database as Database;
+  registerChatFileRoutes(
+    ctx,
+    db,
+    ctx.component.file as import("@velocelab/file").FileService,
+  );
   const adapters = ctx.component.adapters as
     import("@velocelab/adapters").AdapterRegistry | undefined;
   registerStudioTools(db, (tool) => {
