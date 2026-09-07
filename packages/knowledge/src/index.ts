@@ -3,6 +3,10 @@ import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/file";
 import "@velocelab/model";
+
+const communityKnowledgeAPIBaseURL = "https://veloce-community.flweb.cn/api/v1";
+const maxCommunityKnowledgeImport = 32 << 20;
+const communityKnowledgeNotFound = Symbol("community-knowledge-not-found");
 export const depend = ["database", "dashboard", "file", "model"];
 export const provide = ["knowledge"];
 export interface KnowledgeService {
@@ -41,6 +45,23 @@ function normalizeDocumentName(raw: unknown) {
   if (!/\.(md|markdown|txt|json|csv|yaml|yml)$/i.test(name))
     throw Error("only text documents can be created online");
   return name;
+}
+
+async function fetchCommunityJSON<T>(route: string): Promise<T> {
+  const response = await fetch(`${communityKnowledgeAPIBaseURL}${route}`, {
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (response.status === 404) throw communityKnowledgeNotFound;
+  if (!response.ok)
+    throw new Error(`community service returned HTTP ${response.status}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength > maxCommunityKnowledgeImport)
+    throw new Error("community response is too large");
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+  } catch {
+    throw new Error("invalid community response");
+  }
 }
 async function embedTexts(
   db: Database,
@@ -301,6 +322,147 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
         chunks += parts.length;
       }
       s.respond({ success: true, documents: documents.length, chunks }, "json");
+    });
+  ctx
+    .route("/api/user/advanced-chat/community/knowledge-bases/:id/import")
+    .methods("POST")
+    .action(async (s, _p, communityId) => {
+      const userId = user(s);
+      if (!userId) return;
+      if (!cfg.enabled) {
+        s.status = 403;
+        s.respond({ error: "Community is disabled" }, "json");
+        return;
+      }
+      const id = String(communityId ?? "").trim();
+      if (!id || id.length > 120) {
+        s.status = 400;
+        s.respond({ error: "Invalid community knowledge base id" }, "json");
+        return;
+      }
+      let metadata: { id?: string; name?: string; description?: string };
+      let content: {
+        files?: Array<{ id?: string; name?: string; content?: string }>;
+      };
+      try {
+        const encoded = encodeURIComponent(id);
+        metadata = await fetchCommunityJSON(`/knowledge-bases/${encoded}`);
+        content = await fetchCommunityJSON(
+          `/knowledge-bases/${encoded}/content`,
+        );
+      } catch (error) {
+        s.status = error === communityKnowledgeNotFound ? 404 : 502;
+        s.respond(
+          {
+            error:
+              error === communityKnowledgeNotFound
+                ? "Community knowledge base not found"
+                : "Community knowledge base is temporarily unavailable",
+          },
+          "json",
+        );
+        return;
+      }
+      const filesToImport = (content.files ?? []).filter((item) =>
+        String(item.content ?? "").trim(),
+      );
+      if (!filesToImport.length) {
+        s.status = 422;
+        s.respond(
+          { error: "Community knowledge base has no importable files" },
+          "json",
+        );
+        return;
+      }
+      const baseId = randomUUID();
+      const now = new Date().toISOString();
+      const base = await db.create("advanced_chat_knowledge_bases", {
+        id: baseId,
+        user_id: userId,
+        name: String(metadata.name ?? "Untitled"),
+        description: String(metadata.description ?? ""),
+        embedding_model_name: "",
+        embedding_user_channel_id: 0,
+        created_at: now,
+        updated_at: now,
+      } as any);
+      const createdPaths: string[] = [];
+      const createdDocuments: any[] = [];
+      const cleanup = async () => {
+        await Promise.all(createdPaths.map((file) => files.remove(file)));
+        await db.remove("advanced_chat_knowledge_documents", {
+          knowledge_base_id: baseId,
+          user_id: userId,
+        });
+        await db.remove("advanced_chat_knowledge_bases", {
+          id: baseId,
+          user_id: userId,
+        });
+      };
+      try {
+        for (let index = 0; index < (content.files ?? []).length; index += 1) {
+          const item = content.files?.[index];
+          const text = String(item?.content ?? "").trim();
+          if (!text) continue;
+          let name = String(item?.name ?? "").trim();
+          if (!name) name = `community-document-${index + 1}.md`;
+          if (!name.includes(".")) name += ".md";
+          name = normalizeDocumentName(name);
+          const documentId = randomUUID();
+          const storagePath = `knowledge/${userId}/${baseId}/${documentId}.md`;
+          await files.write(storagePath, text);
+          createdPaths.push(storagePath);
+          const row = await db.create("advanced_chat_knowledge_documents", {
+            id: documentId,
+            knowledge_base_id: baseId,
+            user_id: userId,
+            file_id: randomUUID(),
+            name,
+            mime_type: "text/markdown; charset=utf-8",
+            size: Buffer.byteLength(text),
+            text_available: true,
+            embedding_status: "pending",
+            embedding_error: "",
+            embedding_model: "",
+            embedding_dim: 0,
+            chunk_count: 0,
+            storage_path: storagePath,
+            hash: createHash("sha256").update(text).digest("hex"),
+            source: "community-knowledge",
+            source_key: `community-knowledge:${baseId}:${String(item?.id ?? "")}:${index}`,
+            created_at: now,
+            updated_at: now,
+          } as any);
+          createdDocuments.push(row);
+        }
+      } catch (error) {
+        await cleanup();
+        s.status = 500;
+        s.respond(
+          { error: "Failed to import community knowledge base" },
+          "json",
+        );
+        return;
+      }
+      if (!createdDocuments.length) {
+        await cleanup();
+        s.status = 422;
+        s.respond(
+          { error: "Community knowledge base has no importable text" },
+          "json",
+        );
+        return;
+      }
+      s.respond(
+        {
+          knowledge_base: {
+            ...base,
+            document_count: createdDocuments.length,
+            documents: createdDocuments,
+          },
+        },
+        "json",
+      );
     });
   const createDocument = async (s: Session, baseId: string) => {
     const userId = user(s);
