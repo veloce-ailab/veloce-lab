@@ -2,7 +2,7 @@ import { Context, Database, Session } from "yumeri";
 import { randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import "@velocelab/model";
-export const depend = ["dashboard", "database"];
+export const depend = ["dashboard", "database", "model"];
 export const provide = ["connector"];
 export interface ConnectorService {
   execute(

@@ -3,7 +3,7 @@ import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/model";
-export const depend = ["dashboard", "database", "advanced-chat"];
+export const depend = ["dashboard", "database", "advanced-chat", "model"];
 export const provide = ["scheduler"];
 export interface ScheduledJob {
   name: string;

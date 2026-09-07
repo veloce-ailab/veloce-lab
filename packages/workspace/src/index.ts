@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/model";
-export const depend = ["database", "dashboard"];
+export const depend = ["database", "dashboard", "model"];
 export const provide = ["workspace"];
 export interface WorkspaceService {
   list(userId: number): Promise<any[]>;

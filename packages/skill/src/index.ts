@@ -3,7 +3,7 @@ import { Context, Database, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/model";
-export const depend = ["dashboard", "advanced-chat", "database"];
+export const depend = ["dashboard", "advanced-chat", "database", "model"];
 export const provide = ["skill"];
 export interface SkillDefinition {
   id: string;
