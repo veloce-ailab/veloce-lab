@@ -29,8 +29,20 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
   const connector = ctx.component.connector;
   const files = ctx.component.file;
   const service: WorkspaceService = {
-    list: (userId) =>
-      db.select("advanced_chat_workspaces", { user_id: userId }),
+    list: async (userId) => {
+      const workspaces = await db.select("advanced_chat_workspaces", {
+        user_id: userId,
+      });
+      return Promise.all(
+        workspaces.map(async (workspace: any) => ({
+          ...workspace,
+          files: await db.select("advanced_chat_workspace_files", {
+            workspace_id: workspace.id,
+            user_id: userId,
+          }),
+        })),
+      );
+    },
     create: async (userId, input) => {
       const now = new Date().toISOString();
       const workspaceId = randomUUID();
