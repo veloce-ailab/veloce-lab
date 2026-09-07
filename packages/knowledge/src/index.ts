@@ -27,6 +27,46 @@ function similarity(left: number[], right: number[]) {
     0,
   );
 }
+async function embedTexts(
+  db: Database,
+  userId: number,
+  modelName: string,
+  channelId: number,
+  texts: string[],
+) {
+  if (!modelName || !channelId) return texts.map(embedding);
+  const channel: any = await db.selectOne("channels", { id: channelId });
+  if (!channel || (channel.user_id && Number(channel.user_id) !== userId))
+    return texts.map(embedding);
+  const response = await fetch(
+    `${String(channel.base_url).replace(/\/$/, "")}/v1/embeddings`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(channel.api_key
+          ? { authorization: `Bearer ${channel.api_key}` }
+          : {}),
+      },
+      body: JSON.stringify({ model: modelName, input: texts }),
+    },
+  );
+  if (!response.ok) return texts.map(embedding);
+  const payload: any = await response.json().catch(() => ({}));
+  if (!Array.isArray(payload.data) || !payload.data.length)
+    return texts.map(embedding);
+  const vectors = texts.map(() => [] as number[]);
+  for (const item of payload.data)
+    if (
+      Number.isInteger(item.index) &&
+      item.index < vectors.length &&
+      Array.isArray(item.embedding)
+    )
+      vectors[item.index] = item.embedding.map(Number);
+  return vectors.every((vector) => vector.length)
+    ? vectors
+    : texts.map(embedding);
+}
 declare module "yumeri" {
   interface Components {
     knowledge: KnowledgeService;
@@ -141,7 +181,19 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
           document_id: row.id,
           user_id: id,
         });
-        const queryVector = embedding(query);
+        const base = await db.selectOne("advanced_chat_knowledge_bases", {
+          id: baseId,
+          user_id: id,
+        });
+        const queryVector = (
+          await embedTexts(
+            db,
+            id,
+            String(base?.embedding_model_name ?? ""),
+            Number(base?.embedding_user_channel_id ?? 0),
+            [query],
+          )
+        )[0];
         const matches = chunks
           .map((chunk: any) => {
             let vector: number[] = [];
@@ -187,6 +239,12 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
       const id = user(s);
       if (!id) return;
       const documents: any[] = await service.documents(id, baseId);
+      const base: any = await db.selectOne("advanced_chat_knowledge_bases", {
+        id: baseId,
+        user_id: id,
+      });
+      const modelName = String(base?.embedding_model_name ?? "");
+      const channelId = Number(base?.embedding_user_channel_id ?? 0);
       let chunks = 0;
       for (const document of documents) {
         const content = document.storage_path
@@ -197,6 +255,7 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
           document_id: document.id,
           user_id: id,
         });
+        const vectors = await embedTexts(db, id, modelName, channelId, parts);
         for (let index = 0; index < parts.length; index += 1)
           await db.create("advanced_chat_knowledge_chunks", {
             id: randomUUID(),
@@ -207,9 +266,9 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
             content_hash: createHash("sha256")
               .update(parts[index])
               .digest("hex"),
-            embedding: JSON.stringify(embedding(parts[index])),
-            embedding_model: "local-hash-v1",
-            embedding_dim: 32,
+            embedding: JSON.stringify(vectors[index]),
+            embedding_model: modelName || "local-hash-v1",
+            embedding_dim: vectors[index].length,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           } as any);
@@ -218,8 +277,8 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
           { id: document.id, user_id: id },
           {
             embedding_status: "completed",
-            embedding_model: "local-hash-v1",
-            embedding_dim: 32,
+            embedding_model: modelName || "local-hash-v1",
+            embedding_dim: vectors[0]?.length ?? 0,
             chunk_count: parts.length,
             updated_at: new Date().toISOString(),
           },
@@ -365,6 +424,17 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
         ? (await files.read(String(row.storage_path))).toString("utf8")
         : "";
       const chunks = content.match(/[\\s\\S]{1,1200}/g) ?? [];
+      const base: any = await db.selectOne("advanced_chat_knowledge_bases", {
+        id: baseId,
+        user_id: userId,
+      });
+      const vectors = await embedTexts(
+        db,
+        userId,
+        String(base?.embedding_model_name ?? ""),
+        Number(base?.embedding_user_channel_id ?? 0),
+        chunks,
+      );
       await db.remove("advanced_chat_knowledge_chunks", {
         document_id: documentId,
         user_id: userId,
@@ -377,9 +447,11 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
           ordinal: i,
           content: chunks[i],
           content_hash: createHash("sha256").update(chunks[i]).digest("hex"),
-          embedding: JSON.stringify(embedding(chunks[i])),
-          embedding_model: "local-hash-v1",
-          embedding_dim: 32,
+          embedding: JSON.stringify(vectors[i]),
+          embedding_model: String(
+            base?.embedding_model_name ?? "local-hash-v1",
+          ),
+          embedding_dim: vectors[i].length,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         } as any);
@@ -388,8 +460,10 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
         { id: documentId, user_id: userId },
         {
           embedding_status: "completed",
-          embedding_model: "local-hash-v1",
-          embedding_dim: 32,
+          embedding_model: String(
+            base?.embedding_model_name ?? "local-hash-v1",
+          ),
+          embedding_dim: vectors[0]?.length ?? 0,
           chunk_count: chunks.length,
           updated_at: new Date().toISOString(),
         },
