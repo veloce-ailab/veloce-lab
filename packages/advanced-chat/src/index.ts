@@ -10,6 +10,7 @@ import type {
 import { registerAdvancedChatRoutes } from "./routes.js";
 import { registerStudioTools } from "./studio.js";
 import { registerAskUserTool } from "./ask-user.js";
+import { filterToolsByDisabledGroups } from "./tool-groups.js";
 import "@velocelab/dashboard";
 
 export const depend = ["database", "model", "dashboard"];
@@ -145,6 +146,7 @@ export interface ChatInput {
   maxTokens?: number;
   temperature?: number;
   reasoningEffort?: string;
+  disabledToolGroups?: string[];
 }
 
 export interface ChatResult {
@@ -932,6 +934,10 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       )
         .filter(Boolean)
         .join("\n\n");
+      const availableTools = filterToolsByDisabledGroups(
+        service.tools(),
+        input.disabledToolGroups,
+      );
       const request = adapters.build({
         channelType: channel.type,
         model: upstreamModel,
@@ -944,8 +950,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         system:
           [optionalContext, injectedContext].filter(Boolean).join("\n\n") ||
           undefined,
-        tools: service
-          .tools()
+        tools: availableTools
           .filter((tool) => tool?.name)
           .map((tool) => ({
             name: String(tool.name),
@@ -1027,7 +1032,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       if (Array.isArray(toolCalls)) {
         for (const call of toolCalls as any[]) {
           const name = String(call.function?.name ?? call.name ?? "");
-          const definition = service.tools().find((tool) => tool.name === name);
+          const definition = availableTools.find((tool) => tool.name === name);
           if (!definition?.execute) continue;
           let args: unknown = {};
           try {
