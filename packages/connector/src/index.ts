@@ -356,6 +356,53 @@ export function apply(ctx: Context) {
         "json",
       );
     });
+  ctx
+    .route("/api/user/advanced-chat/devices/:id/mcp-processes")
+    .methods("GET")
+    .action(async (s, _p, deviceId) => {
+      const id = uid(s);
+      if (!id) return;
+      try {
+        s.respond(
+          await (ctx.component.connector as ConnectorService).execute(
+            id,
+            "list_mcp_processes",
+            { device_id: deviceId },
+          ),
+          "json",
+        );
+      } catch (error) {
+        s.status = 502;
+        s.respond(
+          { error: error instanceof Error ? error.message : String(error) },
+          "json",
+        );
+      }
+    });
+  ctx
+    .route("/api/user/advanced-chat/devices/:id/mcp-processes/stop")
+    .methods("POST")
+    .action(async (s, _p, deviceId) => {
+      const id = uid(s);
+      if (!id) return;
+      const input = (await s.parseRequestBody()) as any;
+      try {
+        s.respond(
+          await (ctx.component.connector as ConnectorService).execute(
+            id,
+            "stop_mcp_process",
+            { device_id: deviceId, key: String(input.key ?? "") },
+          ),
+          "json",
+        );
+      } catch (error) {
+        s.status = 502;
+        s.respond(
+          { error: error instanceof Error ? error.message : String(error) },
+          "json",
+        );
+      }
+    });
   ctx.registerComponent("connector", {
     async execute(userId, action, input) {
       for (const handler of [...handlers].reverse()) {
