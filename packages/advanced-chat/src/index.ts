@@ -9,6 +9,7 @@ import type {
 } from "@velocelab/model";
 import { registerAdvancedChatRoutes } from "./routes.js";
 import { registerStudioTools } from "./studio.js";
+import { registerAskUserTool } from "./ask-user.js";
 import "@velocelab/dashboard";
 
 export const depend = ["database", "model", "dashboard"];
@@ -255,6 +256,13 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const adapters = ctx.component.adapters as
     import("@velocelab/adapters").AdapterRegistry | undefined;
   registerStudioTools(db, (tool) => {
+    tools.push(tool);
+    return () => {
+      const index = tools.indexOf(tool);
+      if (index >= 0) tools.splice(index, 1);
+    };
+  });
+  registerAskUserTool((tool) => {
     tools.push(tool);
     return () => {
       const index = tools.indexOf(tool);
