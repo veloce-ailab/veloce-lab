@@ -13,6 +13,20 @@ export interface KnowledgeService {
 export const config: Schema<{ enabled: boolean }> = Schema.object({
   enabled: Schema.boolean("Enable knowledge bases").default(true),
 });
+function embedding(text: string) {
+  const vector = new Array(32).fill(0);
+  for (let index = 0; index < text.length; index += 1)
+    vector[text.charCodeAt(index) % vector.length] += 1;
+  const norm =
+    Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
+  return vector.map((value) => Number((value / norm).toFixed(6)));
+}
+function similarity(left: number[], right: number[]) {
+  return left.reduce(
+    (sum, value, index) => sum + value * (right[index] ?? 0),
+    0,
+  );
+}
 declare module "yumeri" {
   interface Components {
     knowledge: KnowledgeService;
@@ -127,11 +141,26 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
           document_id: row.id,
           user_id: id,
         });
-        const matches = chunks.filter((chunk: any) =>
-          String(chunk.content ?? "")
-            .toLowerCase()
-            .includes(query),
-        );
+        const queryVector = embedding(query);
+        const matches = chunks
+          .map((chunk: any) => {
+            let vector: number[] = [];
+            try {
+              vector = JSON.parse(String(chunk.embedding ?? "[]"));
+            } catch {}
+            return {
+              ...chunk,
+              score: vector.length
+                ? similarity(queryVector, vector)
+                : String(chunk.content ?? "")
+                      .toLowerCase()
+                      .includes(query)
+                  ? 1
+                  : 0,
+            };
+          })
+          .filter((chunk: any) => chunk.score > 0)
+          .sort((left: any, right: any) => right.score - left.score);
         if (
           matches.length ||
           String(row.name ?? "")
@@ -144,6 +173,7 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
               id: chunk.id,
               ordinal: chunk.ordinal,
               content: String(chunk.content ?? "").slice(0, 1000),
+              score: chunk.score,
             })),
           });
         }
@@ -299,9 +329,9 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
           ordinal: i,
           content: chunks[i],
           content_hash: createHash("sha256").update(chunks[i]).digest("hex"),
-          embedding: "",
-          embedding_model: "",
-          embedding_dim: 0,
+          embedding: JSON.stringify(embedding(chunks[i])),
+          embedding_model: "local-hash-v1",
+          embedding_dim: 32,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         } as any);
@@ -310,6 +340,8 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
         { id: documentId, user_id: userId },
         {
           embedding_status: "completed",
+          embedding_model: "local-hash-v1",
+          embedding_dim: 32,
           chunk_count: chunks.length,
           updated_at: new Date().toISOString(),
         },
