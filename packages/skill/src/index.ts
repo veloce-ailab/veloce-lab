@@ -185,4 +185,62 @@ export function apply(ctx: Context) {
         s.respond({ success: true }, "json");
       }
     });
+  ctx
+    .route("/api/user/advanced-chat/skill-packages")
+    .methods("GET")
+    .action(async (s) => {
+      const id = user(s);
+      if (id)
+        s.respond(
+          await db.select("advanced_chat_skill_packages", { user_id: id }),
+          "json",
+        );
+    });
+  ctx
+    .route("/api/user/advanced-chat/skill-packages/:id")
+    .methods("GET")
+    .action(async (s, _p, packageId) => {
+      const id = user(s);
+      const row = id
+        ? await db.selectOne("advanced_chat_skill_packages", {
+            id: packageId,
+            user_id: id,
+          })
+        : undefined;
+      if (!row) {
+        s.status = 404;
+        s.respond({ error: "Skill package not found" }, "json");
+        return;
+      }
+      s.respond(row, "json");
+    });
+  ctx
+    .route("/api/user/advanced-chat/skill-packages/:id")
+    .methods("DELETE")
+    .action(async (s, _p, packageId) => {
+      const id = user(s);
+      if (id) {
+        await db.remove("advanced_chat_skill_packages", {
+          id: packageId,
+          user_id: id,
+        });
+        s.respond({ success: true }, "json");
+      }
+    });
+  ctx
+    .route("/api/user/advanced-chat/workspace-skills/refresh")
+    .methods("POST")
+    .action(async (s) => {
+      const id = user(s);
+      if (id)
+        s.respond(
+          {
+            success: true,
+            refreshed: (
+              await db.select("advanced_chat_packaged_skills", { user_id: id })
+            ).length,
+          },
+          "json",
+        );
+    });
 }
