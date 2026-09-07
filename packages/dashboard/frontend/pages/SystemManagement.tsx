@@ -146,9 +146,9 @@ function AdvancedChatSettings() {
           <TabsTrigger value="attachments" className="flex-none rounded-none px-1.5 data-active:bg-transparent data-active:text-foreground after:bottom-[-1px]"><Paperclip size={15} />附件</TabsTrigger>
           <TabsTrigger value="mcp" className="flex-none rounded-none px-1.5 data-active:bg-transparent data-active:text-foreground after:bottom-[-1px]"><Server size={15} />MCP</TabsTrigger>
         </TabsList>
-        <TabsContent value="assistant"><AdvancedChatManagement mode="assistant" /></TabsContent>
-        <TabsContent value="attachments"><AdvancedChatManagement mode="attachments" /></TabsContent>
-        <TabsContent value="mcp"><AdvancedChatManagement mode="mcp" /></TabsContent>
+        <TabsContent value="assistant"><PluginSettingsPlaceholder /></TabsContent>
+        <TabsContent value="attachments"><PluginSettingsPlaceholder /></TabsContent>
+        <TabsContent value="mcp"><PluginSettingsPlaceholder /></TabsContent>
       </Tabs>
     </div>
   )
@@ -158,3 +158,5 @@ function apiError(cause: unknown) {
   const value = cause as { response?: { data?: { error?: string } }; message?: string }
   return value.response?.data?.error || value.message || "保存失败"
 }
+
+function PluginSettingsPlaceholder() { return <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">This configuration is provided by an optional plugin.</div> }
