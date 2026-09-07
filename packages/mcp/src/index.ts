@@ -88,6 +88,63 @@ export function apply(ctx: Context) {
       });
       if (!server || server.enabled === false)
         throw Error("MCP server is not available");
+      if (String(server.transport ?? "") === "connector") {
+        const config = JSON.parse(String(server.config ?? "{}"));
+        const deviceId = String(
+          config.device_id ?? config.connector_device_id ?? "",
+        );
+        if (!deviceId) throw Error("Connector MCP server requires a device");
+        const chat = ctx.component["advanced-chat"];
+        const task = await chat.createConnectorTask(
+          context.userId,
+          deviceId,
+          String(value.method) === "tools/list"
+            ? "mcp_list_tools"
+            : "mcp_call_tool",
+          {
+            server: {
+              id: server.id,
+              name: server.name,
+              type: "connector",
+              command: server.command,
+              args: server.args,
+              env: server.env,
+            },
+            ...(String(value.method) === "tools/call"
+              ? {
+                  name: String((value.params as any)?.name ?? ""),
+                  arguments: ((value.params as any)?.arguments ?? {}) as Record<
+                    string,
+                    unknown
+                  >,
+                }
+              : {}),
+          },
+        );
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline) {
+          const completed: any = await db.selectOne(
+            "advanced_chat_connector_tasks",
+            {
+              id: task.id,
+              user_id: context.userId,
+            },
+          );
+          if (completed?.status === "completed") {
+            try {
+              return JSON.parse(String(completed.result || "{}"));
+            } catch {
+              return completed.result;
+            }
+          }
+          if (completed?.status === "failed")
+            throw Error(
+              String(completed.error_message || "Connector MCP task failed"),
+            );
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        throw Error("Connector MCP task timed out");
+      }
       const config = JSON.parse(String(server.config ?? "{}"));
       const headers =
         config.headers && typeof config.headers === "object"
