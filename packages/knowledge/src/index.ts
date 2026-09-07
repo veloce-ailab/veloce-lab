@@ -3,7 +3,7 @@ import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/file";
 import "@velocelab/model";
-export const depend = ["database", "dashboard", "file"];
+export const depend = ["database", "dashboard", "file", "model"];
 export const provide = ["knowledge"];
 export interface KnowledgeService {
   list(userId: number): Promise<any[]>;

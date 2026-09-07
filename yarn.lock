@@ -923,6 +923,8 @@ __metadata:
 "@velocelab/connector@workspace:*, @velocelab/connector@workspace:packages/connector":
   version: 0.0.0-use.local
   resolution: "@velocelab/connector@workspace:packages/connector"
+  dependencies:
+    "@velocelab/model": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -952,6 +954,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/delivery@workspace:packages/delivery"
   dependencies:
+    "@velocelab/model": "workspace:*"
     "@vitejs/plugin-react": "npm:^6.0.1"
     react: "npm:^19.2.6"
     vite: "npm:^8.0.12"
@@ -995,6 +998,8 @@ __metadata:
 "@velocelab/knowledge@workspace:packages/knowledge":
   version: 0.0.0-use.local
   resolution: "@velocelab/knowledge@workspace:packages/knowledge"
+  dependencies:
+    "@velocelab/model": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -1003,6 +1008,8 @@ __metadata:
 "@velocelab/mcp@workspace:packages/mcp":
   version: 0.0.0-use.local
   resolution: "@velocelab/mcp@workspace:packages/mcp"
+  dependencies:
+    "@velocelab/model": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -1012,6 +1019,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/memory@workspace:packages/memory"
   dependencies:
+    "@velocelab/model": "workspace:*"
     "@vitejs/plugin-react": "npm:^6.0.1"
     react: "npm:^19.2.6"
     vite: "npm:^8.0.12"
@@ -1086,6 +1094,8 @@ __metadata:
 "@velocelab/scheduler@workspace:packages/scheduler":
   version: 0.0.0-use.local
   resolution: "@velocelab/scheduler@workspace:packages/scheduler"
+  dependencies:
+    "@velocelab/model": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -1105,6 +1115,8 @@ __metadata:
 "@velocelab/skill@workspace:packages/skill":
   version: 0.0.0-use.local
   resolution: "@velocelab/skill@workspace:packages/skill"
+  dependencies:
+    "@velocelab/model": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -1153,6 +1165,8 @@ __metadata:
 "@velocelab/workspace@workspace:packages/workspace":
   version: 0.0.0-use.local
   resolution: "@velocelab/workspace@workspace:packages/workspace"
+  dependencies:
+    "@velocelab/model": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
