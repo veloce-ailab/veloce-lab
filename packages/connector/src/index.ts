@@ -118,6 +118,60 @@ export function apply(ctx: Context) {
         s.respond({ success: true }, "json");
       }
     });
+  ctx
+    .route("/api/user/advanced-chat/connector-tasks/:id")
+    .methods("GET")
+    .action(async (s, _p, taskId) => {
+      const id = uid(s);
+      const task = id
+        ? await db.selectOne("advanced_chat_connector_tasks", {
+            id: taskId,
+            user_id: id,
+          })
+        : undefined;
+      if (!task) {
+        s.status = 404;
+        s.respond({ error: "Connector task not found" }, "json");
+        return;
+      }
+      s.respond(task, "json");
+    });
+  ctx
+    .route("/api/user/advanced-chat/connector-tasks/:id/decision")
+    .methods("POST")
+    .action(async (s, _p, taskId) => {
+      const id = uid(s);
+      if (!id) return;
+      const task: any = await db.selectOne("advanced_chat_connector_tasks", {
+        id: taskId,
+        user_id: id,
+      });
+      if (!task) {
+        s.status = 404;
+        s.respond({ error: "Connector task not found" }, "json");
+        return;
+      }
+      const input = (await s.parseRequestBody()) as any;
+      const approved = input.approved === true || input.decision === "approve";
+      await db.update(
+        "advanced_chat_connector_tasks",
+        { id: taskId, user_id: id },
+        {
+          status: approved ? "approved" : "rejected",
+          error_message: approved
+            ? ""
+            : String(input.reason ?? "Rejected by user"),
+          updated_at: new Date().toISOString(),
+        },
+      );
+      s.respond(
+        await db.selectOne("advanced_chat_connector_tasks", {
+          id: taskId,
+          user_id: id,
+        }),
+        "json",
+      );
+    });
   ctx.registerComponent("connector", {
     async execute(userId, action, input) {
       for (const handler of [...handlers].reverse()) {
