@@ -34,13 +34,20 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
   const chat = ctx.component["advanced-chat"];
   chat.registerContextProvider({
     id: "memory",
-    async provide({ userId }) {
+    async provide({ userId, agentId }) {
       const rows = await db.select("advanced_chat_memory_documents", {
         user_id: userId,
         enabled: true,
       });
-      return rows.length
-        ? `Available memories:\n${rows.map((row: any) => `- ${row.title} (${row.kind})`).join("\n")}`
+      const visible = rows.filter(
+        (row: any) =>
+          !row.scope ||
+          row.scope === "global" ||
+          !agentId ||
+          row.agent_id === agentId,
+      );
+      return visible.length
+        ? `Available memories:\n${visible.map((row: any) => `- ${row.title} (${row.kind})`).join("\n")}`
         : undefined;
     },
   });
@@ -254,6 +261,58 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
     .route("/api/advanced-chat/memories/:id")
     .methods("PUT")
     .action((s, _p, id) => save(s, id));
+  ctx
+    .route("/api/advanced-chat/memories/:id")
+    .methods("PATCH")
+    .action(async (s, _p, id) => {
+      const uid = user(s);
+      if (!uid) return;
+      const existing: any = await db.selectOne(
+        "advanced_chat_memory_documents",
+        { id, user_id: uid },
+      );
+      if (!existing) {
+        s.status = 404;
+        s.respond({ error: "Memory not found" }, "json");
+        return;
+      }
+      const input = (await s.parseRequestBody()) as any;
+      const currentContent = existing.storage_path
+        ? await readFile(String(existing.storage_path), "utf8").catch(() => "")
+        : "";
+      const content =
+        input.content === undefined ? currentContent : String(input.content);
+      if (Buffer.byteLength(content) > 512 * 1024) {
+        s.status = 413;
+        s.respond({ error: "Memory is too large" }, "json");
+        return;
+      }
+      if (existing.storage_path)
+        await writeFile(String(existing.storage_path), content, "utf8");
+      await db.update("advanced_chat_memory_documents", { id, user_id: uid }, {
+        ...(input.title !== undefined
+          ? { title: String(input.title).slice(0, 200) }
+          : {}),
+        ...(input.kind !== undefined && kinds.has(String(input.kind))
+          ? { kind: String(input.kind) }
+          : {}),
+        ...(input.enabled !== undefined
+          ? { enabled: input.enabled !== false }
+          : {}),
+        ...(input.scope !== undefined ? { scope: String(input.scope) } : {}),
+        content_size: Buffer.byteLength(content),
+        size: Buffer.byteLength(content),
+        hash: createHash("sha256").update(content).digest("hex"),
+        updated_at: new Date().toISOString(),
+      } as any);
+      s.respond(
+        await db.selectOne("advanced_chat_memory_documents", {
+          id,
+          user_id: uid,
+        }),
+        "json",
+      );
+    });
   ctx
     .route("/api/advanced-chat/memories/:id")
     .methods("DELETE")
