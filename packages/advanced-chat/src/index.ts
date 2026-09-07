@@ -79,6 +79,12 @@ export interface AdvancedChatService {
     userId: number,
     runId: string,
   ): Promise<Record<string, unknown>[]>;
+  createConnectorTask(
+    userId: number,
+    deviceId: string,
+    action: string,
+    payload: Record<string, unknown>,
+  ): Promise<import("@velocelab/model").HarnessConnectorTask>;
   listScheduledTasks(
     userId: number,
   ): Promise<import("@velocelab/model").AdvancedChatScheduledTask[]>;
@@ -105,8 +111,23 @@ export interface AdvancedChatService {
   ): Promise<boolean>;
   complete(userId: number, input: ChatInput): Promise<ChatResult>;
 }
-export interface ChatToolDefinition { name: string; description: string; parameters: Record<string, unknown>; execute?(input: unknown, context: { userId: number; sessionId?: string; runId?: string }): Promise<unknown>; }
-export interface ChatContextProvider { id: string; provide(input: { userId: number; sessionId?: string; agentId?: string }): Promise<string | undefined> | string | undefined; }
+export interface ChatToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  execute?(
+    input: unknown,
+    context: { userId: number; sessionId?: string; runId?: string },
+  ): Promise<unknown>;
+}
+export interface ChatContextProvider {
+  id: string;
+  provide(input: {
+    userId: number;
+    sessionId?: string;
+    agentId?: string;
+  }): Promise<string | undefined> | string | undefined;
+}
 
 export interface ChatInput {
   sessionId?: string;
@@ -218,18 +239,36 @@ function decodeObject(value: unknown) {
 
 export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const dashboard = ctx.component.dashboard;
-  const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  dashboard.addEntry({ dev: path.resolve(packageRoot, "frontend/index.tsx"), prod: path.resolve(packageRoot, "frontend/advanced-chat.js"), plugin: "advanced-chat" });
+  const packageRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+  );
+  dashboard.addEntry({
+    dev: path.resolve(packageRoot, "frontend/index.tsx"),
+    prod: path.resolve(packageRoot, "frontend/advanced-chat.js"),
+    plugin: "advanced-chat",
+  });
   const tools: ChatToolDefinition[] = [];
   const contextProviders: ChatContextProvider[] = [];
   const db = ctx.component.database as Database;
   const adapters = ctx.component.adapters as
-    | import("@velocelab/adapters").AdapterRegistry
-    | undefined;
+    import("@velocelab/adapters").AdapterRegistry | undefined;
   const service: AdvancedChatService = {
-    registerTool(tool) { tools.push(tool); return () => { const i = tools.indexOf(tool); if (i >= 0) tools.splice(i, 1); }; },
+    registerTool(tool) {
+      tools.push(tool);
+      return () => {
+        const i = tools.indexOf(tool);
+        if (i >= 0) tools.splice(i, 1);
+      };
+    },
     tools: () => tools.slice(),
-    registerContextProvider(provider) { contextProviders.push(provider); return () => { const i = contextProviders.indexOf(provider); if (i >= 0) contextProviders.splice(i, 1); }; },
+    registerContextProvider(provider) {
+      contextProviders.push(provider);
+      return () => {
+        const i = contextProviders.indexOf(provider);
+        if (i >= 0) contextProviders.splice(i, 1);
+      };
+    },
     async createConnector(userId, name, remark) {
       if (!pluginConfig.enabled) throw Error("personal Harness is disabled");
       if (!adapters) throw Error("upstream adapters are not enabled");
@@ -593,6 +632,30 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         )
         .sort((left, right) => left.created_at.localeCompare(right.created_at));
     },
+    async createConnectorTask(userId, deviceId, action, payload) {
+      const device = await db.selectOne("advanced_chat_connector_devices", {
+        id: deviceId,
+        user_id: userId,
+      });
+      if (!device || device.status !== "online")
+        throw Error("A connected device is required");
+      return db.create("advanced_chat_connector_tasks", {
+        id: newID("act"),
+        user_id: userId,
+        device_id: deviceId,
+        run_id: "",
+        action: action.trim(),
+        workspace_path: String(payload.workspace_path ?? ""),
+        payload: JSON.stringify(payload),
+        status: "queued",
+        result: "",
+        error_message: "",
+        started_at: null,
+        finished_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as any);
+    },
     async listScheduledTasks(userId) {
       const tasks = await db.select("advanced_chat_scheduled_tasks", {
         user_id: userId,
@@ -826,14 +889,26 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
               toolCalls: message.tool_calls.map((call: any) => ({
                 id: String(call.id ?? ""),
                 name: String(call.function?.name ?? call.name ?? ""),
-                arguments: String(call.function?.arguments ?? call.arguments ?? "{}"),
+                arguments: String(
+                  call.function?.arguments ?? call.arguments ?? "{}",
+                ),
               })),
             }
           : {}),
-        ...(message.tool_call_id ? { toolCallId: String(message.tool_call_id) } : {}),
+        ...(message.tool_call_id
+          ? { toolCallId: String(message.tool_call_id) }
+          : {}),
       }));
       const optionalContext = "";
-      const injectedContext = (await Promise.all(contextProviders.map((provider) => provider.provide({ userId, sessionId, agentId: session.agent_id })))).filter(Boolean).join("\n\n");
+      const injectedContext = (
+        await Promise.all(
+          contextProviders.map((provider) =>
+            provider.provide({ userId, sessionId, agentId: session.agent_id }),
+          ),
+        )
+      )
+        .filter(Boolean)
+        .join("\n\n");
       const request = adapters.build({
         channelType: channel.type,
         model: upstreamModel,
@@ -843,8 +918,11 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         maxTokens: input.maxTokens,
         temperature: input.temperature,
         reasoningEffort: input.reasoningEffort,
-        system: [optionalContext, injectedContext].filter(Boolean).join("\n\n") || undefined,
-        tools: service.tools()
+        system:
+          [optionalContext, injectedContext].filter(Boolean).join("\n\n") ||
+          undefined,
+        tools: service
+          .tools()
           .filter((tool) => tool?.name)
           .map((tool) => ({
             name: String(tool.name),
@@ -862,14 +940,14 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         { method: "POST", headers, body: JSON.stringify(request.body) },
       );
       let streamedContent = "";
-      if (input.stream && response.ok && response.headers.get("content-type")?.includes("text/event-stream")) {
-        await adapters.stream(
-          channel.type,
-          response.clone(),
-          (delta) => {
-            streamedContent += delta;
-          },
-        );
+      if (
+        input.stream &&
+        response.ok &&
+        response.headers.get("content-type")?.includes("text/event-stream")
+      ) {
+        await adapters.stream(channel.type, response.clone(), (delta) => {
+          streamedContent += delta;
+        });
       }
       const text = await response.text();
       if (!response.ok) {
@@ -930,14 +1008,20 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           if (!definition?.execute) continue;
           let args: unknown = {};
           try {
-            args = JSON.parse(String(call.function?.arguments ?? call.arguments ?? "{}"));
+            args = JSON.parse(
+              String(call.function?.arguments ?? call.arguments ?? "{}"),
+            );
           } catch {
             args = {};
           }
           try {
             toolResults.push({
               id: String(call.id ?? ""),
-              result: await definition.execute(args, { userId, sessionId, runId }),
+              result: await definition.execute(args, {
+                userId,
+                sessionId,
+                runId,
+              }),
             });
           } catch (error) {
             toolResults.push({
@@ -977,7 +1061,9 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             },
           );
           if (followupResponse.ok) {
-            const followupData = await followupResponse.json().catch(() => ({}));
+            const followupData = await followupResponse
+              .json()
+              .catch(() => ({}));
             const followupParsed = adapters.parse(channel.type, followupData);
             if (followupParsed?.content) content = followupParsed.content;
           }
