@@ -95,6 +95,19 @@ export function apply(ctx: Context) {
       const { token_hash: _hash, ...device } = row;
       s.respond({ ...device, token }, "json");
     });
+  ctx
+    .route("/api/user/advanced-chat/devices/:id")
+    .methods("DELETE")
+    .action(async (s, _p, deviceId) => {
+      const id = uid(s);
+      if (id) {
+        await db.remove("advanced_chat_connector_devices", {
+          id: deviceId,
+          user_id: id,
+        });
+        s.respond({ success: true }, "json");
+      }
+    });
   const heartbeat = async (s: Session) => {
     const token = connectorToken(s);
     const device: any = await deviceByToken(token);
