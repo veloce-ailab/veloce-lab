@@ -350,6 +350,95 @@ export function registerAdvancedChatRoutes(
         session.respond(await service.listSessionTasks(current.id, id), "json");
     });
   ctx
+    .route("/api/user/advanced-chat/sessions/:id/tasks")
+    .methods("POST")
+    .action(async (session, _params, sessionId) => {
+      const current = await user(session);
+      if (!current?.id) return;
+      const owned = await service.getSession(current.id, sessionId);
+      if (!owned) {
+        session.status = 404;
+        session.respond({ error: "Session not found" }, "json");
+        return;
+      }
+      const input = await body(session);
+      const existing = await db.select("advanced_chat_session_tasks", {
+        user_id: current.id,
+        session_id: sessionId,
+      });
+      const now = new Date().toISOString();
+      const row = await db.create("advanced_chat_session_tasks", {
+        id: `task-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        user_id: current.id,
+        session_id: sessionId,
+        position: existing.length,
+        title: String(input.title ?? "Task").slice(0, 200),
+        description: String(input.description ?? ""),
+        status: String(input.status ?? "pending"),
+        note: String(input.note ?? ""),
+        created_at: now,
+        updated_at: now,
+      } as any);
+      session.status = 201;
+      session.respond(row, "json");
+    });
+  ctx
+    .route("/api/user/advanced-chat/sessions/:id/tasks/:task_id")
+    .methods("PUT")
+    .action(async (session, _params, sessionId, taskId) => {
+      const current = await user(session);
+      if (!current?.id) return;
+      const task = await db.selectOne("advanced_chat_session_tasks", {
+        id: taskId,
+        session_id: sessionId,
+        user_id: current.id,
+      });
+      if (!task) {
+        session.status = 404;
+        session.respond({ error: "Task not found" }, "json");
+        return;
+      }
+      const input = await body(session);
+      await db.update(
+        "advanced_chat_session_tasks",
+        { id: taskId, user_id: current.id },
+        {
+          ...(input.title !== undefined
+            ? { title: String(input.title).slice(0, 200) }
+            : {}),
+          ...(input.description !== undefined
+            ? { description: String(input.description) }
+            : {}),
+          ...(input.status !== undefined
+            ? { status: String(input.status) }
+            : {}),
+          ...(input.note !== undefined ? { note: String(input.note) } : {}),
+          updated_at: new Date().toISOString(),
+        },
+      );
+      session.respond(
+        await db.selectOne("advanced_chat_session_tasks", {
+          id: taskId,
+          user_id: current.id,
+        }),
+        "json",
+      );
+    });
+  ctx
+    .route("/api/user/advanced-chat/sessions/:id/tasks/:task_id")
+    .methods("DELETE")
+    .action(async (session, _params, sessionId, taskId) => {
+      const current = await user(session);
+      if (current?.id) {
+        await db.remove("advanced_chat_session_tasks", {
+          id: taskId,
+          session_id: sessionId,
+          user_id: current.id,
+        });
+        session.respond({ success: true }, "json");
+      }
+    });
+  ctx
     .route("/api/user/advanced-chat/sessions/folders")
     .methods("GET")
     .action(async (session) => {
