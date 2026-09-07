@@ -1,10 +1,34 @@
 import { randomUUID } from "node:crypto";
 import { Context, Database, Session } from "yumeri";
+import { createHash } from "node:crypto";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/model";
-export const depend = ["dashboard", "advanced-chat", "database", "model"];
+import "@velocelab/file";
+export const depend = [
+  "dashboard",
+  "advanced-chat",
+  "database",
+  "model",
+  "file",
+];
 export const provide = ["skill"];
+const communityAPI = "https://veloce-community.flweb.cn/api/v1";
+const maxSkillArchive = 64 << 20;
+const communityNotFound = Symbol("community-skill-not-found");
+
+async function fetchCommunitySkill<T>(route: string): Promise<T> {
+  const response = await fetch(`${communityAPI}${route}`, {
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (response.status === 404) throw communityNotFound;
+  if (!response.ok)
+    throw new Error(`community service returned HTTP ${response.status}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength > maxSkillArchive)
+    throw new Error("community response is too large");
+  return JSON.parse(new TextDecoder().decode(bytes)) as T;
+}
 export interface SkillDefinition {
   id: string;
   name: string;
@@ -29,6 +53,7 @@ export function apply(ctx: Context) {
   });
   const skills: SkillDefinition[] = [];
   const db = ctx.component.database as Database;
+  const files = ctx.component.file;
   const service: SkillService = {
     list: async (userId) =>
       userId
@@ -74,6 +99,76 @@ export function apply(ctx: Context) {
     execute: (_input, context) => service.list(context.userId),
   });
   const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
+  ctx
+    .route("/api/user/advanced-chat/community/skills/:id/import")
+    .methods("POST")
+    .action(async (s, _p, communityId) => {
+      const userId = user(s);
+      if (!userId) return;
+      const id = String(communityId ?? "").trim();
+      if (!id || id.length > 120) {
+        s.status = 400;
+        s.respond({ error: "Invalid community skill id" }, "json");
+        return;
+      }
+      let metadata: { name?: string; source_name?: string };
+      let archive: Uint8Array;
+      try {
+        const encoded = encodeURIComponent(id);
+        metadata = await fetchCommunitySkill(`/skills/${encoded}`);
+        const response = await fetch(
+          `${communityAPI}/skills/${encoded}/archive`,
+          {
+            signal: AbortSignal.timeout(20_000),
+          },
+        );
+        if (response.status === 404) throw communityNotFound;
+        if (!response.ok) throw new Error("community archive unavailable");
+        archive = new Uint8Array(await response.arrayBuffer());
+        if (!archive.byteLength || archive.byteLength > maxSkillArchive)
+          throw new Error("invalid community skill package");
+      } catch (error) {
+        s.status = error === communityNotFound ? 404 : 502;
+        s.respond(
+          {
+            error:
+              error === communityNotFound
+                ? "Community skill not found"
+                : "Community skill package is temporarily unavailable",
+          },
+          "json",
+        );
+        return;
+      }
+      const sourceName = String(
+        metadata.source_name ?? metadata.name ?? `${id}.zip`,
+      ).trim();
+      const packageId = randomUUID();
+      const storagePath = `skills/${userId}/packages/${packageId}.zip`;
+      const now = new Date().toISOString();
+      try {
+        await files.write(storagePath, archive);
+        const row = await db.create("advanced_chat_skill_packages", {
+          id: packageId,
+          user_id: userId,
+          name: String(metadata.name ?? id),
+          source_name: sourceName,
+          storage_path: storagePath,
+          size: archive.byteLength,
+          file_count: 0,
+          hash: createHash("sha256").update(archive).digest("hex"),
+          status: "stored",
+          error_text: "",
+          created_at: now,
+          updated_at: now,
+        } as any);
+        s.respond({ package: row }, "json");
+      } catch {
+        await files.remove(storagePath).catch(() => undefined);
+        s.status = 500;
+        s.respond({ error: "Failed to import community skill" }, "json");
+      }
+    });
   ctx
     .route("/api/user/advanced-chat/skills")
     .methods("GET")
