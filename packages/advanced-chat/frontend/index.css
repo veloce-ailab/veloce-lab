@@ -1,5 +1,4 @@
 @import "tw-animate-css";
-@import "@fontsource-variable/inter";
 @config "../tailwind.config.js";
 @import "tailwindcss";
 
