@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
-export const depend = ["database", "dashboard"];
+import "@velocelab/file";
+export const depend = ["database", "dashboard", "file"];
 export const provide = ["knowledge"];
 export interface KnowledgeService { list(userId: number): Promise<any[]>; create(userId: number, input: Record<string, unknown>): Promise<any>; documents(userId: number, baseId: string): Promise<any[]>; }
 export const config: Schema<{ enabled: boolean }> = Schema.object({ enabled: Schema.boolean("Enable knowledge bases").default(true) });
@@ -9,6 +10,7 @@ declare module "yumeri" { interface Components { knowledge: KnowledgeService; } 
 export function apply(ctx: Context, cfg: { enabled: boolean }) {
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/knowledge.js", import.meta.url).pathname, plugin: "knowledge" });
   const db = ctx.component.database as Database;
+  const files = ctx.component.file;
   const service: KnowledgeService = { list: (userId) => db.select("advanced_chat_knowledge_bases", { user_id: userId }), create: (userId, input) => db.create("advanced_chat_knowledge_bases", { id: randomUUID(), user_id: userId, name: String(input.name ?? "Untitled"), description: String(input.description ?? ""), embedding_model_name: String(input.embedding_model_name ?? ""), embedding_user_channel_id: Number(input.embedding_user_channel_id ?? 0), created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as any), documents: (userId, baseId) => db.select("advanced_chat_knowledge_documents", { user_id: userId, knowledge_base_id: baseId }) };
   ctx.registerComponent("knowledge", service);
   const user = (s: Session) => (s.properties.user as any)?.id as number | undefined;
@@ -18,5 +20,21 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
   ctx.route("/api/user/advanced-chat/knowledge-bases/:id").methods("PUT").action(async (s, _p, baseId) => { const id = user(s); if (!id) return; const input = await s.parseRequestBody() as any; await db.update("advanced_chat_knowledge_bases", { id: baseId, user_id: id }, { name: String(input.name ?? ""), description: String(input.description ?? ""), updated_at: new Date().toISOString() }); s.respond(await db.selectOne("advanced_chat_knowledge_bases", { id: baseId, user_id: id }), "json"); });
   ctx.route("/api/user/advanced-chat/knowledge-bases/:id").methods("DELETE").action(async (s, _p, baseId) => { const id = user(s); if (id) { await db.remove("advanced_chat_knowledge_bases", { id: baseId, user_id: id }); s.respond({ success: true }, "json"); } });
   ctx.route("/api/user/advanced-chat/knowledge-bases/:id/search").methods("POST").action(async (s, _p, baseId) => { const id = user(s); if (!id) return; const input = await s.parseRequestBody() as any; const query = String(input.query ?? "").toLowerCase(); const rows = await service.documents(id, baseId); s.respond(rows.filter((row: any) => String(row.name ?? "").toLowerCase().includes(query)), "json"); });
+  const createDocument = async (s: Session, baseId: string) => {
+    const userId = user(s); if (!userId) return;
+    const base = await db.selectOne("advanced_chat_knowledge_bases", { id: baseId, user_id: userId });
+    if (!base) { s.status = 404; s.respond({ error: "Knowledge base not found" }, "json"); return; }
+    const input = await s.parseRequestBody() as any;
+    const content = String(input.content ?? input.data ?? "");
+    const documentId = randomUUID(); const fileId = randomUUID(); const storage = `knowledge/${userId}/${baseId}/${documentId}.txt`;
+    await files.write(storage, content);
+    const now = new Date().toISOString();
+    const row = await db.create("advanced_chat_knowledge_documents", { id: documentId, knowledge_base_id: baseId, user_id: userId, file_id: fileId, name: String(input.name ?? "Document"), mime_type: String(input.mime_type ?? "text/plain"), size: Buffer.byteLength(content), text_available: true, embedding_status: "pending", embedding_error: "", embedding_model: "", embedding_dim: 0, chunk_count: 0, storage_path: storage, hash: createHash("sha256").update(content).digest("hex"), created_at: now, updated_at: now } as any);
+    s.status = 201; s.respond(row, "json");
+  };
+  ctx.route("/api/user/advanced-chat/knowledge-bases/:id/documents").methods("POST").action((s, _p, baseId) => createDocument(s, baseId));
+  ctx.route("/api/user/advanced-chat/knowledge-bases/:id/documents/text").methods("POST").action((s, _p, baseId) => createDocument(s, baseId));
+  ctx.route("/api/user/advanced-chat/knowledge-bases/:id/documents/:documentId/content").methods("GET").action(async (s, _p, baseId, documentId) => { const userId = user(s); const row = userId ? await db.selectOne("advanced_chat_knowledge_documents", { id: documentId, knowledge_base_id: baseId, user_id: userId }) : undefined; if (!row) { s.status = 404; s.respond({ error: "Document not found" }, "json"); return; } const content = row.storage_path ? (await files.read(String(row.storage_path))).toString("utf8") : ""; s.respond({ ...row, content }, "json"); });
+  ctx.route("/api/user/advanced-chat/knowledge-bases/:id/documents/:documentId").methods("DELETE").action(async (s, _p, baseId, documentId) => { const userId = user(s); const row = userId ? await db.selectOne("advanced_chat_knowledge_documents", { id: documentId, knowledge_base_id: baseId, user_id: userId }) : undefined; if (!row) { s.status = 404; s.respond({ error: "Document not found" }, "json"); return; } if (row.storage_path) await files.remove(String(row.storage_path)); await db.remove("advanced_chat_knowledge_documents", { id: documentId, user_id: userId }); s.respond({ success: true }, "json"); });
 }
 
