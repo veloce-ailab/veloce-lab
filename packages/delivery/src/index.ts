@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { Context, Database, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/model";
-export const depend = ["dashboard", "database", "model"];
+import "@velocelab/advanced-chat";
+export const depend = ["dashboard", "database", "model", "advanced-chat"];
 export const provide = ["delivery"];
 export function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
@@ -11,6 +12,7 @@ export function apply(ctx: Context) {
     plugin: "delivery",
   });
   const db = ctx.component.database as Database;
+  const chat = ctx.component["advanced-chat"];
   const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
   const fields = (input: any, old: any = {}) => ({
     name: String(input.name ?? old.name ?? "Delivery"),
@@ -28,6 +30,50 @@ export function apply(ctx: Context) {
     smtp_password: String(input.smtp_password ?? old.smtp_password ?? ""),
     smtp_from: String(input.smtp_from ?? old.smtp_from ?? ""),
     enabled: input.enabled !== false,
+  });
+  chat.registerTool({
+    name: "deliver_result",
+    description: "Deliver a completed result through a configured webhook",
+    parameters: {
+      type: "object",
+      properties: {
+        delivery_id: { type: "string" },
+        title: { type: "string" },
+        body: { type: "string" },
+      },
+      required: ["delivery_id", "body"],
+    },
+    execute: async (input, context) => {
+      const value = input as any;
+      const delivery: any = await db.selectOne("advanced_chat_deliveries", {
+        id: String(value.delivery_id),
+        user_id: context.userId,
+      });
+      if (!delivery || delivery.enabled === false)
+        throw Error("Delivery is not available");
+      if (delivery.method !== "webhook" || !delivery.webhook_url)
+        throw Error("Only configured webhook delivery is supported");
+      let headers: Record<string, string> = {
+        "content-type": "application/json",
+      };
+      try {
+        headers = {
+          ...headers,
+          ...JSON.parse(String(delivery.webhook_headers ?? "{}")),
+        };
+      } catch {}
+      const response = await fetch(String(delivery.webhook_url), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          title: String(value.title ?? ""),
+          body: String(value.body),
+          delivery_id: delivery.id,
+        }),
+      });
+      if (!response.ok) throw Error(`Delivery failed (${response.status})`);
+      return { success: true, status: response.status };
+    },
   });
   ctx
     .route("/api/user/advanced-chat/deliveries")
