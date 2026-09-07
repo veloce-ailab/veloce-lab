@@ -96,6 +96,106 @@ export function apply(ctx: Context) {
       s.respond({ ...device, token }, "json");
     });
   ctx
+    .route("/api/user/advanced-chat/devices/:id/token")
+    .methods("POST")
+    .action(async (s, _p, deviceId) => {
+      const id = uid(s);
+      if (!id) return;
+      const token = randomBytes(32).toString("base64url");
+      const existing = await db.selectOne("advanced_chat_connector_devices", {
+        id: deviceId,
+        user_id: id,
+      });
+      if (!existing) {
+        s.status = 404;
+        s.respond({ error: "Device not found" }, "json");
+        return;
+      }
+      await db.update(
+        "advanced_chat_connector_devices",
+        { id: deviceId, user_id: id },
+        { token_hash: tokenHash(token), updated_at: new Date().toISOString() },
+      );
+      const device: any = await db.selectOne(
+        "advanced_chat_connector_devices",
+        {
+          id: deviceId,
+          user_id: id,
+        },
+      );
+      const { token_hash: _hash, ...safe } = device;
+      s.respond({ token, device: safe }, "json");
+    });
+  ctx
+    .route("/api/user/advanced-chat/desktop/connector/ensure")
+    .methods("POST")
+    .action(async (s) => {
+      const id = uid(s);
+      if (!id) return;
+      const input = (await s.parseRequestBody()) as any;
+      const instance = String(input.desktop_instance_id ?? "")
+        .trim()
+        .slice(0, 120);
+      if (!instance) {
+        s.status = 400;
+        s.respond({ error: "Desktop instance id is required" }, "json");
+        return;
+      }
+      const existing: any = await db.selectOne(
+        "advanced_chat_connector_devices",
+        {
+          user_id: id,
+          kind: "desktop",
+          desktop_instance_id: instance,
+        },
+      );
+      const resume = String(
+        s.client.req?.headers["x-desktop-connector-token"] ?? "",
+      ).trim();
+      if (existing && resume && existing.token_hash === tokenHash(resume)) {
+        const { token_hash: _hash, ...safe } = existing;
+        s.respond({ device: safe, reused: true }, "json");
+        return;
+      }
+      const token = randomBytes(32).toString("base64url");
+      const now = new Date().toISOString();
+      const values = {
+        user_id: id,
+        token_hash: tokenHash(token),
+        name: `Veloce Desktop${input.hostname ? ` (${String(input.hostname).slice(0, 120)})` : ""}`,
+        hostname: String(input.hostname ?? "").slice(0, 120),
+        os: String(input.os ?? "").slice(0, 40),
+        arch: String(input.arch ?? "").slice(0, 40),
+        version: String(input.version ?? "").slice(0, 80),
+        kind: "desktop",
+        desktop_instance_id: instance,
+        mode: "platform",
+        status: "offline",
+        updated_at: now,
+      };
+      let device: any;
+      if (existing) {
+        await db.update(
+          "advanced_chat_connector_devices",
+          { id: existing.id },
+          values,
+        );
+        device = await db.selectOne("advanced_chat_connector_devices", {
+          id: existing.id,
+        });
+      } else {
+        device = await db.create("advanced_chat_connector_devices", {
+          id: randomUUID(),
+          ...values,
+          remark: "",
+          last_seen_at: null,
+          created_at: now,
+        } as any);
+      }
+      const { token_hash: _hash, ...safe } = device;
+      s.respond({ token, device: safe, reused: false }, "json");
+    });
+  ctx
     .route("/api/user/advanced-chat/devices/:id")
     .methods("DELETE")
     .action(async (s, _p, deviceId) => {
