@@ -1,11 +1,15 @@
-import { randomUUID, createHash } from "node:crypto"; import { mkdir, readFile, writeFile, unlink } from "node:fs/promises"; import path from "node:path"; import { Context, Database, Schema, Session } from "yumeri"; import "@velocelab/dashboard";
-export const depend = ["database", "dashboard"]; export const provide = ["memory"];
+import { randomUUID, createHash } from "node:crypto"; import { mkdir, readFile, writeFile, unlink } from "node:fs/promises"; import path from "node:path"; import { Context, Database, Schema, Session } from "yumeri"; import "@velocelab/dashboard"; import "@velocelab/advanced-chat";
+export const depend = ["database", "dashboard", "advanced-chat"]; export const provide = ["memory"];
 export interface MemoryConfig { root: string; }
 export const config: Schema<MemoryConfig> = Schema.object({ root: Schema.string("Memory storage root").default("./data/memories") });
 const kinds = new Set(["profile", "preferences", "facts", "projects", "rules", "scratch", "custom"]);
 export function apply(ctx: Context, cfg: MemoryConfig) {
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/memory.js", import.meta.url).pathname, plugin: "memory" });
   const db = ctx.component.database as Database; const root = path.resolve(cfg.root); void mkdir(root, { recursive: true });
+  const chat = ctx.component["advanced-chat"];
+  chat.registerContextProvider({ id: "memory", async provide({ userId }) { const rows = await db.select("advanced_chat_memory_documents", { user_id: userId, enabled: true }); return rows.length ? `Available memories:\n${rows.map((row: any) => `- ${row.title} (${row.kind})`).join("\n")}` : undefined; } });
+  chat.registerTool({ name: "memory_list", description: "List saved memories", parameters: { type: "object", properties: {} }, execute: async (_input, context) => db.select("advanced_chat_memory_documents", { user_id: context.userId, enabled: true }) });
+  chat.registerTool({ name: "memory_read", description: "Read a saved memory", parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }, execute: async (input, context) => { const row = await db.selectOne("advanced_chat_memory_documents", { id: String((input as any).id), user_id: context.userId }); return row?.storage_path ? { ...row, content: await readFile(String(row.storage_path), "utf8").catch(() => "") } : row; } });
   const user = (s: Session) => Number((s.properties.user as { id?: number } | undefined)?.id ?? 0);
   ctx.route("/api/advanced-chat/memories").methods("GET").action(async s => { const id = user(s); if (id) s.respond({ memories: await db.select("advanced_chat_memory_documents", { user_id: id }) }, "json"); });
   ctx.route("/api/advanced-chat/memories/:id").methods("GET").action(async (s, _p, memoryId) => { const uid = user(s); const row = uid ? await db.selectOne("advanced_chat_memory_documents", { id: memoryId, user_id: uid }) : undefined; if (!row) { s.status = 404; s.respond({ error: "Memory not found" }, "json"); return; } const content = row.storage_path ? await readFile(String(row.storage_path), "utf8").catch(() => "") : ""; s.respond({ ...row, content: content.slice(0, 200 * 1024), truncated: content.length > 200 * 1024 }, "json"); });
