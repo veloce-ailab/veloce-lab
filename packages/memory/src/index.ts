@@ -55,6 +55,81 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
       }),
   });
   chat.registerTool({
+    name: "memory_upsert",
+    description: "Create or replace a saved memory",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        title: { type: "string" },
+        kind: { type: "string" },
+        content: { type: "string" },
+      },
+      required: ["content"],
+    },
+    execute: async (input, context) => {
+      const value = input as any;
+      const id = String(value.id ?? randomUUID());
+      const content = String(value.content ?? "");
+      if (Buffer.byteLength(content) > 512 * 1024)
+        throw Error("Memory is too large");
+      const now = new Date().toISOString();
+      const storagePath = path.join(root, `${id}.md`);
+      await writeFile(storagePath, content, "utf8");
+      const row = {
+        id,
+        user_id: context.userId,
+        scope: "global",
+        agent_id: "",
+        group_id: "",
+        kind: kinds.has(String(value.kind)) ? String(value.kind) : "facts",
+        title: String(value.title ?? "").slice(0, 200),
+        storage_path: storagePath,
+        size: Buffer.byteLength(content),
+        hash: createHash("sha256").update(content).digest("hex"),
+        enabled: true,
+        updated_by: "assistant",
+        created_at: now,
+        updated_at: now,
+      };
+      const existing = await db.selectOne("advanced_chat_memory_documents", {
+        id,
+        user_id: context.userId,
+      });
+      if (existing)
+        await db.update(
+          "advanced_chat_memory_documents",
+          { id, user_id: context.userId },
+          row as any,
+        );
+      else await db.create("advanced_chat_memory_documents", row as any);
+      return row;
+    },
+  });
+  chat.registerTool({
+    name: "memory_delete",
+    description: "Delete a saved memory",
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+    },
+    execute: async (input, context) => {
+      const id = String((input as any).id ?? "");
+      const row = await db.selectOne("advanced_chat_memory_documents", {
+        id,
+        user_id: context.userId,
+      });
+      if (row?.storage_path)
+        await unlink(String(row.storage_path)).catch(() => undefined);
+      await db.remove("advanced_chat_memory_documents", {
+        id,
+        user_id: context.userId,
+      });
+      return { success: true };
+    },
+  });
+  chat.registerTool({
     name: "memory_read",
     description: "Read a saved memory",
     parameters: {
