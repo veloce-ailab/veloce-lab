@@ -1,7 +1,8 @@
 import { Context, Database, Schema, Session } from "yumeri";
 import { randomUUID } from "node:crypto";
+import "@velocelab/dashboard";
 
-export const depend = ["database"];
+export const depend = ["database", "dashboard"];
 export const provide = ["channel"];
 
 export interface ChannelConfig {
@@ -89,6 +90,7 @@ function summary(provider: string, payload: unknown): WebhookSummary {
 }
 
 export function apply(ctx: Context, pluginConfig: ChannelConfig) {
+  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/channel.js", import.meta.url).pathname, plugin: "channel" });
   const db = ctx.component.database as Database;
   ctx.registerComponent("channel", {
     enabled: () => pluginConfig.enabled,
