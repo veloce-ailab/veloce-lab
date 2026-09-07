@@ -180,6 +180,54 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
       }
       s.respond(results, "json");
     });
+  ctx
+    .route("/api/user/advanced-chat/knowledge-bases/:id/vectorize")
+    .methods("POST")
+    .action(async (s, _p, baseId) => {
+      const id = user(s);
+      if (!id) return;
+      const documents: any[] = await service.documents(id, baseId);
+      let chunks = 0;
+      for (const document of documents) {
+        const content = document.storage_path
+          ? (await files.read(String(document.storage_path))).toString("utf8")
+          : "";
+        const parts = content.match(/[\s\S]{1,1200}/g) ?? [];
+        await db.remove("advanced_chat_knowledge_chunks", {
+          document_id: document.id,
+          user_id: id,
+        });
+        for (let index = 0; index < parts.length; index += 1)
+          await db.create("advanced_chat_knowledge_chunks", {
+            id: randomUUID(),
+            document_id: document.id,
+            user_id: id,
+            ordinal: index,
+            content: parts[index],
+            content_hash: createHash("sha256")
+              .update(parts[index])
+              .digest("hex"),
+            embedding: JSON.stringify(embedding(parts[index])),
+            embedding_model: "local-hash-v1",
+            embedding_dim: 32,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          } as any);
+        await db.update(
+          "advanced_chat_knowledge_documents",
+          { id: document.id, user_id: id },
+          {
+            embedding_status: "completed",
+            embedding_model: "local-hash-v1",
+            embedding_dim: 32,
+            chunk_count: parts.length,
+            updated_at: new Date().toISOString(),
+          },
+        );
+        chunks += parts.length;
+      }
+      s.respond({ success: true, documents: documents.length, chunks }, "json");
+    });
   const createDocument = async (s: Session, baseId: string) => {
     const userId = user(s);
     if (!userId) return;
@@ -366,6 +414,10 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
         return;
       }
       if (row.storage_path) await files.remove(String(row.storage_path));
+      await db.remove("advanced_chat_knowledge_chunks", {
+        document_id: documentId,
+        user_id: userId,
+      });
       await db.remove("advanced_chat_knowledge_documents", {
         id: documentId,
         user_id: userId,
