@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/model";
-export const depend = ["database", "dashboard", "model"];
+import "@velocelab/connector";
+export const depend = ["database", "dashboard", "model", "connector"];
 export const provide = ["workspace"];
 export interface WorkspaceService {
   list(userId: number): Promise<any[]>;
@@ -24,6 +25,7 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
     plugin: "workspace",
   });
   const db = ctx.component.database as Database;
+  const connector = ctx.component.connector;
   const service: WorkspaceService = {
     list: (userId) =>
       db.select("advanced_chat_workspaces", { user_id: userId }),
@@ -242,6 +244,49 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
       if (id) {
         await db.remove("advanced_chat_files", { id: fileId, user_id: id });
         s.respond({ success: true }, "json");
+      }
+    });
+  ctx
+    .route("/api/user/advanced-chat/workspace/git/status")
+    .methods("GET")
+    .action(async (s) => {
+      const id = user(s);
+      if (!id) return;
+      const query = s.client.req?.url?.split("?")[1] ?? "";
+      const params = new URLSearchParams(query);
+      const deviceId = params.get("connector_device_id") ?? "";
+      const workspacePath = params.get("connector_workspace_path") ?? "";
+      try {
+        s.respond(
+          await connector.execute(id, "git_status", {
+            device_id: deviceId,
+            workspace_path: workspacePath,
+          }),
+          "json",
+        );
+      } catch (error) {
+        s.status = 502;
+        s.respond(
+          { error: error instanceof Error ? error.message : String(error) },
+          "json",
+        );
+      }
+    });
+  ctx
+    .route("/api/user/advanced-chat/workspace/git/action")
+    .methods("POST")
+    .action(async (s) => {
+      const id = user(s);
+      if (!id) return;
+      const input = (await s.parseRequestBody()) as any;
+      try {
+        s.respond(await connector.execute(id, "git_action", input), "json");
+      } catch (error) {
+        s.status = 502;
+        s.respond(
+          { error: error instanceof Error ? error.message : String(error) },
+          "json",
+        );
       }
     });
 }

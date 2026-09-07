@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json && vite build"
   },
   "dependencies": {
-    "@velocelab/model": "workspace:*"
+    "@velocelab/model": "workspace:*",
+    "@velocelab/connector": "workspace:*"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"
