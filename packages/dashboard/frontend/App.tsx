@@ -10,10 +10,7 @@ import { I18nProvider, useI18n } from "./lib/i18n"
 import { ThemeProvider } from "./lib/theme"
 import { DashboardSlot, DashboardSlotProvider } from "./lib/slots"
 import { routes as extensionRoutes, subscribeExtensions } from "./extension"
-import DesktopAuthorize from "./pages/DesktopAuthorize"
-import Login from "./pages/Login"
 import SettingsWorkspace from "./pages/SettingsWorkspace"
-import Setup from "./pages/Setup"
 
 const queryClient = new QueryClient()
 
@@ -77,9 +74,6 @@ function App() {
                 <SetupGate>
                   <Routes>
                   {extensionRoutes().map((route) => { const Component = route.component; return <Route key={route.path} path={route.path} element={<ProtectedRoute authenticated={!route.protected || authenticated}><Component /></ProtectedRoute>} /> })}
-                  <Route path="/setup" element={<PageTransition><Setup /></PageTransition>} />
-                  <Route path="/desktop/authorize" element={<PageTransition><DesktopAuthorize /></PageTransition>} />
-                  <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
                   <Route path="/chat/*" element={<ProtectedRoute authenticated={authenticated}><div className="p-6">Advanced Chat plugin is loading…</div></ProtectedRoute>} />
                   <Route path="/settings/*" element={<ProtectedRoute authenticated={authenticated}><SettingsWorkspace /></ProtectedRoute>} />
                   <Route path="/admin/*" element={<Navigate to="/settings/statistics" replace />} />
