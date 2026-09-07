@@ -3,7 +3,8 @@ import "@velocelab/dashboard";
 import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/model";
 import "@velocelab/connector";
-export const depend = ["database", "dashboard", "model", "connector"];
+import "@velocelab/file";
+export const depend = ["database", "dashboard", "model", "connector", "file"];
 export const provide = ["workspace"];
 export interface WorkspaceService {
   list(userId: number): Promise<any[]>;
@@ -26,6 +27,7 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
   });
   const db = ctx.component.database as Database;
   const connector = ctx.component.connector;
+  const files = ctx.component.file;
   const service: WorkspaceService = {
     list: (userId) =>
       db.select("advanced_chat_workspaces", { user_id: userId }),
@@ -151,14 +153,17 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
       const input = (await s.parseRequestBody()) as any;
       const data = String(input.data ?? input.content ?? "");
       const now = new Date().toISOString();
+      const fileId = randomUUID();
+      const storagePath = `workspace-files/${id}/${fileId}`;
+      await files.write(storagePath, data);
       const row = await db.create("advanced_chat_files", {
-        id: randomUUID(),
+        id: fileId,
         user_id: id,
         name: String(input.name ?? "file"),
         mime_type: String(input.mime_type ?? "text/plain"),
         size: Buffer.byteLength(data),
-        data,
-        storage_path: "",
+        data: "",
+        storage_path: storagePath,
         text_extract: data,
         hash: "",
         source: "upload",
@@ -182,7 +187,14 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
         s.respond({ error: "File not found" }, "json");
         return;
       }
-      s.respond({ content: row.data ?? row.text_extract ?? "" }, "json");
+      s.respond(
+        {
+          content: row.storage_path
+            ? (await files.read(String(row.storage_path))).toString("utf8")
+            : (row.data ?? row.text_extract ?? ""),
+        },
+        "json",
+      );
     });
   ctx
     .route("/api/user/advanced-chat/files/:id/download")
@@ -198,7 +210,13 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
         return;
       }
       s.respond(
-        { name: row.name, mime_type: row.mime_type, data: row.data ?? "" },
+        {
+          name: row.name,
+          mime_type: row.mime_type,
+          data: row.storage_path
+            ? (await files.read(String(row.storage_path))).toString("base64")
+            : (row.data ?? ""),
+        },
         "json",
       );
     });
@@ -219,13 +237,19 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
       }
       const input = (await s.parseRequestBody()) as any;
       const data =
-        input.content === undefined ? existing.data : String(input.content);
+        input.content === undefined
+          ? existing.storage_path
+            ? (await files.read(String(existing.storage_path))).toString("utf8")
+            : existing.data
+          : String(input.content);
+      if (existing.storage_path)
+        await files.write(String(existing.storage_path), data);
       await db.update(
         "advanced_chat_files",
         { id: fileId, user_id: id },
         {
           name: String(input.name ?? existing.name),
-          data,
+          data: "",
           text_extract: data,
           size: Buffer.byteLength(data),
           updated_at: new Date().toISOString(),
@@ -242,6 +266,12 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
     .action(async (s, _p, fileId) => {
       const id = user(s);
       if (id) {
+        const existing: any = await db.selectOne("advanced_chat_files", {
+          id: fileId,
+          user_id: id,
+        });
+        if (existing?.storage_path)
+          await files.remove(String(existing.storage_path));
         await db.remove("advanced_chat_files", { id: fileId, user_id: id });
         s.respond({ success: true }, "json");
       }
