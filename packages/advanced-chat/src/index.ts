@@ -8,6 +8,7 @@ import type {
   HarnessSession,
 } from "@velocelab/model";
 import { registerAdvancedChatRoutes } from "./routes.js";
+import { registerStudioTools } from "./studio.js";
 import "@velocelab/dashboard";
 
 export const depend = ["database", "model", "dashboard"];
@@ -253,6 +254,13 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const db = ctx.component.database as Database;
   const adapters = ctx.component.adapters as
     import("@velocelab/adapters").AdapterRegistry | undefined;
+  registerStudioTools(db, (tool) => {
+    tools.push(tool);
+    return () => {
+      const index = tools.indexOf(tool);
+      if (index >= 0) tools.splice(index, 1);
+    };
+  });
   const service: AdvancedChatService = {
     registerTool(tool) {
       tools.push(tool);
