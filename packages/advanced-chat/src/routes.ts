@@ -26,6 +26,229 @@ export function registerAdvancedChatRoutes(
     ...value,
     id: value.stable_id || String(value.id ?? ""),
   });
+  const terminalTask = async (
+    session: Session,
+    userId: number,
+    deviceId: string,
+    action: string,
+    payload: Record<string, unknown>,
+  ) => {
+    const task = await service.createConnectorTask(
+      userId,
+      deviceId.trim(),
+      action,
+      payload,
+    );
+    const deadline = Date.now() + 25_000;
+    while (Date.now() < deadline) {
+      const current: any = await db.selectOne("advanced_chat_connector_tasks", {
+        id: task.id,
+        user_id: userId,
+      });
+      if (current?.status === "completed") {
+        try {
+          session.respond(JSON.parse(String(current.result || "{}")), "json");
+        } catch {
+          session.status = 502;
+          session.respond(
+            { error: "Invalid connector terminal response" },
+            "json",
+          );
+        }
+        return;
+      }
+      if (current?.status === "failed") {
+        session.status = 502;
+        session.respond(
+          {
+            error: String(
+              current.error_message || "Connector terminal task failed",
+            ),
+          },
+          "json",
+        );
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    await db.update(
+      "advanced_chat_connector_tasks",
+      { id: task.id, user_id: userId },
+      {
+        status: "failed",
+        error_message: "Connector terminal task timed out",
+        finished_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    );
+    session.status = 502;
+    session.respond({ error: "Connector terminal task timed out" }, "json");
+  };
+  const terminalDevice = async (session: Session, value: unknown) => {
+    const current = await user(session);
+    const deviceId = String(value ?? "").trim();
+    if (!current?.id || !deviceId) return undefined;
+    const device: any = await db.selectOne("advanced_chat_connector_devices", {
+      id: deviceId,
+      user_id: current.id,
+      status: "online",
+    });
+    if (!device) {
+      session.status = 400;
+      session.respond({ error: "A connected device is required" }, "json");
+      return undefined;
+    }
+    return { userId: current.id, device };
+  };
+
+  ctx
+    .route("/api/user/advanced-chat/terminal/open")
+    .methods("POST")
+    .action(async (session) => {
+      const input = await body(session);
+      const target = await terminalDevice(session, input.connector_device_id);
+      if (!target) return;
+      const shell = String(input.shell ?? "")
+        .trim()
+        .toLowerCase();
+      if (
+        shell &&
+        !["cmd", "powershell", "pwsh", "bash", "zsh", "sh"].includes(shell)
+      ) {
+        session.status = 400;
+        session.respond({ error: "Unsupported terminal shell" }, "json");
+        return;
+      }
+      const cols = Number(input.cols ?? 120) || 120;
+      const rows = Number(input.rows ?? 30) || 30;
+      if (cols < 0 || rows < 0 || cols > 500 || rows > 200) {
+        session.status = 400;
+        session.respond(
+          { error: "Terminal dimensions are out of range" },
+          "json",
+        );
+        return;
+      }
+      await terminalTask(
+        session,
+        target.userId,
+        target.device.id,
+        "terminal_open",
+        {
+          workspace_path: String(input.connector_workspace_path ?? "").trim(),
+          ...(shell ? { shell } : {}),
+          cols,
+          rows,
+        },
+      );
+    });
+  ctx
+    .route("/api/user/advanced-chat/terminal/input")
+    .methods("POST")
+    .action(async (session) => {
+      const input = await body(session);
+      const target = await terminalDevice(session, input.connector_device_id);
+      if (!target) return;
+      const terminalId = String(input.terminal_id ?? "").trim();
+      const data = String(input.data ?? "");
+      if (
+        !terminalId ||
+        terminalId.length > 80 ||
+        !/^[A-Za-z0-9+/=_-]*$/.test(data)
+      ) {
+        session.status = 400;
+        session.respond({ error: "Invalid terminal input" }, "json");
+        return;
+      }
+      try {
+        if (Buffer.from(data, "base64").byteLength > 8192) throw Error();
+      } catch {
+        session.status = 400;
+        session.respond({ error: "Terminal input is too large" }, "json");
+        return;
+      }
+      await terminalTask(
+        session,
+        target.userId,
+        target.device.id,
+        "terminal_input",
+        {
+          terminal_id: terminalId,
+          data,
+        },
+      );
+    });
+  ctx
+    .route("/api/user/advanced-chat/terminal/output")
+    .methods("GET")
+    .action(async (session) => {
+      const target = await terminalDevice(
+        session,
+        session.query.connector_device_id,
+      );
+      if (!target) return;
+      const terminalId = String(session.query.terminal_id ?? "").trim();
+      const offset = Number(session.query.offset ?? 0);
+      if (
+        !terminalId ||
+        terminalId.length > 80 ||
+        !Number.isSafeInteger(offset) ||
+        offset < 0
+      ) {
+        session.status = 400;
+        session.respond({ error: "Invalid terminal query" }, "json");
+        return;
+      }
+      await terminalTask(
+        session,
+        target.userId,
+        target.device.id,
+        "terminal_read",
+        {
+          terminal_id: terminalId,
+          offset,
+        },
+      );
+    });
+  for (const [path, action] of [
+    ["resize", "terminal_resize"],
+    ["close", "terminal_close"],
+  ] as const) {
+    ctx
+      .route(`/api/user/advanced-chat/terminal/${path}`)
+      .methods("POST")
+      .action(async (session) => {
+        const input = await body(session);
+        const target = await terminalDevice(session, input.connector_device_id);
+        if (!target) return;
+        const terminalId = String(input.terminal_id ?? "").trim();
+        if (!terminalId || terminalId.length > 80) {
+          session.status = 400;
+          session.respond({ error: "Terminal id is required" }, "json");
+          return;
+        }
+        if (path === "resize") {
+          const cols = Number(input.cols ?? 120) || 120;
+          const rows = Number(input.rows ?? 30) || 30;
+          if (cols < 0 || rows < 0 || cols > 500 || rows > 200) {
+            session.status = 400;
+            session.respond(
+              { error: "Terminal dimensions are out of range" },
+              "json",
+            );
+            return;
+          }
+          await terminalTask(session, target.userId, target.device.id, action, {
+            terminal_id: terminalId,
+            cols,
+            rows,
+          });
+        } else
+          await terminalTask(session, target.userId, target.device.id, action, {
+            terminal_id: terminalId,
+          });
+      });
+  }
 
   ctx
     .route("/api/user/advanced-chat/devices")
