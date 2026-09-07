@@ -819,6 +819,65 @@ export function registerAdvancedChatRoutes(
       });
       s.status = 201;
       s.respond(message, "json");
+      void (async () => {
+        const members: any[] = await db.select(
+          "advanced_chat_chat_group_members",
+          { group_id: id, user_id: u.id },
+        );
+        const mentions = Array.isArray(input.mention_member_ids)
+          ? input.mention_member_ids.map(String)
+          : [];
+        for (const member of members) {
+          if (mentions.length && !mentions.includes(String(member.id)))
+            continue;
+          await db.update(
+            "advanced_chat_chat_group_members",
+            { id: member.id, user_id: u.id },
+            { status: "working", updated_at: new Date().toISOString() },
+          );
+          try {
+            const result = await service.complete(u.id!, {
+              model: String(member.model_name ?? ""),
+              messages: [
+                {
+                  role: "user",
+                  content: `You are ${member.agent_name}. Respond to this group message concisely: ${message.content}`,
+                },
+              ],
+              userChannelId: Number(member.user_channel_id ?? 0) || undefined,
+              stream: false,
+            });
+            await db.create("advanced_chat_chat_group_messages", {
+              id: randomUUID(),
+              group_id: id,
+              user_id: u.id,
+              sender_type: "agent",
+              sender_id: String(member.id),
+              sender_name: String(member.agent_name),
+              content: result.message.content,
+              mention_member_ids: "[]",
+              depth: 1,
+              source_run_id: result.runId,
+              created_at: new Date().toISOString(),
+            } as any);
+            await db.update(
+              "advanced_chat_chat_group_members",
+              { id: member.id, user_id: u.id },
+              {
+                status: "idle",
+                run_id: result.runId,
+                updated_at: new Date().toISOString(),
+              },
+            );
+          } catch (error) {
+            await db.update(
+              "advanced_chat_chat_group_members",
+              { id: member.id, user_id: u.id },
+              { status: "error", updated_at: new Date().toISOString() },
+            );
+          }
+        }
+      })();
     });
   ctx
     .route("/api/user/advanced-chat/chat-groups/:id/private-conversations")
@@ -855,6 +914,48 @@ export function registerAdvancedChatRoutes(
         conversation_id: conversationId,
         user_id: u.id,
       });
+      ctx
+        .route(
+          "/api/user/advanced-chat/chat-groups/:id/private-conversations/:conversation_id/messages",
+        )
+        .methods("POST")
+        .action(async (s, _p, groupId, conversationId) => {
+          const u = await user(s);
+          if (!u?.id) return;
+          const conversation: any = await db.selectOne(
+            "advanced_chat_private_conversations",
+            { id: conversationId, group_id: groupId, user_id: u.id },
+          );
+          if (!conversation) {
+            s.status = 404;
+            s.respond({ error: "Conversation not found" }, "json");
+            return;
+          }
+          const input = await body(s);
+          const row = await db.create("advanced_chat_private_messages", {
+            id: randomUUID(),
+            conversation_id: conversationId,
+            group_id: groupId,
+            user_id: u.id,
+            sender_member_id: conversation.member_a_id,
+            sender_name: conversation.member_a_name,
+            recipient_member_id: conversation.member_b_id,
+            content: String(input.content ?? "").slice(0, 10000),
+            source_run_id: "",
+            delivered_at: null,
+            created_at: new Date().toISOString(),
+          } as any);
+          await db.update(
+            "advanced_chat_private_conversations",
+            { id: conversationId, user_id: u.id },
+            {
+              last_message_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          );
+          s.status = 201;
+          s.respond(row, "json");
+        });
       s.respond({ ...conversation, messages }, "json");
     });
   ctx
