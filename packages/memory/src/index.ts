@@ -5,7 +5,7 @@ import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/model";
-export const depend = ["database", "dashboard", "advanced-chat"];
+export const depend = ["database", "dashboard", "advanced-chat", "model"];
 export const provide = ["memory"];
 export interface MemoryConfig {
   root: string;
