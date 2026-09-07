@@ -3,7 +3,6 @@ import { BarChart3, Bell, Bot, ChevronDown, ChevronRight, Database, Home, KeyRou
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useState } from "react"
 import Settings, { type SettingsSection } from "./Settings"
-import Channels from "./Channels"
 import SystemManagement from "./SystemManagement"
 import SettingsStatistics from "./SettingsStatistics"
 import ConnectorCredentials from "./ConnectorCredentials"
@@ -94,7 +93,7 @@ export default function SettingsWorkspace() {
                 <Route path="profile" element={<Settings section="profile" />} />
                 <Route path="assistant" element={<Settings section="assistant" />} />
                 <Route path="security" element={<Settings section="security" />} />
-                <Route path="channels" element={<Channels />} />
+                <Route path="channels" element={<PluginSettingsSlot />} />
                 <Route path="models" element={<Navigate to="../channels" replace />} />
                 <Route path="system" element={<SystemManagement section="proxy" />} />
                 <Route path="message-channel" element={<SystemManagement section="channels" />} />
