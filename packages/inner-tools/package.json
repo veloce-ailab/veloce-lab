@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@velocelab/connector": "workspace:*",
-    "@velocelab/tools": "workspace:*"
+    "@velocelab/advanced-chat": "workspace:*"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

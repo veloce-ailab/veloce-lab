@@ -19,6 +19,9 @@ export interface AdvancedChatConfig {
 }
 
 export interface AdvancedChatService {
+  registerTool(tool: ChatToolDefinition): () => void;
+  tools(): ChatToolDefinition[];
+  registerContextProvider(provider: ChatContextProvider): () => void;
   createConnector(
     userId: number,
     name: string,
@@ -102,6 +105,8 @@ export interface AdvancedChatService {
   ): Promise<boolean>;
   complete(userId: number, input: ChatInput): Promise<ChatResult>;
 }
+export interface ChatToolDefinition { name: string; description: string; parameters: Record<string, unknown>; execute?(input: unknown, context: { userId: number; sessionId?: string; runId?: string }): Promise<unknown>; }
+export interface ChatContextProvider { id: string; provide(input: { userId: number; sessionId?: string; agentId?: string }): Promise<string | undefined> | string | undefined; }
 
 export interface ChatInput {
   sessionId?: string;
@@ -215,13 +220,16 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const dashboard = ctx.component.dashboard;
   const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   dashboard.addEntry({ dev: path.resolve(packageRoot, "frontend/index.tsx"), prod: path.resolve(packageRoot, "frontend/advanced-chat.js"), plugin: "advanced-chat" });
-  const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const frontendBundle = path.resolve(packageRoot, "frontend/advanced-chat.js");
+  const tools: ChatToolDefinition[] = [];
+  const contextProviders: ChatContextProvider[] = [];
   const db = ctx.component.database as Database;
   const adapters = ctx.component.adapters as
     | import("@velocelab/adapters").AdapterRegistry
     | undefined;
   const service: AdvancedChatService = {
+    registerTool(tool) { tools.push(tool); return () => { const i = tools.indexOf(tool); if (i >= 0) tools.splice(i, 1); }; },
+    tools: () => tools.slice(),
+    registerContextProvider(provider) { contextProviders.push(provider); return () => { const i = contextProviders.indexOf(provider); if (i >= 0) contextProviders.splice(i, 1); }; },
     async createConnector(userId, name, remark) {
       if (!pluginConfig.enabled) throw Error("personal Harness is disabled");
       if (!adapters) throw Error("upstream adapters are not enabled");
@@ -838,6 +846,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           ? `Enabled MCP servers:\n${optionalMcp.map((server: any) => `- ${server.name}: ${server.url}`).join("\n")}`
           : "",
       ].filter(Boolean).join("\n\n");
+      const injectedContext = (await Promise.all(contextProviders.map((provider) => provider.provide({ userId, sessionId, agentId: session.agent_id })))).filter(Boolean).join("\n\n");
       const request = adapters.build({
         channelType: channel.type,
         model: upstreamModel,
@@ -847,10 +856,10 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         maxTokens: input.maxTokens,
         temperature: input.temperature,
         reasoningEffort: input.reasoningEffort,
-        system: optionalContext || undefined,
-        tools: (ctx.component as any).tools?.list?.()
-          ?.filter((tool: any) => tool?.name)
-          ?.map((tool: any) => ({
+        system: [optionalContext, injectedContext].filter(Boolean).join("\n\n") || undefined,
+        tools: service.tools()
+          .filter((tool) => tool?.name)
+          .map((tool) => ({
             name: String(tool.name),
             description: String(tool.description ?? ""),
             parameters: tool.parameters ?? {},
@@ -927,11 +936,10 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       const toolCalls = parsed?.toolCalls || [];
       const finishReason = parsed?.finishReason || "stop";
       const toolResults: unknown[] = [];
-      const toolRegistry = (ctx.component as any).tools;
-      if (toolRegistry && Array.isArray(toolCalls)) {
+      if (Array.isArray(toolCalls)) {
         for (const call of toolCalls as any[]) {
           const name = String(call.function?.name ?? call.name ?? "");
-          const definition = toolRegistry.get?.(name);
+          const definition = service.tools().find((tool) => tool.name === name);
           if (!definition?.execute) continue;
           let args: unknown = {};
           try {
