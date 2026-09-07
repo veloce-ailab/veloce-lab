@@ -18,7 +18,7 @@
     "@velocelab/dashboard": { "enabled": true },
     "@velocelab/community": { "enabled": true },
     "@velocelab/knowledge": { "enabled": true },
-    "@velocelab/memory": {},
+    "@velocelab/memory": { "root": "./data/memories" },
     "@velocelab/desktop": {},
     "@velocelab/billing": { "enabled": true },
     "@velocelab/scheduler": { "enabled": true },
