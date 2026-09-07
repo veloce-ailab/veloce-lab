@@ -150,7 +150,13 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
       if (Buffer.byteLength(content) > 512 * 1024)
         throw Error("Memory is too large");
       const now = new Date().toISOString();
-      const storagePath = path.join(root, `${id}.md`);
+      const storagePath = path.join(
+        root,
+        String(context.userId),
+        scope,
+        `${scope === "agent" ? String(value.agent_id ?? context.agentId ?? "default") : "global"}-${id}.md`,
+      );
+      await mkdir(path.dirname(storagePath), { recursive: true });
       await writeFile(storagePath, content, "utf8");
       const row = {
         id,
@@ -305,7 +311,8 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
       s.respond({ error: "Memory is too large" }, "json");
       return;
     }
-    const file = path.join(root, `${id}.md`);
+    const file = path.join(root, String(uid), scope, `${id}.md`);
+    await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, content, "utf8");
     const value = {
       id,
@@ -419,8 +426,8 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
     db.selectOne(
       "advanced_chat_memory_documents",
       id
-        ? { id, user_id: uid, group_id: groupId }
-        : { user_id: uid, group_id: groupId },
+        ? { id, user_id: uid, scope: "group", group_id: groupId }
+        : { user_id: uid, scope: "group", group_id: groupId },
     );
   ctx
     .route("/api/user/advanced-chat/chat-groups/:id/memories")
@@ -474,13 +481,14 @@ export function apply(ctx: Context, cfg: MemoryConfig) {
     }
     const id = memoryId ?? randomUUID();
     const now = new Date().toISOString();
-    const file = path.join(root, `${id}.md`);
+    const file = path.join(root, String(uid), "group", groupId, `${id}.md`);
+    await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, content, "utf8");
     const value = {
       id,
       user_id: uid,
       scope: "group",
-      agent_id: "",
+      agent_id: groupId,
       group_id: groupId,
       kind,
       title: String(input.title ?? ""),
