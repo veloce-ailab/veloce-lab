@@ -1,4 +1,5 @@
 import { Context } from "yumeri";
+import "@velocelab/dashboard";
 export const depend: string[] = [];
 export const provide = ["connector"];
 export interface ConnectorService {
@@ -10,6 +11,7 @@ export interface ConnectorHandler {
 }
 declare module "yumeri" { interface Components { connector: ConnectorService; } }
 export function apply(ctx: Context) {
+  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/connector.js", import.meta.url).pathname, plugin: "connector" });
   const handlers: ConnectorHandler[] = [];
   ctx.registerComponent("connector", {
     async execute(userId, action, input) {
