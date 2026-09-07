@@ -1,6 +1,5 @@
 import { randomBytes, createHash } from "node:crypto";
 import path from "node:path";
-import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Context, Database, Schema } from "yumeri";
 import type {
@@ -9,6 +8,7 @@ import type {
   HarnessSession,
 } from "@velocelab/model";
 import { registerAdvancedChatRoutes } from "./routes.js";
+import "@velocelab/dashboard";
 
 export const depend = ["database", "model", "dashboard"];
 export const provide = ["advanced-chat"];
@@ -212,10 +212,11 @@ function decodeObject(value: unknown) {
 }
 
 export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
-  const dashboard = (ctx.component as any).dashboard as { registerAsset?: (asset: { id: string; file: string; mime?: string; plugin?: string }) => () => void } | undefined;
+  const dashboard = ctx.component.dashboard;
+  const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  dashboard.addEntry({ dev: path.resolve(packageRoot, "frontend/index.tsx"), prod: path.resolve(packageRoot, "frontend/advanced-chat.js"), plugin: "advanced-chat" });
   const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const frontendBundle = path.resolve(packageRoot, "frontend/advanced-chat.js");
-  if (dashboard?.registerAsset && existsSync(frontendBundle)) dashboard.registerAsset({ id: createHash("md5").update(frontendBundle).digest("hex"), file: frontendBundle, mime: "text/javascript; charset=utf-8", plugin: "advanced-chat" });
   const db = ctx.component.database as Database;
   const adapters = ctx.component.adapters as
     | import("@velocelab/adapters").AdapterRegistry
