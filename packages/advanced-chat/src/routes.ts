@@ -407,18 +407,44 @@ export function registerAdvancedChatRoutes(
   ctx
     .route("/api/user/advanced-chat/sessions/:id/title/regenerate")
     .methods("POST")
-    .action(async (session, _params, id) => {
-      const current = await user(session);
+    .action(async (request, _params, id) => {
+      const current = await user(request);
       if (!current?.id) return;
-      const value = await service.updateSession(current.id, id, {
-        title: "New conversation",
-      });
-      if (!value) {
-        session.status = 404;
-        session.respond({ error: "Session not found" }, "json");
+      const currentSession = await service.getSession(current.id, id);
+      if (!currentSession) {
+        request.status = 404;
+        request.respond({ error: "Session not found" }, "json");
         return;
       }
-      session.respond(value, "json");
+      const messages = Array.isArray((currentSession as any).messages)
+        ? (currentSession as any).messages.slice(-8)
+        : [];
+      let title = "New conversation";
+      try {
+        const result = await service.complete(current.id, {
+          sessionId: id,
+          model: String((currentSession as any).model_name ?? ""),
+          messages: [
+            {
+              role: "user",
+              content: `Create a concise title of at most 60 characters for this conversation. Return title only.\n${messages.map((item: any) => `${item.role}: ${item.content}`).join("\n")}`,
+            },
+          ],
+          stream: false,
+        });
+        title =
+          result.message.content
+            .trim()
+            .replace(/^['"`]+|['"`]+$/g, "")
+            .slice(0, 60) || title;
+      } catch {}
+      const value = await service.updateSession(current.id, id, { title });
+      if (!value) {
+        request.status = 404;
+        request.respond({ error: "Session not found" }, "json");
+        return;
+      }
+      request.respond(value, "json");
     });
   ctx
     .route("/api/user/advanced-chat/sessions/:id/tasks")
@@ -657,17 +683,33 @@ export function registerAdvancedChatRoutes(
     .action(async (session) => {
       const current = await user(session);
       if (!current?.id) return;
-      const events = await db.select("advanced_chat_run_events", {
+      const runs: any[] = await db.select("advanced_chat_runs", {
         user_id: current.id,
       });
-      session.respond(
-        events.filter(
-          (event: any) =>
-            String(event.event_type ?? "").includes("task") ||
-            String(event.type ?? "").includes("task"),
-        ),
-        "json",
+      const active = runs
+        .filter((run) => ["queued", "running"].includes(String(run.status)))
+        .sort((left, right) =>
+          String(right.updated_at).localeCompare(String(left.updated_at)),
+        )
+        .slice(0, 50);
+      const result = await Promise.all(
+        active.map(async (run) => ({
+          run_id: run.id,
+          session_id: run.session_id,
+          status: run.status,
+          status_message: run.status_message,
+          started_at: run.started_at,
+          events: (
+            await db.select("advanced_chat_run_events", {
+              run_id: run.id,
+              user_id: current.id,
+            })
+          )
+            .filter((event: any) => event.event === "agent_task")
+            .slice(-100),
+        })),
       );
+      session.respond(result, "json");
     });
   ctx
     .route("/api/user/advanced-chat/runs/:id/connector-tasks/pending")
