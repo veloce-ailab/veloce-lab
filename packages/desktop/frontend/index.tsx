@@ -1,3 +1,2 @@
-import { defineExtension } from "@velocelab/dashboard/frontend"
-import DesktopAuthorize from "./pages/DesktopAuthorize"
-defineExtension((api) => { api.route({ path: "/desktop/authorize", component: DesktopAuthorize }) })
+import { defineExtension } from "@velocelab/dashboard/frontend"; import DesktopNotifications from "./pages/DesktopNotifications";
+defineExtension(api => api.route({ path: "/settings/notifications", component: DesktopNotifications, protected: true }));

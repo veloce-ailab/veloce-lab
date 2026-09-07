@@ -4,8 +4,6 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-r
 import { useEffect, useState } from "react"
 import Settings, { type SettingsSection } from "./Settings"
 import SystemManagement from "./SystemManagement"
-import SettingsStatistics from "./SettingsStatistics"
-import DesktopNotifications from "./DesktopNotifications"
 import ThemeSettings from "./ThemeSettings"
 import { AppHeader } from "@/components/layout/Layout"
 import { PageTransition } from "@/components/layout/PageTransition"
@@ -88,7 +86,7 @@ export default function SettingsWorkspace() {
             <PageTransition transitionKey={location.pathname} className={cn("page-shell-transition", isMemoryRoute && "h-full min-h-0")}>
               <Routes>
                 <Route index element={<Navigate to="statistics" replace />} />
-                <Route path="statistics" element={<SettingsStatistics />} />
+                <Route path="statistics" element={<PluginSettingsSlot />} />
                 <Route path="profile" element={<Settings section="profile" />} />
                 <Route path="assistant" element={<Settings section="assistant" />} />
                 <Route path="security" element={<Settings section="security" />} />
@@ -104,7 +102,7 @@ export default function SettingsWorkspace() {
                 <Route path="devices" element={<PluginSettingsSlot />} />
                 <Route path="devices/:id" element={<PluginSettingsSlot />} />
                 <Route path="theme" element={<ThemeSettings />} />
-                <Route path="notifications" element={<DesktopNotifications />} />
+                <Route path="notifications" element={<PluginSettingsSlot />} />
                 <Route path="*" element={<Navigate to="profile" replace />} />
               </Routes>
             </PageTransition>
