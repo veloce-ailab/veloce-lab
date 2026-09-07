@@ -121,14 +121,34 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
       const input = (await s.parseRequestBody()) as any;
       const query = String(input.query ?? "").toLowerCase();
       const rows = await service.documents(id, baseId);
-      s.respond(
-        rows.filter((row: any) =>
-          String(row.name ?? "")
+      const results: any[] = [];
+      for (const row of rows as any[]) {
+        const chunks = await db.select("advanced_chat_knowledge_chunks", {
+          document_id: row.id,
+          user_id: id,
+        });
+        const matches = chunks.filter((chunk: any) =>
+          String(chunk.content ?? "")
             .toLowerCase()
             .includes(query),
-        ),
-        "json",
-      );
+        );
+        if (
+          matches.length ||
+          String(row.name ?? "")
+            .toLowerCase()
+            .includes(query)
+        ) {
+          results.push({
+            ...row,
+            matches: matches.slice(0, 20).map((chunk: any) => ({
+              id: chunk.id,
+              ordinal: chunk.ordinal,
+              content: String(chunk.content ?? "").slice(0, 1000),
+            })),
+          });
+        }
+      }
+      s.respond(results, "json");
     });
   const createDocument = async (s: Session, baseId: string) => {
     const userId = user(s);
