@@ -1,14 +1,14 @@
 import { Context } from "yumeri";
 import type { ConnectorService } from "@velocelab/connector";
-import type { ToolDefinition, ToolsService } from "@velocelab/tools";
+import type { AdvancedChatService, ChatToolDefinition } from "@velocelab/advanced-chat";
 
-export const depend = ["tools", "connector"];
+export const depend = ["advanced-chat", "connector"];
 export const provide: string[] = [];
 
 export function apply(ctx: Context) {
-  const tools = ctx.component.tools as ToolsService;
+  const chat = ctx.component["advanced-chat"] as AdvancedChatService;
   const connector = ctx.component.connector as ConnectorService;
-  const register = (tool: ToolDefinition) => tools.register(tool);
+  const register = (tool: ChatToolDefinition) => chat.registerTool(tool);
   register({
     name: "connector_read_file",
     description: "Read a text file through the connected workspace.",
