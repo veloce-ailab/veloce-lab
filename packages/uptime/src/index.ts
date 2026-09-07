@@ -1,6 +1,7 @@
 import { Context, Database, Session } from "yumeri";
+import "@velocelab/dashboard";
 
-export const depend = ["database"];
+export const depend = ["database", "dashboard"];
 export const provide = ["uptime"];
 
 export interface UptimeService {
@@ -12,6 +13,7 @@ declare module "yumeri" {
 }
 
 export function apply(ctx: Context) {
+  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/uptime.js", import.meta.url).pathname, plugin: "uptime" });
   const db = ctx.component.database as Database;
   const service: UptimeService = {
     async list() {
