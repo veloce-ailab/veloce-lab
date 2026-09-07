@@ -2,6 +2,7 @@ import { Context, Session } from "yumeri";
 import type { AdvancedChatService } from "./index.js";
 
 export function registerAdvancedChatRoutes(ctx: Context, service: AdvancedChatService) {
+  const db = ctx.component.database as import("yumeri").Database;
   const user = async (session: Session) => {
     return session.properties.user as { id?: number } | undefined;
   };
@@ -44,6 +45,8 @@ export function registerAdvancedChatRoutes(ctx: Context, service: AdvancedChatSe
   ctx.route("/api/user/advanced-chat/runs/:id").methods("GET").action(async (session, _params, id) => { const current = await user(session); if (current?.id) session.respond(await service.getRun(current.id, id) ?? { error: "Run not found" }, "json"); });
   ctx.route("/api/user/advanced-chat/runs/:id/stop").methods("POST").action(async (session, _params, id) => { const current = await user(session); if (current?.id) session.respond(await service.stopRun(current.id, id) ?? { error: "Run not found" }, "json"); });
   ctx.route("/api/user/advanced-chat/runs/:id/events").methods("GET").action(async (session, params, id) => { const current = await user(session); if (current?.id) session.respond(await service.listRunEvents(current.id, id, Number(params.get("after") ?? 0) || 0), "json"); });
+  ctx.route("/api/user/advanced-chat/runs/:id/agent-work").methods("GET").action(async (session, _params, id) => { const current = await user(session); if (!current?.id) return; const events = await db.select("advanced_chat_run_events", { run_id: id, user_id: current.id }); session.respond(events.filter((event: any) => String(event.event_type ?? "").includes("agent") || String(event.type ?? "").includes("agent")), "json"); });
+  ctx.route("/api/user/advanced-chat/agent-tasks").methods("GET").action(async (session) => { const current = await user(session); if (!current?.id) return; const events = await db.select("advanced_chat_run_events", { user_id: current.id }); session.respond(events.filter((event: any) => String(event.event_type ?? "").includes("task") || String(event.type ?? "").includes("task")), "json"); });
   ctx.route("/api/user/advanced-chat/runs/:id/connector-tasks/pending").methods("GET").action(async (session, _params, id) => { const current = await user(session); if (current?.id) session.respond(await service.listPendingConnectorTasks(current.id, id), "json"); });
   ctx.route("/api/advanced-chat/connectors/register").methods("POST").action(async (session) => { const input = await body(session); const value = await service.heartbeatConnector(token(session), input as any); if (!value) { session.status = 401; session.respond({ error: "Invalid connector token" }, "json"); } else { const { token_hash: _hash, ...device } = value; session.respond(device, "json"); } });
   ctx.route("/api/advanced-chat/connectors/heartbeat").methods("POST").action(async (session) => { const value = await service.heartbeatConnector(token(session), await body(session) as any); if (!value) session.status = 401; session.respond(value ? { ok: true, device_id: value.id } : { error: "Invalid connector token" }, "json"); });
