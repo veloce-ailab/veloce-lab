@@ -8,8 +8,7 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@velocelab/billing": "workspace:*",
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/billing": "workspace:*"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

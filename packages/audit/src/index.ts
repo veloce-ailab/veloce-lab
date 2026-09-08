@@ -1,5 +1,5 @@
 import { Context, Database, Schema, Session } from "yumeri";
-import { AuditLog } from "@velocelab/model-catalog";
+import type { AuditLog } from "./types.js";
 import "@velocelab/database-core";
 export const depend = ["database"];
 export const provide = ["audit"];
