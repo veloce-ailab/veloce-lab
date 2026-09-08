@@ -1,7 +1,7 @@
 import { Context, Database, Schema, Session } from "yumeri";
 import { AuditLog } from "@velocelab/model-catalog";
 import "@velocelab/database-core";
-export const depend: string[] = [];
+export const depend = ["database"];
 export const provide = ["audit"];
 export interface AuditRecord { type: string; action: string; resource?: string; userId?: number; statusCode?: number; path?: string; metadata?: Record<string, unknown>; createdAt: string; }
 export interface AuditService { record(input: Omit<AuditRecord, "createdAt">): Promise<void>; list(limit?: number): AuditRecord[]; }
