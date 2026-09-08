@@ -979,7 +979,7 @@ export async function apply(ctx: Context) {
       created_at: "timestamp",
       updated_at: "timestamp",
     },
-    { unique: [["user_id", "name"], ["user_id", "stable_id"]] },
+    { unique: [["user_id", "name"]] },
   );
 
   await db.extend(
@@ -1632,59 +1632,6 @@ export async function apply(ctx: Context) {
       await db.remove("channels", { id } as any);
     },
   };
-
-  const defaultGroup = await groups.ensureDefault();
-  const usersWithoutGroup = await db.select("users", { group_id: 0 } as any);
-  for (const user of usersWithoutGroup) {
-    await db.update("users", { id: user.id }, { group_id: defaultGroup.id ?? 0 });
-  }
-
-  const existingUsers = await db.select("users", {});
-  for (const user of existingUsers) {
-    const groupId = user.group_id || defaultGroup.id || 0;
-    const membership = await db.selectOne("user_group_memberships", {
-      user_id: user.id,
-      group_id: groupId,
-    });
-    if (membership) continue;
-    const now = new Date().toISOString();
-    await db.create("user_group_memberships", {
-      user_id: user.id ?? 0,
-      group_id: groupId,
-      expires_at: null,
-      created_at: now,
-      updated_at: now,
-    });
-  }
-
-  for (const user of existingUsers) {
-    if (user.oidc_sub === "") {
-      await db.update("users", { id: user.id } as any, { oidc_sub: null } as any);
-    }
-    if (!user.referral_code?.trim()) {
-      let referralCode = "";
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        const candidate = randomBytes(8).toString("base64")
-          .replaceAll("=", "")
-          .replaceAll("+", "A")
-          .replaceAll("/", "B")
-          .slice(0, 13)
-          .toUpperCase();
-        if (!(await db.selectOne("users", { referral_code: candidate } as any))) {
-          referralCode = candidate;
-          break;
-        }
-      }
-      if (!referralCode) throw Error("failed to create unique referral code");
-      await db.update("users", { id: user.id } as any, { referral_code: referralCode } as any);
-    }
-  }
-
-  const defaultUserChannel = await userChannels.ensureDefault();
-  const unassignedChannels = await db.select("channels", { user_channel_id: null } as any);
-  for (const channel of unassignedChannels) {
-    await db.update("channels", { id: channel.id } as any, { user_channel_id: defaultUserChannel.id ?? 0 } as any);
-  }
 
   ctx.registerComponent("model", { users, groups, userChannels, models, channels });
 }
