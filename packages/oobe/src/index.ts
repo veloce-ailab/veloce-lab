@@ -1,5 +1,5 @@
 import { Context, Session } from "yumeri";
-import type { ServiceRegistry, SetupInput } from "@velocelab/service";
+import { ServiceRegistry, SetupInput } from "@velocelab/service";
 import "@velocelab/dashboard";
 
 export const depend = ["service", "dashboard"];

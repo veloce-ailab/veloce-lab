@@ -1,7 +1,7 @@
 import { Context, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
-import type { ModelService } from "@velocelab/model";
-import type { ServiceRegistry } from "@velocelab/service";
+import { ModelService } from "@velocelab/model";
+import { ServiceRegistry } from "@velocelab/service";
 import "@velocelab/dashboard";
 export const depend = ["service", "user", "model", "dashboard"];
 export const provide = ["auth"];

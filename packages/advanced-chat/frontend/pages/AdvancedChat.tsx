@@ -6,17 +6,8 @@ import { useEffect, useMemo, useState } from "react"
 import Chat from "./Chat"
 import Agents from "./Agents"
 import AgentEditor from "./AgentEditor"
-import Skills from "./Skills"
-import AdvancedChatMCP from "./AdvancedChatMCP"
-import AdvancedChatFiles from "./AdvancedChatFiles"
-import KnowledgeBases from "./KnowledgeBases"
-import AdvancedChatMemories from "./AdvancedChatMemories"
-import MessageChannels from "./MessageChannelsWorkspace"
-import AdvancedChatDeliveries from "./AdvancedChatDeliveries"
-import AdvancedChatScheduledTasks from "./AdvancedChatScheduledTasks"
 import AgentGroupsPage from "./AgentGroupsPage"
 import ChatGroups from "./ChatGroups"
-import Community from "./Community"
 import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { Button } from "@/components/ui/button"
@@ -189,25 +180,12 @@ export default function AdvancedChat() {
                   <Chat />
                 ) : (
                   <Routes>
-                    <Route path="community" element={<Community />} />
-                    <Route path="community/knowledge-bases/:knowledgeBaseID" element={<Community />} />
-                    <Route path="community/skills/:skillID" element={<Community />} />
-                    <Route path="community/:id" element={<Community />} />
                     <Route path="agents" element={<Agents />} />
                     <Route path="agents/:id" element={<AgentEditor />} />
-                    <Route path="skills" element={<Skills />} />
-                    <Route path="skills/:id" element={<Skills />} />
-                    <Route path="mcp" element={<AdvancedChatMCP />} />
                     <Route path="devices/*" element={<Navigate to="/settings/devices" replace />} />
                     <Route path="agent-groups/*" element={<AgentGroupsPage />} />
-                    {publicSettings.message_channel_enabled && <Route path="channels/*" element={<MessageChannels />} />}
-                    <Route path="deliveries" element={<AdvancedChatDeliveries />} />
-                    <Route path="scheduled-tasks" element={<AdvancedChatScheduledTasks />} />
                     <Route path="groups" element={<ChatGroups />} />
                     <Route path="groups/:groupID" element={<ChatGroups />} />
-                    <Route path="files" element={<AdvancedChatFiles />} />
-                    <Route path="knowledge" element={<KnowledgeBases />} />
-                    <Route path="memories" element={<AdvancedChatMemories />} />
                     <Route path="*" element={<Navigate to="/chat" replace />} />
                   </Routes>
                 )}

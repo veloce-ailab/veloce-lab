@@ -1,5 +1,5 @@
 import { Context, Database, Session } from "yumeri";
-import type { ModelService } from "@velocelab/model";
+import { ModelService } from "@velocelab/model";
 
 export const depend = ["model", "database"];
 export const provide = ["model-catalog"];
