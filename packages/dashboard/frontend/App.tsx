@@ -5,73 +5,18 @@ import {
   Navigate,
   Route,
   Routes,
-  useLocation,
 } from "react-router-dom";
-import { PageTransition } from "./components/layout/PageTransition";
 import { ToastProvider } from "./components/ui/toast";
 import { TooltipProvider } from "./components/ui/tooltip";
-import api, { getAuthToken } from "./lib/api";
-import { resolvePostLoginPath } from "./lib/desktop-authorize";
-import { I18nProvider, useI18n } from "./lib/i18n";
+import { I18nProvider } from "./lib/i18n";
 import { ThemeProvider } from "./lib/theme";
 import { DashboardSlot, DashboardSlotProvider } from "./lib/slots";
 import { routes as extensionRoutes, subscribeExtensions } from "./extension";
+import { Layout } from "./components/layout/Layout";
 
 const queryClient = new QueryClient();
 
-interface SetupStatus {
-  required: boolean;
-}
-
-function ProtectedRoute({
-  children,
-  authenticated,
-}: {
-  children: React.ReactNode;
-  authenticated: boolean;
-}) {
-  const location = useLocation();
-  if (!authenticated && location.pathname !== "/login") {
-    return <Navigate to="/login" replace />;
-  }
-  return <>{children}</>;
-}
-
-function SetupGate({ children }: { children: React.ReactNode }) {
-  const location = useLocation();
-  const { t } = useI18n();
-  const [status, setStatus] = useState<SetupStatus | null>(null);
-
-  useEffect(() => {
-    api
-      .get("/setup/status")
-      .then((response) => setStatus(response.data))
-      .catch(() => setStatus({ required: false }));
-  }, []);
-
-  if (!status) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
-        {t("common.loading")}
-      </div>
-    );
-  }
-  if (status.required && location.pathname !== "/setup") {
-    return <Navigate to="/setup" replace />;
-  }
-  if (!status.required && location.pathname === "/setup") {
-    return (
-      <Navigate
-        to={localStorage.getItem("token") ? "/chat" : "/login"}
-        replace
-      />
-    );
-  }
-  return <>{children}</>;
-}
-
 function App() {
-  const [authenticated] = useState(() => Boolean(getAuthToken()));
   const [, refreshExtensions] = useState(0);
   useEffect(
     () => subscribeExtensions(() => refreshExtensions((value) => value + 1)),
@@ -94,16 +39,6 @@ function App() {
       .catch(() => undefined);
   }, []);
 
-  useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get("token");
-    if (token) {
-      localStorage.setItem("token", token);
-      // OAuth callbacks use /dashboard as a neutral landing path. Restore a
-      // pending desktop authorization before taking the signed-in user home.
-      window.location.replace(resolvePostLoginPath());
-    }
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <DashboardSlotProvider>
@@ -113,8 +48,7 @@ function App() {
             <TooltipProvider>
               <ToastProvider>
                 <BrowserRouter>
-                  <SetupGate>
-                    <Routes>
+                  <Routes>
                       {extensionRoutes().map((route) => {
                         const Component = route.component;
                         return (
@@ -122,57 +56,31 @@ function App() {
                             key={route.path}
                             path={route.path}
                             element={
-                              <ProtectedRoute
-                                authenticated={
-                                  !route.protected || authenticated
-                                }
-                              >
-                                <Component />
-                              </ProtectedRoute>
+                              <Layout><Component /></Layout>
                             }
                           />
                         );
                       })}
-                      <Route
-                        path="/chat/*"
-                        element={
-                          <ProtectedRoute authenticated={authenticated}>
-                            <div className="p-6">
-                              Advanced Chat plugin is loading…
-                            </div>
-                          </ProtectedRoute>
-                        }
-                      />
                       {/* Settings and admin pages are owned by feature plugins. */}
                       <Route
                         path="/"
                         element={
-                          <Navigate
-                            to={authenticated ? "/chat" : "/login"}
-                            replace
-                          />
+                          <Navigate to="/dashboard" replace />
                         }
                       />
                       <Route
                         path="/dashboard"
                         element={
-                          <Navigate
-                            to={authenticated ? "/chat" : "/login"}
-                            replace
-                          />
+                          <Layout><div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Dashboard</div></Layout>
                         }
                       />
                       <Route
                         path="*"
                         element={
-                          <Navigate
-                            to={authenticated ? "/chat" : "/login"}
-                            replace
-                          />
+                          <Navigate to="/dashboard" replace />
                         }
                       />
                     </Routes>
-                  </SetupGate>
                 </BrowserRouter>
               </ToastProvider>
             </TooltipProvider>
