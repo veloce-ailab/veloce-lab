@@ -1,6 +1,5 @@
 import { Context, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
-import { ModelService } from "@velocelab/model-catalog";
 import { ServiceRegistry } from "@velocelab/service";
 import "@velocelab/dashboard";
 import "@velocelab/database-core";
@@ -15,7 +14,7 @@ declare module "@yumerijs/types" {
     passkey_credentials: PasskeyCredential;
   }
 }
-export const depend = ["service", "user", "model", "dashboard"];
+export const depend = ["service", "user", "dashboard"];
 export const provide = ["auth"];
 export interface AuthConfig { }
 export const config: Schema<AuthConfig> = Schema.object({});
@@ -51,7 +50,7 @@ export async function apply(ctx: Context) {
     plugin: "auth",
   });
   const service = ctx.component.service as ServiceRegistry;
-  const model = ctx.component.model as ModelService;
+  const userService = ctx.component.user;
   const revokedTokens = new Set<string>();
   const auth: AuthService = { enabled: () => true };
   ctx.registerComponent("auth", auth);
@@ -90,12 +89,12 @@ export async function apply(ctx: Context) {
         if (username.length < 3 || !email.includes("@") || password.length < 8)
           throw Error("username, email, and password are required");
         if (
-          (await model.users.findByIdentifier(username)) ||
-          (await model.users.findByIdentifier(email))
+          (await userService.findByIdentifier(username)) ||
+          (await userService.findByIdentifier(email))
         )
           throw Error("user already exists");
-        const group = await model.groups.ensureDefault();
-        const user = await model.users.create({
+        const group = await userService.ensureDefaultGroup();
+        const user = await userService.create({
           username,
           email,
           phone: null,

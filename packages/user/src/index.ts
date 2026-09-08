@@ -19,6 +19,12 @@ export const depend = ["database"];
 export const provide = ["user"];
 export interface UserService {
   current(session: Session): Promise<User | undefined>;
+  findById(id: number): Promise<User | undefined>;
+  findByIdentifier(identifier: string): Promise<User | undefined>;
+  findAdmin(): Promise<User | undefined>;
+  ensureDefaultGroup(): Promise<Group>;
+  create(data: Omit<User, "id" | "created_at" | "updated_at">): Promise<User>;
+  update(id: number, data: Partial<User>): Promise<User | undefined>;
 }
 declare module "yumeri" {
   interface Components {
@@ -83,6 +89,20 @@ export async function apply(ctx: Context) {
     },
   };
   const service: UserService = {
+    findById: users.findById,
+    findByIdentifier: (identifier) => db.selectOne("users", { $or: [{ username: identifier }, { email: identifier.toLowerCase() }] }),
+    findAdmin: () => db.selectOne("users", { is_admin: true }),
+    ensureDefaultGroup: async () => {
+      const existing = await db.selectOne("groups", { name: "user" });
+      if (existing) return existing;
+      return db.create("groups", { name: "user", multiplier: "1", created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+    },
+    create: async (data) => {
+      const now = new Date().toISOString();
+      const user = await db.create("users", { ...data, created_at: now, updated_at: now });
+      return user;
+    },
+    update: users.update,
     async current(session) {
       const raw = session.client.req?.headers.cookie ?? "";
       const match = String(raw).match(/(?:^|;\s*)userid=(\d+)/);
