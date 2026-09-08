@@ -4,6 +4,52 @@ import type { FileService } from "@velocelab/file";
 
 const maxFileBytes = 32 << 20;
 const textExtensions = /\.(md|txt|json|csv|xml|yaml|yml|log|ini|toml)$/i;
+const attachmentPattern = /file_id=(acf-[A-Za-z0-9_-]+)/g;
+
+export async function attachImageFiles(
+  userId: number,
+  messages: Array<{ role: string; content: string; [key: string]: unknown }>,
+  db: Database,
+  files: FileService,
+) {
+  for (const message of messages) {
+    if (message.role !== "user" || !message.content) continue;
+    const ids = [...message.content.matchAll(attachmentPattern)].map(
+      (match) => match[1],
+    );
+    if (!ids.length) continue;
+    const parts: Array<Record<string, unknown>> = [
+      { type: "text", text: message.content },
+    ];
+    for (const id of [...new Set(ids)]) {
+      const row: any = await db.selectOne("advanced_chat_files", {
+        id,
+        user_id: userId,
+      });
+      if (
+        !row ||
+        !String(row.mime_type ?? "")
+          .toLowerCase()
+          .startsWith("image/") ||
+        Number(row.size) > 20 * 1024 * 1024
+      )
+        continue;
+      try {
+        const data = await files.read(String(row.storage_path));
+        parts.push({
+          type: "image_url",
+          image_url: {
+            url: `data:${row.mime_type};base64,${data.toString("base64")}`,
+          },
+        });
+      } catch {
+        // Ignore missing attachments and preserve the text message.
+      }
+    }
+    if (parts.length > 1) (message as any).content = parts;
+  }
+  return messages;
+}
 
 export function registerChatFileRoutes(
   ctx: Context,
