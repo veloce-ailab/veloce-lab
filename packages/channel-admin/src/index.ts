@@ -1,8 +1,9 @@
 import { Context, Database, Session } from "yumeri";
-import { ModelService } from "@velocelab/model";
+import { ModelService, TokenLog } from "@velocelab/model-catalog";
 import "@velocelab/dashboard";
+import "@velocelab/billing";
 
-export const depend = ["model", "dashboard"];
+export const depend = ["model", "dashboard", "billing"];
 export const provide = ["channel-admin"];
 
 export function apply(ctx: Context) {
@@ -19,12 +20,12 @@ export function apply(ctx: Context) {
   ctx.route("/api/channel-usage").methods("GET").action(async (session) => {
     if (!admin(session)) return;
     const channels = await model.channels.list();
-    const logs = await db.select("token_logs", {} as any);
+    const logs = await db.select("token_logs", {});
     session.respond({ upstream_channels: channels.map((channel) => {
-      const rows = logs.filter((row: any) => row.channel_id === channel.id);
-      const input = rows.reduce((sum: number, row: any) => sum + Number(row.input_tokens || 0), 0);
-      const output = rows.reduce((sum: number, row: any) => sum + Number(row.output_tokens || 0), 0);
-      return { id: channel.id, name: channel.name, request_count: rows.length, input_tokens: input, output_tokens: output, total_tokens: input + output, total_cost: rows.reduce((sum: number, row: any) => sum + Number(row.cost || 0), 0).toString() };
+      const rows = logs.filter((row: TokenLog) => row.channel_id === channel.id);
+      const input = rows.reduce((sum: number, row: TokenLog) => sum + Number(row.input_tokens || 0), 0);
+      const output = rows.reduce((sum: number, row: TokenLog) => sum + Number(row.output_tokens || 0), 0);
+      return { id: channel.id, name: channel.name, request_count: rows.length, input_tokens: input, output_tokens: output, total_tokens: input + output, total_cost: rows.reduce((sum: number, row: TokenLog) => sum + Number(row.cost || 0), 0).toString() };
     }) }, "json");
   });
   ctx.route("/api/channels/:id/health").methods("POST").action(async (session, _params, id) => {

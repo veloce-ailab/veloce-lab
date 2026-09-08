@@ -16,9 +16,36 @@ declare module "yumeri" {
   interface Components { uptime: UptimeService; }
 }
 
-export function apply(ctx: Context) {
-  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/uptime.js", import.meta.url).pathname, plugin: "uptime" });
+export async function apply(ctx: Context) {
   const db = ctx.component.database;
+  await db.extend("status_monitors", {
+    id: { type: "integer", autoIncrement: true },
+    name: { type: "string", nullable: false },
+    target_url: { type: "string", nullable: false },
+    check_type: { type: "string", initial: "http" },
+    method: { type: "string", initial: "GET" },
+    interval_seconds: { type: "integer", initial: 60 },
+    retention_hours: { type: "integer", initial: 168 },
+    enabled: { type: "boolean", initial: true },
+    last_status: { type: "string", initial: "pending" },
+    last_latency_ms: "integer",
+    last_status_code: "integer",
+    last_message: "string",
+    last_checked_at: "timestamp",
+    created_at: "timestamp",
+    updated_at: "timestamp",
+  });
+  await db.extend("status_checks", {
+    id: { type: "integer", autoIncrement: true },
+    monitor_id: { type: "integer", nullable: false },
+    status: { type: "string", nullable: false },
+    latency_ms: "integer",
+    status_code: "integer",
+    message: "string",
+    checked_at: "timestamp",
+    created_at: "timestamp",
+  });
+  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/uptime.js", import.meta.url).pathname, plugin: "uptime" });
   const service: UptimeService = {
     async list() {
       return db.select("status_monitors", {} as any);

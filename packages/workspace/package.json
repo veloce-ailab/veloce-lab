@@ -10,7 +10,7 @@
   "dependencies": {
     "@velocelab/connector": "workspace:*",
     "@velocelab/file": "workspace:*",
-    "@velocelab/model": "workspace:*"
+    "@velocelab/model-catalog": "workspace:*"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"
