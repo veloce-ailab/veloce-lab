@@ -47,7 +47,7 @@ declare module "yumeri" {
 export function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
-    prod: new URL("../frontend/skill.js", import.meta.url).pathname,
+    prod: new URL("./frontend/skill.js", import.meta.url).pathname,
     plugin: "skill",
   });
   const skills: SkillDefinition[] = [];

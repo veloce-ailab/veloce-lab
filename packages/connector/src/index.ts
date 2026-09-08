@@ -27,7 +27,7 @@ declare module "yumeri" {
 export function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
-    prod: new URL("../frontend/connector.js", import.meta.url).pathname,
+    prod: new URL("./frontend/connector.js", import.meta.url).pathname,
     plugin: "connector",
   });
   const handlers: ConnectorHandler[] = [];

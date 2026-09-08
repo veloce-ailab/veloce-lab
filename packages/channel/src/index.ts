@@ -124,7 +124,7 @@ export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
   });
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
-    prod: new URL("../frontend/channel.js", import.meta.url).pathname,
+    prod: new URL("./frontend/channel.js", import.meta.url).pathname,
     plugin: "channel",
   });
   ctx.registerComponent("channel", {

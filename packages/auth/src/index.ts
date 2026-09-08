@@ -46,7 +46,7 @@ export async function apply(ctx: Context) {
   }, { unique: ["credential_id"] });
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
-    prod: new URL("../frontend/auth.js", import.meta.url).pathname,
+    prod: new URL("./frontend/auth.js", import.meta.url).pathname,
     plugin: "auth",
   });
   const service = ctx.component.service as ServiceRegistry;

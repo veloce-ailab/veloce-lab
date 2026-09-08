@@ -28,7 +28,7 @@ declare module "yumeri" {
 export async function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
-    prod: new URL("../frontend/scheduler.js", import.meta.url).pathname,
+    prod: new URL("./frontend/scheduler.js", import.meta.url).pathname,
     plugin: "scheduler",
   });
   const jobs = new Map<string, ScheduledJob>();
