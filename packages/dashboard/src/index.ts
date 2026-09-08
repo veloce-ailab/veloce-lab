@@ -57,7 +57,8 @@ export class Dashboard extends Service implements DashboardService {
   }
 
   registerAsset(asset: DashboardAsset): () => void {
-    const value: DashboardAsset = { ...asset, id: asset.id || createHash("md5").update(asset.file).digest("hex") };
+    const file = /^\/[A-Za-z]:[\\/]/.test(asset.file) ? asset.file.slice(1) : asset.file;
+    const value: DashboardAsset = { ...asset, file, id: asset.id || createHash("md5").update(file).digest("hex") };
     this.state.assets.push(value);
     const remove = () => {
       const index = this.state.assets.indexOf(value);
@@ -98,7 +99,7 @@ declare module "yumeri" { interface Components { dashboard: DashboardService; } 
 export function apply(ctx: Context) {
   ctx.registerService("dashboard", Dashboard);
   const service = new Dashboard(ctx);
-  const packageRoot = path.dirname(fileURLToPath(import.meta.url));
+  const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "web");
 
   ctx.route("/api/dashboard/manifest").methods("GET").action(async (session: Session) => {
     session.respond({ assets: service.assets().map(({ id, mime, plugin }) => ({ id, mime, plugin, url: `/api/static/plugin?file=${encodeURIComponent(id)}` })) }, "json");
@@ -117,8 +118,8 @@ export function apply(ctx: Context) {
   ctx.route("root").methods("GET").action(async (session: Session) => {
     const requested = session.pathname === "/" ? "index.html" : session.pathname.replace(/^\//, "");
     const safe = requested.includes("..") ? "index.html" : requested;
-    const file = path.resolve(packageRoot, "web", safe);
+    const file = path.resolve(webRoot, safe);
     try { session.file(file, { maxAge: 3600, etag: true }); }
-    catch { session.file(path.resolve(packageRoot, "web", "index.html"), { maxAge: 60, etag: true }); }
+    catch { session.file(path.resolve(webRoot, "index.html"), { maxAge: 60, etag: true }); }
   });
 }
