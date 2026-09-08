@@ -14,6 +14,7 @@ import { filterToolsByDisabledGroups } from "./tool-groups.js";
 import { attachImageFiles, registerChatFileRoutes } from "./files.js";
 import { fetchCompletionWithRetry } from "./completion-runtime.js";
 import { registerSessionTaskTools } from "./session-tasks.js";
+import { registerRunTools } from "./run-tools.js";
 import "@velocelab/dashboard";
 import "@velocelab/file";
 
@@ -296,6 +297,13 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
     };
   });
   registerSessionTaskTools(db, (tool) => {
+    tools.push(tool);
+    return () => {
+      const index = tools.indexOf(tool);
+      if (index >= 0) tools.splice(index, 1);
+    };
+  });
+  registerRunTools(db, (tool) => {
     tools.push(tool);
     return () => {
       const index = tools.indexOf(tool);
