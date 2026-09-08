@@ -18,17 +18,14 @@ export interface SchedulerService {
   run(name: string): Promise<boolean>;
 }
 export interface SchedulerConfig {
-  enabled: boolean;
 }
-export const config: Schema<SchedulerConfig> = Schema.object({
-  enabled: Schema.boolean("Enable scheduler").default(true),
-});
+export const config: Schema<SchedulerConfig> = Schema.object({});
 declare module "yumeri" {
   interface Components {
     scheduler: SchedulerService;
   }
 }
-export async function apply(ctx: Context, cfg: SchedulerConfig) {
+export async function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("../frontend/scheduler.js", import.meta.url).pathname,
@@ -39,7 +36,7 @@ export async function apply(ctx: Context, cfg: SchedulerConfig) {
   const service: SchedulerService = {
     register(job) {
       jobs.set(job.name, job);
-      if (cfg.enabled && job.intervalMs)
+      if (job.intervalMs)
         timers.set(
           job.name,
           setInterval(() => void job.run(), job.intervalMs),
@@ -75,7 +72,6 @@ export async function apply(ctx: Context, cfg: SchedulerConfig) {
   const chat = ctx.component["advanced-chat"];
   const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
   const dispatchDue = async () => {
-    if (!cfg.enabled) return;
     const now = new Date();
     const tasks: any[] = await db.select("advanced_chat_scheduled_tasks", {
       enabled: true,

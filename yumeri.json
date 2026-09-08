@@ -6,7 +6,6 @@
   },
   "plugins": {
     "@velocelab/cache": {
-      "enabled": false,
       "address": "127.0.0.1:6379",
       "username": "",
       "password": "",
@@ -14,26 +13,24 @@
       "tls": false
     },
     "@velocelab/sqlite": { "path": "./data/veloce.db" },
-    "@velocelab/dashboard": { "enabled": true },
-    "@velocelab/community": { "enabled": true },
-    "@velocelab/knowledge": { "enabled": true },
+    "@velocelab/dashboard": {},
+    "@velocelab/community": {},
+    "@velocelab/knowledge": {},
     "@velocelab/memory": { "root": "./data/memories" },
     "@velocelab/desktop": {},
-    "@velocelab/billing": { "enabled": true },
-    "@velocelab/scheduler": { "enabled": true },
-    "@velocelab/audit": { "enabled": true },
+    "@velocelab/billing": {},
+    "@velocelab/scheduler": {},
+    "@velocelab/audit": {},
     "@velocelab/user": {},
-    "@velocelab/auth": { "enabled": true },
+    "@velocelab/auth": {},
     "@velocelab/model-catalog": {},
     "@velocelab/channel-admin": {},
     "@velocelab/adapters": {},
     "@velocelab/channel": {
-      "enabled": true,
       "contextMessageCount": "12",
       "webhookPayloadMaxBytes": "1048576"
     },
     "@velocelab/ratelimit": {
-      "enabled": true,
       "requestsPerMinute": "60",
       "burst": "10"
     },
@@ -53,11 +50,9 @@
       "passwordHCaptchaEnabled": false
     },
     "@velocelab/advanced-chat": {
-      "enabled": true,
       "connectorOnlineWindowSeconds": "60"
     },
-    "@velocelab/knowledge": { "enabled": true },
-    "@velocelab/workspace": { "enabled": true },
+    "@velocelab/workspace": {},
     "@velocelab/middleware": {},
     "@velocelab/file": { "root": "./data" }
   }

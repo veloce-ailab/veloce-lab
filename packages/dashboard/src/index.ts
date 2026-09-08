@@ -92,10 +92,10 @@ export class Dashboard extends Service implements DashboardService {
   }
 }
 
-export const config: Schema<{ enabled: boolean }> = Schema.object({ enabled: Schema.boolean("Enable dashboard").default(true) });
+export const config: Schema<Record<string, never>> = Schema.object({});
 declare module "yumeri" { interface Components { dashboard: DashboardService; } }
 
-export function apply(ctx: Context, _cfg: { enabled: boolean }) {
+export function apply(ctx: Context) {
   ctx.registerService("dashboard", Dashboard);
   const service = new Dashboard(ctx);
   const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

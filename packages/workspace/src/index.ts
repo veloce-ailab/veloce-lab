@@ -11,15 +11,13 @@ export interface WorkspaceService {
   create(userId: number, input: Record<string, unknown>): Promise<any>;
   files(userId: number, workspaceId: string): Promise<any[]>;
 }
-export const config: Schema<{ enabled: boolean }> = Schema.object({
-  enabled: Schema.boolean("Enable workspaces").default(true),
-});
+export const config: Schema<Record<string, never>> = Schema.object({});
 declare module "yumeri" {
   interface Components {
     workspace: WorkspaceService;
   }
 }
-export function apply(ctx: Context, cfg: { enabled: boolean }) {
+export function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("../frontend/workspace.js", import.meta.url).pathname,
