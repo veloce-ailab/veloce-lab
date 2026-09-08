@@ -1,0 +1,16 @@
+import path from "node:path";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+const dashboard = path.resolve(__dirname, "../dashboard/frontend");
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: [
+      { find: "@velocelab/dashboard/frontend", replacement: path.join(dashboard, "extension.tsx") },
+      { find: "@", replacement: dashboard },
+    ],
+  },
+  build: { outDir: "dist/frontend", lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "skill.js" } },
+});
