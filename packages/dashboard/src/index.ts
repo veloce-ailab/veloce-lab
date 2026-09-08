@@ -124,8 +124,8 @@ export function apply(ctx: Context) {
   ctx.route("/api/dashboard/manifest").methods("GET").action(async (session: Session) => {
     session.respond({ assets: state.assets.map(({ id, mime, plugin }) => ({ id, mime, plugin, url: `/api/static/plugin?file=${encodeURIComponent(id)}` })) }, "json");
   });
-  ctx.route("/api/static/plugin").methods("GET").action(async (session: Session) => {
-    const id = String(session.query?.file ?? "");
+  ctx.route("/api/static/plugin").methods("GET").action(async (session: Session, query: URLSearchParams) => {
+    const id = query.get("file") ?? "";
     const asset = state.assets.find((item) => item.id === id);
     if (!asset || !existsSync(asset.file)) {
       session.status = 404;
