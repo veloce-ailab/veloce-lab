@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 const dashboard = path.resolve(__dirname, "../dashboard/frontend");
 
 export default defineConfig({
+  define: { "process.env.NODE_ENV": JSON.stringify("production") },
   plugins: [react()],
   resolve: {
     alias: [
