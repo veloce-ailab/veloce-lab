@@ -11,7 +11,7 @@ import { registerAdvancedChatRoutes } from "./routes.js";
 import { registerStudioTools } from "./studio.js";
 import { registerAskUserTool } from "./ask-user.js";
 import { filterToolsByDisabledGroups } from "./tool-groups.js";
-import { registerChatFileRoutes } from "./files.js";
+import { attachImageFiles, registerChatFileRoutes } from "./files.js";
 import "@velocelab/dashboard";
 import "@velocelab/file";
 
@@ -931,6 +931,12 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           ? { toolCallId: String(message.tool_call_id) }
           : {}),
       }));
+      await attachImageFiles(
+        userId,
+        messages as any,
+        db,
+        ctx.component.file as import("@velocelab/file").FileService,
+      );
       const optionalContext = "";
       const injectedContext = (
         await Promise.all(
