@@ -12,6 +12,7 @@ import { registerStudioTools } from "./studio.js";
 import { registerAskUserTool } from "./ask-user.js";
 import { filterToolsByDisabledGroups } from "./tool-groups.js";
 import { attachImageFiles, registerChatFileRoutes } from "./files.js";
+import { fetchCompletionWithRetry } from "./completion-runtime.js";
 import "@velocelab/dashboard";
 import "@velocelab/file";
 
@@ -149,6 +150,7 @@ export interface ChatInput {
   temperature?: number;
   reasoningEffort?: string;
   disabledToolGroups?: string[];
+  mode?: string;
 }
 
 export interface ChatResult {
@@ -976,9 +978,10 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         ...request.headers,
         ...(input.stream ? { Accept: "text/event-stream" } : {}),
       };
-      const response = await fetch(
+      const response = await fetchCompletionWithRetry(
         `${String(channel.base_url).replace(/\\\/$/, "")}${request.urlPath}`,
         { method: "POST", headers, body: JSON.stringify(request.body) },
+        String(input.mode ?? "chat"),
       );
       let streamedContent = "";
       if (
