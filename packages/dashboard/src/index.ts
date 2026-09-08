@@ -98,15 +98,15 @@ declare module "yumeri" { interface Components { dashboard: DashboardService; } 
 
 export function apply(ctx: Context) {
   ctx.registerService("dashboard", Dashboard);
-  const service = new Dashboard(ctx);
+  const state = stateFor(ctx);
   const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "web");
 
   ctx.route("/api/dashboard/manifest").methods("GET").action(async (session: Session) => {
-    session.respond({ assets: service.assets().map(({ id, mime, plugin }) => ({ id, mime, plugin, url: `/api/static/plugin?file=${encodeURIComponent(id)}` })) }, "json");
+    session.respond({ assets: state.assets.map(({ id, mime, plugin }) => ({ id, mime, plugin, url: `/api/static/plugin?file=${encodeURIComponent(id)}` })) }, "json");
   });
   ctx.route("/api/static/plugin").methods("GET").action(async (session: Session) => {
     const id = String(session.query?.file ?? "");
-    const asset = service.assets().find((item) => item.id === id);
+    const asset = state.assets.find((item) => item.id === id);
     if (!asset || !existsSync(asset.file)) {
       session.status = 404;
       session.respond({ error: "Static plugin file not found" }, "json");
