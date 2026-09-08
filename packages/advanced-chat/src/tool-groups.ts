@@ -34,7 +34,7 @@ export function filterToolsByDisabledGroups<T extends { name: string }>(
           ? "workspace"
           : name.startsWith("web_")
             ? "web"
-            : name.startsWith("session_tasks_")
+            : name.startsWith("session_tasks_") || name.startsWith("tasks_")
               ? "tasks"
               : "";
     return !excluded.has(group);
