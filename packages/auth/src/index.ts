@@ -138,6 +138,8 @@ export async function apply(ctx: Context) {
         path === "/api/configuration" ||
         path === "/api/setup/status" ||
         path === "/api/setup" ||
+        path === "/api/dashboard/manifest" ||
+        path === "/api/static/plugin" ||
         path === "/auth/password/login" ||
         path === "/auth/password/register" ||
         path.startsWith("/api/advanced-chat/connectors/");
