@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@velocelab/database-core": "workspace:*",
-    "@velocelab/model-catalog": "workspace:*",
     "@velocelab/service": "workspace:*",
     "@velocelab/user": "workspace:*",
     "bcryptjs": "^3.0.2"

@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { ServiceRegistry } from "@velocelab/service";
 import "@velocelab/dashboard";
 import "@velocelab/database-core";
-import { EmailVerificationCode, PhoneVerificationCode, OIDCBindRequest, WebAuthnChallenge, PasskeyCredential } from "@velocelab/model-catalog";
+import type { EmailVerificationCode, PhoneVerificationCode, OIDCBindRequest, WebAuthnChallenge, PasskeyCredential } from "./types.js";
 
 declare module "@yumerijs/types" {
   interface Tables {
