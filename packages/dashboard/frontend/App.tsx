@@ -1,107 +1,187 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
-import { PageTransition } from "./components/layout/PageTransition"
-import { ToastProvider } from "./components/ui/toast"
-import { TooltipProvider } from "./components/ui/tooltip"
-import api, { getAuthToken } from "./lib/api"
-import { resolvePostLoginPath } from "./lib/desktop-authorize"
-import { I18nProvider, useI18n } from "./lib/i18n"
-import { ThemeProvider } from "./lib/theme"
-import { DashboardSlot, DashboardSlotProvider } from "./lib/slots"
-import { routes as extensionRoutes, subscribeExtensions } from "./extension"
-import SettingsWorkspace from "./pages/SettingsWorkspace"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
+import { PageTransition } from "./components/layout/PageTransition";
+import { ToastProvider } from "./components/ui/toast";
+import { TooltipProvider } from "./components/ui/tooltip";
+import api, { getAuthToken } from "./lib/api";
+import { resolvePostLoginPath } from "./lib/desktop-authorize";
+import { I18nProvider, useI18n } from "./lib/i18n";
+import { ThemeProvider } from "./lib/theme";
+import { DashboardSlot, DashboardSlotProvider } from "./lib/slots";
+import { routes as extensionRoutes, subscribeExtensions } from "./extension";
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient();
 
 interface SetupStatus {
-  required: boolean
+  required: boolean;
 }
 
-function ProtectedRoute({ children, authenticated }: { children: React.ReactNode; authenticated: boolean }) {
-  const location = useLocation()
+function ProtectedRoute({
+  children,
+  authenticated,
+}: {
+  children: React.ReactNode;
+  authenticated: boolean;
+}) {
+  const location = useLocation();
   if (!authenticated && location.pathname !== "/login") {
-    return <Navigate to="/login" replace />
+    return <Navigate to="/login" replace />;
   }
-  return <>{children}</>
+  return <>{children}</>;
 }
 
 function SetupGate({ children }: { children: React.ReactNode }) {
-  const location = useLocation()
-  const { t } = useI18n()
-  const [status, setStatus] = useState<SetupStatus | null>(null)
+  const location = useLocation();
+  const { t } = useI18n();
+  const [status, setStatus] = useState<SetupStatus | null>(null);
 
   useEffect(() => {
-    api.get("/setup/status").then((response) => setStatus(response.data)).catch(() => setStatus({ required: false }))
-  }, [])
+    api
+      .get("/setup/status")
+      .then((response) => setStatus(response.data))
+      .catch(() => setStatus({ required: false }));
+  }, []);
 
   if (!status) {
-    return <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">{t("common.loading")}</div>
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+        {t("common.loading")}
+      </div>
+    );
   }
   if (status.required && location.pathname !== "/setup") {
-    return <Navigate to="/setup" replace />
+    return <Navigate to="/setup" replace />;
   }
   if (!status.required && location.pathname === "/setup") {
-    return <Navigate to={localStorage.getItem("token") ? "/chat" : "/login"} replace />
+    return (
+      <Navigate
+        to={localStorage.getItem("token") ? "/chat" : "/login"}
+        replace
+      />
+    );
   }
-  return <>{children}</>
+  return <>{children}</>;
 }
 
 function App() {
-  const [authenticated] = useState(() => Boolean(getAuthToken()))
-  const [, refreshExtensions] = useState(0)
-  useEffect(() => subscribeExtensions(() => refreshExtensions((value) => value + 1)), [])
+  const [authenticated] = useState(() => Boolean(getAuthToken()));
+  const [, refreshExtensions] = useState(0);
+  useEffect(
+    () => subscribeExtensions(() => refreshExtensions((value) => value + 1)),
+    [],
+  );
   useEffect(() => {
-    fetch("/api/dashboard/manifest").then((response) => response.json()).then((manifest: { assets?: Array<{ url: string; mime?: string }> }) => {
-      manifest.assets?.filter((asset) => asset.mime?.includes("javascript")).forEach((asset) => {
-        const script = document.createElement("script")
-        script.type = "module"
-        script.src = asset.url
-        script.dataset.dashboardPlugin = "true"
-        document.head.appendChild(script)
+    fetch("/api/dashboard/manifest")
+      .then((response) => response.json())
+      .then((manifest: { assets?: Array<{ url: string; mime?: string }> }) => {
+        manifest.assets
+          ?.filter((asset) => asset.mime?.includes("javascript"))
+          .forEach((asset) => {
+            const script = document.createElement("script");
+            script.type = "module";
+            script.src = asset.url;
+            script.dataset.dashboardPlugin = "true";
+            document.head.appendChild(script);
+          });
       })
-    }).catch(() => undefined)
-  }, [])
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get("token")
+    const token = new URLSearchParams(window.location.search).get("token");
     if (token) {
-      localStorage.setItem("token", token)
+      localStorage.setItem("token", token);
       // OAuth callbacks use /dashboard as a neutral landing path. Restore a
       // pending desktop authorization before taking the signed-in user home.
-      window.location.replace(resolvePostLoginPath())
+      window.location.replace(resolvePostLoginPath());
     }
-  }, [])
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
       <DashboardSlotProvider>
-      <DashboardSlot name="app.before" />
-      <ThemeProvider>
-        <I18nProvider>
-          <TooltipProvider>
-            <ToastProvider>
-              <BrowserRouter>
-                <SetupGate>
-                  <Routes>
-                  {extensionRoutes().map((route) => { const Component = route.component; return <Route key={route.path} path={route.path} element={<ProtectedRoute authenticated={!route.protected || authenticated}><Component /></ProtectedRoute>} /> })}
-                  <Route path="/chat/*" element={<ProtectedRoute authenticated={authenticated}><div className="p-6">Advanced Chat plugin is loading…</div></ProtectedRoute>} />
-                  <Route path="/settings/*" element={<ProtectedRoute authenticated={authenticated}><SettingsWorkspace /></ProtectedRoute>} />
-                  <Route path="/admin/*" element={<Navigate to="/settings/statistics" replace />} />
-                  <Route path="/" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
-                  <Route path="/dashboard" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
-                  <Route path="*" element={<Navigate to={authenticated ? "/chat" : "/login"} replace />} />
-                  </Routes>
-                </SetupGate>
-              </BrowserRouter>
-            </ToastProvider>
-          </TooltipProvider>
-        </I18nProvider>
-      </ThemeProvider>
-      <DashboardSlot name="app.after" />
+        <DashboardSlot name="app.before" />
+        <ThemeProvider>
+          <I18nProvider>
+            <TooltipProvider>
+              <ToastProvider>
+                <BrowserRouter>
+                  <SetupGate>
+                    <Routes>
+                      {extensionRoutes().map((route) => {
+                        const Component = route.component;
+                        return (
+                          <Route
+                            key={route.path}
+                            path={route.path}
+                            element={
+                              <ProtectedRoute
+                                authenticated={
+                                  !route.protected || authenticated
+                                }
+                              >
+                                <Component />
+                              </ProtectedRoute>
+                            }
+                          />
+                        );
+                      })}
+                      <Route
+                        path="/chat/*"
+                        element={
+                          <ProtectedRoute authenticated={authenticated}>
+                            <div className="p-6">
+                              Advanced Chat plugin is loading…
+                            </div>
+                          </ProtectedRoute>
+                        }
+                      />
+                      {/* Settings and admin pages are owned by feature plugins. */}
+                      <Route
+                        path="/"
+                        element={
+                          <Navigate
+                            to={authenticated ? "/chat" : "/login"}
+                            replace
+                          />
+                        }
+                      />
+                      <Route
+                        path="/dashboard"
+                        element={
+                          <Navigate
+                            to={authenticated ? "/chat" : "/login"}
+                            replace
+                          />
+                        }
+                      />
+                      <Route
+                        path="*"
+                        element={
+                          <Navigate
+                            to={authenticated ? "/chat" : "/login"}
+                            replace
+                          />
+                        }
+                      />
+                    </Routes>
+                  </SetupGate>
+                </BrowserRouter>
+              </ToastProvider>
+            </TooltipProvider>
+          </I18nProvider>
+        </ThemeProvider>
+        <DashboardSlot name="app.after" />
       </DashboardSlotProvider>
     </QueryClientProvider>
-  )
+  );
 }
 
-export default App
+export default App;
