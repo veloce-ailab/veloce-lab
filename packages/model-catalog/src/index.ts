@@ -1,8 +1,21 @@
 import { Context, Database, Session } from "yumeri";
-import { ModelService } from "@velocelab/model";
+import type { ModelService, Channel, Model, ModelConfig, ModelGroupMultiplier, ChannelGroupMultiplier } from "./model-service.js";
+import { apply as applyModelService } from "./model-service.js";
+export * from "./model-service.js";
+import "@velocelab/database-core";
 
-export const depend = ["model", "database"];
-export const provide = ["model-catalog"];
+declare module "@yumerijs/types" {
+  interface Tables {
+    channels: Channel;
+    models: Model;
+    model_configs: ModelConfig;
+    model_group_multipliers: ModelGroupMultiplier;
+    channel_group_multipliers: ChannelGroupMultiplier;
+  }
+}
+
+export const depend = ["database"];
+export const provide = ["model", "model-catalog"];
 
 export interface ModelCatalogService {
   list(): ReturnType<ModelService["models"]["list"]>;
@@ -14,9 +27,30 @@ declare module "yumeri" {
   }
 }
 
-export function apply(ctx: Context) {
+export async function apply(ctx: Context) {
+  await applyModelService(ctx);
   const model = ctx.component.model as ModelService;
-  const db = ctx.component.database as Database;
+  const db = ctx.component.database;
+  await db.extend("channels", {
+    id: { type: "integer", autoIncrement: true }, user_channel_id: "integer", name: "string", type: "string", base_url: "string", api_key: "string", plugin_config: "text", multiplier: { type: "decimal", initial: 1 }, priority: { type: "integer", initial: 1 }, weight: { type: "integer", initial: 1 }, enabled: { type: "boolean", initial: true }, price_sync_enabled: "boolean", price_sync_cron: "string", price_sync_last_at: "timestamp", consecutive_failures: { type: "integer", initial: 0 }, last_failure_at: "timestamp", last_failure_reason: "string", auto_disabled_at: "timestamp", auto_disabled_reason: "string", last_health_checked_at: "timestamp", last_health_status: "string", created_at: "timestamp", updated_at: "timestamp",
+  });
+  await db.extend("models", {
+    id: { type: "integer", autoIncrement: true }, model_name: { type: "string", nullable: false }, provider: "string", provider_icon_url: "string", quota_type: { type: "integer", initial: 0 }, input_price: { type: "decimal", initial: 0 }, output_price: { type: "decimal", initial: 0 }, cached_input_price: { type: "decimal", initial: 0 }, cache_write_input_price: { type: "decimal", initial: 0 }, cache_write_1h_input_price: { type: "decimal", initial: 0 }, image_input_price: { type: "decimal", initial: 0 }, image_output_price: { type: "decimal", initial: 0 }, audio_input_price: { type: "decimal", initial: 0 }, audio_output_price: { type: "decimal", initial: 0 }, input_price_tiers: "text", output_price_tiers: "text", cached_input_price_tiers: "text", cache_write_input_price_tiers: "text", cache_write_1h_input_price_tiers: "text", image_input_price_tiers: "text", image_output_price_tiers: "text", audio_input_price_tiers: "text", audio_output_price_tiers: "text", video_billing_config: "text", enabled: { type: "boolean", initial: true }, created_at: "timestamp", updated_at: "timestamp",
+  }, { unique: ["model_name"] });
+  await db.extend("model_configs", {
+    id: { type: "integer", autoIncrement: true }, channel_id: "integer", model_id: "integer", upstream_model_name: "string", input_price: { type: "decimal", initial: 0 }, output_price: { type: "decimal", initial: 0 }, enabled: { type: "boolean", initial: true }, created_at: "timestamp", updated_at: "timestamp",
+  });
+  await db.extend("model_group_multipliers", {
+    id: { type: "integer", autoIncrement: true }, model_config_id: { type: "integer", nullable: false }, group_id: { type: "integer", nullable: false }, multiplier: { type: "decimal", initial: 1 }, created_at: "timestamp", updated_at: "timestamp",
+  }, { unique: [["model_config_id", "group_id"]] });
+  await db.extend("channel_group_multipliers", {
+    id: { type: "integer", autoIncrement: true },
+    channel_id: { type: "integer", nullable: false },
+    group_id: { type: "integer", nullable: false },
+    multiplier: { type: "decimal", initial: 1 },
+    created_at: "timestamp",
+    updated_at: "timestamp",
+  }, { unique: [["channel_id", "group_id"]] });
   const catalog: ModelCatalogService = {
     list: () => model.models.list(),
   };

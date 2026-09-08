@@ -1,7 +1,21 @@
 import { Context, Session } from "yumeri";
-import { ModelService, User } from "@velocelab/model";
+import type { User, UserAvatar, Group, UserGroupMembership, UserChannel, UserChannelGroupAccess, UserChannelUserAccess, CheckInRecord } from "@velocelab/model-catalog";
+import "@velocelab/database-core";
 
-export const depend = ["model"];
+declare module "@yumerijs/types" {
+  interface Tables {
+    users: User;
+    user_avatars: UserAvatar;
+    groups: Group;
+    user_group_memberships: UserGroupMembership;
+    user_channels: UserChannel;
+    user_channel_group_accesses: UserChannelGroupAccess;
+    user_channel_user_accesses: UserChannelUserAccess;
+    check_in_records: CheckInRecord;
+  }
+}
+
+export const depend = ["database", "model"];
 export const provide = ["user"];
 export interface UserService {
   current(session: Session): Promise<User | undefined>;
@@ -12,8 +26,56 @@ declare module "yumeri" {
   }
 }
 
-export function apply(ctx: Context) {
-  const model = ctx.component.model as ModelService;
+export async function apply(ctx: Context) {
+  const db = ctx.component.database;
+  await db.extend("users", {
+    id: { type: "integer", autoIncrement: true },
+    username: { type: "string", nullable: false },
+    email: { type: "string", nullable: false },
+    phone: "string",
+    oidc_sub: "string",
+    password_hash: { type: "string", nullable: false },
+    email_verified: { type: "boolean", nullable: false },
+    avatar_url: { type: "string", initial: "" },
+    balance: { type: "decimal", initial: 0 },
+    group_id: { type: "integer", initial: 0 },
+    referral_code: "string",
+    referrer_id: "integer",
+    is_admin: { type: "boolean", nullable: false },
+    created_at: "timestamp",
+    updated_at: "timestamp",
+  }, { unique: ["username", "email", "phone", "oidc_sub", "referral_code"] });
+  await db.extend("user_avatars", {
+    user_id: { type: "integer", nullable: false },
+    mime_type: { type: "string", nullable: false },
+    data: { type: "text", nullable: false },
+    updated_at: "timestamp",
+  }, { unique: ["user_id"] });
+  await db.extend("groups", {
+    id: { type: "integer", autoIncrement: true },
+    name: { type: "string", nullable: false },
+    multiplier: { type: "decimal", initial: 1 },
+    created_at: "timestamp",
+    updated_at: "timestamp",
+  }, { unique: ["name"] });
+  await db.extend("user_group_memberships", {
+    id: { type: "integer", autoIncrement: true },
+    user_id: { type: "integer", nullable: false },
+    group_id: { type: "integer", nullable: false },
+    expires_at: "timestamp",
+    created_at: "timestamp",
+    updated_at: "timestamp",
+  }, { unique: [["user_id", "group_id"]] });
+  await db.extend("user_channels", {
+    id: { type: "integer", autoIncrement: true }, name: { type: "string", nullable: false }, description: "string", multiplier: { type: "decimal", initial: 1 }, routing_algorithm: { type: "string", initial: "priority" }, enabled: { type: "boolean", initial: true }, rate_limit_enabled: { type: "boolean", initial: false }, rate_limit_requests_per_minute: { type: "integer", initial: 0 }, rate_limit_burst: { type: "integer", initial: 0 }, created_at: "timestamp", updated_at: "timestamp",
+  }, { unique: ["name"] });
+  await db.extend("user_channel_group_accesses", {
+    id: { type: "integer", autoIncrement: true }, user_channel_id: { type: "integer", nullable: false }, group_id: { type: "integer", nullable: false }, created_at: "timestamp", updated_at: "timestamp",
+  }, { unique: [["user_channel_id", "group_id"]] });
+  await db.extend("user_channel_user_accesses", {
+    id: { type: "integer", autoIncrement: true }, user_channel_id: { type: "integer", nullable: false }, user_id: { type: "integer", nullable: false }, created_at: "timestamp", updated_at: "timestamp",
+  }, { unique: [["user_channel_id", "user_id"]] });
+  const model = ctx.component.model;
   const service: UserService = {
     async current(session) {
       const raw = session.client.req?.headers.cookie ?? "";
@@ -47,7 +109,16 @@ export function apply(ctx: Context) {
         return;
       }
       session.respond(current, "json");
-    });
+  });
+  await db.extend("check_in_records", {
+    id: { type: "integer", autoIncrement: true },
+    user_id: { type: "integer", nullable: false },
+    check_in_date: { type: "string", nullable: false },
+    reward_amount: { type: "decimal", nullable: false },
+    streak_days: { type: "integer", initial: 1 },
+    reward_kind: "string",
+    created_at: "timestamp",
+  }, { unique: [["user_id", "check_in_date"]] });
   ctx
     .route("/api/user/me")
     .methods("PUT")

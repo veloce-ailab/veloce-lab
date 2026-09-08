@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/file";
-import "@velocelab/model";
+import "@velocelab/model-catalog";
 import "@velocelab/database-core";
 
 const communityKnowledgeAPIBaseURL = "https://veloce-community.flweb.cn/api/v1";
