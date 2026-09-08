@@ -98,7 +98,7 @@ declare module "yumeri" { interface Components { dashboard: DashboardService; } 
 export function apply(ctx: Context) {
   ctx.registerService("dashboard", Dashboard);
   const service = new Dashboard(ctx);
-  const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const packageRoot = path.dirname(fileURLToPath(import.meta.url));
 
   ctx.route("/api/dashboard/manifest").methods("GET").action(async (session: Session) => {
     session.respond({ assets: service.assets().map(({ id, mime, plugin }) => ({ id, mime, plugin, url: `/api/static/plugin?file=${encodeURIComponent(id)}` })) }, "json");
