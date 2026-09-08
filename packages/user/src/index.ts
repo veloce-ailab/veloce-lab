@@ -98,7 +98,7 @@ export async function apply(ctx: Context) {
   );
   ctx
     .route("/api/user/me")
-    .methods("GET")
+    .methods("GET", "PUT")
     .action(async (session) => {
       const current =
         (session.properties.user as User | undefined) ??
@@ -108,33 +108,11 @@ export async function apply(ctx: Context) {
         session.respond({ error: "Authorization is required" }, "json");
         return;
       }
-      session.respond(current, "json");
-  });
-  await db.extend("check_in_records", {
-    id: { type: "integer", autoIncrement: true },
-    user_id: { type: "integer", nullable: false },
-    check_in_date: { type: "string", nullable: false },
-    reward_amount: { type: "decimal", nullable: false },
-    streak_days: { type: "integer", initial: 1 },
-    reward_kind: "string",
-    created_at: "timestamp",
-  }, { unique: [["user_id", "check_in_date"]] });
-  ctx
-    .route("/api/user/me")
-    .methods("PUT")
-    .action(async (session) => {
-      const current =
-        (session.properties.user as User | undefined) ??
-        (await service.current(session));
-      if (!current) {
-        session.status = 401;
-        session.respond({ error: "Authorization is required" }, "json");
+      if ((session.client.req?.method ?? "GET").toUpperCase() === "GET") {
+        session.respond(current, "json");
         return;
       }
-      const input = (await session.parseRequestBody()) as Record<
-        string,
-        unknown
-      >;
+      const input = (await session.parseRequestBody()) as Record<string, unknown>;
       const updates: Partial<User> = {};
       if (typeof input.username === "string" && input.username.trim())
         updates.username = input.username.trim().slice(0, 80);
@@ -146,5 +124,14 @@ export async function apply(ctx: Context) {
         updates.avatar_url = input.avatar_url.trim().slice(0, 500);
       const updated = await model.users.update(current.id, updates);
       session.respond(updated ?? current, "json");
-    });
+  });
+  await db.extend("check_in_records", {
+    id: { type: "integer", autoIncrement: true },
+    user_id: { type: "integer", nullable: false },
+    check_in_date: { type: "string", nullable: false },
+    reward_amount: { type: "decimal", nullable: false },
+    streak_days: { type: "integer", initial: 1 },
+    reward_kind: "string",
+    created_at: "timestamp",
+  }, { unique: [["user_id", "check_in_date"]] });
 }
