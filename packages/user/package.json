@@ -8,8 +8,7 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@velocelab/database-core": "workspace:*",
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/database-core": "workspace:*"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"
