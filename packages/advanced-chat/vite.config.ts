@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 const frontend = path.resolve(__dirname, "frontend");
 const dashboard = path.resolve(__dirname, "../dashboard/frontend");
-export default defineConfig({ plugins: [react()], resolve: { alias: [
+export default defineConfig({ define: { "process.env.NODE_ENV": JSON.stringify("production") }, plugins: [react()], resolve: { alias: [
   { find: "@velocelab/dashboard/frontend", replacement: path.join(dashboard, "extension.tsx") },
   { find: /^@\/components\/chat/, replacement: path.join(frontend, "components/chat") },
   { find: /^@\/components/, replacement: path.join(dashboard, "components") },
