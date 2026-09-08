@@ -1,11 +1,12 @@
 import { randomBytes, createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Context, Database, Schema } from "yumeri";
+import { Context, Schema } from "yumeri";
 import type {
   HarnessAgent,
   HarnessConnectorDevice,
   HarnessSession,
+  AdvancedChatSessionFolder,
 } from "@velocelab/model";
 import { registerAdvancedChatRoutes } from "./routes.js";
 import { registerStudioTools } from "./studio.js";
@@ -17,6 +18,7 @@ import { registerSessionTaskTools } from "./session-tasks.js";
 import { registerRunTools } from "./run-tools.js";
 import "@velocelab/dashboard";
 import "@velocelab/file";
+import "@velocelab/database-core";
 
 export const depend = ["database", "model", "dashboard", "file"];
 export const provide = ["advanced-chat"];
@@ -82,7 +84,7 @@ export interface AdvancedChatService {
   createSessionFolder(
     userId: number,
     name: string,
-  ): Promise<Record<string, unknown>>;
+  ): Promise<AdvancedChatSessionFolder>;
   getUserSettings(userId: number): Promise<Record<string, unknown>>;
   updateUserSettings(
     userId: number,
@@ -274,7 +276,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   });
   const tools: ChatToolDefinition[] = [];
   const contextProviders: ChatContextProvider[] = [];
-  const db = ctx.component.database as Database;
+  const db = ctx.component.database;
   registerChatFileRoutes(
     ctx,
     db,
@@ -916,7 +918,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         status_message: "",
         current_round: 0,
         error_message: "",
-        cost: 0,
+        cost: "0",
         tool_calls: 0,
         tool_call_details: "[]",
         started_at: now,

@@ -18,3 +18,4 @@ transfer.md
 node_modules/
 .yarn/install-state.gz
 dist/
+**/dist/

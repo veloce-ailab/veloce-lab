@@ -1,7 +1,9 @@
-import { Context, Database, Schema, Session } from "yumeri";
+import { Context, Schema, Session } from "yumeri";
 import { randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
+import "@velocelab/database-core";
+import "@velocelab/model";
 
 export const depend = ["database", "dashboard", "advanced-chat"];
 export const provide = ["channel"];
@@ -117,7 +119,7 @@ export function apply(ctx: Context, pluginConfig: ChannelConfig) {
     prod: new URL("../frontend/channel.js", import.meta.url).pathname,
     plugin: "channel",
   });
-  const db = ctx.component.database as Database;
+  const db = ctx.component.database;
   ctx.registerComponent("channel", {
     enabled: () => pluginConfig.enabled,
     providers: () => providers.map((provider) => ({ ...provider })),

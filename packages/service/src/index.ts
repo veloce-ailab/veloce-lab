@@ -7,7 +7,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Context, Database, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
-import type { ModelService, User } from "@velocelab/model";
+import { ModelService, User } from "@velocelab/model";
 
 
 export const depend = [
