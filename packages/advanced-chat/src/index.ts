@@ -13,6 +13,7 @@ import { registerAskUserTool } from "./ask-user.js";
 import { filterToolsByDisabledGroups } from "./tool-groups.js";
 import { attachImageFiles, registerChatFileRoutes } from "./files.js";
 import { fetchCompletionWithRetry } from "./completion-runtime.js";
+import { registerSessionTaskTools } from "./session-tasks.js";
 import "@velocelab/dashboard";
 import "@velocelab/file";
 
@@ -293,6 +294,20 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       const index = tools.indexOf(tool);
       if (index >= 0) tools.splice(index, 1);
     };
+  });
+  registerSessionTaskTools(db, (tool) => {
+    tools.push(tool);
+    return () => {
+      const index = tools.indexOf(tool);
+      if (index >= 0) tools.splice(index, 1);
+    };
+  });
+  contextProviders.push({
+    id: "session-tasks",
+    provide: ({ sessionId }) =>
+      sessionId
+        ? "For work requiring three or more distinct steps, call tasks_plan first. Keep one task in_progress at a time, then mark it completed or skipped with tasks_update."
+        : undefined,
   });
   contextProviders.push({
     id: "ask-user",
