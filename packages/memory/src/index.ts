@@ -4,7 +4,7 @@ import path from "node:path";
 import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
-import "@velocelab/model-catalog";
+import "@velocelab/advanced-chat";
 export const depend = ["database", "dashboard", "advanced-chat"];
 export const provide = ["memory"];
 export interface MemoryConfig {

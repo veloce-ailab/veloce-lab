@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Context, Database, Session } from "yumeri";
 import "@velocelab/dashboard";
-import "@velocelab/model-catalog";
+import "@velocelab/advanced-chat";
 import "@velocelab/advanced-chat";
 export const depend = ["dashboard", "database", "advanced-chat"];
 export const provide = ["delivery"];

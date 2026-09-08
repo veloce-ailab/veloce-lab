@@ -3,7 +3,7 @@ import { Context, Database, Session } from "yumeri";
 import { createHash } from "node:crypto";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
-import "@velocelab/model-catalog";
+import "@velocelab/advanced-chat";
 import "@velocelab/file";
 export const depend = [
   "dashboard",

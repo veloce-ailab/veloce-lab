@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/database-core";
-import "@velocelab/model-catalog";
+import "@velocelab/advanced-chat";
 
 export const depend = ["database", "dashboard", "advanced-chat"];
 export const provide = ["channel"];

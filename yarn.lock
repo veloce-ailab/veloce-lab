@@ -2317,7 +2317,7 @@ __metadata:
     "@tanstack/react-query": "npm:^5.100.14"
     "@velocelab/adapters": "workspace:*"
     "@velocelab/file": "workspace:*"
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/user": "workspace:*"
     "@vitejs/plugin-react": "npm:^6.0.1"
     axios: "npm:^1.16.1"
     lucide-react: "npm:^1.16.0"
@@ -2343,7 +2343,6 @@ __metadata:
   resolution: "@velocelab/auth@workspace:packages/auth"
   dependencies:
     "@velocelab/database-core": "workspace:*"
-    "@velocelab/model-catalog": "workspace:*"
     "@velocelab/service": "workspace:*"
     "@velocelab/user": "workspace:*"
     bcryptjs: "npm:^3.0.2"
@@ -2398,7 +2397,6 @@ __metadata:
   resolution: "@velocelab/channel-admin@workspace:packages/channel-admin"
   dependencies:
     "@velocelab/billing": "workspace:*"
-    "@velocelab/model-catalog": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2428,7 +2426,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/connector@workspace:packages/connector"
   dependencies:
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/advanced-chat": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2458,7 +2456,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/delivery@workspace:packages/delivery"
   dependencies:
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/advanced-chat": "workspace:*"
     "@vitejs/plugin-react": "npm:^6.0.1"
     react: "npm:^19.2.6"
     vite: "npm:^8.0.12"
@@ -2503,7 +2501,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/knowledge@workspace:packages/knowledge"
   dependencies:
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/advanced-chat": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2513,7 +2511,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/mcp@workspace:packages/mcp"
   dependencies:
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/advanced-chat": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2523,7 +2521,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/memory@workspace:packages/memory"
   dependencies:
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/advanced-chat": "workspace:*"
     "@vitejs/plugin-react": "npm:^6.0.1"
     react: "npm:^19.2.6"
     vite: "npm:^8.0.12"
@@ -2532,7 +2530,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/model-catalog@workspace:*, @velocelab/model-catalog@workspace:packages/model-catalog":
+"@velocelab/model-catalog@workspace:packages/model-catalog":
   version: 0.0.0-use.local
   resolution: "@velocelab/model-catalog@workspace:packages/model-catalog"
   dependencies:
@@ -2591,7 +2589,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/scheduler@workspace:packages/scheduler"
   dependencies:
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/advanced-chat": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2601,7 +2599,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/service@workspace:packages/service"
   dependencies:
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/user": "workspace:*"
     bcryptjs: "npm:^3.0.2"
   peerDependencies:
     yumeri: ^3.0.0
@@ -2612,7 +2610,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/skill@workspace:packages/skill"
   dependencies:
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/advanced-chat": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2644,7 +2642,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/uptime@workspace:packages/uptime"
   dependencies:
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/database-core": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2655,7 +2653,6 @@ __metadata:
   resolution: "@velocelab/user@workspace:packages/user"
   dependencies:
     "@velocelab/database-core": "workspace:*"
-    "@velocelab/model-catalog": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2665,9 +2662,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/workspace@workspace:packages/workspace"
   dependencies:
+    "@velocelab/advanced-chat": "workspace:*"
     "@velocelab/connector": "workspace:*"
     "@velocelab/file": "workspace:*"
-    "@velocelab/model-catalog": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2768,8 +2765,8 @@ __metadata:
   linkType: hard
 
 "@yumerijs/core@npm:^3.0.0":
-  version: 3.0.1
-  resolution: "@yumerijs/core@npm:3.0.1"
+  version: 3.0.2
+  resolution: "@yumerijs/core@npm:3.0.2"
   dependencies:
     chokidar: "npm:^4.0.3"
     formidable: "npm:^3.5.4"
@@ -2778,7 +2775,7 @@ __metadata:
     picocolors: "npm:^1.1.1"
     semver: "npm:^7.8.4"
     ws: "npm:^8.18.3"
-  checksum: 10c0/b4dc5efead29976a910b21397fd8fa450deb7443c9237e21bd78a37b17c055885ad40b542cb48d4c0a74d6cb1663344002dc97eec1bc80143c5be6ec2bcac42b
+  checksum: 10c0/b3df5c696e47293254f7ffc2f332309196848b4d6e748959e9fd6070f86f3d41dd591ae82baa19b0de25902e67b12ed37c5dc3b7a65b6cee9c117b0aa21e3b8f
   languageName: node
   linkType: hard
 
@@ -3802,11 +3799,11 @@ __metadata:
   linkType: hard
 
 "lucide-react@npm:^1.16.0":
-  version: 1.42.0
-  resolution: "lucide-react@npm:1.42.0"
+  version: 1.43.0
+  resolution: "lucide-react@npm:1.43.0"
   peerDependencies:
     react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
-  checksum: 10c0/3d6ed3416e85937fc15fda2af926a3505bb0205038fdadf48beb43b4c6546a85f8d24fda3a4431acd78cdc1028075a8c75b86fbe495d40b46a8e812f245922d5
+  checksum: 10c0/58619588b6e0ce44d0188d7b0021b3e85e2fd473fbc1b1ef9b6de6f9519eb46b359354747137da26ce215f5efa9435f8b9d8e20c29d4d24471f17de076cb5f79
   languageName: node
   linkType: hard
 
