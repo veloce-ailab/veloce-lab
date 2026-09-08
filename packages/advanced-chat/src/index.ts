@@ -7,7 +7,8 @@ import type {
   HarnessConnectorDevice,
   HarnessSession,
   AdvancedChatSessionFolder,
-} from "@velocelab/model";
+} from "@velocelab/model-catalog";
+import type * as ModelTypes from "@velocelab/model-catalog";
 import { registerAdvancedChatRoutes } from "./routes.js";
 import { registerStudioTools } from "./studio.js";
 import { registerAskUserTool } from "./ask-user.js";
@@ -22,6 +23,40 @@ import "@velocelab/database-core";
 
 export const depend = ["database", "model", "dashboard", "file"];
 export const provide = ["advanced-chat"];
+
+declare module "@yumerijs/types" {
+  interface Tables {
+    advanced_chat_agents: ModelTypes.HarnessAgent;
+    advanced_chat_connector_devices: ModelTypes.HarnessConnectorDevice;
+    advanced_chat_connector_tasks: ModelTypes.HarnessConnectorTask;
+    advanced_chat_sessions: ModelTypes.HarnessSession;
+    advanced_chat_messages: ModelTypes.HarnessMessage;
+    advanced_chat_runs: ModelTypes.HarnessRun;
+    advanced_chat_user_settings: ModelTypes.HarnessUserSettings;
+    advanced_chat_mcp_servers: ModelTypes.HarnessMCPServer;
+    advanced_chat_files: ModelTypes.AdvancedChatFile;
+    advanced_chat_knowledge_bases: ModelTypes.AdvancedChatKnowledgeBase;
+    advanced_chat_memory_documents: ModelTypes.AdvancedChatMemoryDocument;
+    advanced_chat_knowledge_documents: ModelTypes.AdvancedChatKnowledgeDocument;
+    advanced_chat_connector_credentials: ModelTypes.AdvancedChatConnectorCredential;
+    advanced_chat_connector_credential_bindings: ModelTypes.AdvancedChatConnectorCredentialBinding;
+    advanced_chat_skill_packages: ModelTypes.AdvancedChatSkillPackage;
+    advanced_chat_packaged_skills: ModelTypes.AdvancedChatPackagedSkill;
+    advanced_chat_knowledge_chunks: ModelTypes.AdvancedChatKnowledgeChunk;
+    advanced_chat_run_events: ModelTypes.AdvancedChatRunEvent;
+    advanced_chat_chat_groups: ModelTypes.AdvancedChatChatGroup;
+    advanced_chat_chat_group_members: ModelTypes.AdvancedChatChatGroupMember;
+    advanced_chat_chat_group_messages: ModelTypes.AdvancedChatChatGroupMessage;
+    advanced_chat_private_conversations: ModelTypes.AdvancedChatPrivateConversation;
+    advanced_chat_private_messages: ModelTypes.AdvancedChatPrivateMessage;
+    advanced_chat_scheduled_tasks: ModelTypes.AdvancedChatScheduledTask;
+    advanced_chat_deliveries: ModelTypes.AdvancedChatDelivery;
+    advanced_chat_workspaces: ModelTypes.AdvancedChatWorkspace;
+    advanced_chat_workspace_files: ModelTypes.AdvancedChatWorkspaceFile;
+    advanced_chat_session_tasks: ModelTypes.AdvancedChatSessionTask;
+    advanced_chat_session_folders: ModelTypes.AdvancedChatSessionFolder;
+  }
+}
 
 export interface AdvancedChatConfig {
   enabled: boolean;
@@ -99,14 +134,14 @@ export interface AdvancedChatService {
     deviceId: string,
     action: string,
     payload: Record<string, unknown>,
-  ): Promise<import("@velocelab/model").HarnessConnectorTask>;
+  ): Promise<import("@velocelab/model-catalog").HarnessConnectorTask>;
   listScheduledTasks(
     userId: number,
-  ): Promise<import("@velocelab/model").AdvancedChatScheduledTask[]>;
+  ): Promise<import("@velocelab/model-catalog").AdvancedChatScheduledTask[]>;
   createScheduledTask(
     userId: number,
     input: ScheduledTaskInput,
-  ): Promise<import("@velocelab/model").AdvancedChatScheduledTask>;
+  ): Promise<import("@velocelab/model-catalog").AdvancedChatScheduledTask>;
   authenticateConnector(
     token: string,
   ): Promise<HarnessConnectorDevice | undefined>;
@@ -116,7 +151,7 @@ export interface AdvancedChatService {
   ): Promise<HarnessConnectorDevice | undefined>;
   nextConnectorTask(
     token: string,
-  ): Promise<import("@velocelab/model").HarnessConnectorTask | undefined>;
+  ): Promise<import("@velocelab/model-catalog").HarnessConnectorTask | undefined>;
   completeConnectorTask(
     token: string,
     taskId: string,

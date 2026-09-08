@@ -8,7 +8,7 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@velocelab/model": "workspace:*",
+    "@velocelab/model-catalog": "workspace:*",
     "bcryptjs": "^3.0.2"
   },
   "peerDependencies": {

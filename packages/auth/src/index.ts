@@ -1,8 +1,20 @@
 import { Context, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
-import { ModelService } from "@velocelab/model";
+import { ModelService } from "@velocelab/model-catalog";
 import { ServiceRegistry } from "@velocelab/service";
 import "@velocelab/dashboard";
+import "@velocelab/database-core";
+import { EmailVerificationCode, PhoneVerificationCode, OIDCBindRequest, WebAuthnChallenge, PasskeyCredential } from "@velocelab/model-catalog";
+
+declare module "@yumerijs/types" {
+  interface Tables {
+    email_verification_codes: EmailVerificationCode;
+    phone_verification_codes: PhoneVerificationCode;
+    oidc_bind_requests: OIDCBindRequest;
+    webauthn_challenges: WebAuthnChallenge;
+    passkey_credentials: PasskeyCredential;
+  }
+}
 export const depend = ["service", "user", "model", "dashboard"];
 export const provide = ["auth"];
 export interface AuthConfig {
@@ -20,7 +32,23 @@ declare module "yumeri" {
   }
 }
 
-export function apply(ctx: Context, cfg: AuthConfig) {
+export async function apply(ctx: Context, cfg: AuthConfig) {
+  const db = ctx.component.database;
+  await db.extend("email_verification_codes", {
+    id: { type: "integer", autoIncrement: true }, email: { type: "string", nullable: false }, code_hash: { type: "string", nullable: false }, purpose: { type: "string", nullable: false }, hcaptcha_verified: { type: "boolean", initial: false }, expires_at: "timestamp", used_at: "timestamp", created_at: "timestamp",
+  });
+  await db.extend("phone_verification_codes", {
+    id: { type: "integer", autoIncrement: true }, phone: { type: "string", nullable: false }, code_hash: { type: "string", nullable: false }, purpose: { type: "string", nullable: false }, hcaptcha_verified: { type: "boolean", initial: false }, expires_at: "timestamp", used_at: "timestamp", created_at: "timestamp",
+  });
+  await db.extend("oidc_bind_requests", {
+    state: { type: "string", nullable: false }, user_id: { type: "integer", nullable: false }, expires_at: "timestamp", created_at: "timestamp",
+  }, { unique: ["state"] });
+  await db.extend("webauthn_challenges", {
+    id: { type: "integer", autoIncrement: true }, challenge: { type: "string", nullable: false }, purpose: { type: "string", nullable: false }, user_id: "integer", rp_id: { type: "string", nullable: false }, origin: { type: "string", nullable: false }, expires_at: "timestamp", created_at: "timestamp",
+  }, { unique: ["challenge"] });
+  await db.extend("passkey_credentials", {
+    id: { type: "integer", autoIncrement: true }, user_id: { type: "integer", nullable: false }, name: { type: "string", nullable: false }, credential_id: { type: "text", nullable: false }, public_key_cose: { type: "text", nullable: false }, aaguid: "text", sign_count: "integer", last_used_at: "timestamp", created_at: "timestamp", updated_at: "timestamp",
+  }, { unique: ["credential_id"] });
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("../frontend/auth.js", import.meta.url).pathname,

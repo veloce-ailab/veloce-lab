@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { Context, Database, Schema, Session } from "yumeri";
+import { Context, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
-import "@velocelab/model";
+import "@velocelab/model-catalog";
+interface ScheduledTaskRun { id?: number; task_name: string; status: string; trigger: string; node_name: string; message: string; duration_ms: number; started_at: string; created_at: string }
+declare module "@yumerijs/types" { interface Tables { scheduled_task_runs: ScheduledTaskRun } }
 export const depend = ["dashboard", "database", "advanced-chat", "model"];
 export const provide = ["scheduler"];
 export interface ScheduledJob {
@@ -26,7 +28,7 @@ declare module "yumeri" {
     scheduler: SchedulerService;
   }
 }
-export function apply(ctx: Context, cfg: SchedulerConfig) {
+export async function apply(ctx: Context, cfg: SchedulerConfig) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("../frontend/scheduler.js", import.meta.url).pathname,
@@ -58,7 +60,18 @@ export function apply(ctx: Context, cfg: SchedulerConfig) {
     },
   };
   ctx.registerComponent("scheduler", service);
-  const db = ctx.component.database as Database;
+  const db = ctx.component.database;
+  await db.extend("scheduled_task_runs", {
+    id: { type: "integer", autoIncrement: true },
+    task_name: "string",
+    status: "string",
+    trigger: "string",
+    node_name: "string",
+    message: "string",
+    duration_ms: "bigint",
+    started_at: "timestamp",
+    created_at: "timestamp",
+  });
   const chat = ctx.component["advanced-chat"];
   const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
   const dispatchDue = async () => {

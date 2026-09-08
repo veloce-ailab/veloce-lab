@@ -14,7 +14,6 @@
       "tls": false
     },
     "@velocelab/sqlite": { "path": "./data/veloce.db" },
-    "@velocelab/model": {},
     "@velocelab/dashboard": { "enabled": true },
     "@velocelab/community": { "enabled": true },
     "@velocelab/knowledge": { "enabled": true },
