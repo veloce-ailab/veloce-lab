@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ComponentType } from "react"
 
-export type DashboardSlotName =
+export type DashboardSlotName = string
   | "app.before" | "app.after"
   | "header.before" | "header.brand.after" | "header.nav" | "header.actions" | "header.after"
   | "sidebar.before" | "sidebar.navigation.before" | "sidebar.navigation.after" | "sidebar.footer" | "sidebar.after"
@@ -12,6 +12,7 @@ export interface DashboardSlotRegistration {
   slot: DashboardSlotName
   component: ComponentType<Record<string, unknown>>
   order?: number
+  scope?: string
 }
 
 const entries = new Map<string, DashboardSlotRegistration>()
@@ -24,8 +25,8 @@ export const dashboardSlots = {
     notify()
     return () => { entries.delete(entry.id); notify() }
   },
-  list(slot: DashboardSlotName) {
-    return [...entries.values()].filter((entry) => entry.slot === slot).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  list(slot: DashboardSlotName, scope?: string) {
+    return [...entries.values()].filter((entry) => entry.slot === slot && entry.scope === scope).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   },
 }
 
@@ -35,9 +36,9 @@ export function DashboardSlotProvider({ children }: { children: React.ReactNode 
   useEffect(() => { const listener = () => setRevision((value) => value + 1); listeners.add(listener); return () => { listeners.delete(listener) } }, [])
   return <SlotContext.Provider value={revision}>{children}</SlotContext.Provider>
 }
-export function DashboardSlot({ name, className }: { name: DashboardSlotName; className?: string }) {
+export function DashboardSlot({ name, className, scope }: { name: DashboardSlotName; className?: string; scope?: string }) {
   const revision = useContext(SlotContext)
-  const items = useMemo(() => dashboardSlots.list(name), [name, revision])
+  const items = useMemo(() => dashboardSlots.list(name, scope), [name, scope, revision])
   if (!items.length) return null
   return <div className={className} data-dashboard-slot={name}>{items.map(({ id, component: Component }) => <Component key={id} />)}</div>
 }

@@ -51,33 +51,19 @@ function App() {
                   <Routes>
                       {extensionRoutes().map((route) => {
                         const Component = route.component;
-                        return (
-                          <Route
-                            key={route.path}
-                            path={route.path}
-                            element={
-                              <Layout><Component /></Layout>
-                            }
-                          />
-                        );
+                        return <Route key={route.path} path={route.path} element={route.shell === "owned" ? <Component /> : <Layout><Component /></Layout>} />;
                       })}
                       {/* Settings and admin pages are owned by feature plugins. */}
                       <Route
                         path="/"
                         element={
-                          <Navigate to="/dashboard" replace />
-                        }
-                      />
-                      <Route
-                        path="/dashboard"
-                        element={
-                          <Layout><div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Dashboard</div></Layout>
+                          <Navigate to="/chat" replace />
                         }
                       />
                       <Route
                         path="*"
                         element={
-                          <Navigate to="/dashboard" replace />
+                          <Navigate to="/chat" replace />
                         }
                       />
                     </Routes>

@@ -5,7 +5,7 @@ import { MessageSquare } from "lucide-react";
 import ConnectorCredentials from "./pages/ConnectorCredentials";
 
 defineExtension((api) => {
-  api.route({ path: "/chat/*", component: AdvancedChat, protected: true });
+  api.route({ path: "/chat/*", component: AdvancedChat, protected: true, shell: "owned" });
   api.route({ path: "/settings/chat", component: AdvancedChatManagement, protected: true });
   api.nav({ id: "advanced-chat", label: "聊天", path: "/chat", icon: MessageSquare, order: 10 });
   api.route({ path: "/settings/credentials", component: ConnectorCredentials, protected: true });
