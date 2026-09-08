@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Context, Database, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
-import "@velocelab/model-catalog";
+import "@velocelab/advanced-chat";
 import { McpClient } from "./client.js";
 export const depend = ["dashboard", "advanced-chat", "database"];
 export const provide = ["mcp"];

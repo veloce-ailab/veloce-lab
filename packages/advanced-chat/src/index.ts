@@ -7,8 +7,8 @@ import type {
   HarnessConnectorDevice,
   HarnessSession,
   AdvancedChatSessionFolder,
-} from "@velocelab/model-catalog";
-import type * as ModelTypes from "@velocelab/model-catalog";
+} from "./types.js";
+import type * as ModelTypes from "./types.js";
 import { registerAdvancedChatRoutes } from "./routes.js";
 import { registerStudioTools } from "./studio.js";
 import { registerAskUserTool } from "./ask-user.js";
@@ -21,11 +21,16 @@ import "@velocelab/dashboard";
 import "@velocelab/file";
 import "@velocelab/database-core";
 
+export * from "./types.js";
+
 export const depend = ["database", "dashboard", "file"];
 export const provide = ["advanced-chat"];
 
 declare module "@yumerijs/types" {
   interface Tables {
+    channels: ModelTypes.Channel;
+    models: ModelTypes.Model;
+    model_configs: ModelTypes.ModelConfig;
     advanced_chat_agents: ModelTypes.HarnessAgent;
     advanced_chat_connector_devices: ModelTypes.HarnessConnectorDevice;
     advanced_chat_connector_tasks: ModelTypes.HarnessConnectorTask;
@@ -133,14 +138,14 @@ export interface AdvancedChatService {
     deviceId: string,
     action: string,
     payload: Record<string, unknown>,
-  ): Promise<import("@velocelab/model-catalog").HarnessConnectorTask>;
+  ): Promise<ModelTypes.HarnessConnectorTask>;
   listScheduledTasks(
     userId: number,
-  ): Promise<import("@velocelab/model-catalog").AdvancedChatScheduledTask[]>;
+  ): Promise<ModelTypes.AdvancedChatScheduledTask[]>;
   createScheduledTask(
     userId: number,
     input: ScheduledTaskInput,
-  ): Promise<import("@velocelab/model-catalog").AdvancedChatScheduledTask>;
+  ): Promise<ModelTypes.AdvancedChatScheduledTask>;
   authenticateConnector(
     token: string,
   ): Promise<HarnessConnectorDevice | undefined>;
@@ -150,7 +155,7 @@ export interface AdvancedChatService {
   ): Promise<HarnessConnectorDevice | undefined>;
   nextConnectorTask(
     token: string,
-  ): Promise<import("@velocelab/model-catalog").HarnessConnectorTask | undefined>;
+  ): Promise<ModelTypes.HarnessConnectorTask | undefined>;
   completeConnectorTask(
     token: string,
     taskId: string,

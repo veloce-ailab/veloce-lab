@@ -2,6 +2,8 @@ import { Context, Session } from "yumeri";
 import type { User, UserAvatar, Group, UserGroupMembership, UserChannel, UserChannelGroupAccess, UserChannelUserAccess, CheckInRecord } from "./types.js";
 import "@velocelab/database-core";
 
+export type { User, UserAvatar, Group, UserGroupMembership, UserChannel, UserChannelGroupAccess, UserChannelUserAccess, CheckInRecord } from "./types.js";
+
 declare module "@yumerijs/types" {
   interface Tables {
     users: User;

@@ -1,7 +1,7 @@
 import { Context, Database, Session } from "yumeri";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
-import "@velocelab/model-catalog";
+import "@velocelab/advanced-chat";
 export const depend = ["dashboard", "database"];
 export const provide = ["connector"];
 export interface ConnectorService {

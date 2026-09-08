@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Context, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
-import "@velocelab/model-catalog";
+import "@velocelab/advanced-chat";
 interface ScheduledTaskRun { id?: number; task_name: string; status: string; trigger: string; node_name: string; message: string; duration_ms: number; started_at: string; created_at: string }
 declare module "@yumerijs/types" { interface Tables { scheduled_task_runs: ScheduledTaskRun } }
 export const depend = ["dashboard", "database", "advanced-chat"];

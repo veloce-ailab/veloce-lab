@@ -7,12 +7,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Context, Database, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
-import { ModelService, User } from "@velocelab/model-catalog";
+import { User } from "@velocelab/user";
 
 
 export const depend = [
-  "model",
   "database",
+  "user",
 ];
 export const provide = ["service"];
 
@@ -170,12 +170,12 @@ function verifyJwt(token: string, secret: string): number | undefined {
 }
 
 export async function apply(ctx: Context, cfg: ServiceConfig) {
-  const model = ctx.component.model as ModelService;
+  const users = ctx.component.user;
   const db = ctx.component.database as Database;
   const jwtSecret = await resolveJwtSecret(cfg);
   const service: ServiceRegistry = {
     names: () => ["auth", "billing", "chat"],
-    initialSetupRequired: async () => !(await model.users.findAdmin()),
+    initialSetupRequired: async () => !(await users.findAdmin()),
     async setupInitialAdmin(input) {
       const username = input.username.trim();
       const email = input.email.trim().toLowerCase();
@@ -186,8 +186,8 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
         throw Error("password must be at least 8 characters");
       if (!(await service.initialSetupRequired()))
         throw Error("Initial setup is already complete");
-      const defaultGroup = await model.groups.ensureDefault();
-      const user = await model.users.create({
+      const defaultGroup = await users.ensureDefaultGroup();
+      const user = await users.create({
         username,
         email,
         phone: null,
@@ -206,14 +206,14 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     async loginWithPassword(identifier, password) {
       if (await service.initialSetupRequired())
         throw Error("initial setup is required");
-      const user = await model.users.findByIdentifier(identifier.trim());
+      const user = await users.findByIdentifier(identifier.trim());
       if (!user || !verifyPassword(password, user.password_hash))
         throw Error("invalid username/email or password");
       return { user, token: issueToken(user, jwtSecret) };
     },
     async verifyToken(authToken) {
       const userId = verifyJwt(authToken, jwtSecret);
-      return userId ? model.users.findById(userId) : undefined;
+      return userId ? users.findById(userId) : undefined;
     },
     publicConfiguration: () => ({
       authAgreementMode: cfg.authAgreementMode,
@@ -235,7 +235,7 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
 
   // Model synchronization routes are owned by model-catalog.
   return;
-
+/*
   ctx.route("/api/models/sync/preview").methods("POST").action(async (session) => {
     const user = await authenticate(session);
     if (!user?.is_admin) return;
@@ -371,4 +371,5 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
       results: [{ channel_id: channelId, source: "upstream", created, updated }],
     }, "json");
   });
+*/
 }

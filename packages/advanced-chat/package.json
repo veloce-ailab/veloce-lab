@@ -10,7 +10,7 @@
   "dependencies": {
     "@velocelab/adapters": "workspace:*",
     "@velocelab/file": "workspace:*",
-    "@velocelab/model-catalog": "workspace:*"
+    "@velocelab/user": "workspace:*"
   },
   "devDependencies": {
     "@tanstack/react-query": "^5.100.14",
