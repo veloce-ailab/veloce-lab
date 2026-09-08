@@ -1,6 +1,7 @@
 import { Context, Schema } from "yumeri";
-import type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask } from "@velocelab/model-catalog";
+import type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask } from "./types.js";
 import "@velocelab/database-core";
+export type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask } from "./types.js";
 
 declare module "@yumerijs/types" {
   interface Tables {
