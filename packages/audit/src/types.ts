@@ -1,0 +1,1 @@
+export interface AuditLog { id?: number; log_type: string; action: string; resource: string; user_id?: number | null; api_key_id?: number | null; method: string; path: string; query: string; status_code: number; ip_address: string; user_agent: string; message: string; metadata: string; duration_ms: number; created_at: string; }
