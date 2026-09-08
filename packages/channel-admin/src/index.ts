@@ -1,8 +1,13 @@
 import { Context, Database, Session } from "yumeri";
-import type { Channel, Model } from "./types.js";
+import type { Channel, Model, ModelConfig } from "./types.js";
 import type { TokenLog } from "@velocelab/billing";
 import "@velocelab/dashboard";
 import "@velocelab/billing";
+import "@velocelab/database-core";
+
+declare module "@yumerijs/types" {
+  interface Tables { channels: Channel; models: Model; model_configs: ModelConfig; }
+}
 
 export const depend = ["database", "dashboard", "billing"];
 export const provide = ["channel-admin"];
