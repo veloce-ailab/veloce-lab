@@ -4,7 +4,7 @@ import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/model-catalog";
 import "@velocelab/connector";
 import "@velocelab/file";
-export const depend = ["database", "dashboard", "model", "connector", "file"];
+export const depend = ["database", "dashboard", "connector", "file"];
 export const provide = ["workspace"];
 export interface WorkspaceService {
   list(userId: number): Promise<any[]>;

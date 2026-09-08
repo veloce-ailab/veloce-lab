@@ -8,7 +8,7 @@ import "@velocelab/database-core";
 const communityKnowledgeAPIBaseURL = "https://veloce-community.flweb.cn/api/v1";
 const maxCommunityKnowledgeImport = 32 << 20;
 const communityKnowledgeNotFound = Symbol("community-knowledge-not-found");
-export const depend = ["database", "dashboard", "file", "model"];
+export const depend = ["database", "dashboard", "file"];
 export const provide = ["knowledge"];
 export interface KnowledgeService {
   list(userId: number): Promise<any[]>;

@@ -4,7 +4,7 @@ import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/model-catalog";
 import { McpClient } from "./client.js";
-export const depend = ["dashboard", "advanced-chat", "database", "model"];
+export const depend = ["dashboard", "advanced-chat", "database"];
 export const provide = ["mcp"];
 export interface McpServer {
   id: string;

@@ -21,7 +21,7 @@ import "@velocelab/dashboard";
 import "@velocelab/file";
 import "@velocelab/database-core";
 
-export const depend = ["database", "model", "dashboard", "file"];
+export const depend = ["database", "dashboard", "file"];
 export const provide = ["advanced-chat"];
 
 declare module "@yumerijs/types" {
