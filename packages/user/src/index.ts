@@ -1,5 +1,5 @@
 import { Context, Session } from "yumeri";
-import type { User, UserAvatar, Group, UserGroupMembership, UserChannel, UserChannelGroupAccess, UserChannelUserAccess, CheckInRecord } from "@velocelab/model-catalog";
+import type { User, UserAvatar, Group, UserGroupMembership, UserChannel, UserChannelGroupAccess, UserChannelUserAccess, CheckInRecord } from "./types.js";
 import "@velocelab/database-core";
 
 declare module "@yumerijs/types" {
