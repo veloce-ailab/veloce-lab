@@ -12,7 +12,6 @@ interface ChannelMessage { id?: number; integration_id: number; user_id: number;
 declare module "@yumerijs/types" { interface Tables { message_channel_integrations: ChannelIntegration; message_channel_messages: ChannelMessage } }
 
 export interface ChannelConfig {
-  enabled: boolean;
   contextMessageCount: string;
   webhookPayloadMaxBytes: string;
 }
@@ -41,7 +40,6 @@ export interface ChannelService {
 }
 
 export const config: Schema<ChannelConfig> = Schema.object({
-  enabled: Schema.boolean("Enable message channels").default(true),
   contextMessageCount: Schema.string("Default context message count").default(
     "12",
   ),
@@ -130,7 +128,7 @@ export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
     plugin: "channel",
   });
   ctx.registerComponent("channel", {
-    enabled: () => pluginConfig.enabled,
+    enabled: () => true,
     providers: () => providers.map((provider) => ({ ...provider })),
     normalizeProvider: (provider) =>
       provider.trim().toLowerCase().replaceAll("-", "_"),
@@ -146,7 +144,7 @@ export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
     .route("/api/user/message-channels/settings")
     .methods("GET")
     .action((session) => {
-      session.respond({ enabled: pluginConfig.enabled, providers }, "json");
+      session.respond({ enabled: true, providers }, "json");
     });
   ctx
     .route("/api/user/message-channels")
@@ -315,11 +313,6 @@ export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
     .route("/api/message-channels/:provider/:id/webhook")
     .methods("POST")
     .action(async (session, _params, provider, id) => {
-      if (!pluginConfig.enabled) {
-        session.status = 403;
-        session.respond({ error: "Message channel is disabled" }, "json");
-        return;
-      }
       const integration = await db.selectOne("message_channel_integrations", {
         id: Number(id),
         provider,

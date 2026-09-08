@@ -17,12 +17,8 @@ declare module "@yumerijs/types" {
 }
 export const depend = ["service", "user", "model", "dashboard"];
 export const provide = ["auth"];
-export interface AuthConfig {
-  enabled: boolean;
-}
-export const config: Schema<AuthConfig> = Schema.object({
-  enabled: Schema.boolean("Enable authentication").default(true),
-});
+export interface AuthConfig { }
+export const config: Schema<AuthConfig> = Schema.object({});
 export interface AuthService {
   enabled(): boolean;
 }
@@ -32,7 +28,7 @@ declare module "yumeri" {
   }
 }
 
-export async function apply(ctx: Context, cfg: AuthConfig) {
+export async function apply(ctx: Context) {
   const db = ctx.component.database;
   await db.extend("email_verification_codes", {
     id: { type: "integer", autoIncrement: true }, email: { type: "string", nullable: false }, code_hash: { type: "string", nullable: false }, purpose: { type: "string", nullable: false }, hcaptcha_verified: { type: "boolean", initial: false }, expires_at: "timestamp", used_at: "timestamp", created_at: "timestamp",
@@ -57,17 +53,12 @@ export async function apply(ctx: Context, cfg: AuthConfig) {
   const service = ctx.component.service as ServiceRegistry;
   const model = ctx.component.model as ModelService;
   const revokedTokens = new Set<string>();
-  const auth: AuthService = { enabled: () => cfg.enabled };
+  const auth: AuthService = { enabled: () => true };
   ctx.registerComponent("auth", auth);
   ctx
     .route("/auth/password/login")
     .methods("POST")
     .action(async (session) => {
-      if (!cfg.enabled) {
-        session.status = 404;
-        session.respond({ error: "Authentication is disabled" }, "json");
-        return;
-      }
       try {
         const body = (await session.parseRequestBody()) as any;
         session.respond(
@@ -89,11 +80,6 @@ export async function apply(ctx: Context, cfg: AuthConfig) {
     .route("/auth/password/register")
     .methods("POST")
     .action(async (session) => {
-      if (!cfg.enabled) {
-        session.status = 404;
-        session.respond({ error: "Authentication is disabled" }, "json");
-        return;
-      }
       try {
         const body = (await session.parseRequestBody()) as any;
         const username = String(body.username ?? "").trim();
@@ -147,7 +133,6 @@ export async function apply(ctx: Context, cfg: AuthConfig) {
   ctx.use(
     "authentication",
     async (session: Session, next: () => Promise<void>) => {
-      if (!cfg.enabled) return next();
       const path = session.pathname || "";
       const publicRoute =
         path === "/api/public/settings" ||

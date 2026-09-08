@@ -15,9 +15,7 @@ export interface KnowledgeService {
   create(userId: number, input: Record<string, unknown>): Promise<any>;
   documents(userId: number, baseId: string): Promise<any[]>;
 }
-export const config: Schema<{ enabled: boolean }> = Schema.object({
-  enabled: Schema.boolean("Enable knowledge bases").default(true),
-});
+export const config: Schema<Record<string, never>> = Schema.object({});
 function embedding(text: string) {
   const vector = new Array(32).fill(0);
   for (let index = 0; index < text.length; index += 1)
@@ -109,7 +107,7 @@ declare module "yumeri" {
     knowledge: KnowledgeService;
   }
 }
-export function apply(ctx: Context, cfg: { enabled: boolean }) {
+export function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("../frontend/knowledge.js", import.meta.url).pathname,
@@ -330,11 +328,6 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
     .action(async (s, _p, communityId) => {
       const userId = user(s);
       if (!userId) return;
-      if (!cfg.enabled) {
-        s.status = 403;
-        s.respond({ error: "Community is disabled" }, "json");
-        return;
-      }
       const id = String(communityId ?? "").trim();
       if (!id || id.length > 120) {
         s.status = 400;

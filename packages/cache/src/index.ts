@@ -4,7 +4,6 @@ export const depend: string[] = [];
 export const provide = ["cache"];
 
 export interface CacheConfig {
-  enabled: boolean;
   address: string;
   username: string;
   password: string;
@@ -22,7 +21,6 @@ export interface CacheService {
 }
 
 export const config: Schema<CacheConfig> = Schema.object({
-  enabled: Schema.boolean("Enable Redis cache").default(false),
   address: Schema.string("Redis address").default("127.0.0.1:6379"),
   username: Schema.string("Redis username").default(""),
   password: Schema.string("Redis password").default(""),

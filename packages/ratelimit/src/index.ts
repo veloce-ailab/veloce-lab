@@ -4,7 +4,6 @@ export const depend: string[] = [];
 export const provide = ["ratelimit"];
 
 export interface RateLimitConfig {
-  enabled: boolean;
   requestsPerMinute: string;
   burst: string;
 }
@@ -30,7 +29,6 @@ export interface RateLimitService {
 }
 
 export const config: Schema<RateLimitConfig> = Schema.object({
-  enabled: Schema.boolean("Enable rate limiting").default(true),
   requestsPerMinute: Schema.string("Requests per minute").default("60"),
   burst: Schema.string("Burst size").default("10"),
 });
@@ -85,7 +83,6 @@ export function apply(ctx: Context, pluginConfig: RateLimitConfig) {
 
   ctx.registerComponent("ratelimit", {
     allow(key) {
-      if (!pluginConfig.enabled) return { allowed: true, limit: 0, remaining: 0, retryAfter: 0 };
       const requests = integer(pluginConfig.requestsPerMinute);
       if (requests <= 0) return { allowed: true, limit: 0, remaining: 0, retryAfter: 0 };
       return consume(entries, key, requests + Math.max(0, integer(pluginConfig.burst)), Date.now());

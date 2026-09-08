@@ -59,7 +59,6 @@ declare module "@yumerijs/types" {
 }
 
 export interface AdvancedChatConfig {
-  enabled: boolean;
   connectorOnlineWindowSeconds: string;
   retryAttempts: number;
   assistantRetryAttempts: number;
@@ -252,7 +251,6 @@ export interface ConnectorRegistration {
 }
 
 export const config: Schema<AdvancedChatConfig> = Schema.object({
-  enabled: Schema.boolean("Enable personal Harness").default(true),
   connectorOnlineWindowSeconds: Schema.string(
     "Connector online window seconds",
   ).default("60"),
@@ -378,7 +376,6 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       };
     },
     async createConnector(userId, name, remark) {
-      if (!pluginConfig.enabled) throw Error("personal Harness is disabled");
       if (!adapters) throw Error("upstream adapters are not enabled");
       const trimmedName = name.trim();
       if (!userId || !trimmedName) throw Error("connector name is required");
@@ -886,7 +883,6 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       return changed > 0;
     },
     async complete(userId, input) {
-      if (!pluginConfig.enabled) throw Error("personal Harness is disabled");
       const modelName = input.model.trim();
       if (!modelName || !input.messages.length)
         throw Error("model and messages are required");
