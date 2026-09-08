@@ -8,7 +8,7 @@ export const provide = ["delivery"];
 export function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
-    prod: new URL("../frontend/delivery.js", import.meta.url).pathname,
+    prod: new URL("./frontend/delivery.js", import.meta.url).pathname,
     plugin: "delivery",
   });
   const db = ctx.component.database as Database;

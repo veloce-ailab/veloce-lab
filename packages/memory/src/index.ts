@@ -25,7 +25,7 @@ const kinds = new Set([
 export function apply(ctx: Context, cfg: MemoryConfig) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
-    prod: new URL("../frontend/memory.js", import.meta.url).pathname,
+    prod: new URL("./frontend/memory.js", import.meta.url).pathname,
     plugin: "memory",
   });
   const db = ctx.component.database as Database;

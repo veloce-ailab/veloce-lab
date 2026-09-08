@@ -45,7 +45,7 @@ export async function apply(ctx: Context) {
     checked_at: "timestamp",
     created_at: "timestamp",
   });
-  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/uptime.js", import.meta.url).pathname, plugin: "uptime" });
+  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/uptime.js", import.meta.url).pathname, plugin: "uptime" });
   const service: UptimeService = {
     async list() {
       return db.select("status_monitors", {} as any);

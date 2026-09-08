@@ -309,7 +309,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   );
   dashboard.addEntry({
     dev: path.resolve(packageRoot, "frontend/index.tsx"),
-    prod: path.resolve(packageRoot, "frontend/advanced-chat.js"),
+    prod: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "frontend/advanced-chat.js"),
     plugin: "advanced-chat",
   });
   const tools: ChatToolDefinition[] = [];

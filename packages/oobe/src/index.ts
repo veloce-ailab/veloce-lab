@@ -16,7 +16,7 @@ declare module "yumeri" {
 }
 
 export function apply(ctx: Context) {
-  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/oobe.js", import.meta.url).pathname, plugin: "oobe" });
+  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/oobe.js", import.meta.url).pathname, plugin: "oobe" });
   const service = ctx.component.service as ServiceRegistry;
   const oobe: OobeService = {
     required: () => service.initialSetupRequired(),

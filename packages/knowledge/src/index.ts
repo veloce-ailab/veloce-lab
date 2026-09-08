@@ -110,7 +110,7 @@ declare module "yumeri" {
 export function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
-    prod: new URL("../frontend/knowledge.js", import.meta.url).pathname,
+    prod: new URL("./frontend/knowledge.js", import.meta.url).pathname,
     plugin: "knowledge",
   });
   const db = ctx.component.database;

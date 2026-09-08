@@ -13,7 +13,7 @@ export const depend = ["database", "dashboard", "billing"];
 export const provide = ["channel-admin"];
 
 export function apply(ctx: Context) {
-  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/channel-admin.js", import.meta.url).pathname, plugin: "channel-admin" });
+  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/channel-admin.js", import.meta.url).pathname, plugin: "channel-admin" });
   const db = ctx.component.database as Database;
   const channels = {
     list: async () => db.select("channels", {}),

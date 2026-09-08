@@ -25,7 +25,7 @@ declare module "yumeri" {
 export function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
-    prod: new URL("../frontend/mcp.js", import.meta.url).pathname,
+    prod: new URL("./frontend/mcp.js", import.meta.url).pathname,
     plugin: "mcp",
   });
   const servers: McpServer[] = [];
