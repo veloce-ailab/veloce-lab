@@ -2,8 +2,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { Context, Core, Schema, Service, Session } from "yumeri";
+import { Context, Core, Schema, Service, Session, Logger } from "yumeri";
 
+const logger = new Logger("dashboard");
 export const depend: string[] = [];
 export const provide = ["dashboard"];
 
@@ -32,6 +33,25 @@ function stateFor(context: Context): DashboardState {
   return state;
 }
 
+function mimeFor(file: string): string | undefined {
+  const types: Record<string, string> = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".ico": "image/x-icon",
+    ".webp": "image/webp",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+  };
+  return types[path.extname(file).toLowerCase()];
+}
+
 export class Dashboard extends Service implements DashboardService {
   private readonly state: DashboardState;
   private readonly context: Context;
@@ -58,7 +78,7 @@ export class Dashboard extends Service implements DashboardService {
 
   registerAsset(asset: DashboardAsset): () => void {
     const file = /^\/[A-Za-z]:[\\/]/.test(asset.file) ? asset.file.slice(1) : asset.file;
-    const value: DashboardAsset = { ...asset, file, id: asset.id || createHash("md5").update(file).digest("hex") };
+    const value: DashboardAsset = { ...asset, file, mime: asset.mime ?? mimeFor(file), id: asset.id || createHash("md5").update(file).digest("hex") };
     this.state.assets.push(value);
     const remove = () => {
       const index = this.state.assets.indexOf(value);
@@ -115,11 +135,20 @@ export function apply(ctx: Context) {
     if (asset.mime) session.setMime(asset.mime);
     session.sendFile(asset.file);
   });
+  logger.info(`Dashboard web root: ${webRoot}`);
   ctx.route("root").methods("GET").action(async (session: Session) => {
+    logger.info(`Serving dashboard`);
     const requested = session.pathname === "/" ? "index.html" : session.pathname.replace(/^\//, "");
     const safe = requested.includes("..") ? "index.html" : requested;
     const file = path.resolve(webRoot, safe);
-    try { session.file(file, { maxAge: 3600, etag: true }); }
-    catch { session.file(path.resolve(webRoot, "index.html"), { maxAge: 60, etag: true }); }
+    try {
+      const mime = mimeFor(file);
+      if (mime) session.setMime(mime);
+      session.file(file, { maxAge: 3600, etag: true });
+    } catch {
+      const fallback = path.resolve(webRoot, "index.html");
+      session.setMime("text/html; charset=utf-8");
+      session.file(fallback, { maxAge: 60, etag: true });
+    }
   });
 }
