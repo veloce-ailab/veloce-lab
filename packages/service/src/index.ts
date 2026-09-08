@@ -233,6 +233,9 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
     return user;
   };
 
+  // Model synchronization routes are owned by model-catalog.
+  return;
+
   ctx.route("/api/models/sync/preview").methods("POST").action(async (session) => {
     const user = await authenticate(session);
     if (!user?.is_admin) return;
