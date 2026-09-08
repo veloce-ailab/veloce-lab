@@ -9,7 +9,6 @@ export const depend = [
   "dashboard",
   "advanced-chat",
   "database",
-  "model",
   "file",
 ];
 export const provide = ["skill"];

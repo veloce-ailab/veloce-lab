@@ -3,7 +3,7 @@ import { Context, Database, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/model-catalog";
 import "@velocelab/advanced-chat";
-export const depend = ["dashboard", "database", "model", "advanced-chat"];
+export const depend = ["dashboard", "database", "advanced-chat"];
 export const provide = ["delivery"];
 export function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
