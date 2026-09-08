@@ -26,10 +26,8 @@ interface CurrentUser {
   is_admin?: boolean;
 }
 
-export function Layout() {
+export function Layout({ children }: { children?: ReactNode }) {
   const location = useLocation();
-  const isChatWorkspace =
-    location.pathname === "/chat" || location.pathname.startsWith("/chat/");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { language } = useI18n();
   const { data: settings } = useQuery<PublicSettings>({
@@ -52,7 +50,7 @@ export function Layout() {
       <DashboardSlot name="header.after" />
 
       <div className="flex min-h-0 flex-1">
-        {!isChatWorkspace && (
+        {
           <ResizableSidebar
             storageKey="main-navigation"
             side="left"
@@ -65,7 +63,7 @@ export function Layout() {
             <Sidebar className="w-full" />
             <DashboardSlot name="sidebar.after" />
           </ResizableSidebar>
-        )}
+        }
 
         <div
           className={cn(
@@ -105,18 +103,16 @@ export function Layout() {
           <div
             className={cn(
               "mx-auto w-full flex-1",
-              isChatWorkspace
-                ? "min-h-0 max-w-none p-0"
-                : "max-w-6xl p-4 sm:p-6 lg:p-8",
+              "max-w-6xl p-4 sm:p-6 lg:p-8",
             )}
           >
             <PageTransition className="page-shell-transition">
               <div
-                className={cn(isChatWorkspace ? "h-full min-h-0" : "space-y-6")}
+                className="space-y-6"
               >
                 <DashboardSlot name="content.header" />
                 <DashboardSlot name="content.toolbar" />
-                <Outlet />
+                {children ?? <Outlet />}
               </div>
             </PageTransition>
           </div>
