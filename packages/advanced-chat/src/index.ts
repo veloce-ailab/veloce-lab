@@ -22,6 +22,11 @@ export const provide = ["advanced-chat"];
 export interface AdvancedChatConfig {
   enabled: boolean;
   connectorOnlineWindowSeconds: string;
+  retryAttempts: number;
+  assistantRetryAttempts: number;
+  retryDelayMs: number;
+  retryMaxDelayMs: number;
+  requestTimeoutMs: number;
 }
 
 export interface AdvancedChatService {
@@ -212,6 +217,15 @@ export const config: Schema<AdvancedChatConfig> = Schema.object({
   connectorOnlineWindowSeconds: Schema.string(
     "Connector online window seconds",
   ).default("60"),
+  retryAttempts: Schema.number("Chat retry attempts").default(3),
+  assistantRetryAttempts: Schema.number("Assistant retry attempts").default(10),
+  retryDelayMs: Schema.number("Chat retry delay milliseconds").default(500),
+  retryMaxDelayMs: Schema.number(
+    "Chat retry maximum delay milliseconds",
+  ).default(30000),
+  requestTimeoutMs: Schema.number("Chat request timeout milliseconds").default(
+    120000,
+  ),
 });
 
 declare module "yumeri" {
@@ -982,6 +996,22 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         `${String(channel.base_url).replace(/\\\/$/, "")}${request.urlPath}`,
         { method: "POST", headers, body: JSON.stringify(request.body) },
         String(input.mode ?? "chat"),
+        {
+          retryAttempts: Math.max(1, Number(pluginConfig.retryAttempts) || 3),
+          assistantRetryAttempts: Math.max(
+            1,
+            Number(pluginConfig.assistantRetryAttempts) || 10,
+          ),
+          retryDelayMs: Math.max(50, Number(pluginConfig.retryDelayMs) || 500),
+          retryMaxDelayMs: Math.max(
+            100,
+            Number(pluginConfig.retryMaxDelayMs) || 30000,
+          ),
+          requestTimeoutMs: Math.max(
+            1000,
+            Number(pluginConfig.requestTimeoutMs) || 120000,
+          ),
+        },
       );
       let streamedContent = "";
       if (
