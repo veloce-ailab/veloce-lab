@@ -167,7 +167,7 @@ export interface ChatToolDefinition {
   parameters: Record<string, unknown>;
   execute?(
     input: unknown,
-    context: { userId: number; sessionId?: string; runId?: string },
+    context: { userId: number; sessionId?: string; runId?: string; agentId?: string },
   ): Promise<unknown>;
 }
 export interface ChatContextProvider {
