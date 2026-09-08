@@ -1,5 +1,6 @@
 import { Context, Database, Session } from "yumeri";
-import { Channel, Model, TokenLog } from "@velocelab/model-catalog";
+import type { Channel, Model } from "@velocelab/model-catalog";
+import type { TokenLog } from "@velocelab/billing";
 import "@velocelab/dashboard";
 import "@velocelab/billing";
 
