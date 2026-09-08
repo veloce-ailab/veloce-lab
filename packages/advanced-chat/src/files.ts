@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Context, Database, Session } from "yumeri";
-import type { FileService } from "@velocelab/file";
+import { FileService } from "@velocelab/file";
 
 const maxFileBytes = 32 << 20;
 const textExtensions = /\.(md|txt|json|csv|xml|yaml|yml|log|ini|toml)$/i;

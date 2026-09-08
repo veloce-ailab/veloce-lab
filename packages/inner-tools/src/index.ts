@@ -1,6 +1,6 @@
 import { Context } from "yumeri";
-import type { ConnectorService } from "@velocelab/connector";
-import type { AdvancedChatService, ChatToolDefinition } from "@velocelab/advanced-chat";
+import { ConnectorService } from "@velocelab/connector";
+import { AdvancedChatService, ChatToolDefinition } from "@velocelab/advanced-chat";
 
 export const depend = ["advanced-chat", "connector"];
 export const provide: string[] = [];

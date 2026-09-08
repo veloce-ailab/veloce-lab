@@ -1,5 +1,5 @@
 import { Context, Session } from "yumeri";
-import type { ModelService, User } from "@velocelab/model";
+import { ModelService, User } from "@velocelab/model";
 
 export const depend = ["model"];
 export const provide = ["user"];

@@ -5,12 +5,12 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json && vite build"
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
   },
   "dependencies": {
-    "@velocelab/model": "workspace:*",
     "@velocelab/connector": "workspace:*",
-    "@velocelab/file": "workspace:*"
+    "@velocelab/file": "workspace:*",
+    "@velocelab/model": "workspace:*"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

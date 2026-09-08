@@ -3,6 +3,7 @@ import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/file";
 import "@velocelab/model";
+import "@velocelab/database-core";
 
 const communityKnowledgeAPIBaseURL = "https://veloce-community.flweb.cn/api/v1";
 const maxCommunityKnowledgeImport = 32 << 20;
@@ -114,7 +115,7 @@ export function apply(ctx: Context, cfg: { enabled: boolean }) {
     prod: new URL("../frontend/knowledge.js", import.meta.url).pathname,
     plugin: "knowledge",
   });
-  const db = ctx.component.database as Database;
+  const db = ctx.component.database;
   const files = ctx.component.file;
   const service: KnowledgeService = {
     list: (userId) =>

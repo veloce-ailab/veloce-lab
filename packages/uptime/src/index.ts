@@ -1,8 +1,12 @@
-import { Context, Database, Session } from "yumeri";
+import { Context, Session } from "yumeri";
 import "@velocelab/dashboard";
+import "@velocelab/database-core";
 
 export const depend = ["database", "dashboard"];
 export const provide = ["uptime"];
+interface StatusMonitor { id?: number; name: string; target_url: string; check_type: string; method: string; interval_seconds: number; retention_hours: number; enabled: boolean; last_status: string; last_latency_ms: number; last_status_code: number; last_message: string; last_checked_at?: string | null; created_at: string; updated_at: string }
+interface StatusCheck { monitor_id: number; status: string; latency_ms: number; status_code: number; message: string; checked_at: string; created_at: string }
+declare module "@yumerijs/types" { interface Tables { status_monitors: StatusMonitor; status_checks: StatusCheck } }
 
 export interface UptimeService {
   list(): Promise<Record<string, unknown>[]>;
@@ -14,7 +18,7 @@ declare module "yumeri" {
 
 export function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("../frontend/uptime.js", import.meta.url).pathname, plugin: "uptime" });
-  const db = ctx.component.database as Database;
+  const db = ctx.component.database;
   const service: UptimeService = {
     async list() {
       return db.select("status_monitors", {} as any);
