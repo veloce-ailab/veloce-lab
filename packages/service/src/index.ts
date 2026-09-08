@@ -7,7 +7,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Context, Database, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
-import { ModelService, User } from "@velocelab/model";
+import { ModelService, User } from "@velocelab/model-catalog";
 
 
 export const depend = [
@@ -174,7 +174,7 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
   const db = ctx.component.database as Database;
   const jwtSecret = await resolveJwtSecret(cfg);
   const service: ServiceRegistry = {
-    names: () => ["auth", "billing", "chat", "plugins"],
+    names: () => ["auth", "billing", "chat"],
     initialSetupRequired: async () => !(await model.users.findAdmin()),
     async setupInitialAdmin(input) {
       const username = input.username.trim();

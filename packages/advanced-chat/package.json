@@ -8,7 +8,9 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
   },
   "dependencies": {
-    "@velocelab/model": "workspace:*"
+    "@velocelab/adapters": "workspace:*",
+    "@velocelab/file": "workspace:*",
+    "@velocelab/model-catalog": "workspace:*"
   },
   "devDependencies": {
     "@tanstack/react-query": "^5.100.14",

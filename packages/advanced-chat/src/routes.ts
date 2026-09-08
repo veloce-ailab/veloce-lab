@@ -6,7 +6,7 @@ export function registerAdvancedChatRoutes(
   ctx: Context,
   service: AdvancedChatService,
 ) {
-  const db = ctx.component.database as import("yumeri").Database;
+  const db = ctx.component.database;
   const user = async (session: Session) => {
     return session.properties.user as { id?: number } | undefined;
   };
@@ -395,133 +395,6 @@ export function registerAdvancedChatRoutes(
       if (current?.id) {
         await service.deleteAgent(current.id, id);
         session.respond({ success: true }, "json");
-      }
-    });
-  const agentGroupRows = async (userId: number) => {
-    const rows = await db.select("plugin_kv", {
-      user_id: userId,
-      plugin_id: "advanced-chat-agent-groups",
-    });
-    return rows.map((row: any) => {
-      try {
-        return JSON.parse(String(row.value_json ?? "{}"));
-      } catch {
-        return { id: row.key, name: row.key, agents: [] };
-      }
-    });
-  };
-  ctx
-    .route("/api/user/advanced-chat/agent-groups")
-    .methods("GET")
-    .action(async (s) => {
-      const current = await user(s);
-      if (current?.id)
-        s.respond({ groups: await agentGroupRows(current.id) }, "json");
-    });
-  ctx
-    .route("/api/user/advanced-chat/agent-groups")
-    .methods("POST")
-    .action(async (s) => {
-      const current = await user(s);
-      if (!current?.id) return;
-      const input = (await body(s)) as any;
-      const id = String(input.id ?? `group-${randomUUID()}`).trim();
-      if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) {
-        s.status = 400;
-        s.respond({ error: "Invalid agent group id" }, "json");
-        return;
-      }
-      const value = {
-        id,
-        name: String(input.name ?? id).slice(0, 120),
-        description: String(input.description ?? "").slice(0, 2000),
-        agents: Array.isArray(input.agents) ? input.agents : [],
-        updated_at: new Date().toISOString(),
-      };
-      await db.create("plugin_kv", {
-        user_id: current.id,
-        plugin_id: "advanced-chat-agent-groups",
-        key: id,
-        value_json: JSON.stringify(value),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      } as any);
-      s.status = 201;
-      s.respond(value, "json");
-    });
-  ctx
-    .route("/api/user/advanced-chat/agent-groups/:id")
-    .methods("GET")
-    .action(async (s, _p, id) => {
-      const current = await user(s);
-      const row: any = current?.id
-        ? await db.selectOne("plugin_kv", {
-            user_id: current.id,
-            plugin_id: "advanced-chat-agent-groups",
-            key: id,
-          })
-        : undefined;
-      if (!row) {
-        s.status = 404;
-        s.respond({ error: "Studio not found" }, "json");
-        return;
-      }
-      try {
-        s.respond(JSON.parse(String(row.value_json)), "json");
-      } catch {
-        s.respond({ id, name: id, agents: [] }, "json");
-      }
-    });
-  ctx
-    .route("/api/user/advanced-chat/agent-groups/:id")
-    .methods("PUT")
-    .action(async (s, _p, id) => {
-      const current = await user(s);
-      if (!current?.id) return;
-      const row: any = await db.selectOne("plugin_kv", {
-        user_id: current.id,
-        plugin_id: "advanced-chat-agent-groups",
-        key: id,
-      });
-      if (!row) {
-        s.status = 404;
-        s.respond({ error: "Studio not found" }, "json");
-        return;
-      }
-      const input = (await body(s)) as any;
-      const value = {
-        id,
-        name: String(input.name ?? id).slice(0, 120),
-        description: String(input.description ?? "").slice(0, 2000),
-        agents: Array.isArray(input.agents) ? input.agents : [],
-        updated_at: new Date().toISOString(),
-      };
-      await db.update(
-        "plugin_kv",
-        {
-          user_id: current.id,
-          plugin_id: "advanced-chat-agent-groups",
-          key: id,
-        },
-        {
-          value_json: JSON.stringify(value),
-          updated_at: new Date().toISOString(),
-        },
-      );
-      s.respond(value, "json");
-    });
-  ctx
-    .route("/api/user/advanced-chat/agent-groups/:id")
-    .methods("DELETE")
-    .action(async (s, _p, id) => {
-      const current = await user(s);
-      if (current?.id) {
-        await db.remove("plugin_kv", {
-          user_id: current.id,
-          plugin_id: "advanced-chat-agent-groups",
-          key: id,
-        });
-        s.respond({ success: true }, "json");
       }
     });
   ctx

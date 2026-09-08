@@ -3,10 +3,13 @@ import { randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/database-core";
-import "@velocelab/model";
+import "@velocelab/model-catalog";
 
 export const depend = ["database", "dashboard", "advanced-chat"];
 export const provide = ["channel"];
+interface ChannelIntegration { id?: number; user_id: number; name: string; provider: string; bot_token: string; webhook_secret: string; enabled: boolean; default_model: string; [key: string]: unknown }
+interface ChannelMessage { id?: number; integration_id: number; user_id: number; provider: string; [key: string]: unknown }
+declare module "@yumerijs/types" { interface Tables { message_channel_integrations: ChannelIntegration; message_channel_messages: ChannelMessage } }
 
 export interface ChannelConfig {
   enabled: boolean;
@@ -113,13 +116,19 @@ function summary(provider: string, payload: unknown): WebhookSummary {
   };
 }
 
-export function apply(ctx: Context, pluginConfig: ChannelConfig) {
+export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
+  const db = ctx.component.database;
+  await db.extend("message_channel_integrations", {
+    id: { type: "integer", autoIncrement: true }, user_id: { type: "integer", nullable: false }, name: { type: "string", nullable: false }, provider: { type: "string", nullable: false }, bot_token: { type: "text", nullable: false }, webhook_secret: { type: "string", nullable: false }, enabled: { type: "boolean", initial: true }, default_model: "string", created_at: "timestamp", updated_at: "timestamp",
+  }, { unique: [["user_id", "name"], "webhook_secret"] });
+  await db.extend("message_channel_messages", {
+    id: { type: "integer", autoIncrement: true }, integration_id: { type: "integer", nullable: false }, user_id: { type: "integer", nullable: false }, provider: { type: "string", nullable: false }, content: { type: "text", nullable: false }, payload: { type: "text", nullable: false }, created_at: "timestamp",
+  });
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("../frontend/channel.js", import.meta.url).pathname,
     plugin: "channel",
   });
-  const db = ctx.component.database;
   ctx.registerComponent("channel", {
     enabled: () => pluginConfig.enabled,
     providers: () => providers.map((provider) => ({ ...provider })),
