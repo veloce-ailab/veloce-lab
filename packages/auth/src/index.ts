@@ -14,7 +14,7 @@ declare module "@yumerijs/types" {
     passkey_credentials: PasskeyCredential;
   }
 }
-export const depend = ["service", "user", "dashboard"];
+export const depend = ["service", "user", "dashboard", "database"];
 export const provide = ["auth"];
 export interface AuthConfig { }
 export const config: Schema<AuthConfig> = Schema.object({});
