@@ -7,8 +7,8 @@ import "@velocelab/model-catalog";
 
 export const depend = ["database", "dashboard", "advanced-chat"];
 export const provide = ["channel"];
-interface ChannelIntegration { id?: number; user_id: number; name: string; provider: string; bot_token: string; webhook_secret: string; enabled: boolean; default_model: string; [key: string]: unknown }
-interface ChannelMessage { id?: number; integration_id: number; user_id: number; provider: string; [key: string]: unknown }
+interface ChannelIntegration { id?: number; user_id: number; name: string; provider: string; bot_token: string; webhook_secret: string; enabled: boolean; default_model: string; default_device_id?: string | null; default_workspace_path?: string | null; default_workspace_unrestricted?: boolean; default_connector_auto_approve?: boolean; default_connector_command_prefixes?: string; default_agent_key?: string; default_agent_group_id?: string; default_skill_ids?: string; default_context_message_count?: number; reply_mode?: string; trigger_mode?: string; system_prompt?: string; group_configs?: string; advanced_options?: string; last_event_at?: string | null; created_at?: string; updated_at?: string }
+interface ChannelMessage { id?: number; integration_id: number; user_id: number; provider: string; external_chat_id: string; external_user_id: string; external_user_name: string; external_message_id: string; direction: string; status: string; content: string; payload: string; error: string; created_at: string }
 declare module "@yumerijs/types" { interface Tables { message_channel_integrations: ChannelIntegration; message_channel_messages: ChannelMessage } }
 
 export interface ChannelConfig {

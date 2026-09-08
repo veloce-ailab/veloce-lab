@@ -814,8 +814,6 @@ declare module "@yumerijs/types" {
     advanced_chat_workspace_files: AdvancedChatWorkspaceFile;
     advanced_chat_session_tasks: AdvancedChatSessionTask;
     advanced_chat_session_folders: AdvancedChatSessionFolder;
-    message_channel_integrations: MessageChannelIntegration;
-    message_channel_messages: MessageChannelMessage;
   }
   interface Components {
     model: ModelService;
