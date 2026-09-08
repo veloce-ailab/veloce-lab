@@ -15,7 +15,7 @@ declare module "@yumerijs/types" {
   }
 }
 
-export const depend = ["database", "model"];
+export const depend = ["database"];
 export const provide = ["user"];
 export interface UserService {
   current(session: Session): Promise<User | undefined>;
@@ -75,14 +75,20 @@ export async function apply(ctx: Context) {
   await db.extend("user_channel_user_accesses", {
     id: { type: "integer", autoIncrement: true }, user_channel_id: { type: "integer", nullable: false }, user_id: { type: "integer", nullable: false }, created_at: "timestamp", updated_at: "timestamp",
   }, { unique: [["user_channel_id", "user_id"]] });
-  const model = ctx.component.model;
+  const users = {
+    findById: (id: number) => db.selectOne("users", { id }),
+    async update(id: number, data: Partial<User>) {
+      await db.update("users", { id }, { ...data, updated_at: new Date().toISOString() });
+      return db.selectOne("users", { id });
+    },
+  };
   const service: UserService = {
     async current(session) {
       const raw = session.client.req?.headers.cookie ?? "";
       const match = String(raw).match(/(?:^|;\s*)userid=(\d+)/);
       const id = match ? Number(match[1]) : 0;
       if (!id) return undefined;
-      return model.users.findById(id);
+      return users.findById(id);
     },
   };
   ctx.registerComponent("user", service);
@@ -122,7 +128,7 @@ export async function apply(ctx: Context) {
         updates.phone = input.phone.trim().slice(0, 40) || null;
       if (typeof input.avatar_url === "string")
         updates.avatar_url = input.avatar_url.trim().slice(0, 500);
-      const updated = await model.users.update(current.id, updates);
+      const updated = await users.update(current.id, updates);
       session.respond(updated ?? current, "json");
   });
   await db.extend("check_in_records", {
