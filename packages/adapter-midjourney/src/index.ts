@@ -1,5 +1,5 @@
 import { Context } from "yumeri";
-import type { AdapterInput, AdapterRegistry } from "@velocelab/adapters";
+import { AdapterInput, AdapterRegistry } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
 export function apply(ctx: Context) {

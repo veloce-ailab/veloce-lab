@@ -690,6 +690,7 @@ export interface AdvancedChatKnowledgeDocument {
   knowledge_base_id: string;
   user_id: number;
   file_id: string;
+  storage_path: string;
   name: string;
   mime_type: string;
   size: number;
@@ -699,6 +700,7 @@ export interface AdvancedChatKnowledgeDocument {
   embedding_model: string;
   embedding_dim: number;
   chunk_count: number;
+  hash: string;
   embedded_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -828,7 +830,7 @@ export interface ModelService {
   };
 }
 
-declare module "yumeri" {
+declare module "@yumerijs/types" {
   interface Tables {
     users: User;
     user_avatars: UserAvatar;
