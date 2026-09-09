@@ -1,7 +1,13 @@
 export * from "./runtime"
 export * from "./public"
+// `export *` intentionally excludes `default`. Plugin bundles compiled from
+// JSX can still request React's default import, so expose it explicitly from
+// the shared runtime.
+export { default } from "./vendor"
 export {
-  Fragment, StrictMode, createContext, createElement, forwardRef, memo, lazy,
+  Children, Component, PureComponent, Profiler, Suspense,
+  Fragment, StrictMode, createContext, createElement, cloneElement, forwardRef,
+  isValidElement, memo, lazy,
   useCallback, useContext, useDebugValue, useDeferredValue, useEffect, useId,
   useImperativeHandle, useInsertionEffect, useLayoutEffect, useMemo, useReducer,
   useRef, useState, useSyncExternalStore, useTransition, startTransition,
@@ -30,3 +36,12 @@ export {
   RouterRoutes as Routes,
   RouterBrowserRouter as BrowserRouter,
 }
+
+// Explicitly pin names that are also exported by lucide-react or react-router.
+// Rollup otherwise drops the ambiguous star exports from the public runtime,
+// which makes plugin imports such as `Table` fail at browser load time.
+export { Badge } from "./components/ui/badge"
+export { Calendar } from "./components/ui/calendar"
+export { Sheet } from "./components/ui/sheet"
+export { Sidebar } from "./components/ui/sidebar"
+export { Table } from "./components/ui/table"

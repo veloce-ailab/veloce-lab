@@ -3,7 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Brain, FolderKanban, Heart, Home, Lightbulb, Plus, RefreshCw, Save, ScrollText, Shapes, StickyNote, Trash2, UserRound } from "lucide-react"
-import api from "@/lib/api"
+import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"

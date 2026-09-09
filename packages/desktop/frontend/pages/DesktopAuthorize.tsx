@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import api, { getAuthToken } from "@/lib/api"
+import { api, getAuthToken } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { clearDesktopAuthorizeStash, isValidDesktopAuthState, isValidDesktopCodeChallenge, saveDesktopAuthorizeStash } from "@/lib/desktop-authorize"
 

@@ -1,10 +1,12 @@
 import type { ComponentType } from "react"
 
-export interface DashboardRoute { path: string; component: ComponentType; protected?: boolean; shell?: "layout" | "owned" }
+export interface DashboardRoute { path: string; component: ComponentType; shell?: "layout" | "owned" }
 export interface DashboardNavItem { id: string; label: string; path: string; icon?: ComponentType; order?: number; scope?: string }
 export type DashboardSlotName = string
 export interface DashboardExtensionApi {
   route(route: DashboardRoute): () => void
+  /** Koishi-compatible name for registering a routed page. */
+  page(route: DashboardRoute): () => void
   nav(item: DashboardNavItem): () => void
   slot(name: DashboardSlotName, component: ComponentType<Record<string, unknown>>, id: string, order?: number, scope?: string): () => void
 }

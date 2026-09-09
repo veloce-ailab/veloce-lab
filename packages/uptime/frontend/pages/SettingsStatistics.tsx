@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { useMemo, useState } from "react"
-import api from "@/lib/api"
+import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
-import type { ReactNode } from "react"
+import type { Context, ReactNode } from "react"
 import { CheckCircle2, Info, X, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -19,7 +19,10 @@ interface ToastApi {
   info: (message: string) => void
 }
 
-const ToastContext = createContext<ToastApi | null>(null)
+const globalObject = globalThis as typeof globalThis & {
+  __VELOCE_DASHBOARD_TOAST_CONTEXT__?: Context<ToastApi | null>
+}
+const ToastContext = globalObject.__VELOCE_DASHBOARD_TOAST_CONTEXT__ ??= createContext<ToastApi | null>(null)
 
 const AUTO_DISMISS_MS = 3200
 const LEAVE_ANIMATION_MS = 180
