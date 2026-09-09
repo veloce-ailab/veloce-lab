@@ -17,5 +17,6 @@ transfer.md
 /.cache/
 node_modules/
 .yarn/install-state.gz
+.tmp-koishi-webui/
 dist/
 **/dist/
