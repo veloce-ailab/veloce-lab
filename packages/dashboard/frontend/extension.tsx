@@ -5,14 +5,25 @@ import type { DashboardContext as DashboardContextType, DashboardPlugin, Dashboa
 export type { DashboardRoute, DashboardNavItem }
 export interface DashboardExtensionApi { route(route: DashboardRoute): () => void; page(route: DashboardRoute): () => void; nav(item: DashboardNavItem): () => void; slot(name: DashboardSlotName, component: ComponentType<Record<string, unknown>>, id: string, order?: number, scope?: string): () => void }
 
-const registeredRoutes: DashboardRoute[] = []
-const navItems: DashboardNavItem[] = []
-const extensionListeners = new Set<() => void>()
-const notifyExtensions = () => extensionListeners.forEach((listener) => listener())
+interface DashboardExtensionStore {
+  routes: DashboardRoute[]
+  navItems: DashboardNavItem[]
+  listeners: Set<() => void>
+}
+
+const globalObject = globalThis as typeof globalThis & {
+  __VELOCE_DASHBOARD_EXTENSION_STORE__?: DashboardExtensionStore
+}
+const store = globalObject.__VELOCE_DASHBOARD_EXTENSION_STORE__ ??= {
+  routes: [],
+  navItems: [],
+  listeners: new Set<() => void>(),
+}
+const notifyExtensions = () => store.listeners.forEach((listener) => listener())
 export const dashboardExtension: DashboardExtensionApi = {
-  route(route) { registeredRoutes.push(route); notifyExtensions(); return () => { const i = registeredRoutes.indexOf(route); if (i >= 0) registeredRoutes.splice(i, 1); notifyExtensions() } },
+  route(route) { store.routes.push(route); notifyExtensions(); return () => { const i = store.routes.indexOf(route); if (i >= 0) store.routes.splice(i, 1); notifyExtensions() } },
   page(route) { return this.route(route) },
-  nav(item) { navItems.push(item); notifyExtensions(); return () => { const i = navItems.indexOf(item); if (i >= 0) navItems.splice(i, 1); notifyExtensions() } },
+  nav(item) { store.navItems.push(item); notifyExtensions(); return () => { const i = store.navItems.indexOf(item); if (i >= 0) store.navItems.splice(i, 1); notifyExtensions() } },
   slot(name, component, id, order = 0, scope) { return dashboardSlots.register({ id, slot: name, component, order, scope }) },
 }
 export class DashboardContext implements DashboardContextType {
@@ -28,7 +39,7 @@ export class DashboardContext implements DashboardContextType {
   async dispose() { if (this.disposed) return; this.disposed = true; for (const effect of this.effects.splice(0).reverse()) await effect() }
   private track(dispose: () => void) { this.affect(dispose) }
 }
-export function routes() { return [...registeredRoutes] }
-export function nav(scope?: string) { return navItems.filter((item) => item.scope === scope).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) }
-export function subscribeExtensions(listener: () => void) { extensionListeners.add(listener); return () => extensionListeners.delete(listener) }
+export function routes() { return [...store.routes] }
+export function nav(scope?: string) { return store.navItems.filter((item) => item.scope === scope).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) }
+export function subscribeExtensions(listener: () => void) { store.listeners.add(listener); return () => store.listeners.delete(listener) }
 export function defineExtension(setup: (api: DashboardExtensionApi) => void) { return setup }

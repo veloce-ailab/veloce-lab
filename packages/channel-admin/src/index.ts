@@ -4,18 +4,20 @@ import type { TokenLog } from "@velocelab/billing";
 import "@velocelab/dashboard";
 import "@velocelab/billing";
 import "@velocelab/database-core";
+import type { AdapterRegistry } from "@velocelab/adapters";
 
 declare module "@yumerijs/types" {
   interface Tables { channels: Channel; models: Model; model_configs: ModelConfig; }
 }
 
-export const depend = ["database", "dashboard", "billing"];
+export const depend = ["database", "dashboard", "billing", "adapters"];
 export const provide = ["channel-admin"];
 
 export function apply(ctx: Context) {
   ctx.i18n("channelAdmin.settings", { zh: "AI 服务商与模型", en: "AI providers and models", ja: "AIサービスとモデル" });
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/channel-admin.js", import.meta.url).pathname, plugin: "channel-admin" });
   const db = ctx.component.database as Database;
+  const adapters = ctx.component.adapters as AdapterRegistry;
   const channels = {
     list: async () => db.select("channels", {}),
     findById: (id: number) => db.selectOne("channels", { id }),
@@ -30,6 +32,10 @@ export function apply(ctx: Context) {
     (await session.parseRequestBody()) as Record<string, unknown>;
   ctx.registerComponent("channel-admin", {
     list: () => channels.list(),
+  });
+  ctx.route("/api/channel-adapters").methods("GET").action(async (session) => {
+    if (!admin(session)) return;
+    session.respond(adapters.names(), "json");
   });
   ctx.route("/api/channel-usage").methods("GET").action(async (session) => {
     if (!admin(session)) return;

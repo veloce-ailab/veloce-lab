@@ -21,6 +21,7 @@ import type { PublicSettings } from "@/lib/public-settings"
 import { parseTopNavItems, withPublicSettingsDefaults } from "@/lib/public-settings"
 import { cn } from "@/lib/utils"
 import { DashboardSlot } from "@/lib/slots"
+import { nav, subscribeExtensions } from "@velocelab/dashboard/frontend"
 
 interface CurrentUser {
   username?: string
@@ -74,6 +75,22 @@ interface AdvancedChatSidebarGroup {
   id: string
   label: string
   items: AdvancedChatSidebarItem[]
+}
+
+function sidebarItem(item: { path: string; label: string; icon?: LucideIcon }, pathname: string): AdvancedChatSidebarItem {
+  const active = pathname === item.path || pathname.startsWith(`${item.path}/`)
+  return { href: item.path, label: item.label, icon: item.icon || Bot, active }
+}
+
+function chatGroupLabel(group: string, language: string) {
+  const labels: Record<string, [string, string, string]> = {
+    direct: ["直接访问", "Direct", "直接アクセス"],
+    library: ["库", "Library", "ライブラリ"],
+    workflow: ["工作流", "Workflows", "ワークフロー"],
+    agents: ["代理", "Agents", "エージェント"],
+  }
+  const value = labels[group] || [group, group, group]
+  return language === "zh" ? value[0] : language === "ja" ? value[2] : value[1]
 }
 
 export default function AdvancedChat() {
@@ -278,55 +295,19 @@ function AdvancedChatSidebar({
   const location = useLocation()
   const { isMobile, setOpenMobile } = useSidebar()
   const { language, t } = useI18n()
-  const filesLabel = language === "zh" ? "文件库" : "Files"
-  const knowledgeLabel = t("nav.knowledgeBases")
-  const memoriesLabel = language === "zh" ? "记忆" : "Memory"
-  const messageChannelsLabel = language === "zh" ? "消息通道" : "Message Channels"
-  const deliveriesLabel = language === "zh" ? "结果投递" : "Result Delivery"
-  const scheduledTasksLabel = language === "zh" ? "任务" : "Tasks"
-  const agentGroupsLabel = language === "zh" ? "工作室" : "Agent Studios"
-  const workflowLabel = language === "zh" ? "工作流" : language === "ja" ? "ワークフロー" : "Workflows"
-  const agentLabel = language === "zh" ? "代理" : language === "ja" ? "エージェント" : "Agents"
+  const [, refreshNavigation] = useState(0)
+  useEffect(() => subscribeExtensions(() => refreshNavigation((value) => value + 1)), [])
   const homeItem: AdvancedChatSidebarItem = {
     href: "/chat?new_session=1",
     label: language === "zh" ? "主页" : language === "ja" ? "ホーム" : "Home",
     icon: Home,
     active: location.pathname === "/chat" || location.pathname.startsWith("/chat/session/"),
   }
-  const directItems: AdvancedChatSidebarItem[] = [
-    { href: "/chat/community", label: language === "zh" ? "社区" : language === "ja" ? "コミュニティ" : "Community", icon: Users, active: location.pathname === "/chat/community" || location.pathname.startsWith("/chat/community/") },
-    { href: "/chat/groups", label: language === "zh" ? "聊天群组" : "Chat Groups", icon: MessageSquareText, active: location.pathname === "/chat/groups" || location.pathname.startsWith("/chat/groups/") },
-  ]
-  const groups: AdvancedChatSidebarGroup[] = [
-    {
-      id: "library",
-      label: language === "zh" ? "库" : language === "ja" ? "ライブラリ" : "Library",
-      items: [
-        { href: "/chat/files", label: filesLabel, icon: FileText, active: location.pathname === "/chat/files" },
-        { href: "/chat/knowledge", label: knowledgeLabel, icon: Database, active: location.pathname === "/chat/knowledge" },
-      ],
-    },
-    {
-      id: "workflow",
-      label: workflowLabel,
-      items: [
-        ...(publicSettings.message_channel_enabled ? [{ href: "/chat/channels", label: messageChannelsLabel, icon: MessageSquare, active: location.pathname.startsWith("/chat/channels") }] : []),
-        { href: "/chat/deliveries", label: deliveriesLabel, icon: Send, active: location.pathname === "/chat/deliveries" },
-        { href: "/chat/scheduled-tasks", label: scheduledTasksLabel, icon: CalendarClock, active: location.pathname === "/chat/scheduled-tasks" },
-      ],
-    },
-    {
-      id: "agents",
-      label: agentLabel,
-      items: [
-        { href: "/chat/agents", label: t("nav.agents"), icon: Bot, active: location.pathname === "/chat/agents" },
-        { href: "/chat/memories", label: memoriesLabel, icon: Brain, active: location.pathname === "/chat/memories" },
-        { href: "/chat/skills", label: t("nav.skills"), icon: Sparkles, active: location.pathname === "/chat/skills" || location.pathname.startsWith("/chat/skills/") },
-        { href: "/chat/agent-groups", label: agentGroupsLabel, icon: Users, active: location.pathname.startsWith("/chat/agent-groups") },
-        { href: "/chat/mcp", label: t("nav.mcp"), icon: Bot, active: location.pathname === "/chat/mcp" },
-      ],
-    },
-  ].filter((group) => group.items.length > 0)
+  const chatItems = nav("chat")
+  const directItems = chatItems.filter((item) => item.group === "direct").map((item) => sidebarItem(item, location.pathname))
+  const groups = Object.entries(Object.groupBy(chatItems.filter((item) => item.group && item.group !== "direct"), (item) => item.group!))
+    .map(([id, items]) => ({ id, label: chatGroupLabel(id, language), items: items.map((item) => sidebarItem(item, location.pathname)) }))
+    .filter((group) => group.items.length > 0)
   const [selectedGroupID, setSelectedGroupID] = useState("")
   const routeGroup = groups.find((group) => group.items.some((item) => item.active || item.children?.some((child) => location.pathname === child.href)))
   const activeGroup = groups.find((group) => group.id === selectedGroupID) || routeGroup
