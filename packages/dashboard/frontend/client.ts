@@ -8,8 +8,25 @@ export {
   createRoot, hydrateRoot, createPortal, jsx, jsxs, FragmentJSX, jsxDEV,
 } from "./vendor"
 export * from "./vendor"
+import {
+  BrowserRouter as RouterBrowserRouter,
+  Link as RouterLink,
+  NavLink as RouterNavLink,
+  Navigate as RouterNavigate,
+  Outlet as RouterOutlet,
+  Route as RouterRoute,
+  Routes as RouterRoutes,
+} from "react-router-dom"
 export * from "react-router-dom"
 export * from "@tanstack/react-query"
 export * from "lucide-react"
 // Keep host framework names deterministic when UI libraries expose the same names.
-export { Link, NavLink, Navigate, Outlet, Route, Routes, BrowserRouter } from "react-router-dom"
+export {
+  RouterLink as Link,
+  RouterNavLink as NavLink,
+  RouterNavigate as Navigate,
+  RouterOutlet as Outlet,
+  RouterRoute as Route,
+  RouterRoutes as Routes,
+  RouterBrowserRouter as BrowserRouter,
+}
