@@ -1,7 +1,7 @@
 import type { ComponentType } from "react"
 
 export interface DashboardRoute { path: string; component: ComponentType; shell?: "layout" | "owned" }
-export interface DashboardNavItem { id: string; label: string; path: string; icon?: ComponentType; order?: number; scope?: string }
+export interface DashboardNavItem { id: string; label: string; path: string; icon?: ComponentType; order?: number; scope?: string; group?: string }
 export type DashboardSlotName = string
 export interface DashboardExtensionApi {
   route(route: DashboardRoute): () => void
