@@ -1,5 +1,6 @@
 export * from "./runtime"
 export * from "./public"
+export { nav, subscribeExtensions } from "./extension"
 // `export *` intentionally excludes `default`. Plugin bundles compiled from
 // JSX can still request React's default import, so expose it explicitly from
 // the shared runtime.

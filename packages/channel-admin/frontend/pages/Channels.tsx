@@ -135,6 +135,10 @@ interface UpstreamChannelUsage extends UsageStats {
   name: string
 }
 
+function normalizeChannelType(value: string) {
+  return value.trim().toLowerCase().replaceAll(" ", "").replaceAll("-", "_")
+}
+
 export default function Channels() {
   const { language, t } = useI18n()
   const currency = useCurrencyDisplayName()
@@ -170,7 +174,18 @@ export default function Channels() {
     },
   })
 
-  const availableProviderTypes = useMemo(() => [...providerTypes, ...pluginTypes], [pluginTypes])
+  const { data: adapterTypes = [] } = useQuery<string[]>({
+    queryKey: ["registered-channel-adapters"],
+    queryFn: async () => {
+      const response = await api.get("/channel-adapters")
+      return Array.isArray(response.data) ? response.data.map(String) : []
+    },
+  })
+
+  const availableProviderTypes = useMemo(() => {
+    const registered = new Set(adapterTypes.map(normalizeChannelType))
+    return [...providerTypes.filter((item) => registered.has(normalizeChannelType(item.value))), ...pluginTypes]
+  }, [adapterTypes, pluginTypes])
 
   const { data: channelUsage = emptyChannelUsage() } = useQuery<ChannelUsageResponse>({
     queryKey: ["admin-channel-usage"],
