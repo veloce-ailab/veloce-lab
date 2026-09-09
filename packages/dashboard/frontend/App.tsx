@@ -12,6 +12,7 @@ import { I18nProvider } from "./lib/i18n";
 import { ThemeProvider } from "./lib/theme";
 import { DashboardSlot, DashboardSlotProvider } from "./lib/slots";
 import { routes as extensionRoutes, subscribeExtensions } from "./extension";
+import { DashboardPluginLoader } from "./plugin-loader";
 import { Layout } from "./components/layout/Layout";
 
 const queryClient = new QueryClient();
@@ -23,20 +24,15 @@ function App() {
     [],
   );
   useEffect(() => {
+    const loader = new DashboardPluginLoader()
+    let active = true
     fetch("/api/dashboard/manifest")
       .then((response) => response.json())
-      .then((manifest: { assets?: Array<{ url: string; mime?: string }> }) => {
-        manifest.assets
-          ?.filter((asset) => asset.mime?.includes("javascript"))
-          .forEach((asset) => {
-            const script = document.createElement("script");
-            script.type = "module";
-            script.src = asset.url;
-            script.dataset.dashboardPlugin = "true";
-            document.head.appendChild(script);
-          });
+      .then((manifest: { assets?: Array<{ id?: string; url: string; mime?: string; plugin?: string; data?: Record<string, unknown> }> }) => {
+        if (active) void loader.sync((manifest.assets ?? []).map((asset, index) => ({ ...asset, id: asset.id || asset.url || String(index) }))).catch(() => undefined)
       })
       .catch(() => undefined);
+    return () => { active = false; void loader.dispose() }
   }, []);
 
   return (

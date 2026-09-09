@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { Context, Core, Schema, Service, Session, Logger } from "yumeri";
 
 const logger = new Logger("dashboard");
@@ -9,8 +9,8 @@ export const depend: string[] = [];
 export const provide = ["dashboard"];
 
 export interface DashboardSlot { id: string; script: string; order?: number; }
-export interface DashboardAsset { id: string; file: string; mime?: string; plugin?: string; }
-export interface DashboardEntry { dev?: string; prod: string; plugin?: string; }
+export interface DashboardAsset { id: string; file: string; mime?: string; plugin?: string; data?: Record<string, unknown>; }
+export interface DashboardEntry { dev?: string | string[]; prod: string | string[]; plugin?: string; data?: Record<string, unknown>; }
 export interface DashboardEntryHandle { id: string; remove(): void; }
 export interface DashboardService {
   registerSlot(slot: DashboardSlot): () => void;
@@ -91,13 +91,24 @@ export class Dashboard extends Service implements DashboardService {
   assets(): DashboardAsset[] { return [...this.state.assets]; }
 
   addEntry(entry: DashboardEntry): DashboardEntryHandle {
-    const id = createHash("md5").update(entry.prod).digest("hex");
-    const removeAsset = this.registerAsset({ id, file: entry.prod, plugin: entry.plugin, mime: "text/javascript; charset=utf-8" });
+    const files = (Array.isArray(entry.prod) ? entry.prod : [entry.prod]).flatMap((file) => {
+      const absolute = /^\/[A-Za-z]:[\\/]/.test(file) ? file.slice(1) : file;
+      if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return [file];
+      return ["index.js", "style.css"].map((name) => path.join(file, name)).filter((name) => existsSync(name));
+    });
+    if (!files.length) throw new Error("Dashboard entry has no files");
+    const id = createHash("md5").update(files.join("\0")).digest("hex");
+    const removeAssets = files.map((file, index) => this.registerAsset({
+      id: index === 0 ? id : `${id}-${index}`,
+      file,
+      plugin: entry.plugin,
+      data: entry.data,
+    }));
     const handle: DashboardEntryHandle = {
       id,
       remove: () => {
         if (!this.state.entries.delete(id)) return;
-        removeAsset();
+        removeAssets.forEach((remove) => remove());
       },
     };
     this.state.entries.set(id, handle);
@@ -122,7 +133,7 @@ export function apply(ctx: Context) {
   const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "web");
 
   ctx.route("/api/dashboard/manifest").methods("GET").action(async (session: Session) => {
-    session.respond({ assets: state.assets.map(({ id, mime, plugin }) => ({ id, mime, plugin, url: `/api/static/plugin?file=${encodeURIComponent(id)}` })) }, "json");
+    session.respond({ assets: state.assets.map(({ id, mime, plugin, data }) => ({ id, mime, plugin, data, url: `/api/static/plugin?file=${encodeURIComponent(id)}` })) }, "json");
   });
   ctx.route("/api/static/plugin").methods("GET").action(async (session: Session, query: URLSearchParams) => {
     const id = query.get("file") ?? "";
@@ -144,7 +155,10 @@ export function apply(ctx: Context) {
     try {
       const mime = mimeFor(file);
       if (mime) session.setMime(mime);
-      session.file(file, { maxAge: 3600, etag: true });
+      // The shared runtime is referenced by a stable URL from every plugin bundle.
+      // Do not let browsers keep an incompatible runtime after an upgrade.
+      const maxAge = safe === "dashboard-client.js" ? 0 : 3600;
+      session.file(file, { maxAge, etag: true });
     } catch {
       const fallback = path.resolve(webRoot, "index.html");
       session.setMime("text/html; charset=utf-8");
