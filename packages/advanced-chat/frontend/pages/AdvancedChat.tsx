@@ -21,7 +21,6 @@ import type { PublicSettings } from "@/lib/public-settings"
 import { parseTopNavItems, withPublicSettingsDefaults } from "@/lib/public-settings"
 import { cn } from "@/lib/utils"
 import { DashboardSlot } from "@/lib/slots"
-import { nav, subscribeExtensions } from "@velocelab/dashboard/frontend/extension"
 
 interface CurrentUser {
   username?: string
@@ -81,8 +80,6 @@ export default function AdvancedChat() {
   const location = useLocation()
   const navigate = useNavigate()
   const { language, t } = useI18n()
-  const [, refreshExtensions] = useState(0)
-  useEffect(() => subscribeExtensions(() => refreshExtensions((value) => value + 1)), [])
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false)
   const [globalSearch, setGlobalSearch] = useState("")
   const { data: globalSessions = [] } = useQuery<GlobalChatSession[]>({
@@ -334,7 +331,6 @@ function AdvancedChatSidebar({
   const routeGroup = groups.find((group) => group.items.some((item) => item.active || item.children?.some((child) => location.pathname === child.href)))
   const activeGroup = groups.find((group) => group.id === selectedGroupID) || routeGroup
   const showingGroup = Boolean(activeGroup)
-  const extensionItems = nav("/chat")
 
   useEffect(() => {
     if (homeItem.active) {
@@ -417,10 +413,6 @@ function AdvancedChatSidebar({
                   <ChevronRight size={15} className="text-muted-foreground" />
                 </Link>
               )
-            })}
-            {extensionItems.map((item) => {
-              const Icon = item.icon
-              return <Link key={item.id} to={item.path} onClick={handleNavigation} className={cn("flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors", location.pathname.startsWith(item.path) ? "bg-muted text-foreground" : "hover:bg-muted")}><span className="flex size-6 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">{Icon ? <Icon size={15} /> : null}</span><span className="flex-1 truncate">{item.label}</span></Link>
             })}
             <DashboardSlot name="sidebar.navigation.after" scope="/chat" />
           </div>
