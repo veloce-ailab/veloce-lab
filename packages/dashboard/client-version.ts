@@ -1,3 +1,2 @@
-// Keep every dashboard bundle on the same React runtime module instance.
-export const dashboardClientVersion = "4r8n6p"
-export const dashboardClientUrl = `/dashboard-client.js?rev=${dashboardClientVersion}`
+// Keep every dashboard bundle on the same stable React runtime URL.
+export const dashboardClientUrl = "/dashboard-client.js"

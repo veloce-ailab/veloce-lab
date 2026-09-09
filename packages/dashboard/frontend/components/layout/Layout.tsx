@@ -29,6 +29,7 @@ interface CurrentUser {
 export function Layout({ children }: { children?: ReactNode }) {
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const isSettingsRoute = location.pathname.startsWith("/settings");
   const { language } = useI18n();
   const { data: settings } = useQuery<PublicSettings>({
     queryKey: ["public-settings"],
@@ -50,7 +51,7 @@ export function Layout({ children }: { children?: ReactNode }) {
       <DashboardSlot name="header.after" />
 
       <div className="flex min-h-0 flex-1">
-        {
+        {!isSettingsRoute && (
           <ResizableSidebar
             storageKey="main-navigation"
             side="left"
@@ -63,9 +64,9 @@ export function Layout({ children }: { children?: ReactNode }) {
             <Sidebar className="w-full" />
             <DashboardSlot name="sidebar.after" />
           </ResizableSidebar>
-        }
+        )}
 
-        <div
+        {!isSettingsRoute && <div
           className={cn(
             "fixed inset-0 top-16 z-40 transition-opacity duration-200 lg:hidden",
             isSidebarOpen
@@ -91,7 +92,7 @@ export function Layout({ children }: { children?: ReactNode }) {
               onNavigate={() => setIsSidebarOpen(false)}
             />
           </div>
-        </div>
+        </div>}
 
         <main
           className={cn(

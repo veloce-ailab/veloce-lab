@@ -28,6 +28,8 @@ export interface UserService {
   create(data: Omit<User, "id" | "created_at" | "updated_at">): Promise<User>;
   update(id: number, data: Partial<User>): Promise<User | undefined>;
 }
+
+const guestUser = { id: 0, is_admin: false } as User;
 declare module "yumeri" {
   interface Components {
     user: UserService;
@@ -109,8 +111,9 @@ export async function apply(ctx: Context) {
       const raw = session.client.req?.headers.cookie ?? "";
       const match = String(raw).match(/(?:^|;\s*)userid=(\d+)/);
       const id = match ? Number(match[1]) : 0;
-      if (!id) return undefined;
-      return users.findById(id);
+      if (!id) return ctx.component.auth ? undefined : guestUser;
+      const user = await users.findById(id);
+      return user ?? (ctx.component.auth ? undefined : guestUser);
     },
   };
   ctx.registerComponent("user", service);
@@ -131,7 +134,7 @@ export async function apply(ctx: Context) {
       const current =
         (session.properties.user as User | undefined) ??
         (await service.current(session));
-      if (!current) {
+      if (!current && ctx.component.auth) {
         session.status = 401;
         session.respond({ error: "Authorization is required" }, "json");
         return;

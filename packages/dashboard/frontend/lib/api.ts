@@ -56,13 +56,6 @@ export const clearAuthToken = () => {
   localStorage.removeItem("token");
   if (isDesktopTarget()) localStorage.removeItem(desktopServerTokenKey());
 };
-export const handleUnauthorized = () => {
-  if (typeof window === "undefined") return;
-  clearAuthToken();
-  if (isDesktopTarget()) window.location.hash = "#/login";
-  else if (window.location.pathname !== "/login")
-    window.location.assign("/login");
-};
 export const setDesktopServerURL = (
   serverURL: string,
   tabID = getDesktopTabID(),
@@ -124,11 +117,4 @@ api.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error?.response?.status === 401) handleUnauthorized();
-    return Promise.reject(error);
-  },
-);
 export default api;

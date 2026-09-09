@@ -52,10 +52,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <>
         {extensionError ? <div role="alert" className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">无法加载插件界面：{extensionError}</div> : null}
-        <DashboardSlot name="app.before" />
         <ThemeProvider>
           <I18nProvider translations={manifest.i18n}>
             <ToastProvider>
+                <DashboardSlot name="app.before" />
                 <BrowserRouter>
                   {extensionsReady ? (
                     <Routes>
@@ -66,10 +66,10 @@ function App() {
                       </Routes>
                   ) : null}
                 </BrowserRouter>
+                <DashboardSlot name="app.after" />
             </ToastProvider>
           </I18nProvider>
         </ThemeProvider>
-        <DashboardSlot name="app.after" />
       </>
     </QueryClientProvider>
   );

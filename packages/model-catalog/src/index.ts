@@ -17,8 +17,7 @@ export async function apply(ctx: Context) {
   const catalog: ModelCatalogService = { list: () => db.select("models", {}) };
   ctx.registerComponent("model-catalog", catalog);
   ctx.route("/api/models").methods("GET").action(async (session: Session) => {
-    const user = session.properties.user as { is_admin?: boolean } | undefined;
-    if (!user) { session.status = 401; session.respond({ error: "Authorization is required" }, "json"); return; }
+    const user = (session.properties.user as { id?: number; is_admin?: boolean } | undefined) ?? { id: 0, is_admin: false };
     if (!user.is_admin) { session.status = 403; session.respond({ error: "Admin access required" }, "json"); return; }
     session.respond(await catalog.list(), "json");
   });
