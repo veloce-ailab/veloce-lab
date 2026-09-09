@@ -6,11 +6,25 @@
     "types": "dist/index.d.ts",
     "exports": {
         ".": "./dist/index.js",
-        "./frontend": "./frontend/extension.tsx",
-        "./frontend/*": "./frontend/*"
+        "./frontend": {
+            "types": "./frontend/client.ts",
+            "default": "./dist/web/dashboard-client.js"
+        },
+        "./frontend/extension": {
+            "types": "./frontend/client.ts",
+            "default": "./dist/web/dashboard-client.js"
+        },
+        "./frontend/runtime": {
+            "types": "./frontend/client.ts",
+            "default": "./dist/web/dashboard-client.js"
+        },
+        "./frontend/client": {
+            "types": "./frontend/client.ts",
+            "default": "./dist/web/dashboard-client.js"
+        }
     },
     "scripts": {
-        "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
+        "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build && ../../node_modules/.bin/vite build --config vite.client.config.ts"
     },
     "peerDependencies": {
         "yumeri": "^3.0.0"

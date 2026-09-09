@@ -1,3 +1,3 @@
-import { defineExtension } from "@velocelab/dashboard/frontend"
+import type { DashboardContext } from "@velocelab/dashboard/frontend"
 import Login from "./pages/Login"
-defineExtension((api) => { api.route({ path: "/login", component: Login }) })
+export function apply(ctx: DashboardContext) { ctx.route({ path: "/login", component: Login }) }

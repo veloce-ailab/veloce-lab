@@ -2765,8 +2765,8 @@ __metadata:
   linkType: hard
 
 "@yumerijs/core@npm:^3.0.0":
-  version: 3.0.2
-  resolution: "@yumerijs/core@npm:3.0.2"
+  version: 3.0.3
+  resolution: "@yumerijs/core@npm:3.0.3"
   dependencies:
     chokidar: "npm:^4.0.3"
     formidable: "npm:^3.5.4"
@@ -2775,13 +2775,13 @@ __metadata:
     picocolors: "npm:^1.1.1"
     semver: "npm:^7.8.4"
     ws: "npm:^8.18.3"
-  checksum: 10c0/b3df5c696e47293254f7ffc2f332309196848b4d6e748959e9fd6070f86f3d41dd591ae82baa19b0de25902e67b12ed37c5dc3b7a65b6cee9c117b0aa21e3b8f
+  checksum: 10c0/36b40ab117b6a014d9419efaf5dd77c45e143b99600abaa0b9ba2b5362964b72a9131070e345a3dbfccb7ccef217438e538ba576004d46a1cbce173064841b7c
   languageName: node
   linkType: hard
 
 "@yumerijs/loader@npm:^3.0.0":
-  version: 3.0.0
-  resolution: "@yumerijs/loader@npm:3.0.0"
+  version: 3.0.1
+  resolution: "@yumerijs/loader@npm:3.0.1"
   dependencies:
     "@types/js-yaml": "npm:^4.0.9"
     "@vue/compiler-sfc": "npm:^3.5.25"
@@ -2790,7 +2790,7 @@ __metadata:
     js-yaml: "npm:^4.1.0"
   peerDependencies:
     "@yumerijs/core": ^3.0.0
-  checksum: 10c0/7476eaf9f62d2d4b40767f1a07114857b23a422e4ca7d9a13eeb4cdb01cf33cb8209b5e9f8f57e63afc76f7975ff7f4ab1d9978820e081d7474503291e112adc
+  checksum: 10c0/9572aaaefe2a9545e7217510f5c8c574d68db3c19aedc3e98e7d1a14464492c82fb8e195d5e40ed2f1587ea411bf4f4e4432134d7dece02445e0e9e6d8a74be7
   languageName: node
   linkType: hard
 

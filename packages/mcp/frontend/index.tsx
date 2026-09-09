@@ -1,2 +1,2 @@
-import { defineExtension } from "@velocelab/dashboard/frontend"; import AdvancedChatMCP from "./pages/AdvancedChatMCP";
-defineExtension(api => api.route({ path: "/chat/mcp", component: AdvancedChatMCP, protected: true }));
+import type { DashboardContext } from "@velocelab/dashboard/frontend"; import AdvancedChatMCP from "./pages/AdvancedChatMCP";
+export function apply(ctx: DashboardContext) { ctx.route({ path: "/chat/mcp", component: AdvancedChatMCP, protected: true }) }

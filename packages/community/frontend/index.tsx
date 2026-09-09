@@ -1,2 +1,2 @@
-import { defineExtension } from "@velocelab/dashboard/frontend"; import Community from "./pages/Community";
-defineExtension(api => api.route({ path: "/community/*", component: Community, protected: true }));
+import type { DashboardContext } from "@velocelab/dashboard/frontend"; import Community from "./pages/Community";
+export function apply(ctx: DashboardContext) { ctx.route({ path: "/community/*", component: Community, protected: true }) }
