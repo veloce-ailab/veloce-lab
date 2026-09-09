@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { api, getAuthToken } from "@/lib/api"
+import { api } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { clearDesktopAuthorizeStash, isValidDesktopAuthState, isValidDesktopCodeChallenge, saveDesktopAuthorizeStash } from "@/lib/desktop-authorize"
 
@@ -26,12 +26,6 @@ export default function DesktopAuthorize() {
     startedRef.current = true
     saveDesktopAuthorizeStash(state, codeChallenge)
 
-    if (!getAuthToken()) {
-      const returnTo = `${location.pathname}${location.search}`
-      navigate(`/login?return_to=${encodeURIComponent(returnTo)}`, { replace: true })
-      return
-    }
-
     void api.post("/user/desktop/authorize", { code_challenge: codeChallenge })
       .then((response) => {
         const code = typeof response.data?.code === "string" ? response.data.code : ""
@@ -48,7 +42,7 @@ export default function DesktopAuthorize() {
       })
   }, [codeChallenge, copy.failed, location.pathname, location.search, navigate, state, validRequest])
 
-  const message = !validRequest ? copy.invalid : errorMessage || (getAuthToken() ? copy.loading : copy.description)
+  const message = !validRequest ? copy.invalid : errorMessage || copy.loading
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-muted/50 p-4">

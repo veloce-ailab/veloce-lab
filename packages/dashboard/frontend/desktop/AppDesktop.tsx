@@ -26,7 +26,6 @@ import { Switch } from "@/components/ui/switch"
 import logoURL from "@/assets/logo.png"
 import type { BuiltinServerStatus, DesktopCurrentUser, DesktopTab, SetupStatus } from "@/desktop/types"
 import { newDesktopTab, normalizeDesktopTabPath, readActiveDesktopTabID, readDesktopTabs, readServerList, serverAccountKey, writeActiveDesktopTabID, writeDesktopTabs, writeServerList } from "@/desktop/storage"
-import { hasAuthToken } from "@/desktop/auth"
 import { DesktopApprovalDecisionBridge, DesktopConnectorBridge, DesktopNavigationBridge, DesktopTransparency, TokenBridge } from "@/desktop/bridges"
 
 const queryClient = new QueryClient()
@@ -38,14 +37,6 @@ const emptyDesktopSettings: DesktopSettings = {
   builtinServerPath: "",
   connectorPath: "",
   preparedUpdate: null,
-}
-
-function ProtectedRoute({ children }: { children: ReactNode }) {
-  const location = useLocation()
-  if (!hasAuthToken()) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />
-  }
-  return <>{children}</>
 }
 
 function SetupGate({ children }: { children: ReactNode }) {
@@ -70,10 +61,6 @@ function SetupGate({ children }: { children: ReactNode }) {
 
   if (data?.required && location.pathname !== "/setup") {
     return <Navigate to="/setup" replace />
-  }
-
-  if (!data?.required && location.pathname === "/setup") {
-    return <Navigate to={hasAuthToken() ? "/chat" : "/login"} replace />
   }
 
   return <>{children}</>
@@ -283,7 +270,7 @@ function DesktopTitleBar({
         onUpdateTabServer(activeTab.id, nextURL)
         setDesktopServerURL(nextURL, activeTab.id)
       }
-      if (!setupStatus?.required && hasAuthToken()) {
+      if (!setupStatus?.required) {
         await api.put("/settings", { system_mode: "personal" }).catch(() => undefined)
       }
       queryClient.clear()
@@ -906,11 +893,10 @@ function DesktopPageRoutes({ className }: { className: string }) {
       <div className={className}>
         <SetupGate>
           <Routes>
-            <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
             <Route path="/setup" element={<Setup />} />
-            <Route path="/settings/*" element={<ProtectedRoute><SettingsWorkspace /></ProtectedRoute>} />
-            <Route path="*" element={<Navigate to={hasAuthToken() ? "/chat" : "/login"} replace />} />
+            <Route path="/settings/*" element={<SettingsWorkspace />} />
+            <Route path="*" element={null} />
           </Routes>
         </SetupGate>
       </div>
