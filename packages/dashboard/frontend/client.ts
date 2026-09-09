@@ -11,3 +11,5 @@ export * from "./vendor"
 export * from "react-router-dom"
 export * from "@tanstack/react-query"
 export * from "lucide-react"
+// Keep host framework names deterministic when UI libraries expose the same names.
+export { Link, NavLink, Navigate, Outlet, Route, Routes, BrowserRouter } from "react-router-dom"
