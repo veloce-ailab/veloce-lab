@@ -14,6 +14,7 @@ import type { PublicSettings } from "@/lib/public-settings"
 import { withPublicSettingsDefaults } from "@/lib/public-settings"
 import { cn } from "@/lib/utils"
 import { DashboardSlot } from "@/lib/slots"
+import { nav, subscribeExtensions } from "@/extension"
 
 interface CurrentUser {
   username?: string
@@ -36,6 +37,7 @@ interface SettingsNavGroup {
 
 export default function SettingsWorkspace() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [, refreshNavigation] = useState(0)
   const location = useLocation()
   const navigate = useNavigate()
   const { language } = useI18n()
@@ -51,6 +53,7 @@ export default function SettingsWorkspace() {
   const publicSettings = withPublicSettingsDefaults(settings)
   const copy = settingsWorkspaceCopy(language)
   const isMemoryRoute = location.pathname === "/settings/memory"
+  useEffect(() => subscribeExtensions(() => refreshNavigation((value) => value + 1)), [])
 
   useEffect(() => {
     if (isDesktopTarget()) {
@@ -127,45 +130,8 @@ function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate
   onNavigate?: () => void
 }) {
   const visibilityClass = className ? "flex flex-col" : "hidden lg:flex lg:flex-col"
-  const groups: SettingsNavGroup[] = [
-    {
-      id: "general",
-      label: copy.general,
-      items: [
-        { href: "/settings/statistics", label: copy.statistics, icon: BarChart3 },
-        { href: "/settings/profile", section: "profile", label: copy.account, icon: UserCircle },
-        { href: "/settings/security", section: "security", label: copy.security, icon: Shield },
-        { href: "/settings/notifications", label: copy.notifications, icon: Bell },
-      ],
-    },
-    {
-      id: "ai",
-      label: copy.aiCategory,
-      items: [
-        { href: "/settings/assistant", section: "assistant", label: copy.assistant, icon: Bot },
-        { href: "/settings/channels", label: copy.channels, icon: Database },
-      ],
-    },
-    {
-      id: "chat",
-      label: copy.chatCategory,
-      items: [
-        { href: "/settings/chat", label: copy.chatSettings, icon: MessageSquare },
-        { href: "/settings/credentials", label: copy.credentials, icon: KeyRound },
-        { href: "/settings/devices", label: copy.devices, icon: Laptop },
-      ],
-    },
-    {
-      id: "system",
-      label: copy.systemCategory,
-      items: [
-        { href: "/settings/system", label: copy.networkProxy, icon: SettingsIcon },
-        { href: "/settings/message-channel", label: copy.messageChannel, icon: MessageSquare },
-        { href: "/settings/theme", label: copy.theme, icon: Palette },
-        { href: "/settings/about", label: copy.about, icon: Shield },
-      ],
-    },
-  ]
+  const registeredItems = nav("settings")
+  const groups = groupSettingsItems(registeredItems, copy)
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([])
   const toggleGroup = (groupID: string) => setCollapsedGroups((current) => current.includes(groupID) ? current.filter((id) => id !== groupID) : [...current, groupID])
   const displayName = user?.username || user?.email || copy.account
@@ -211,6 +177,15 @@ function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate
       </div>
     </aside>
   )
+}
+
+function groupSettingsItems(items: ReturnType<typeof nav>, copy: ReturnType<typeof settingsWorkspaceCopy>): SettingsNavGroup[] {
+  const labels: Record<string, string> = { general: copy.general, ai: copy.aiCategory, chat: copy.chatCategory, system: copy.systemCategory }
+  return Object.entries(Object.groupBy(items, (item) => item.group || "general")).map(([id, groupItems]) => ({
+    id,
+    label: labels[id] || id,
+    items: groupItems.map((item) => ({ href: item.path, label: item.label, icon: item.icon || SettingsIcon })),
+  }))
 }
 
 function settingsWorkspaceCopy(language: string) {
