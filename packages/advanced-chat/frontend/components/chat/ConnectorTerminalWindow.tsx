@@ -6,7 +6,7 @@ import type { IDisposable } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 import { Maximize2, Minimize2, RefreshCw, TerminalSquare, X } from "lucide-react"
-import api from "@/lib/api"
+import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 export interface ConnectorTerminalCopy {

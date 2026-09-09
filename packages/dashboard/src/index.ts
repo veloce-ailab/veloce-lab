@@ -8,27 +8,38 @@ const logger = new Logger("dashboard");
 export const depend: string[] = [];
 export const provide = ["dashboard"];
 
-export interface DashboardSlot { id: string; script: string; order?: number; }
 export interface DashboardAsset { id: string; file: string; mime?: string; plugin?: string; data?: Record<string, unknown>; }
-export interface DashboardEntry { dev?: string | string[]; prod: string | string[]; plugin?: string; data?: Record<string, unknown>; }
+export interface DashboardEntry { id?: string; dev?: string | string[]; prod: string | string[]; plugin?: string; data?: Record<string, unknown>; }
 export interface DashboardEntryHandle { id: string; remove(): void; }
+export interface DashboardManifestFile { id: string; url: string; mime?: string; }
+export interface DashboardManifestEntry { id: string; plugin?: string; data?: Record<string, unknown>; files: DashboardManifestFile[]; }
+export interface DashboardManifest {
+  revision: string;
+  entries: DashboardManifestEntry[];
+  /** Legacy flat asset view kept for older dashboard clients. */
+  assets: Array<DashboardManifestFile & { plugin?: string; data?: Record<string, unknown> }>;
+  i18n: Record<string, Record<string, string>>;
+}
 export interface DashboardService {
-  registerSlot(slot: DashboardSlot): () => void;
-  slots(): DashboardSlot[];
-  registerAsset(asset: DashboardAsset): () => void;
-  assets(): DashboardAsset[];
   addEntry(entry: DashboardEntry): DashboardEntryHandle;
   removeEntry(id: string): boolean;
 }
 
-interface DashboardState { slots: DashboardSlot[]; assets: DashboardAsset[]; entries: Map<string, DashboardEntryHandle>; }
+interface DashboardEntryState {
+  id: string;
+  plugin?: string;
+  data?: Record<string, unknown>;
+  assets: DashboardAsset[];
+  handle: DashboardEntryHandle;
+}
+interface DashboardState { assets: DashboardAsset[]; entries: Map<string, DashboardEntryState>; revision: number; }
 const states = new WeakMap<Core, DashboardState>();
 
 function stateFor(context: Context): DashboardState {
   const core = context.getCore();
   const existing = states.get(core);
   if (existing) return existing;
-  const state: DashboardState = { slots: [], assets: [], entries: new Map() };
+  const state: DashboardState = { assets: [], entries: new Map(), revision: 0 };
   states.set(core, state);
   return state;
 }
@@ -62,44 +73,41 @@ export class Dashboard extends Service implements DashboardService {
     this.state = stateFor(context);
   }
 
-  registerSlot(slot: DashboardSlot): () => void {
-    this.state.slots.push(slot);
-    const remove = () => {
-      const index = this.state.slots.indexOf(slot);
-      if (index >= 0) this.state.slots.splice(index, 1);
-    };
-    this.context.affect(remove);
-    return remove;
-  }
-
-  slots(): DashboardSlot[] {
-    return [...this.state.slots].sort((left, right) => (left.order ?? 0) - (right.order ?? 0));
-  }
-
-  registerAsset(asset: DashboardAsset): () => void {
+  private registerAsset(asset: DashboardAsset): DashboardAsset {
     const file = /^\/[A-Za-z]:[\\/]/.test(asset.file) ? asset.file.slice(1) : asset.file;
     const value: DashboardAsset = { ...asset, file, mime: asset.mime ?? mimeFor(file), id: asset.id || createHash("md5").update(file).digest("hex") };
     this.state.assets.push(value);
-    const remove = () => {
-      const index = this.state.assets.indexOf(value);
-      if (index >= 0) this.state.assets.splice(index, 1);
-    };
-    this.context.affect(remove);
-    return remove;
+    return value;
   }
 
-  assets(): DashboardAsset[] { return [...this.state.assets]; }
-
   addEntry(entry: DashboardEntry): DashboardEntryHandle {
-    const files = (Array.isArray(entry.prod) ? entry.prod : [entry.prod]).flatMap((file) => {
+    // Yumeri serves registered assets through its static route. Until a Vite
+    // middleware is attached, source TS/TSX entries cannot be sent directly
+    // to the browser, so always prefer the built production entry when it is
+    // available and fall back to dev only for local development packages.
+    const production = Array.isArray(entry.prod) ? entry.prod : [entry.prod];
+    const hasProduction = production.some((file) => {
+      const absolute = /^\/[A-Za-z]:[\\/]/.test(file) ? file.slice(1) : file;
+      return existsSync(absolute);
+    });
+    const requested = hasProduction || !entry.dev ? entry.prod : entry.dev;
+    const files = (Array.isArray(requested) ? requested : [requested]).flatMap((file) => {
       const absolute = /^\/[A-Za-z]:[\\/]/.test(file) ? file.slice(1) : file;
       if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return [file];
       return ["index.js", "style.css"].map((name) => path.join(file, name)).filter((name) => existsSync(name));
     });
+    // A library entry commonly emits a sibling stylesheet instead of a
+    // directory containing `style.css`.
+    for (const file of [...files]) {
+      if (!/\.js$/i.test(file)) continue;
+      const css = file.replace(/\.js$/i, ".css");
+      if (existsSync(css) && !files.includes(css)) files.push(css);
+    }
     if (!files.length) throw new Error("Dashboard entry has no files");
-    const id = createHash("md5").update(files.join("\0")).digest("hex");
-    const removeAssets = files.map((file, index) => this.registerAsset({
-      id: index === 0 ? id : `${id}-${index}`,
+    const id = entry.id ?? entry.plugin ?? createHash("md5").update(files.join("\0")).digest("hex");
+    this.removeEntry(id);
+    const assets = files.map((file, index) => this.registerAsset({
+      id: `${id}-${index}`,
       file,
       plugin: entry.plugin,
       data: entry.data,
@@ -107,11 +115,18 @@ export class Dashboard extends Service implements DashboardService {
     const handle: DashboardEntryHandle = {
       id,
       remove: () => {
-        if (!this.state.entries.delete(id)) return;
-        removeAssets.forEach((remove) => remove());
+        const current = this.state.entries.get(id);
+        if (!current || current.handle !== handle) return;
+        this.state.entries.delete(id);
+        current.assets.forEach((asset) => {
+          const index = this.state.assets.indexOf(asset);
+          if (index >= 0) this.state.assets.splice(index, 1);
+        });
+        this.state.revision += 1;
       },
     };
-    this.state.entries.set(id, handle);
+    this.state.entries.set(id, { id, plugin: entry.plugin, data: entry.data, assets, handle });
+    this.state.revision += 1;
     this.context.affect(handle.remove);
     return handle;
   }
@@ -119,7 +134,7 @@ export class Dashboard extends Service implements DashboardService {
   removeEntry(id: string): boolean {
     const entry = this.state.entries.get(id);
     if (!entry) return false;
-    entry.remove();
+    entry.handle.remove();
     return true;
   }
 }
@@ -133,7 +148,20 @@ export function apply(ctx: Context) {
   const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "web");
 
   ctx.route("/api/dashboard/manifest").methods("GET").action(async (session: Session) => {
-    session.respond({ assets: state.assets.map(({ id, mime, plugin, data }) => ({ id, mime, plugin, data, url: `/api/static/plugin?file=${encodeURIComponent(id)}` })) }, "json");
+    const entries = [...state.entries.values()].map((entry) => ({
+      id: entry.id,
+      plugin: entry.plugin,
+      data: entry.data,
+      files: entry.assets.map(({ id, mime }) => ({ id, mime, url: `/api/static/plugin?file=${encodeURIComponent(id)}` })),
+    }));
+    const assets = entries.flatMap((entry) => entry.files.map((file) => ({ ...file, plugin: entry.plugin, data: entry.data })));
+    const manifest: DashboardManifest = {
+      revision: String(state.revision),
+      entries,
+      assets,
+      i18n: ctx.getCore().i18n.all(),
+    };
+    session.respond(manifest, "json");
   });
   ctx.route("/api/static/plugin").methods("GET").action(async (session: Session, query: URLSearchParams) => {
     const id = query.get("file") ?? "";
@@ -157,7 +185,7 @@ export function apply(ctx: Context) {
       if (mime) session.setMime(mime);
       // The shared runtime is referenced by a stable URL from every plugin bundle.
       // Do not let browsers keep an incompatible runtime after an upgrade.
-      const maxAge = safe === "dashboard-client.js" ? 0 : 3600;
+      const maxAge = safe === "dashboard-client.js" || safe === "index.html" ? 0 : 3600;
       session.file(file, { maxAge, etag: true });
     } catch {
       const fallback = path.resolve(webRoot, "index.html");

@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input"
 import { PageTransition } from "@/components/layout/PageTransition"
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
-import api, { apiURL, isDesktopTarget } from "@/lib/api"
+import { api, apiURL, isDesktopTarget } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
 import { parseTopNavItems, withPublicSettingsDefaults } from "@/lib/public-settings"

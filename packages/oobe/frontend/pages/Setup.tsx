@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/components/ui/toast"
-import api, { apiURL, isDesktopTarget, setAuthToken } from "@/lib/api"
+import { api, apiURL, isDesktopTarget, setAuthToken } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 
 interface SetupResponse {

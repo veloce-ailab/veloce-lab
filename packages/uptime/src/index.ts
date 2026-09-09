@@ -17,6 +17,7 @@ declare module "yumeri" {
 }
 
 export async function apply(ctx: Context) {
+  ctx.i18n("uptime.settings", { zh: "统计信息", en: "Statistics", ja: "統計" });
   const db = ctx.component.database;
   await db.extend("status_monitors", {
     id: { type: "integer", autoIncrement: true },

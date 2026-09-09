@@ -1,7 +1,8 @@
 import { createContext, useContext, useMemo, useState } from "react"
-import type { ReactNode } from "react"
+import type { Context, ReactNode } from "react"
 
 export type Language = "zh" | "en" | "ja"
+export type DashboardTranslations = Record<string, Record<string, string>>
 
 const languageStorageKey = "language"
 
@@ -1038,7 +1039,7 @@ const baseTranslations = {
   },
 } as const
 
-export type TranslationKey = keyof typeof baseTranslations.zh
+export type TranslationKey = keyof typeof baseTranslations.zh | (string & {})
 
 const jaTranslations: Record<TranslationKey, string> = {
   ...baseTranslations.en,
@@ -1569,9 +1570,12 @@ interface I18nContextValue {
   t: (key: TranslationKey, params?: Record<string, string | number>) => string
 }
 
-const I18nContext = createContext<I18nContextValue | null>(null)
+const globalObject = globalThis as typeof globalThis & {
+  __VELOCE_DASHBOARD_I18N_CONTEXT__?: Context<I18nContextValue | null>
+}
+const I18nContext = globalObject.__VELOCE_DASHBOARD_I18N_CONTEXT__ ??= createContext<I18nContextValue | null>(null)
 
-export function I18nProvider({ children }: { children: ReactNode }) {
+export function I18nProvider({ children, translations: injectedTranslations = {} }: { children: ReactNode; translations?: DashboardTranslations }) {
   const [language, setLanguageState] = useState<Language>(() => {
     const stored = localStorage.getItem(languageStorageKey)
     return stored === "en" || stored === "zh" || stored === "ja" ? stored : "zh"
@@ -1587,14 +1591,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       language,
       setLanguage,
       t: (key, params) => {
-        let text: string = translations[language][key] ?? translations.zh[key] ?? key
+        const injected = injectedTranslations[key]?.[language] ?? injectedTranslations[key]?.en
+        const localTranslations = translations as Record<string, Record<string, string>>
+        let text: string = injected ?? localTranslations[language]?.[key] ?? localTranslations.zh?.[key] ?? key
         for (const [name, value] of Object.entries(params || {})) {
           text = text.replaceAll(`{${name}}`, String(value))
         }
         return text
       },
     }
-  }, [language])
+  }, [language, injectedTranslations])
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
 }

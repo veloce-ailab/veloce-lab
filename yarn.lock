@@ -2432,7 +2432,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/dashboard@workspace:packages/dashboard":
+"@velocelab/dashboard@workspace:*, @velocelab/dashboard@workspace:packages/dashboard":
   version: 0.0.0-use.local
   resolution: "@velocelab/dashboard@workspace:packages/dashboard"
   dependencies:
@@ -2601,6 +2601,19 @@ __metadata:
   dependencies:
     "@velocelab/user": "workspace:*"
     bcryptjs: "npm:^3.0.2"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/settings@workspace:packages/settings":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/settings@workspace:packages/settings"
+  dependencies:
+    "@velocelab/dashboard": "workspace:*"
+    "@vitejs/plugin-react": "npm:^6.0.1"
+    react: "npm:^19.2.6"
+    vite: "npm:^8.0.12"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown

@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { PageInlineSlot, PageTitleSlot } from "@/components/layout/PageTitleSlot"
-import api from "@/lib/api"
+import { api } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { useToast } from "@/components/ui/toast"
 

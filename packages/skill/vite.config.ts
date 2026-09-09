@@ -1,7 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const client = "/dashboard-client.js";
+import { dashboardClientUrl as client } from "../dashboard/client-version";
 
 export default defineConfig({
   define: { "process.env.NODE_ENV": JSON.stringify("production") },

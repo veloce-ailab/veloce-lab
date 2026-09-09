@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { KeyRound, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { useState } from "react"
-import api from "@/lib/api"
+import { api } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"

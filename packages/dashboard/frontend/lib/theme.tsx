@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react"
-import type { ReactNode } from "react"
+import type { Context, ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import api from "@/lib/api"
 import type { PublicSettings } from "@/lib/public-settings"
@@ -40,7 +40,10 @@ const themeVariableMap: Array<readonly [string, ThemeColorSettingKey, ThemeColor
   ["ring", "theme_light_primary", "theme_dark_primary"],
 ]
 
-const ThemeContext = createContext<ThemeContextValue | null>(null)
+const globalObject = globalThis as typeof globalThis & {
+  __VELOCE_DASHBOARD_THEME_CONTEXT__?: Context<ThemeContextValue | null>
+}
+const ThemeContext = globalObject.__VELOCE_DASHBOARD_THEME_CONTEXT__ ??= createContext<ThemeContextValue | null>(null)
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(getStoredThemeMode)

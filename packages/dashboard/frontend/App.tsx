@@ -2,23 +2,24 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
   BrowserRouter,
-  Navigate,
   Route,
   Routes,
 } from "react-router-dom";
 import { ToastProvider } from "./components/ui/toast";
-import { TooltipProvider } from "./components/ui/tooltip";
-import { I18nProvider } from "./lib/i18n";
+import { I18nProvider } from "@/lib/i18n";
 import { ThemeProvider } from "./lib/theme";
-import { DashboardSlot, DashboardSlotProvider } from "./lib/slots";
+import { DashboardSlot } from "@/lib/slots";
 import { routes as extensionRoutes, subscribeExtensions } from "./extension";
-import { DashboardPluginLoader } from "./plugin-loader";
+import { DashboardPluginLoader, type DashboardManifest } from "./plugin-loader";
 import { Layout } from "./components/layout/Layout";
 
 const queryClient = new QueryClient();
 
 function App() {
   const [, refreshExtensions] = useState(0);
+  const [extensionError, setExtensionError] = useState<string>();
+  const [extensionsReady, setExtensionsReady] = useState(false);
+  const [manifest, setManifest] = useState<DashboardManifest>({});
   useEffect(
     () => subscribeExtensions(() => refreshExtensions((value) => value + 1)),
     [],
@@ -28,48 +29,48 @@ function App() {
     let active = true
     fetch("/api/dashboard/manifest")
       .then((response) => response.json())
-      .then((manifest: { assets?: Array<{ id?: string; url: string; mime?: string; plugin?: string; data?: Record<string, unknown> }> }) => {
-        if (active) void loader.sync((manifest.assets ?? []).map((asset, index) => ({ ...asset, id: asset.id || asset.url || String(index) }))).catch(() => undefined)
+      .then((nextManifest: DashboardManifest) => {
+        if (!active) return
+        setManifest(nextManifest)
+        void loader.sync(nextManifest).catch((error) => {
+          console.error("Failed to load dashboard extension", error)
+          setExtensionError(error instanceof Error ? error.message : String(error))
+        })
+        .finally(() => { if (active) setExtensionsReady(true) })
       })
-      .catch(() => undefined);
+      .catch((error) => {
+        console.error("Failed to load dashboard manifest", error)
+        if (active) {
+          setExtensionError(error instanceof Error ? error.message : String(error))
+          setExtensionsReady(true)
+        }
+      });
     return () => { active = false; void loader.dispose() }
   }, []);
-
+  const registeredRoutes = extensionRoutes();
   return (
     <QueryClientProvider client={queryClient}>
-      <DashboardSlotProvider>
+      <>
+        {extensionError ? <div role="alert" className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">无法加载插件界面：{extensionError}</div> : null}
         <DashboardSlot name="app.before" />
         <ThemeProvider>
-          <I18nProvider>
-            <TooltipProvider>
-              <ToastProvider>
+          <I18nProvider translations={manifest.i18n}>
+            <ToastProvider>
                 <BrowserRouter>
-                  <Routes>
-                      {extensionRoutes().map((route) => {
-                        const Component = route.component;
-                        return <Route key={route.path} path={route.path} element={route.shell === "owned" ? <Component /> : <Layout><Component /></Layout>} />;
-                      })}
-                      {/* Settings and admin pages are owned by feature plugins. */}
-                      <Route
-                        path="/"
-                        element={
-                          <Navigate to="/chat" replace />
-                        }
-                      />
-                      <Route
-                        path="*"
-                        element={
-                          <Navigate to="/chat" replace />
-                        }
-                      />
-                    </Routes>
+                  {extensionsReady ? (
+                    <Routes>
+                        {registeredRoutes.map((route) => {
+                          const Component = route.component;
+                          return <Route key={route.path} path={route.path} element={route.shell === "owned" ? <Component /> : <Layout><Component /></Layout>} />;
+                        })}
+                      </Routes>
+                  ) : null}
                 </BrowserRouter>
-              </ToastProvider>
-            </TooltipProvider>
+            </ToastProvider>
           </I18nProvider>
         </ThemeProvider>
         <DashboardSlot name="app.after" />
-      </DashboardSlotProvider>
+      </>
     </QueryClientProvider>
   );
 }
