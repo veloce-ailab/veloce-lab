@@ -10,7 +10,6 @@ import { useI18n } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
 import { withPublicSettingsDefaults } from "@/lib/public-settings"
 import { cn } from "@/lib/utils"
-import { DashboardSlot } from "@/lib/slots"
 import { DashboardFrameOutlet, nav, subscribeExtensions } from "@/extension"
 
 interface CurrentUser {
@@ -141,7 +140,6 @@ function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate
             </section>
           )
         })}
-        <DashboardSlot name="settings.sidebar" scope="settings" />
       </nav>
       <div className="mt-auto shrink-0 border-t p-3">
         <Link to="/chat" onClick={onNavigate} className="flex h-9 items-center gap-3 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><MessageSquare size={16} /><span>{copy.chat}</span></Link>
