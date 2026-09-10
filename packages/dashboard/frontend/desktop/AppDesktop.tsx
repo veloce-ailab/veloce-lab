@@ -6,7 +6,6 @@ import { Activity, Check, FolderOpen, Globe2, LogOut, PanelTop, Plus, Server, Se
 import Login from "@/pages/Login"
 import Setup from "@/pages/Setup"
 
-import SettingsWorkspace from "@/pages/SettingsWorkspace"
 import api, {
   apiURL,
   getAuthToken,
@@ -27,6 +26,8 @@ import logoURL from "@/assets/logo.png"
 import type { BuiltinServerStatus, DesktopCurrentUser, DesktopTab, SetupStatus } from "@/desktop/types"
 import { newDesktopTab, normalizeDesktopTabPath, readActiveDesktopTabID, readDesktopTabs, readServerList, serverAccountKey, writeActiveDesktopTabID, writeDesktopTabs, writeServerList } from "@/desktop/storage"
 import { DesktopApprovalDecisionBridge, DesktopConnectorBridge, DesktopNavigationBridge, DesktopTransparency, TokenBridge } from "@/desktop/bridges"
+import { DashboardPluginLoader } from "../plugin-loader"
+import { frames as extensionFrames, routes as extensionRoutes, subscribeExtensions } from "../extension"
 
 const queryClient = new QueryClient()
 
@@ -883,6 +884,21 @@ function DesktopRoutes() {
 }
 
 function DesktopPageRoutes({ className }: { className: string }) {
+  const [, refreshExtensions] = useState(0)
+  const [extensionsReady, setExtensionsReady] = useState(false)
+  useEffect(() => subscribeExtensions(() => refreshExtensions((value) => value + 1)), [])
+  useEffect(() => {
+    const loader = new DashboardPluginLoader()
+    let active = true
+    fetch("/api/dashboard/manifest")
+      .then((response) => response.json())
+      .then((manifest) => loader.sync(manifest))
+      .catch((error) => console.error("Failed to load desktop dashboard extensions", error))
+      .finally(() => { if (active) setExtensionsReady(true) })
+    return () => { active = false; void loader.dispose() }
+  }, [])
+  const registeredRoutes = extensionRoutes()
+  const registeredFrames = extensionFrames()
   return (
     <HashRouter>
       <TokenBridge />
@@ -892,12 +908,19 @@ function DesktopPageRoutes({ className }: { className: string }) {
       <DocumentTitle />
       <div className={className}>
         <SetupGate>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/setup" element={<Setup />} />
-            <Route path="/settings/*" element={<SettingsWorkspace />} />
-            <Route path="*" element={null} />
-          </Routes>
+          {extensionsReady ? <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/setup" element={<Setup />} />
+              {registeredRoutes.map((route) => {
+                const Component = route.component
+                return <Route key={route.path} path={route.path} element={route.shell === "owned" ? <Component /> : <Component />} />
+              })}
+              {registeredFrames.map((frame) => {
+                const Component = frame.component
+                return <Route key={frame.id} path={`${frame.path.replace(/\/$/, "")}/*`} element={<Component />} />
+              })}
+              <Route path="*" element={null} />
+            </Routes> : null}
         </SetupGate>
       </div>
     </HashRouter>

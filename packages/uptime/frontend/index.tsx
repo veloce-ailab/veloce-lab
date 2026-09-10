@@ -8,6 +8,6 @@ function UptimeSettingsItem() {
 }
 
 export default function apply(ctx: DashboardContext) {
-  ctx.route({ path: "/settings/statistics", component: SettingsStatistics })
+  ctx.page({ frame: "settings", path: "/settings/statistics", component: SettingsStatistics })
   ctx.slot("settings.sidebar", UptimeSettingsItem, "uptime.settings", 10, "settings")
 }

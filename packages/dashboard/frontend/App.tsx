@@ -9,7 +9,7 @@ import { ToastProvider } from "./components/ui/toast";
 import { I18nProvider } from "@/lib/i18n";
 import { ThemeProvider } from "./lib/theme";
 import { DashboardSlot } from "@/lib/slots";
-import { routes as extensionRoutes, subscribeExtensions } from "./extension";
+import { frames as extensionFrames, routes as extensionRoutes, subscribeExtensions } from "./extension";
 import { DashboardPluginLoader, type DashboardManifest } from "./plugin-loader";
 import { Layout } from "./components/layout/Layout";
 
@@ -48,6 +48,7 @@ function App() {
     return () => { active = false; void loader.dispose() }
   }, []);
   const registeredRoutes = extensionRoutes();
+  const registeredFrames = extensionFrames();
   return (
     <QueryClientProvider client={queryClient}>
       <>
@@ -62,6 +63,11 @@ function App() {
                         {registeredRoutes.map((route) => {
                           const Component = route.component;
                           return <Route key={route.path} path={route.path} element={route.shell === "owned" ? <Component /> : <Layout><Component /></Layout>} />;
+                        })}
+                        {registeredFrames.map((frame) => {
+                          const Component = frame.component;
+                          const path = `${frame.path.replace(/\/$/, "")}/*`;
+                          return <Route key={frame.id} path={path} element={<Component />} />;
                         })}
                       </Routes>
                   ) : null}

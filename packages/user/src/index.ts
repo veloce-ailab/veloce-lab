@@ -1,6 +1,7 @@
 import { Context, Session } from "yumeri";
 import type { User, UserAvatar, Group, UserGroupMembership, UserChannel, UserChannelGroupAccess, UserChannelUserAccess, CheckInRecord } from "./types.js";
 import "@velocelab/database-core";
+import "@velocelab/dashboard";
 
 export type { User, UserAvatar, Group, UserGroupMembership, UserChannel, UserChannelGroupAccess, UserChannelUserAccess, CheckInRecord } from "./types.js";
 
@@ -17,7 +18,7 @@ declare module "@yumerijs/types" {
   }
 }
 
-export const depend = ["database"];
+export const depend = ["database", "dashboard"];
 export const provide = ["user"];
 export interface UserService {
   current(session: Session): Promise<User | undefined>;
@@ -37,6 +38,12 @@ declare module "yumeri" {
 }
 
 export async function apply(ctx: Context) {
+  ctx.component.dashboard.addEntry({
+    id: "user",
+    dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
+    prod: new URL("./frontend/user.js", import.meta.url).pathname,
+    plugin: "user",
+  });
   const db = ctx.component.database;
   await db.extend("users", {
     id: { type: "integer", autoIncrement: true },

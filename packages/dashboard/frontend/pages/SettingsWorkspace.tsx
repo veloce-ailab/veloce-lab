@@ -1,10 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
-import { BarChart3, Bell, Bot, ChevronDown, ChevronRight, Database, Home, KeyRound, Laptop, LogOut, MessageSquare, Palette, Settings as SettingsIcon, Shield, UserCircle } from "lucide-react"
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom"
+import { ChevronDown, ChevronRight, Home, LogOut, MessageSquare, Settings as SettingsIcon, UserCircle } from "lucide-react"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useState } from "react"
-import Settings, { type SettingsSection } from "./Settings"
-import SystemManagement from "./SystemManagement"
-import ThemeSettings from "./ThemeSettings"
 import { AppHeader } from "@/components/layout/Layout"
 import { PageTransition } from "@/components/layout/PageTransition"
 import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
@@ -14,7 +11,7 @@ import type { PublicSettings } from "@/lib/public-settings"
 import { withPublicSettingsDefaults } from "@/lib/public-settings"
 import { cn } from "@/lib/utils"
 import { DashboardSlot } from "@/lib/slots"
-import { nav, subscribeExtensions } from "@/extension"
+import { DashboardFrameOutlet, nav, subscribeExtensions } from "@/extension"
 
 interface CurrentUser {
   username?: string
@@ -24,7 +21,6 @@ interface CurrentUser {
 
 interface SettingsNavItem {
   href: string
-  section?: SettingsSection
   label: string
   icon: typeof UserCircle
 }
@@ -88,37 +84,13 @@ export default function SettingsWorkspace() {
         <main className={cn("min-h-0 flex-1 transition-[filter] duration-200", isMemoryRoute ? "overflow-hidden" : "overflow-y-auto", isSidebarOpen && "max-lg:blur-sm")}>
           <div className={cn("w-full", isMemoryRoute ? "h-full min-h-0" : "mx-auto max-w-6xl p-4 sm:p-7 lg:p-10")}>
             <PageTransition transitionKey={location.pathname} className={cn("page-shell-transition", isMemoryRoute && "h-full min-h-0")}>
-              <Routes>
-                <Route index element={<Navigate to="statistics" replace />} />
-                <Route path="statistics" element={<PluginSettingsSlot />} />
-                <Route path="profile" element={<Settings section="profile" />} />
-                <Route path="assistant" element={<Settings section="assistant" />} />
-                <Route path="security" element={<Settings section="security" />} />
-                <Route path="channels" element={<PluginSettingsSlot />} />
-                <Route path="models" element={<Navigate to="../channels" replace />} />
-                <Route path="system" element={<SystemManagement section="proxy" />} />
-                <Route path="message-channel" element={<SystemManagement section="channels" />} />
-                <Route path="about" element={<SystemManagement section="about" />} />
-                <Route path="chat" element={<SystemManagement section="advancedChat" />} />
-                <Route path="advanced-chat" element={<Navigate to="../chat" replace />} />
-                <Route path="memory" element={<Navigate to="/chat/memories" replace />} />
-                <Route path="credentials" element={<PluginSettingsSlot />} />
-                <Route path="devices" element={<PluginSettingsSlot />} />
-                <Route path="devices/:id" element={<PluginSettingsSlot />} />
-                <Route path="theme" element={<ThemeSettings />} />
-                <Route path="notifications" element={<PluginSettingsSlot />} />
-                <Route path="*" element={<Navigate to="profile" replace />} />
-              </Routes>
+              <DashboardFrameOutlet frame="settings" fallback="/settings/profile" />
             </PageTransition>
           </div>
         </main>
       </div>
     </div>
   )
-}
-
-function PluginSettingsSlot() {
-  return <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">This settings section is provided by an optional plugin.</div>
 }
 
 function SettingsSidebar({ pathname, copy, user, onLogout, className, onNavigate }: {
