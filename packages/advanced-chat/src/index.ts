@@ -307,6 +307,13 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
   );
+  ctx.i18n({
+    advancedChat: {
+      settings: { zh: "聊天设置", en: "Chat settings", ja: "チャット設定" },
+      assistant: { zh: "AI 助手", en: "AI assistant", ja: "AIアシスタント" },
+      credentials: { zh: "凭据管理", en: "Credentials", ja: "資格情報" },
+    },
+  });
   dashboard.addEntry({
     dev: path.resolve(packageRoot, "frontend/index.tsx"),
     prod: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "frontend/advanced-chat.js"),

@@ -2,8 +2,29 @@ import type { ComponentType } from "react"
 
 export interface DashboardRoute { path: string; component: ComponentType; shell?: "layout" | "owned" }
 export interface DashboardFrame { id: string; path: string; component: ComponentType }
-export interface DashboardPage extends DashboardRoute { frame: string; nav?: Omit<DashboardNavItem, "path"> }
-export interface DashboardNavItem { id: string; label: string; path: string; icon?: ComponentType; order?: number; scope?: string; group?: string }
+/** Icon components contributed by plugins: lucide icons and plain components both fit. */
+export type DashboardIconComponent = ComponentType<{ size?: number | string; className?: string }>
+/** Page body layout hint the owning frame may honor. */
+export type DashboardPageLayout = "default" | "full"
+export interface DashboardPage extends DashboardRoute {
+  frame: string
+  nav?: Omit<DashboardNavItem, "path">
+  /** Marks the frame landing page: frames use it for breadcrumbs and fallbacks. */
+  home?: boolean
+  layout?: DashboardPageLayout
+}
+export interface DashboardNavItem {
+  id: string
+  path: string
+  /** Literal label. Use `labelKey` when the label must follow the active language. */
+  label?: string
+  /** Translation key resolved through the dashboard i18n dictionary. */
+  labelKey?: string
+  icon?: DashboardIconComponent
+  order?: number
+  scope?: string
+  group?: string
+}
 export type DashboardSlotName = string
 export interface DashboardExtensionApi {
   route(route: DashboardRoute): () => void
@@ -21,6 +42,15 @@ export interface DashboardContext extends DashboardExtensionApi {
   dispose(): Promise<void>
 }
 export type DashboardPlugin = (ctx: DashboardContext) => void | Promise<void>
+
+/**
+ * Resolve the visible label of a navigation item. Contributions may pass a
+ * translation key, a literal label, or nothing at all; the i18n runtime returns
+ * the key itself for unknown entries, so literal labels keep working.
+ */
+export function navItemLabel(item: DashboardNavItem, t: (key: string) => string): string {
+  return t(item.labelKey ?? item.label ?? item.id)
+}
 
 declare global {
   interface Window {

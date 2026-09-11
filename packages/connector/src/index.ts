@@ -25,6 +25,7 @@ declare module "yumeri" {
   }
 }
 export function apply(ctx: Context) {
+  ctx.i18n({ connector: { settings: { zh: "设备管理", en: "Device management", ja: "デバイス管理" } } });
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/connector.js", import.meta.url).pathname,

@@ -44,6 +44,7 @@ export async function apply(ctx: Context) {
   await db.extend("passkey_credentials", {
     id: { type: "integer", autoIncrement: true }, user_id: { type: "integer", nullable: false }, name: { type: "string", nullable: false }, credential_id: { type: "text", nullable: false }, public_key_cose: { type: "text", nullable: false }, aaguid: "text", sign_count: "integer", last_used_at: "timestamp", created_at: "timestamp", updated_at: "timestamp",
   }, { unique: ["credential_id"] });
+  ctx.i18n({ auth: { settings: { zh: "安全", en: "Security", ja: "セキュリティ" } } });
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/auth.js", import.meta.url).pathname,

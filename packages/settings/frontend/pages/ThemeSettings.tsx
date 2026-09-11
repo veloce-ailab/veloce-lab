@@ -1,9 +1,6 @@
 import { Monitor, Moon, Palette, Sun } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
-import { useI18n } from "@/lib/i18n"
-import { useTheme } from "@/lib/theme"
-import type { ThemeMode } from "@/lib/theme"
-import { cn } from "@/lib/utils"
+import { cn, useI18n, useTheme, type ThemeMode } from "@velocelab/dashboard/frontend"
 
 interface ThemeOption {
   value: ThemeMode

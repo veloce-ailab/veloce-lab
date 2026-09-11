@@ -21,7 +21,7 @@ import type { PublicSettings } from "@/lib/public-settings"
 import { parseTopNavItems, withPublicSettingsDefaults } from "@/lib/public-settings"
 import { cn } from "@/lib/utils"
 import { DashboardSlot } from "@/lib/slots"
-import { nav, subscribeExtensions } from "@velocelab/dashboard/frontend"
+import { nav, navItemLabel, subscribeExtensions, type DashboardNavItem } from "@velocelab/dashboard/frontend"
 
 interface CurrentUser {
   username?: string
@@ -77,9 +77,9 @@ interface AdvancedChatSidebarGroup {
   items: AdvancedChatSidebarItem[]
 }
 
-function sidebarItem(item: { path: string; label: string; icon?: LucideIcon }, pathname: string): AdvancedChatSidebarItem {
+function sidebarItem(item: DashboardNavItem, pathname: string, t: (key: string) => string): AdvancedChatSidebarItem {
   const active = pathname === item.path || pathname.startsWith(`${item.path}/`)
-  return { href: item.path, label: item.label, icon: item.icon || Bot, active }
+  return { href: item.path, label: navItemLabel(item, t), icon: (item.icon as LucideIcon | undefined) || Bot, active }
 }
 
 function chatGroupLabel(group: string, language: string) {
@@ -304,9 +304,9 @@ function AdvancedChatSidebar({
     active: location.pathname === "/chat" || location.pathname.startsWith("/chat/session/"),
   }
   const chatItems = nav("chat")
-  const directItems = chatItems.filter((item) => item.group === "direct").map((item) => sidebarItem(item, location.pathname))
+  const directItems = chatItems.filter((item) => item.group === "direct").map((item) => sidebarItem(item, location.pathname, t))
   const groups = Object.entries(Object.groupBy(chatItems.filter((item) => item.group && item.group !== "direct"), (item) => item.group!))
-    .map(([id, items]) => ({ id, label: chatGroupLabel(id, language), items: items.map((item) => sidebarItem(item, location.pathname)) }))
+    .map(([id, items]) => ({ id, label: chatGroupLabel(id, language), items: items.map((item) => sidebarItem(item, location.pathname, t)) }))
     .filter((group) => group.items.length > 0)
   const [selectedGroupID, setSelectedGroupID] = useState("")
   const routeGroup = groups.find((group) => group.items.some((item) => item.active || item.children?.some((child) => location.pathname === child.href)))

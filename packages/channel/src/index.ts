@@ -122,6 +122,7 @@ export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
   await db.extend("message_channel_messages", {
     id: { type: "integer", autoIncrement: true }, integration_id: { type: "integer", nullable: false }, user_id: { type: "integer", nullable: false }, provider: { type: "string", nullable: false }, content: { type: "text", nullable: false }, payload: { type: "text", nullable: false }, created_at: "timestamp",
   });
+  ctx.i18n({ channel: { settings: { zh: "消息通道", en: "Message channels", ja: "メッセージチャンネル" } } });
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/channel.js", import.meta.url).pathname,
