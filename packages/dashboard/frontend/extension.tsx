@@ -33,7 +33,17 @@ const notifyExtensions = () => { store.revision += 1; store.listeners.forEach((l
 export const dashboardExtension: DashboardExtensionApi = {
   route(route) { store.routes.push(route); notifyExtensions(); return () => { const i = store.routes.indexOf(route); if (i >= 0) store.routes.splice(i, 1); notifyExtensions() } },
   frame(frame) { store.frames.push(frame); notifyExtensions(); return () => { const i = store.frames.indexOf(frame); if (i >= 0) store.frames.splice(i, 1); notifyExtensions() } },
-  page(page) { store.pages.push(page); notifyExtensions(); return () => { const i = store.pages.indexOf(page); if (i >= 0) store.pages.splice(i, 1); notifyExtensions() } },
+  page(page) {
+    store.pages.push(page)
+    const navItem = page.nav ? { ...page.nav, path: page.path } : undefined
+    if (navItem) store.navItems.push(navItem)
+    notifyExtensions()
+    return () => {
+      const i = store.pages.indexOf(page); if (i >= 0) store.pages.splice(i, 1)
+      if (navItem) { const ni = store.navItems.indexOf(navItem); if (ni >= 0) store.navItems.splice(ni, 1) }
+      notifyExtensions()
+    }
+  },
   nav(item) { store.navItems.push(item); notifyExtensions(); return () => { const i = store.navItems.indexOf(item); if (i >= 0) store.navItems.splice(i, 1); notifyExtensions() } },
   slot(name, component, id, order = 0, scope) { return dashboardSlots.register({ id, slot: name, component, order, scope }) },
 }

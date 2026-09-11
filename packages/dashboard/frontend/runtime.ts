@@ -2,7 +2,7 @@ import type { ComponentType } from "react"
 
 export interface DashboardRoute { path: string; component: ComponentType; shell?: "layout" | "owned" }
 export interface DashboardFrame { id: string; path: string; component: ComponentType }
-export interface DashboardPage extends DashboardRoute { frame: string }
+export interface DashboardPage extends DashboardRoute { frame: string; nav?: Omit<DashboardNavItem, "path"> }
 export interface DashboardNavItem { id: string; label: string; path: string; icon?: ComponentType; order?: number; scope?: string; group?: string }
 export type DashboardSlotName = string
 export interface DashboardExtensionApi {
