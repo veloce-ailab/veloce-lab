@@ -104,6 +104,28 @@ Owner: new plugin-management capability
 - render settings through slots
 - remove deferred legacy configuration pages
 
+### Settings ownership (done ahead of the aggregator)
+
+`@velocelab/dashboard` is framework-only: extension registry, navigation
+registry, frame outlet, slots and the UI kit. The settings area is assembled
+from contributions instead of being rendered by the framework:
+
+- `@velocelab/settings` owns the settings shell (`/settings` frame and sidebar)
+  and the platform-level pages (network proxy, theme, about).
+- Capability plugins own their own settings pages and navigation entries:
+  `user` (profile), `auth` (security), `advanced-chat` (chat, assistant,
+  credentials), `connector` (devices), `channel` (message channels),
+  `channel-admin` (providers and models), `desktop` (notifications),
+  `uptime` (statistics), `memory` (memory route).
+- Navigation labels come from i18n keys (`<plugin>.settings`, `settings.group.<id>`)
+  registered by the contributing plugin, so the shell holds no page list.
+- A frame landing page is declared by the owning plugin with `home: true`, and
+  per-page chrome with `layout: "full"`.
+
+Remaining work for this phase: aggregate the deferred configuration pages
+(system settings store, provider/pricing sections) behind plugin-declared
+schemas instead of hand-written pages.
+
 ## Completion checks per phase
 
 - compare all old Go routes for the domain

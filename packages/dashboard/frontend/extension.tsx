@@ -65,7 +65,38 @@ export function routes() { return [...store.routes] }
 export function frames() { return [...store.frames] }
 export function pages(frame?: string) { return store.pages.filter((page) => frame === undefined || page.frame === frame) }
 export function nav(scope?: string) { return store.navItems.filter((item) => item.scope === scope).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) }
-export function subscribeExtensions(listener: () => void) { store.listeners.add(listener); return () => store.listeners.delete(listener) }
+export function subscribeExtensions(listener: () => void) { store.listeners.add(listener); return () => { store.listeners.delete(listener) } }
+
+/** True when `pathname` is `target` itself or a nested path below it. */
+export function pathMatches(target: string, pathname: string) {
+  const base = target.replace(/\/$/, "")
+  return pathname === base || pathname.startsWith(`${base}/`)
+}
+
+function bestPathMatch<T extends { path: string }>(items: T[], pathname: string): T | undefined {
+  const normalized = pathname.replace(/\/$/, "")
+  const exact = items.find((item) => item.path.replace(/\/$/, "") === normalized)
+  if (exact) return exact
+  return items
+    .filter((item) => pathMatches(item.path, pathname))
+    .sort((a, b) => b.path.length - a.path.length)[0]
+}
+
+/** Longest navigation item matching a pathname inside one scope. */
+export function navItemForPath(scope: string | undefined, pathname: string): DashboardNavItem | undefined {
+  return bestPathMatch(nav(scope), pathname)
+}
+
+/** Longest frame page matching a pathname, used for per-page layout hints. */
+export function pageForPath(frame: string, pathname: string): DashboardPage | undefined {
+  return bestPathMatch(pages(frame), pathname)
+}
+
+/** Landing path of a frame: the page marked `home`, otherwise the first registered page. */
+export function frameHome(frame: string): string | undefined {
+  const registered = pages(frame)
+  return (registered.find((page) => page.home) ?? registered[0])?.path
+}
 export function defineExtension(setup: (api: DashboardExtensionApi) => void) { return setup }
 
 export function DashboardFrameOutlet({ frame, fallback }: { frame: string; fallback?: string }) {

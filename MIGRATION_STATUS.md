@@ -43,6 +43,39 @@ Model listing and synchronization endpoints are now owned by
 `@velocelab/model-catalog`. The plugin declares its `database` dependency and
 can be removed without introducing routes through a generic API package.
 
+## Frontend ownership: settings area
+
+`@velocelab/dashboard` no longer contains settings pages, a settings sidebar or
+a page-title table. It exposes framework primitives only:
+
+- `nav(scope)` / `navItemForPath` / `navItemLabel` for contribution-driven
+  navigation, with labels resolved from `labelKey` translations.
+- `pages(frame)` / `pageForPath` / `frameHome` for frame pages, per-page layout
+  hints (`layout: "full"`) and landing pages (`home: true`).
+- `DashboardFrameOutlet`, slots, i18n, the UI kit and `AppHeader`.
+
+The settings frame, shell and sidebar now live in `@velocelab/settings`, which
+declares only the contribution contract: navigation items scoped to `settings`,
+group labels read from `settings.group.<id>`, and pages registered on the
+`settings` frame. Capability plugins own their pages and labels:
+
+| Page | Owner | Label key |
+| --- | --- | --- |
+| `/settings/profile` (frame landing page) | `user` | `user.settings` |
+| `/settings/security` | `auth` | `auth.settings` |
+| `/settings/chat`, `/settings/assistant`, `/settings/credentials` | `advanced-chat` | `advancedChat.*` |
+| `/settings/devices` | `connector` | `connector.settings` |
+| `/settings/message-channel` | `channel` | `channel.settings` |
+| `/settings/channels` | `channel-admin` | `channelAdmin.settings` |
+| `/settings/notifications` | `desktop` | `desktop.settings` |
+| `/settings/statistics` | `uptime` | `uptime.settings` |
+| `/settings/system`, `/settings/theme`, `/settings/about` | `settings` | `settings.*` |
+
+Known gap: the settings pages call `/api/settings`, which the TypeScript
+backend does not implement yet (it exists only in the legacy Go service), so the
+network proxy form cannot load or save until a system-settings store and route
+are added. That store belongs to Phase 10 of the roadmap.
+
 When migrating an item, place its routes in that plugin's `apply` function and
 make all dependencies optional through `ctx.component` lookups. Do not add
 new routes to `service` or create an `api` catch-all package.
