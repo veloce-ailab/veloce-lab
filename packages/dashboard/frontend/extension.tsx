@@ -107,10 +107,35 @@ export function pathMatches(target: string, pathname: string) {
   return pathname === base || pathname.startsWith(`${base}/`)
 }
 
+/**
+ * True when a registered path pattern matches a pathname, using the same shape
+ * the frame outlet hands to the router: `:name` matches one segment and `*`
+ * matches the rest, including nothing at all.
+ */
+function patternMatches(pattern: string, pathname: string): boolean {
+  const patternParts = pattern.replace(/\/$/, "").split("/")
+  const pathParts = pathname.replace(/\/$/, "").split("/")
+  for (let index = 0; index < patternParts.length; index += 1) {
+    const part = patternParts[index]
+    if (part === "*") return true
+    if (index >= pathParts.length) return false
+    if (part.startsWith(":")) continue
+    if (part !== pathParts[index]) return false
+  }
+  return pathParts.length === patternParts.length
+}
+
 function bestPathMatch<T extends { path: string }>(items: T[], pathname: string): T | undefined {
   const normalized = pathname.replace(/\/$/, "")
   const exact = items.find((item) => item.path.replace(/\/$/, "") === normalized)
   if (exact) return exact
+  // Patterns (`/chat/session/:id`, `/chat/agent-groups/*`) win over plain
+  // prefixes so a nested page keeps its own layout hint and title.
+  const patterned = items
+    .filter((item) => item.path.includes(":") || item.path.includes("*"))
+    .filter((item) => patternMatches(item.path, pathname))
+    .sort((a, b) => b.path.length - a.path.length)[0]
+  if (patterned) return patterned
   return items
     .filter((item) => pathMatches(item.path, pathname))
     .sort((a, b) => b.path.length - a.path.length)[0]

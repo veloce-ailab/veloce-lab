@@ -85,6 +85,46 @@ owns `system`, while `settings.group.<id>` only backstops the shell's own
 `general` bucket. Adding a whole new settings section therefore needs no edit
 here.
 
+## Frontend ownership: the chat area
+
+`/chat` is a frame owned by `@velocelab/advanced-chat`, the same way the settings
+area is owned by `@velocelab/settings`. The frame renders the chat chrome and a
+two-level navigation built from the contributions it is given; every page inside
+it, the conversation included, is registered by the package that owns the
+capability:
+
+| page | owner | section |
+| --- | --- | --- |
+| `/chat`, `/chat/session/:id` | `advanced-chat` | frame home, not in the menu |
+| `/chat/groups`, `/chat/agents`, `/chat/agent-groups/*` | `advanced-chat` | `direct`, `agents` |
+| `/chat/community/*` | `community` | `direct` |
+| `/chat/knowledge` | `knowledge` | `library` |
+| `/chat/files` | `workspace` | `library` |
+| `/chat/memories` | `memory` | `agents` |
+| `/chat/skills` | `skill` | `agents` |
+| `/chat/mcp` | `mcp` | `agents` |
+| `/chat/scheduled-tasks` | `scheduler` | `workflow` |
+| `/chat/deliveries` | `delivery` | `workflow` |
+
+The menu has two levels: items in the `direct` section are listed flat, and every
+other section is a heading that opens its own list. A package introduces a new
+submenu by declaring the section on its own page
+(`group: { id, labelKey, order }`) — no edit to `advanced-chat` is needed, and the
+frame only backstops the section labels nobody declares.
+
+What used to live in the frame and no longer does, because it was knowledge about
+other packages' pages:
+
+- a `/chat/*` owned route whose `<Routes>` re-declared pages owned elsewhere,
+- a path-keyed icon-tone table (`advancedChatSidebarIconTones`) covering pages
+  such as `/chat/admin-users` that the frame did not even own,
+- a path-to-window-title table replaced by the matching page's own navigation
+  label.
+
+`navItemForPath` and `pageForPath` resolve `:param` and `*` patterns before
+falling back to prefix matching, so a nested page keeps its own title and its
+`layout: "full"` hint.
+
 ## Design system ownership
 
 `@velocelab/dashboard` owns the only stylesheet in the repository
