@@ -104,6 +104,31 @@ Re-apply the preset after a shadcn upgrade with
 `yarn dlx shadcn@latest apply --preset b27GcrRo --only theme,font -c packages/dashboard`;
 `packages/dashboard/components.json` points the CLI at that stylesheet.
 
+### Colour parity with the legacy console
+
+The token values are the ones the legacy `web/` console shipped
+(`71a8e50^:web/src/index.css`), so switching to the plugin architecture did not
+change how the product looks. Two values deviate on purpose, both measured as
+WCAG contrast ratios:
+
+| token | legacy | here | why |
+| --- | --- | --- | --- |
+| light `--muted-foreground` | `oklch(0.556 0 0)` | `oklch(0.52 0 0)` | muted text on a `bg-muted` panel was 4.34:1, now 5.05:1 |
+| dark `--destructive-foreground` | `oklch(0.985 0 0)` | `oklch(0.205 0 0)` | light text on the dark `--destructive` was 2.77:1, now 6.19:1 |
+
+The kit also keeps the legacy weight for surfaces and fields, because the
+preset's own choices are invisible on a white background in light mode:
+
+- floating surfaces (card, dialog, alert dialog, popover, menus, select
+  content) ring with `--border` instead of `ring-foreground/5`, which measured
+  1.05:1 against a white card — effectively no edge at all.
+- form controls (input, textarea, select trigger, checkbox) use
+  `border-input bg-background` instead of a `bg-input/50` fill with a
+  transparent border, which measured 1.11:1 against the page.
+
+Both are decisions of the dashboard, not of the callers: plugins render
+`<Card>`, `<Input>` and friends and never restyle their edges.
+
 When migrating an item, place its routes in that plugin's `apply` function and
 make all dependencies optional through `ctx.component` lookups. Do not add
 new routes to `service` or create an `api` catch-all package.
