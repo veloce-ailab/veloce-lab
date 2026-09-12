@@ -2,13 +2,28 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
+import type { IncomingMessage, Server as HttpServer } from "node:http";
 import { Context, Core, Schema, Service, Session, Logger } from "yumeri";
+import { startDashboardDevServer, type DashboardDevServer } from "./dev.js";
 
 const logger = new Logger("dashboard");
 export const depend: string[] = [];
 export const provide = ["dashboard"];
 
-export interface DashboardAsset { id: string; file: string; mime?: string; plugin?: string; data?: Record<string, unknown>; }
+export interface DashboardConfig {
+  /**
+   * Serve the frontend from source through an embedded Vite server. Defaults to
+   * on unless `NODE_ENV` is `production`.
+   */
+  dev?: boolean;
+}
+/** Stable URL every built plugin bundle imports the shared runtime from. */
+const runtimePath = "/dashboard-client.js";
+export const config: Schema<DashboardConfig> = Schema.object<DashboardConfig>({
+  dev: Schema.boolean("Serve the frontend from source instead of the build"),
+});
+
+export interface DashboardAsset { id: string; file: string; mime?: string; plugin?: string; data?: Record<string, unknown>; dev?: boolean; }
 export interface DashboardEntry { id?: string; dev?: string | string[]; prod: string | string[]; plugin?: string; data?: Record<string, unknown>; }
 export interface DashboardEntryHandle { id: string; remove(): void; }
 export interface DashboardManifestFile { id: string; url: string; mime?: string; }
@@ -35,6 +50,12 @@ interface DashboardEntryState {
 interface DashboardState { assets: DashboardAsset[]; entries: Map<string, DashboardEntryState>; revision: number; }
 const states = new WeakMap<Core, DashboardState>();
 
+/**
+ * Whether the frontend is served from source. Entry registration happens while
+ * plugins apply, which is before any request, so the mode is settled by then.
+ */
+let development = process.env.NODE_ENV !== "production";
+
 function stateFor(context: Context): DashboardState {
   const core = context.getCore();
   const existing = states.get(core);
@@ -42,6 +63,23 @@ function stateFor(context: Context): DashboardState {
   const state: DashboardState = { assets: [], entries: new Map(), revision: 0 };
   states.set(core, state);
   return state;
+}
+
+function absoluteFile(file: string) {
+  return /^\/[A-Za-z]:[\\/]/.test(file) ? file.slice(1) : file;
+}
+
+function anyExists(files: string[]) {
+  return files.some((file) => existsSync(absoluteFile(file)));
+}
+
+/** Expand a built entry that was emitted as a directory into its files. */
+function expandBuild(files: string[]) {
+  return files.flatMap((file) => {
+    const absolute = absoluteFile(file);
+    if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return [file];
+    return ["index.js", "style.css"].map((name) => path.join(file, name)).filter((name) => existsSync(name));
+  });
 }
 
 function mimeFor(file: string): string | undefined {
@@ -81,21 +119,17 @@ export class Dashboard extends Service implements DashboardService {
   }
 
   addEntry(entry: DashboardEntry): DashboardEntryHandle {
-    // Yumeri serves registered assets through its static route. Until a Vite
-    // middleware is attached, source TS/TSX entries cannot be sent directly
-    // to the browser, so always prefer the built production entry when it is
-    // available and fall back to dev only for local development packages.
-    const production = Array.isArray(entry.prod) ? entry.prod : [entry.prod];
-    const hasProduction = production.some((file) => {
-      const absolute = /^\/[A-Za-z]:[\\/]/.test(file) ? file.slice(1) : file;
-      return existsSync(absolute);
-    });
-    const requested = hasProduction || !entry.dev ? entry.prod : entry.dev;
-    const files = (Array.isArray(requested) ? requested : [requested]).flatMap((file) => {
-      const absolute = /^\/[A-Za-z]:[\\/]/.test(file) ? file.slice(1) : file;
-      if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return [file];
-      return ["index.js", "style.css"].map((name) => path.join(file, name)).filter((name) => existsSync(name));
-    });
+    // Plugins register both forms: the sources they are written in and the
+    // bundle a build produces. Which one is served follows the mode, and the
+    // other one is the fallback so a package without a build still loads.
+    const sources = entry.dev ? (Array.isArray(entry.dev) ? entry.dev : [entry.dev]) : [];
+    const builds = Array.isArray(entry.prod) ? entry.prod : [entry.prod];
+    const hasSources = sources.length > 0 && anyExists(sources);
+    const hasBuild = builds.length > 0 && anyExists(builds);
+    // Sources are what the development server compiles; a build stands in when
+    // the package has none on disk, and is the only form served in production.
+    const servingSources = hasSources && (development || !hasBuild);
+    const files = servingSources ? [...sources] : expandBuild(builds);
     // A library entry commonly emits a sibling stylesheet instead of a
     // directory containing `style.css`.
     for (const file of [...files]) {
@@ -111,6 +145,7 @@ export class Dashboard extends Service implements DashboardService {
       file,
       plugin: entry.plugin,
       data: entry.data,
+      dev: servingSources,
     }));
     const handle: DashboardEntryHandle = {
       id,
@@ -139,20 +174,44 @@ export class Dashboard extends Service implements DashboardService {
   }
 }
 
-export const config: Schema<Record<string, never>> = Schema.object({});
 declare module "yumeri" { interface Components { dashboard: DashboardService; } }
 
-export function apply(ctx: Context) {
+export function apply(ctx: Context, pluginConfig?: DashboardConfig) {
   ctx.registerService("dashboard", Dashboard);
+  development = pluginConfig?.dev ?? development;
   const state = stateFor(ctx);
   const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "web");
+  const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  let devServerPromise: Promise<DashboardDevServer | undefined> | undefined;
+
+  /**
+   * The development server is created on the first request, because it attaches
+   * its socket to the server that request arrived on.
+   */
+  const devServerFor = (req: IncomingMessage | undefined) => {
+    if (!development) return Promise.resolve(undefined);
+    if (!devServerPromise) {
+      const server = (req?.socket as unknown as { server?: HttpServer } | undefined)?.server;
+      devServerPromise = server
+        ? startDashboardDevServer({ packageRoot, server, runtimePath, logger })
+        : Promise.resolve(undefined);
+    }
+    return devServerPromise;
+  };
 
   ctx.route("/api/dashboard/manifest").methods("GET").action(async (session: Session) => {
+    const dev = await devServerFor(session.client.req as IncomingMessage | undefined);
     const entries = [...state.entries.values()].map((entry) => ({
       id: entry.id,
       plugin: entry.plugin,
       data: entry.data,
-      files: entry.assets.map(({ id, mime }) => ({ id, mime, url: `/api/static/plugin?file=${encodeURIComponent(id)}` })),
+      files: entry.assets.map(({ id, mime, file, dev: isSource }) => ({
+        id,
+        mime,
+        // Sources are served by the development server, which compiles them on
+        // the fly and rewrites their imports; builds are served as they are.
+        url: isSource && dev ? dev.url(file) : `/api/static/plugin?file=${encodeURIComponent(id)}`,
+      })),
     }));
     const assets = entries.flatMap((entry) => entry.files.map((file) => ({ ...file, plugin: entry.plugin, data: entry.data })));
     const manifest: DashboardManifest = {
@@ -171,12 +230,38 @@ export function apply(ctx: Context) {
       session.respond({ error: "Static plugin file not found" }, "json");
       return;
     }
+    const dev = await devServerFor(session.client.req as IncomingMessage | undefined);
+    if (asset.dev && dev) {
+      // A source is only meaningful once it has been compiled.
+      session.status = 302;
+      session.head.Location = dev.url(asset.file);
+      session.respond("", "plain");
+      return;
+    }
     if (asset.mime) session.setMime(asset.mime);
     session.sendFile(asset.file);
   });
-  logger.info(`Dashboard web root: ${webRoot}`);
+  logger.info(`Dashboard web root: ${webRoot}${development ? " (development sources)" : ""}`);
   ctx.route("root").methods("GET").action(async (session: Session) => {
-    logger.info(`Serving dashboard`);
+    const req = session.client.req as IncomingMessage | undefined;
+    const res = session.client.res;
+    const dev = await devServerFor(req);
+    if (dev && req && res) {
+      if (await dev.handle(req, res)) return;
+      // Documents are rendered from source too, so the application itself is
+      // reloaded as it is edited.
+      if (!path.extname(session.pathname)) {
+        try {
+          const document = await dev.document();
+          session.setMime("text/html; charset=utf-8");
+          session.head["Cache-Control"] = "no-store";
+          session.respond(document, "plain");
+          return;
+        } catch (error) {
+          logger.warn(`Dashboard development document unavailable, serving the build instead: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
     const requested = session.pathname === "/" ? "index.html" : session.pathname.replace(/^\//, "");
     const safe = requested.includes("..") ? "index.html" : requested;
     const file = path.resolve(webRoot, safe);
@@ -185,7 +270,7 @@ export function apply(ctx: Context) {
       if (mime) session.setMime(mime);
       // The shared runtime is referenced by a stable URL from every plugin bundle.
       // Do not let browsers keep an incompatible runtime after an upgrade.
-      const maxAge = safe === "dashboard-client.js" || safe === "index.html" ? 0 : 3600;
+      const maxAge = safe === runtimePath.replace(/^\//, "") || safe === "index.html" ? 0 : 3600;
       session.file(file, { maxAge, etag: true });
     } catch {
       const fallback = path.resolve(webRoot, "index.html");

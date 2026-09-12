@@ -51,11 +51,15 @@ const publicAPIPaths = new Set([
   "/auth/logout",
 ]);
 const publicAPIPrefixes = ["/api/advanced-chat/connectors/"];
-const assetPattern = /\.(?:js|mjs|css|map|json|txt|svg|png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|wasm)$/i;
+const assetPattern = /\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx|css|map|json|txt|svg|png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|wasm)$/i;
 
 /** Static files the pre-authentication pages are built from. */
 export function isAssetRequest(pathname: string) {
-  return !pathname.startsWith("/api/") && assetPattern.test(pathname);
+  if (pathname.startsWith("/api/")) return false;
+  // The development server compiles the application from sources, so its module
+  // graph has to be reachable before a session exists.
+  if (pathname.startsWith("/@") || pathname.startsWith("/node_modules/.vite/")) return true;
+  return assetPattern.test(pathname);
 }
 
 /** True when a request may be answered without a session. */
