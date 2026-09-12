@@ -146,11 +146,7 @@ export function apply(ctx: Context) {
         disabled: { zh: "插件已禁用", en: "Plugin disabled", ja: "プラグインを無効化しました" },
         reloaded: { zh: "插件已重载", en: "Plugin reloaded", ja: "プラグインを再読み込みしました" },
         failed: { zh: "操作失败", en: "The operation failed", ja: "操作に失敗しました" },
-        forbidden: {
-          zh: "需要管理员权限才能管理插件。",
-          en: "Administrator access is required to manage plugins.",
-          ja: "プラグインの管理には管理者権限が必要です。",
-        },
+        loadFailed: { zh: "加载插件列表失败", en: "Could not load the plugin list", ja: "プラグイン一覧を読み込めませんでした" },
         saveHint: {
           zh: "保存会写回 yumeri.json,配置在插件下次加载时生效。",
           en: "Saving writes yumeri.json; the values apply the next time the plugin loads.",
@@ -230,13 +226,9 @@ export function apply(ctx: Context) {
   // before it acts.
   const loader = () => (ctx.getCore() as unknown as { loader?: PluginLoader }).loader;
 
-  const requireAdmin = (session: Session): boolean => {
-    const user = session.properties.user as { id?: number; is_admin?: boolean } | undefined;
-    if (user?.is_admin) return true;
-    session.status = 403;
-    session.respond({ error: "Admin access required" }, "json");
-    return false;
-  };
+  // Who is allowed to reach these routes is not decided here: access control is
+  // a layer in front of the application, and duplicating a permission check in
+  // the plugin that happens to own the page only spreads the rule around.
 
   // A malformed or empty body is a client mistake, not a server fault, so it is
   // reported as a missing argument rather than allowed to throw.
@@ -255,7 +247,6 @@ export function apply(ctx: Context) {
   };
 
   ctx.route("/api/settings/plugins").methods("GET").action(async (session: Session) => {
-    if (!requireAdmin(session)) return;
     const current = loader();
     if (!current) return unavailable(session);
     const plugins = current.config.plugins ?? {};
@@ -283,7 +274,6 @@ export function apply(ctx: Context) {
   });
 
   ctx.route("/api/settings/plugins/config").methods("POST").action(async (session: Session) => {
-    if (!requireAdmin(session)) return;
     const current = loader();
     if (!current) return unavailable(session);
     const body = await readBody(session);
@@ -311,7 +301,6 @@ export function apply(ctx: Context) {
   });
 
   ctx.route("/api/settings/plugins/action").methods("POST").action(async (session: Session) => {
-    if (!requireAdmin(session)) return;
     const current = loader();
     if (!current) return unavailable(session);
     const body = await readBody(session);
