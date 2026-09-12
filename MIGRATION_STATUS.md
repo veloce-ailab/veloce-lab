@@ -125,6 +125,38 @@ other packages' pages:
 falling back to prefix matching, so a nested page keeps its own title and its
 `layout: "full"` hint.
 
+With only `@velocelab/advanced-chat` enabled, the frame renders the chat page and
+its own menu rows (home, groups, agents, studios) and nothing else: sections that
+no package contributes do not appear, and no row points at a page that is not
+registered. A frame is also self-sufficient in the other direction — it links to
+the settings area through `frameHome("settings")` and hides the entry when no
+settings frame exists.
+
+## Frontend ownership: the top bar and the site root
+
+Neither frame draws the top bar. `@velocelab/topbar` owns it and registers it into
+the `frame.topbar` slot; the console layout, the settings frame and the chat frame
+each render that slot and hand over only what belongs to them:
+
+- `leading` — the control that drives the frame's own sidebar,
+- `actions` — frame features that sit in the bar, such as the chat session search.
+
+The bar itself carries the brand, the configurable top navigation, the
+`header.nav`/`header.actions`/`header.brand.after` slots, the theme and language
+switchers and the account entry, and it links to frames through `frameHome(...)`
+rather than to hardcoded paths. Because the bar is a contribution, disabling
+`@velocelab/topbar` leaves the frames without one — accepted, like every other
+plugin-owned surface.
+
+`@velocelab/home-redirect` claims `/` and sends it to the home of the chat frame.
+The root used to match no route at all. Nothing else owns `/`.
+
+Cross-frame links no longer name another package's page: the chat frame's settings
+entry resolves to `frameHome("settings")`, the settings frame's chat entry to
+`frameHome("chat")`, and the message-channel page links to its own
+`/settings/message-channel` path. `avatar_url`, `site_name` and the switchers come
+from the top bar package, so the dashboard no longer exports an `AppHeader`.
+
 ## Design system ownership
 
 `@velocelab/dashboard` owns the only stylesheet in the repository

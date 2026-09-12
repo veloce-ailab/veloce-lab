@@ -1,0 +1,21 @@
+{
+  "name": "@velocelab/topbar",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
+  },
+  "dependencies": {
+    "@velocelab/dashboard": "workspace:*"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "react": "^19.2.6",
+    "vite": "^8.0.12"
+  }
+}

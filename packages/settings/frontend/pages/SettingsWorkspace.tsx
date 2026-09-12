@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query"
-import { ChevronDown, ChevronRight, Home, LogOut, MessageSquare, Settings as SettingsIcon, UserCircle } from "lucide-react"
+import { ChevronDown, ChevronRight, Home, LogOut, Menu, MessageSquare, Settings as SettingsIcon, UserCircle } from "lucide-react"
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useState } from "react"
 import {
-  AppHeader,
+  Button,
   DashboardFrameOutlet,
   DashboardSlot,
   PageTransition,
@@ -68,6 +68,7 @@ export default function SettingsWorkspace() {
   })
   const publicSettings = withPublicSettingsDefaults(settings)
   const homePath = frameHome("settings")
+  const chatPath = frameHome("chat")
   const fullHeight = pageForPath("settings", location.pathname)?.layout === "full"
   const title = settingsPageTitle(location.pathname, t)
   useEffect(() => subscribeExtensions(() => refreshNavigation((value) => value + 1)), [])
@@ -87,21 +88,34 @@ export default function SettingsWorkspace() {
   return (
     <div className={cn("flex flex-col overflow-hidden", isDesktop ? "desktop-acrylic-window h-full min-h-0" : "h-screen bg-background")}>
       {!isDesktop && (
-        <AppHeader
-          publicSettings={publicSettings}
-          user={user}
-          isSidebarOpen={isSidebarOpen}
-          onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
+        <DashboardSlot
+          name="frame.topbar"
+          className="shrink-0"
+          data={{
+            frame: "settings",
+            leading: (
+              <Button
+                className="lg:hidden"
+                variant="outline"
+                size="icon"
+                onClick={() => setIsSidebarOpen((open) => !open)}
+                aria-label={isSidebarOpen ? t("settings.closeMenu") : t("settings.openMenu")}
+                aria-expanded={isSidebarOpen}
+              >
+                <Menu size={18} />
+              </Button>
+            ),
+          }}
         />
       )}
 
       <div className="flex min-h-0 flex-1">
         <ResizableSidebar storageKey="settings-navigation" side="left" defaultWidth={288} minWidth={216} maxWidth={440} className="hidden lg:block lg:h-full">
-          <SettingsSidebar className="h-full w-full" homePath={homePath} user={user} onLogout={logout} />
+          <SettingsSidebar className="h-full w-full" homePath={homePath} chatPath={chatPath} user={user} onLogout={logout} />
         </ResizableSidebar>
         <div className={cn("fixed inset-0 z-40 transition-opacity duration-200 lg:hidden", isDesktop ? "top-0" : "top-16", isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSidebarOpen}>
           <button type="button" className="absolute inset-0 bg-black/35 backdrop-blur-sm transition-opacity duration-200" aria-label={t("settings.closeMenu")} onClick={() => setIsSidebarOpen(false)} />
-          <SettingsSidebar className={cn("relative z-50 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")} homePath={homePath} user={user} onLogout={logout} onNavigate={() => setIsSidebarOpen(false)} />
+          <SettingsSidebar className={cn("relative z-50 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")} homePath={homePath} chatPath={chatPath} user={user} onLogout={logout} onNavigate={() => setIsSidebarOpen(false)} />
         </div>
         <main className={cn("flex min-h-0 flex-1 flex-col transition-[filter] duration-200", fullHeight ? "overflow-hidden" : "overflow-y-auto", isSidebarOpen && "max-lg:blur-sm")}>
           <DashboardSlot name="content.before" />
@@ -127,8 +141,9 @@ export default function SettingsWorkspace() {
   )
 }
 
-function SettingsSidebar({ homePath, user, onLogout, className, onNavigate }: {
+function SettingsSidebar({ homePath, chatPath, user, onLogout, className, onNavigate }: {
   homePath?: string
+  chatPath?: string
   user?: CurrentUser
   onLogout: () => void
   className?: string
@@ -140,13 +155,13 @@ function SettingsSidebar({ homePath, user, onLogout, className, onNavigate }: {
   const toggleGroup = (groupID: string) => setCollapsedGroups((current) => current.includes(groupID) ? current.filter((id) => id !== groupID) : [...current, groupID])
   const displayName = user?.username || user?.email || t("settings.account")
   const initials = avatarInitials(displayName)
-  const accountPath = homePath ?? "/chat"
+  const accountPath = homePath ?? chatPath ?? "/"
 
   return (
     <aside className={cn("flex h-full min-h-0 w-full shrink-0 flex-col border-r bg-card", className)}>
       <div className="shrink-0 border-b px-4 pb-3 pt-4">
         <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
-          <Link to="/chat" onClick={onNavigate} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted" title={t("nav.chat")} aria-label={t("nav.chat")}><Home size={15} /></Link>
+          {chatPath ? <Link to={chatPath} onClick={onNavigate} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted" title={t("nav.chat")} aria-label={t("nav.chat")}><Home size={15} /></Link> : <span className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground"><Home size={15} /></span>}
           <ChevronRight size={13} />
           <span className="font-medium text-foreground">{t("settings.title")}</span>
         </div>
@@ -177,7 +192,7 @@ function SettingsSidebar({ homePath, user, onLogout, className, onNavigate }: {
         <DashboardSlot name="settings.sidebar.after" />
       </nav>
       <div className="mt-auto shrink-0 border-t p-3">
-        <Link to="/chat" onClick={onNavigate} className="flex h-9 items-center gap-3 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><MessageSquare size={16} /><span>{t("nav.chat")}</span></Link>
+        {chatPath && <Link to={chatPath} onClick={onNavigate} className="flex h-9 items-center gap-3 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><MessageSquare size={16} /><span>{t("nav.chat")}</span></Link>}
         <button type="button" onClick={onLogout} className="flex h-9 w-full items-center gap-3 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><LogOut size={16} /><span>{t("common.signOut")}</span></button>
       </div>
     </aside>

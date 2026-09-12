@@ -14,6 +14,8 @@
     },
     "@velocelab/sqlite": { "path": "./data/veloce.db" },
     "@velocelab/dashboard": {},
+    "@velocelab/topbar": {},
+    "@velocelab/home-redirect": {},
     "@velocelab/settings": {},
     "@velocelab/community": {},
     "@velocelab/knowledge": {},

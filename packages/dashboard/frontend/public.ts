@@ -43,5 +43,5 @@ export * from "./lib/public-settings"
 export * from "./lib/slots"
 export * from "./lib/theme"
 export * from "./lib/utils"
-export { AppHeader } from "./components/layout/Layout"
-export type { AppHeaderUser } from "./components/layout/Layout"
+// The top bar is no longer exported: it is a contribution rendered through the
+// `frame.topbar` slot, provided by @velocelab/topbar.

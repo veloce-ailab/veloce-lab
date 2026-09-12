@@ -1,22 +1,21 @@
-import { Bot, ChevronRight, Home, Search, Settings as SettingsIcon, UserCircle } from "lucide-react"
+import { Bot, ChevronRight, Home, Search, Settings as SettingsIcon } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useState } from "react"
-import { LanguageSwitcher } from "@/components/LanguageSwitcher"
-import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { PageTransition } from "@/components/layout/PageTransition"
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
-import { api, apiURL, isDesktopTarget } from "@/lib/api"
+import { api, isDesktopTarget } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
-import { parseTopNavItems, withPublicSettingsDefaults, type PublicSettings } from "@/lib/public-settings"
+import { withPublicSettingsDefaults, type PublicSettings } from "@/lib/public-settings"
 import { cn } from "@/lib/utils"
 import { DashboardSlot } from "@/lib/slots"
 import {
   DashboardFrameOutlet,
+  frameHome,
   navItemForPath,
   navItemLabel,
   navSections,
@@ -25,13 +24,6 @@ import {
   type DashboardNavItem,
   type DashboardNavSection,
 } from "@velocelab/dashboard/frontend"
-
-interface CurrentUser {
-  username?: string
-  email?: string
-  avatar_url?: string
-  is_admin?: boolean
-}
 
 interface GlobalChatSession {
   id: string
@@ -89,16 +81,8 @@ export default function ChatWorkspace() {
       return res.data
     },
   })
-  const { data: user } = useQuery<CurrentUser>({
-    queryKey: ["me"],
-    queryFn: async () => {
-      const res = await api.get("/user/me")
-      return res.data
-    },
-  })
   const publicSettings = withPublicSettingsDefaults(settings)
   const isDesktop = isDesktopTarget()
-  const topNavItems = parseTopNavItems(publicSettings.top_nav_items)
   const isHome = location.pathname === chatHomePath || location.pathname.startsWith(`${chatHomePath}/session/`)
   // Pages that need the whole viewport declare `layout: "full"` when they register.
   const fullHeight = pageForPath("chat", location.pathname)?.layout === "full"
@@ -125,40 +109,32 @@ export default function ChatWorkspace() {
   return (
     <SidebarProvider className={cn("overflow-hidden", isDesktop ? "desktop-acrylic-window" : "bg-background", viewportHeightClass)}>
       <Sidebar collapsible="offcanvas" className={cn(fullHeight && "bg-background")}>
-        <ChatSidebar className={cn("w-full", fullHeight && "bg-background")} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot" />
+        <ChatSidebar className={cn("w-full", fullHeight && "bg-background")} sessionSlotID="chat-sessions-sidebar-slot" />
         <SidebarRail />
       </Sidebar>
       <SidebarInset className="min-w-0 overflow-hidden">
-      <header className={cn("z-30 flex shrink-0 items-center justify-between border-b border-border/70 bg-background/95 px-4 backdrop-blur sm:px-6", isDesktop ? "h-12" : "h-16")}>
-        <div className="flex min-w-0 items-center gap-3">
-          <SidebarTrigger className="h-8 w-8" aria-label={t("advancedChat.openMenu")} />
-          <Link to="/" className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-semibold">Veloce</span>
-          </Link>
-        </div>
-        <div className="flex min-w-0 items-center gap-3">
-          {publicSettings.top_nav_enabled && topNavItems.length > 0 && (
-            <div className="hidden min-w-0 items-center gap-4 text-sm text-muted-foreground lg:flex">
-              {topNavItems.map((item) => (
-                <TopNavLink key={`${item.label}-${item.href}`} label={item.label} href={item.href} external={item.external} />
-              ))}
-            </div>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setIsGlobalSearchOpen(true)}
-            aria-label={language === "zh" ? "搜索会话" : "Search sessions"}
-            title={language === "zh" ? "搜索会话" : "Search sessions"}
-          >
-            <Search size={17} />
-          </Button>
-          <ThemeSwitcher />
-          <LanguageSwitcher compact />
-          <UserAvatar user={user} />
-        </div>
-      </header>
+      {/* The top bar is a contribution, not part of this frame: the frame hands
+          over the control that drives its own sidebar and keeps the search. */}
+      <DashboardSlot
+        name="frame.topbar"
+        className="shrink-0"
+        data={{
+          frame: "chat",
+          leading: <SidebarTrigger className="h-8 w-8" aria-label={t("advancedChat.openMenu")} />,
+          actions: (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setIsGlobalSearchOpen(true)}
+              aria-label={language === "zh" ? "搜索会话" : "Search sessions"}
+              title={language === "zh" ? "搜索会话" : "Search sessions"}
+            >
+              <Search size={17} />
+            </Button>
+          ),
+        }}
+      />
 
       <div className={cn("flex min-h-0 flex-1", fullHeight && "bg-background")}>
         <main className={cn("flex min-h-0 flex-1 flex-col", fullHeight ? "overflow-hidden" : "overflow-y-auto")}>
@@ -214,14 +190,10 @@ export default function ChatWorkspace() {
 
 function ChatSidebar({
   className,
-  publicSettings,
-  user,
   onNavigate,
   sessionSlotID,
 }: {
   className?: string
-  publicSettings: PublicSettings
-  user?: CurrentUser
   onNavigate?: () => void
   sessionSlotID?: string
 }) {
@@ -229,6 +201,9 @@ function ChatSidebar({
   const { isMobile, setOpenMobile } = useSidebar()
   const { language, t } = useI18n()
   const [, refreshNavigation] = useState(0)
+  // The settings frame decides its own landing page, so the entry point is
+  // looked up rather than guessed.
+  const settingsPath = frameHome("settings")
   useEffect(() => subscribeExtensions(() => refreshNavigation((value) => value + 1)), [])
   const homeItem: ChatSidebarItem = {
     href: `${chatHomePath}?new_session=1`,
@@ -336,8 +311,9 @@ function ChatSidebar({
       </nav>
       </SidebarContent>
       <SidebarFooter className="shrink-0 border-t border-sidebar-border p-3">
+        {settingsPath && (
         <Link
-          to={user?.is_admin ? "/settings/channels" : "/settings/profile"}
+          to={settingsPath}
           onClick={handleNavigation}
           className={cn("flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors", location.pathname.startsWith("/settings") ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted")}
         >
@@ -346,6 +322,7 @@ function ChatSidebar({
           </span>
           <span className="flex-1 truncate">{language === "zh" ? "设置" : language === "ja" ? "設定" : "Settings"}</span>
         </Link>
+        )}
       </SidebarFooter>
     </div>
   )
@@ -397,49 +374,4 @@ function chatFallbackSectionLabel(id: string, language: string) {
   }
   const value = labels[id] || [id, id, id]
   return language === "zh" ? value[0] : language === "ja" ? value[2] : value[1]
-}
-
-function UserAvatar({ user }: { user?: CurrentUser }) {
-  const { t } = useI18n()
-  const label = user?.username || user?.email || t("common.user")
-  const initials = avatarInitials(label)
-  return (
-    <Link
-      to="/settings/profile"
-      className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-muted text-sm font-semibold text-foreground hover:bg-accent"
-      title={label}
-      aria-label={label}
-    >
-      {user?.avatar_url ? (
-        <img src={apiURL(user.avatar_url)} alt="" className="h-full w-full object-cover" />
-      ) : initials ? (
-        initials
-      ) : (
-        <UserCircle size={20} />
-      )}
-    </Link>
-  )
-}
-
-function avatarInitials(value: string) {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return ""
-  }
-  const parts = trimmed.split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-  }
-  return trimmed.slice(0, 2).toUpperCase()
-}
-
-function TopNavLink({ label, href, external }: { label: string; href: string; external: boolean }) {
-  if (external) {
-    return (
-      <a href={href} target="_blank" rel="noreferrer">
-        {label}
-      </a>
-    )
-  }
-  return <Link to={href}>{label}</Link>
 }
