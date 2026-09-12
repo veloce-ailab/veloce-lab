@@ -1,14 +1,51 @@
-import AdvancedChat from "./pages/AdvancedChat";
+import Chat from "./pages/Chat";
+import ChatWorkspace from "./pages/ChatWorkspace";
+import Agents from "./pages/Agents";
+import AgentEditor from "./pages/AgentEditor";
+import AgentGroupsPage from "./pages/AgentGroupsPage";
+import ChatGroups from "./pages/ChatGroups";
 import AdvancedChatManagement from "./pages/AdvancedChatManagement";
 import AssistantSettings from "./pages/AssistantSettings";
-import { Navigate, type DashboardContext } from "@velocelab/dashboard/frontend";
-import { Bot, KeyRound, MessageSquare } from "lucide-react";
 import ConnectorCredentials from "./pages/ConnectorCredentials";
+import { Navigate, type DashboardContext } from "@velocelab/dashboard/frontend";
+import { Bot, KeyRound, LayoutGrid, MessageSquare, MessagesSquare } from "lucide-react";
 
 const AdvancedChatRedirect = () => <Navigate to="/settings/chat" replace />;
+const DevicesRedirect = () => <Navigate to="/settings/devices" replace />;
 
 export function apply(ctx: DashboardContext) {
-  ctx.route({ path: "/chat/*", component: AdvancedChat, shell: "owned" });
+  // This plugin owns the chat frame: the chrome around every `/chat/*` page.
+  // Everything inside it, the chat page included, is a contributed page, so a
+  // package that adds a chat capability only registers a page and a menu entry.
+  ctx.frame({ id: "chat", path: "/chat", component: ChatWorkspace });
+  ctx.page({ frame: "chat", path: "/chat", component: Chat, home: true, layout: "full" });
+  ctx.page({ frame: "chat", path: "/chat/session/:id", component: Chat, layout: "full" });
+  ctx.page({
+    frame: "chat",
+    path: "/chat/groups",
+    component: ChatGroups,
+    nav: { id: "chat-groups", label: "聊天群组", icon: MessagesSquare, order: 20, scope: "chat", group: "direct" },
+  });
+  ctx.page({ frame: "chat", path: "/chat/groups/:groupID", component: ChatGroups });
+  ctx.page({
+    frame: "chat",
+    path: "/chat/agents",
+    component: Agents,
+    nav: { id: "chat-agents", labelKey: "nav.agents", icon: Bot, order: 10, scope: "chat", group: "agents" },
+  });
+  ctx.page({ frame: "chat", path: "/chat/agents/:id", component: AgentEditor });
+  ctx.page({
+    frame: "chat",
+    path: "/chat/agent-groups/*",
+    component: AgentGroupsPage,
+    nav: { id: "chat-agent-groups", label: "工作室", icon: LayoutGrid, order: 40, scope: "chat", group: "agents" },
+  });
+  ctx.page({ frame: "chat", path: "/chat/devices/*", component: DevicesRedirect });
+
+  // The console sidebar lists unscoped navigation, which is how the chat area is
+  // reached from the rest of the console.
+  ctx.nav({ id: "advanced-chat", labelKey: "nav.chat", path: "/chat", icon: MessageSquare, order: 10 });
+
   ctx.page({
     frame: "settings",
     path: "/settings/assistant",
@@ -28,10 +65,6 @@ export function apply(ctx: DashboardContext) {
     component: ConnectorCredentials,
     nav: { id: "advanced-chat-credentials", labelKey: "advancedChat.credentials", icon: KeyRound, order: 20, scope: "settings", group: "chat" },
   });
-  ctx.nav({ id: "advanced-chat", label: "聊天", path: "/chat", icon: MessageSquare, order: 10 });
-  ctx.nav({ id: "chat-groups", label: "聊天群组", path: "/chat/groups", icon: MessageSquare, order: 20, scope: "chat", group: "direct" });
-  ctx.nav({ id: "chat-agents", label: "代理", path: "/chat/agents", icon: MessageSquare, order: 10, scope: "chat", group: "agents" });
-  ctx.nav({ id: "chat-agent-groups", label: "工作室", path: "/chat/agent-groups", icon: MessageSquare, order: 40, scope: "chat", group: "agents" });
 }
 
 export default apply;

@@ -1,13 +1,8 @@
-import { Bot, Brain, CalendarClock, ChevronRight, Database, FileText, Home, MessageSquare, MessageSquareText, Search, Send, Settings as SettingsIcon, Sparkles, UserCircle, Users } from "lucide-react"
+import { Bot, ChevronRight, Home, Search, Settings as SettingsIcon, UserCircle } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useState } from "react"
-import Chat from "./Chat"
-import Agents from "./Agents"
-import AgentEditor from "./AgentEditor"
-import AgentGroupsPage from "./AgentGroupsPage"
-import ChatGroups from "./ChatGroups"
 import { LanguageSwitcher } from "@/components/LanguageSwitcher"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { Button } from "@/components/ui/button"
@@ -17,11 +12,19 @@ import { PageTransition } from "@/components/layout/PageTransition"
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
 import { api, apiURL, isDesktopTarget } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
-import type { PublicSettings } from "@/lib/public-settings"
-import { parseTopNavItems, withPublicSettingsDefaults } from "@/lib/public-settings"
+import { parseTopNavItems, withPublicSettingsDefaults, type PublicSettings } from "@/lib/public-settings"
 import { cn } from "@/lib/utils"
 import { DashboardSlot } from "@/lib/slots"
-import { nav, navItemLabel, subscribeExtensions, type DashboardNavItem } from "@velocelab/dashboard/frontend"
+import {
+  DashboardFrameOutlet,
+  navItemForPath,
+  navItemLabel,
+  navSections,
+  pageForPath,
+  subscribeExtensions,
+  type DashboardNavItem,
+  type DashboardNavSection,
+} from "@velocelab/dashboard/frontend"
 
 interface CurrentUser {
   username?: string
@@ -37,63 +40,28 @@ interface GlobalChatSession {
   created_at?: string
 }
 
-interface AdvancedChatSidebarItem {
+interface ChatSidebarItem {
   href: string
   label: string
   icon: LucideIcon
   active: boolean
-  children?: { href: string; label: string }[]
 }
 
-const advancedChatSidebarIconTones: Record<string, string> = {
-  "/chat": "bg-blue-500/15 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300",
-  "/chat/community": "bg-emerald-500/15 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300",
-  "/chat/tasks": "bg-orange-500/15 text-orange-600 dark:bg-orange-400/15 dark:text-orange-300",
-  "/chat/files": "bg-amber-500/15 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300",
-  "/chat/knowledge": "bg-cyan-500/15 text-cyan-600 dark:bg-cyan-400/15 dark:text-cyan-300",
-  "/chat/images": "bg-pink-500/15 text-pink-600 dark:bg-pink-400/15 dark:text-pink-300",
-  "/chat/videos": "bg-violet-500/15 text-violet-600 dark:bg-violet-400/15 dark:text-violet-300",
-  "/chat/channels": "bg-sky-500/15 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300",
-  "/chat/deliveries": "bg-emerald-500/15 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300",
-  "/chat/scheduled-tasks": "bg-amber-500/15 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300",
-  "/chat/groups": "bg-cyan-500/15 text-cyan-600 dark:bg-cyan-400/15 dark:text-cyan-300",
-  "/chat/agents": "bg-purple-500/15 text-purple-600 dark:bg-purple-400/15 dark:text-purple-300",
-  "/chat/memories": "bg-rose-500/15 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300",
-  "/chat/skills": "bg-fuchsia-500/15 text-fuchsia-600 dark:bg-fuchsia-400/15 dark:text-fuchsia-300",
-  "/chat/agent-groups": "bg-indigo-500/15 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300",
-  "/chat/agent-tasks": "bg-orange-500/15 text-orange-600 dark:bg-orange-400/15 dark:text-orange-300",
-  "/chat/mcp": "bg-indigo-500/15 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300",
-  "/chat/admin-overview": "bg-fuchsia-500/15 text-fuchsia-600 dark:bg-fuchsia-400/15 dark:text-fuchsia-300",
-  "/chat/admin-logs": "bg-slate-500/15 text-slate-600 dark:bg-slate-400/15 dark:text-slate-300",
-  "/chat/admin/general": "bg-rose-500/15 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300",
-  "/chat/admin-channels": "bg-teal-500/15 text-teal-600 dark:bg-teal-400/15 dark:text-teal-300",
-  "/chat/admin-models": "bg-pink-500/15 text-pink-600 dark:bg-pink-400/15 dark:text-pink-300",
-  "/chat/admin-users": "bg-lime-500/15 text-lime-700 dark:bg-lime-400/15 dark:text-lime-300",
-}
+type Translate = (key: string) => string
 
-interface AdvancedChatSidebarGroup {
-  id: string
-  label: string
-  items: AdvancedChatSidebarItem[]
-}
+const chatHomePath = "/chat"
 
-function sidebarItem(item: DashboardNavItem, pathname: string, t: (key: string) => string): AdvancedChatSidebarItem {
-  const active = pathname === item.path || pathname.startsWith(`${item.path}/`)
-  return { href: item.path, label: navItemLabel(item, t), icon: (item.icon as LucideIcon | undefined) || Bot, active }
-}
-
-function chatGroupLabel(group: string, language: string) {
-  const labels: Record<string, [string, string, string]> = {
-    direct: ["直接访问", "Direct", "直接アクセス"],
-    library: ["库", "Library", "ライブラリ"],
-    workflow: ["工作流", "Workflows", "ワークフロー"],
-    agents: ["代理", "Agents", "エージェント"],
-  }
-  const value = labels[group] || [group, group, group]
-  return language === "zh" ? value[0] : language === "ja" ? value[2] : value[1]
-}
-
-export default function AdvancedChat() {
+/**
+ * The chat frame. It owns the chrome around every `/chat/*` page and nothing
+ * else: the pages themselves — including this plugin's own chat page — are
+ * contributions, so a package that adds a chat capability only registers a page
+ * and appears in the menu below.
+ *
+ * The menu has two levels. Items in the `direct` section are listed flat;
+ * every other section is a heading that opens its own list of pages, which is
+ * how a package introduces a new submenu without editing this file.
+ */
+export default function ChatWorkspace() {
   const location = useLocation()
   const navigate = useNavigate()
   const { language, t } = useI18n()
@@ -131,17 +99,20 @@ export default function AdvancedChat() {
   const publicSettings = withPublicSettingsDefaults(settings)
   const isDesktop = isDesktopTarget()
   const topNavItems = parseTopNavItems(publicSettings.top_nav_items)
-  const isChatRoute = location.pathname === "/chat" || location.pathname.startsWith("/chat/session/")
-  const isFullHeightRoute = isChatRoute || location.pathname === "/chat/memories"
-  const transitionKey = isChatRoute ? "/chat" : location.pathname
+  const isHome = location.pathname === chatHomePath || location.pathname.startsWith(`${chatHomePath}/session/`)
+  // Pages that need the whole viewport declare `layout: "full"` when they register.
+  const fullHeight = pageForPath("chat", location.pathname)?.layout === "full"
+  const transitionKey = isHome ? chatHomePath : location.pathname
   const viewportHeightClass = isDesktopTarget() ? "h-full" : "h-screen"
 
   useEffect(() => {
     if (!isDesktopTarget()) {
       return
     }
-    window.parent?.postMessage({ type: "veloce-desktop-tab-title", title: desktopPageTitle(location.pathname, language), path: location.pathname }, "*")
-  }, [language, location.pathname])
+    const item = navItemForPath("chat", location.pathname)
+    const title = item ? navItemLabel(item, t) : t("nav.chat")
+    window.parent?.postMessage({ type: "veloce-desktop-tab-title", title, path: location.pathname }, "*")
+  }, [location.pathname, t])
 
   if (isSettingsLoading) {
     return (
@@ -153,8 +124,8 @@ export default function AdvancedChat() {
 
   return (
     <SidebarProvider className={cn("overflow-hidden", isDesktop ? "desktop-acrylic-window" : "bg-background", viewportHeightClass)}>
-      <Sidebar collapsible="offcanvas" className={cn(isFullHeightRoute && "bg-background")}>
-        <AdvancedChatSidebar className={cn("w-full", isFullHeightRoute && "bg-background")} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot" />
+      <Sidebar collapsible="offcanvas" className={cn(fullHeight && "bg-background")}>
+        <ChatSidebar className={cn("w-full", fullHeight && "bg-background")} publicSettings={publicSettings} user={user} sessionSlotID="chat-sessions-sidebar-slot" />
         <SidebarRail />
       </Sidebar>
       <SidebarInset className="min-w-0 overflow-hidden">
@@ -189,28 +160,16 @@ export default function AdvancedChat() {
         </div>
       </header>
 
-      <div className={cn("flex min-h-0 flex-1", isFullHeightRoute && "bg-background")}>
-        <main className={cn("flex min-h-0 flex-1 flex-col", isFullHeightRoute ? "overflow-hidden" : "overflow-y-auto")}>
-          <div className={cn("w-full flex-1", isFullHeightRoute ? "min-h-0" : "mx-auto max-w-6xl p-4 sm:p-6 lg:p-8")}>
-            <PageTransition transitionKey={transitionKey} className={cn("page-shell-transition", isFullHeightRoute && "h-full min-h-0")}>
-              <div className={cn(isFullHeightRoute ? "h-full" : "space-y-6")}>
-                {isChatRoute ? (
-                  <Chat />
-                ) : (
-                  <Routes>
-                    <Route path="agents" element={<Agents />} />
-                    <Route path="agents/:id" element={<AgentEditor />} />
-                    <Route path="devices/*" element={<Navigate to="/settings/devices" replace />} />
-                    <Route path="agent-groups/*" element={<AgentGroupsPage />} />
-                    <Route path="groups" element={<ChatGroups />} />
-                    <Route path="groups/:groupID" element={<ChatGroups />} />
-                    <Route path="*" element={<Navigate to="/chat" replace />} />
-                  </Routes>
-                )}
+      <div className={cn("flex min-h-0 flex-1", fullHeight && "bg-background")}>
+        <main className={cn("flex min-h-0 flex-1 flex-col", fullHeight ? "overflow-hidden" : "overflow-y-auto")}>
+          <div className={cn("w-full flex-1", fullHeight ? "min-h-0" : "mx-auto max-w-6xl p-4 sm:p-6 lg:p-8")}>
+            <PageTransition transitionKey={transitionKey} className={cn("page-shell-transition", fullHeight && "h-full min-h-0")}>
+              <div className={cn(fullHeight ? "h-full" : "space-y-6")}>
+                <DashboardFrameOutlet frame="chat" fallback={chatHomePath} />
               </div>
             </PageTransition>
           </div>
-          {!isFullHeightRoute && publicSettings.footer_text && (
+          {!fullHeight && publicSettings.footer_text && (
             <footer className="border-t px-4 py-4 text-center text-sm text-muted-foreground sm:px-6 lg:px-8">
               {publicSettings.footer_text}
             </footer>
@@ -253,33 +212,7 @@ export default function AdvancedChat() {
   )
 }
 
-function desktopPageTitle(pathname: string, language: string) {
-  const zh = language === "zh"
-  if (pathname === "/chat" || pathname.startsWith("/chat/session/")) return zh ? "聊天" : "Chat"
-  if (pathname === "/chat/community" || pathname.startsWith("/chat/community/")) return zh ? "社区" : "Community"
-  if (pathname === "/chat/files") return zh ? "文件库" : "Files"
-  if (pathname === "/chat/knowledge") return zh ? "知识库" : "Knowledge bases"
-  if (pathname === "/chat/memories") return zh ? "记忆" : "Memory"
-  if (pathname.startsWith("/chat/channels")) return zh ? "消息通道" : "Message Channels"
-  if (pathname === "/chat/deliveries") return zh ? "结果投递" : "Result Delivery"
-  if (pathname === "/chat/scheduled-tasks") return zh ? "任务" : "Tasks"
-  if (pathname === "/chat/groups" || pathname.startsWith("/chat/groups/")) return zh ? "聊天群组" : "Chat Groups"
-  if (pathname === "/chat/agents" || pathname.startsWith("/chat/agents/")) return zh ? "助理" : "Agents"
-  if (pathname === "/chat/skills" || pathname.startsWith("/chat/skills/")) return zh ? "技能" : "Skills"
-  if (pathname.includes("/agent-groups/") && pathname.endsWith("/operations")) return zh ? "工作室运营" : "Studio Operations"
-  if (pathname.startsWith("/chat/agent-groups")) return zh ? "工作室" : "Agent Studios"
-  if (pathname === "/chat/agent-tasks") return zh ? "代理任务" : "Agent Tasks"
-  if (pathname === "/chat/mcp") return zh ? "MCP" : "MCP"
-  if (pathname === "/chat/admin-overview") return zh ? "管理概览" : "Admin Overview"
-  if (pathname === "/chat/admin-logs") return zh ? "审计日志" : "Audit Logs"
-  if (pathname.startsWith("/chat/admin/")) return zh ? "系统设置" : "System"
-  if (pathname === "/chat/admin-channels") return zh ? "渠道" : "Channels"
-  if (pathname === "/chat/admin-models") return zh ? "模型" : "Models"
-  if (pathname === "/chat/admin-users") return zh ? "用户" : "Users"
-  return zh ? "聊天" : "Chat"
-}
-
-function AdvancedChatSidebar({
+function ChatSidebar({
   className,
   publicSettings,
   user,
@@ -297,29 +230,27 @@ function AdvancedChatSidebar({
   const { language, t } = useI18n()
   const [, refreshNavigation] = useState(0)
   useEffect(() => subscribeExtensions(() => refreshNavigation((value) => value + 1)), [])
-  const homeItem: AdvancedChatSidebarItem = {
-    href: "/chat?new_session=1",
+  const homeItem: ChatSidebarItem = {
+    href: `${chatHomePath}?new_session=1`,
     label: language === "zh" ? "主页" : language === "ja" ? "ホーム" : "Home",
     icon: Home,
-    active: location.pathname === "/chat" || location.pathname.startsWith("/chat/session/"),
+    active: location.pathname === chatHomePath || location.pathname.startsWith(`${chatHomePath}/session/`),
   }
-  const chatItems = nav("chat")
-  const directItems = chatItems.filter((item) => item.group === "direct").map((item) => sidebarItem(item, location.pathname, t))
-  const groups = Object.entries(Object.groupBy(chatItems.filter((item) => item.group && item.group !== "direct"), (item) => item.group!))
-    .map(([id, items]) => ({ id, label: chatGroupLabel(id, language), items: items.map((item) => sidebarItem(item, location.pathname, t)) }))
-    .filter((group) => group.items.length > 0)
-  const [selectedGroupID, setSelectedGroupID] = useState("")
-  const routeGroup = groups.find((group) => group.items.some((item) => item.active || item.children?.some((child) => location.pathname === child.href)))
-  const activeGroup = groups.find((group) => group.id === selectedGroupID) || routeGroup
-  const showingGroup = Boolean(activeGroup)
+  const sections = chatSections(location.pathname, t, language)
+  const flatItems = sections.filter((section) => section.id === "direct").flatMap((section) => section.items)
+  const submenus = sections.filter((section) => section.id !== "direct" && section.items.length > 0)
+  const [selectedSectionID, setSelectedSectionID] = useState("")
+  const routeSection = submenus.find((section) => section.items.some((item) => item.active))
+  const activeSection = submenus.find((section) => section.id === selectedSectionID) || routeSection
+  const showingSection = Boolean(activeSection)
 
   useEffect(() => {
     if (homeItem.active) {
-      setSelectedGroupID("")
+      setSelectedSectionID("")
       return
     }
-    setSelectedGroupID(routeGroup?.id || "")
-  }, [homeItem.active, location.pathname, routeGroup?.id])
+    setSelectedSectionID(routeSection?.id || "")
+  }, [homeItem.active, location.pathname, routeSection?.id])
 
   const handleNavigation = () => {
     onNavigate?.()
@@ -328,7 +259,7 @@ function AdvancedChatSidebar({
     }
   }
 
-  const renderSidebarLink = (item: AdvancedChatSidebarItem) => (
+  const renderSidebarLink = (item: ChatSidebarItem) => (
     <div key={item.href}>
       <Link
         to={item.href}
@@ -338,28 +269,11 @@ function AdvancedChatSidebar({
           item.active ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted"
         )}
       >
-        <span className={cn("flex size-6 shrink-0 items-center justify-center rounded", item.active ? "bg-primary-foreground/15 text-primary-foreground" : advancedChatSidebarIconTones[item.href] || "bg-muted text-muted-foreground")}>
+        <span className={cn("flex size-6 shrink-0 items-center justify-center rounded", item.active ? "bg-primary-foreground/15 text-primary-foreground" : "bg-muted text-muted-foreground")}>
           <item.icon size={15} />
         </span>
         <span className="flex-1 truncate">{item.label}</span>
       </Link>
-      {item.children && item.active && (
-          <div className="ml-8 mt-1 flex flex-col gap-1">
-          {item.children.map((child) => (
-            <Link
-              key={child.href}
-              to={child.href}
-              onClick={handleNavigation}
-              className={cn(
-                "flex h-8 items-center rounded px-2 text-sm transition-colors",
-                location.pathname === child.href ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              {child.label}
-            </Link>
-          ))}
-        </div>
-      )}
     </div>
   )
 
@@ -370,27 +284,27 @@ function AdvancedChatSidebar({
       </SidebarHeader>
       <SidebarContent className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-0">
       <nav className="relative min-h-0 flex-1">
-        <div className={cn("transition-transform duration-200 ease-out", homeItem.active && "flex min-h-full flex-col", showingGroup && "-translate-x-full")}>
+        <div className={cn("transition-transform duration-200 ease-out", homeItem.active && "flex min-h-full flex-col", showingSection && "-translate-x-full")}>
           <div className="flex flex-col gap-1 px-3 pb-3">
             <DashboardSlot name="sidebar.navigation.before" scope="/chat" />
-            {directItems.map((item) => renderSidebarLink(item))}
+            {flatItems.map((item) => renderSidebarLink(item))}
             <div className="my-1.5" />
-            {groups.map((group) => {
-              const firstItem = group.items[0]
+            {submenus.map((section) => {
+              const firstItem = section.items[0]
               return (
                 <Link
-                  key={group.id}
+                  key={section.id}
                   to={firstItem.href}
-                  onClick={() => { setSelectedGroupID(group.id); handleNavigation() }}
+                  onClick={() => { setSelectedSectionID(section.id); handleNavigation() }}
                   className={cn(
                     "flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors",
-                    group.id === routeGroup?.id ? "bg-muted text-foreground" : "hover:bg-muted"
+                    section.id === routeSection?.id ? "bg-muted text-foreground" : "hover:bg-muted"
                   )}
                 >
-                  <span className={cn("flex size-6 shrink-0 items-center justify-center rounded", advancedChatSidebarIconTones[firstItem.href] || "bg-muted text-muted-foreground")}>
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
                     <firstItem.icon size={15} />
                   </span>
-                  <span className="flex-1 truncate">{group.label}</span>
+                  <span className="flex-1 truncate">{section.label}</span>
                   <ChevronRight size={15} className="text-muted-foreground" />
                 </Link>
               )
@@ -399,13 +313,13 @@ function AdvancedChatSidebar({
           </div>
           {homeItem.active && <div id={sessionSlotID} className="min-h-0 flex-1 border-t border-border" />}
         </div>
-        <div className={cn("absolute inset-x-0 top-0 px-3 py-3 transition-transform duration-200 ease-out", showingGroup ? "translate-x-0" : "translate-x-full")}>
-          {activeGroup && (
+        <div className={cn("absolute inset-x-0 top-0 px-3 py-3 transition-transform duration-200 ease-out", showingSection ? "translate-x-0" : "translate-x-full")}>
+          {activeSection && (
             <div className="flex flex-col gap-1">
               <div className="mb-3 flex items-center gap-1 border-b pb-3 text-sm">
                 <Link
-                  to="/chat"
-                  onClick={() => { setSelectedGroupID(""); handleNavigation() }}
+                  to={chatHomePath}
+                  onClick={() => { setSelectedSectionID(""); handleNavigation() }}
                   className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-muted"
                   aria-label={t("nav.chat")}
                   title={t("nav.chat")}
@@ -413,9 +327,9 @@ function AdvancedChatSidebar({
                   <Home size={16} />
                 </Link>
                 <ChevronRight size={14} className="text-muted-foreground" />
-                <span className="min-w-0 truncate font-medium">{activeGroup.label}</span>
+                <span className="min-w-0 truncate font-medium">{activeSection.label}</span>
               </div>
-              {activeGroup.items.map((item) => renderSidebarLink(item))}
+              {activeSection.items.map((item) => renderSidebarLink(item))}
             </div>
           )}
         </div>
@@ -435,6 +349,54 @@ function AdvancedChatSidebar({
       </SidebarFooter>
     </div>
   )
+}
+
+interface ChatSidebarSection {
+  id: string
+  label: string
+  items: ChatSidebarItem[]
+}
+
+/**
+ * Sections come from the contributions: a package may declare one
+ * (`group: { id, labelKey, order }`) or join an existing one by id. This frame
+ * only backstops the buckets nobody owns, so a new submenu needs no edit here.
+ */
+function chatSections(pathname: string, t: Translate, language: string): ChatSidebarSection[] {
+  return navSections("chat").map((section) => ({
+    id: section.id,
+    label: chatSectionLabel(section, t, language),
+    items: section.items.map((item) => chatSidebarItem(item, pathname, t)),
+  }))
+}
+
+function chatSidebarItem(item: DashboardNavItem, pathname: string, t: Translate): ChatSidebarItem {
+  const active = pathname === item.path || pathname.startsWith(`${item.path}/`)
+  return { href: item.path, label: navItemLabel(item, t), icon: (item.icon as LucideIcon | undefined) || Bot, active }
+}
+
+function chatSectionLabel(section: DashboardNavSection, t: Translate, language: string) {
+  if (section.label) {
+    return section.label
+  }
+  if (section.labelKey) {
+    const label = t(section.labelKey)
+    if (label !== section.labelKey) {
+      return label
+    }
+  }
+  return chatFallbackSectionLabel(section.id, language)
+}
+
+function chatFallbackSectionLabel(id: string, language: string) {
+  const labels: Record<string, [string, string, string]> = {
+    direct: ["直接访问", "Direct", "直接アクセス"],
+    library: ["库", "Library", "ライブラリ"],
+    workflow: ["工作流", "Workflows", "ワークフロー"],
+    agents: ["代理", "Agents", "エージェント"],
+  }
+  const value = labels[id] || [id, id, id]
+  return language === "zh" ? value[0] : language === "ja" ? value[2] : value[1]
 }
 
 function UserAvatar({ user }: { user?: CurrentUser }) {

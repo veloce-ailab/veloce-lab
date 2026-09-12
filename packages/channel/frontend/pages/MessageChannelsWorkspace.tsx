@@ -249,7 +249,7 @@ export default function MessageChannelsWorkspace() {
       <Route index element={<ChannelList copy={copy} />} />
       <Route path="new" element={<ChannelDetail copy={copy} mode="create" />} />
       <Route path=":id" element={<ChannelDetail copy={copy} mode="edit" />} />
-      <Route path="*" element={<Navigate to="/chat/channels" replace />} />
+      <Route path="*" element={<Navigate to="/settings/message-channel" replace />} />
     </Routes>
   )
 }
@@ -275,7 +275,7 @@ function ChannelList({ copy }: { copy: CopyText }) {
           <p className="mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
         </div>
         <Button asChild className="gap-2">
-          <Link to="/chat/channels/new">
+          <Link to="/settings/message-channel/new">
             <Plus size={16} />
             {copy.newChannel}
           </Link>
@@ -290,7 +290,7 @@ function ChannelList({ copy }: { copy: CopyText }) {
         ) : (
           channels.map((channel) => (
             <div key={channel.id} className="grid gap-3 rounded-md border p-4 transition-colors hover:bg-muted/50 md:grid-cols-[1fr_auto] md:items-center">
-              <Link to={`/chat/channels/${channel.id}`} className="min-w-0">
+              <Link to={`/settings/message-channel/${channel.id}`} className="min-w-0">
               <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-2">
@@ -370,14 +370,14 @@ function ChannelDetail({ copy, mode }: { copy: CopyText; mode: "create" | "edit"
         if (saved.provider === "tencent_channel") {
           setActiveTab("basic")
           if (mode === "create") {
-            navigate(`/chat/channels/${saved.id}?login=tencent`, { replace: true })
+            navigate(`/settings/message-channel/${saved.id}?login=tencent`, { replace: true })
           } else {
             setTencentLoginAutoKey(Date.now())
-            navigate(`/chat/channels/${saved.id}`, { replace: true })
+            navigate(`/settings/message-channel/${saved.id}`, { replace: true })
           }
           return
         }
-        navigate(`/chat/channels/${saved.id}`, { replace: mode === "create" })
+        navigate(`/settings/message-channel/${saved.id}`, { replace: mode === "create" })
       }
     },
     onError: (err) => error(apiErrorMessage(err, copy.saveFailed)),
@@ -388,7 +388,7 @@ function ChannelDetail({ copy, mode }: { copy: CopyText; mode: "create" | "edit"
     onSuccess: () => {
       success(copy.deleted)
       queryClient.invalidateQueries({ queryKey: channelQueryKey })
-      navigate("/chat/channels", { replace: true })
+      navigate("/settings/message-channel", { replace: true })
     },
     onError: (err) => error(apiErrorMessage(err, copy.deleteFailed)),
   })
@@ -424,7 +424,7 @@ function ChannelDetail({ copy, mode }: { copy: CopyText; mode: "create" | "edit"
   }, [activeTab, tabs])
 
   if (mode === "edit" && channels.length > 0 && !current) {
-    return <Navigate to="/chat/channels" replace />
+    return <Navigate to="/settings/message-channel" replace />
   }
 
   return (
@@ -432,7 +432,7 @@ function ChannelDetail({ copy, mode }: { copy: CopyText; mode: "create" | "edit"
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Button asChild variant="ghost" className="-ml-3 gap-2">
-            <Link to="/chat/channels">
+            <Link to="/settings/message-channel">
               <ArrowLeft size={16} />
               {copy.back}
             </Link>
