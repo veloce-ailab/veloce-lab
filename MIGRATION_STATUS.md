@@ -201,6 +201,42 @@ cookie — before leaving for the login page.
 `@velocelab/auth` is not enabled in `yumeri.json`, so the instance behind it is
 open as before; enabling the plugin puts every request behind a session.
 
+## Development mode: the frontend is served from source
+
+`NODE_ENV=production` serves the build. Anywhere else — and whenever the
+dashboard plugin is configured with `"dev": true` — the frontend is compiled on
+demand instead, so editing a dashboard component or a plugin page updates the
+browser without a build step.
+
+The Vite server is embedded rather than started next to the application: it runs
+in middleware mode, `appType: "custom"`, and answers through the dashboard's own
+catch-all route on the port the application already listens on. Nothing opens a
+second HTTP port. The HMR socket is attached to the same http server, and the
+server's own upgrade handler — which answers every unmatched upgrade with a 400
+and closes it — is wrapped so that `vite-hmr` and `vite-ping` upgrades reach
+Vite while every other upgrade, such as a plugin's own websocket, still reaches
+the application untouched.
+
+Entries follow the mode. `addEntry({ dev, prod })` already registered both, and
+the manifest now resolves them accordingly: the sources are published as `/@fs/`
+URLs that the embedded server compiles, the build keeps its
+`/api/static/plugin?file=…` URL, and whichever of the two is missing on disk
+falls back to the other. `/api/static/plugin` answers a source with a redirect,
+so an old client cannot fetch uncompiled TSX.
+
+Because the plugin sources are compiled by the *dashboard's* Vite server, one
+module graph covers everything: `@velocelab/dashboard/frontend` resolves to
+`frontend/client.ts`, `@/components|lib|hooks` resolves to the dashboard's own
+files, and React, React Router, React Query and lucide come from one pre-bundled
+dependency set. A plugin page and the shell therefore share React and both
+hot-update. `/dashboard-client.js` — the stable URL that *built* plugin bundles
+import — redirects to that same source runtime, so a mix of compiled and
+pre-built parts still holds a single copy of React.
+
+If Vite or one of its plugins is not installed, the dashboard logs the reason and
+serves `dist/web` exactly as before: development mode is a convenience, not a
+requirement. Production behaviour is unchanged.
+
 ## Design system ownership
 
 `@velocelab/dashboard` owns the only stylesheet in the repository
