@@ -237,6 +237,47 @@ If Vite or one of its plugins is not installed, the dashboard logs the reason an
 serves `dist/web` exactly as before: development mode is a convenience, not a
 requirement. Production behaviour is unchanged.
 
+## Development mode: the plugins are loaded from source
+
+The other half of the same idea applies to the backend. Every package declares
+where it is written next to where it is published:
+
+```json
+"main": "dist/index.js",
+"dev": "src/index.ts",
+```
+
+`yarn dev` sets `NODE_ENV=development` and starts Yumeri through the Hirari
+loader (`node --import @hirarijs/loader/import …`), so a package is imported from
+its `dev` entry. A build is then needed to publish, not to run: edit a plugin's
+`src/index.ts`, save, and the running instance is the code you just wrote.
+
+`scripts/hirari-yumeri-dev.cjs` is the loader plugin that ties the two together.
+It resolves `@velocelab/<package>` to that package's `dev` entry, gives the
+package a generation each time Yumeri imports it, and serves its files under a
+URL carrying it. That last part is what makes a reload reload: Yumeri disposes a
+plugin and imports it again when a watched file changes, but an ES module is
+cached by URL, so without a new URL the second import returns the first module
+and the plugin is re-applied with the code it already had.
+
+Reloads themselves need nothing from a plugin. `Context.dispose()` runs every
+effect a plugin registered, `ctx.affect(addEntry's remove)` among them, so the
+manifest entry, its assets and its routes disappear with the plugin and come back
+once, without duplicates. Only the changed package's own files are versioned;
+its imports of other packages keep their identity, so shared classes such as a
+service stay one class.
+
+Two things are worth knowing about this arrangement:
+
+- Yumeri's own `dev` script in the upstream repository,
+  `yumeri start --import @hirarijs/loader/import`, does not work: its launcher
+  splits its arguments at `start`, so the loader flag has to come first —
+  `yumeri --import @hirarijs/loader/import start`.
+- A route that answers a request itself must set `session.responseHandled`; the
+  core writes a response after every matched route otherwise, and writing twice
+  ends the process. The dashboard's catch-all route does this where the embedded
+  Vite server has already answered.
+
 ## Design system ownership
 
 `@velocelab/dashboard` owns the only stylesheet in the repository

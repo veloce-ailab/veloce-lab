@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
+  "dev": "src/index.ts",
   "dependencies": {
     "@velocelab/advanced-chat": "workspace:*"
   },

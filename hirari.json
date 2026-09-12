@@ -1,0 +1,19 @@
+{
+  "loader": {
+    "format": "esm",
+    "plugins": [
+      "./scripts/hirari-yumeri-dev.cjs",
+      "@hirarijs/loader-tsx",
+      "@hirarijs/loader-ts"
+    ],
+    "pluginOptions": {
+      "@hirarijs/loader-ts": {
+        "ignoreNodeModules": true,
+        "continue": true
+      },
+      "@hirarijs/loader-tsx": {}
+    },
+    "autoInstall": true,
+    "debug": false
+  }
+}
