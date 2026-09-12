@@ -1,5 +1,6 @@
-import { Palette, Settings as SettingsIcon, Shield } from "lucide-react";
+import { Palette, Puzzle, Settings as SettingsIcon, Shield } from "lucide-react";
 import type { DashboardContext } from "@velocelab/dashboard/frontend";
+import PluginsSettings from "./pages/PluginsSettings";
 import SettingsWorkspace from "./pages/SettingsWorkspace";
 import SystemSettings from "./pages/SystemSettings";
 import ThemeSettings from "./pages/ThemeSettings";
@@ -21,6 +22,15 @@ export default function apply(ctx: DashboardContext) {
     id: "settings",
     path: "/settings",
     component: SettingsWorkspace,
+  });
+  // Plugin management is a platform concern, so its entry is registered by the
+  // shell's own plugin rather than contributed by a capability package.
+  ctx.page({
+    frame: "settings",
+    path: "/settings/plugins",
+    component: PluginsSettings,
+    layout: "full",
+    nav: { id: "settings-plugins", labelKey: "settings.plugins.title", icon: Puzzle, order: 60, ...SCOPE },
   });
   ctx.page({
     frame: "settings",
