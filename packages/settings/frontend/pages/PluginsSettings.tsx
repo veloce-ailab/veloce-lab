@@ -5,7 +5,6 @@ import {
   Button,
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   Input,
@@ -216,9 +215,6 @@ export default function PluginsSettings() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">{t("settings.plugins.title")}</CardTitle>
-                  <CardDescription>
-                    {selected.enabled ? t("settings.plugins.saveHint") : t("settings.plugins.disabledHint")}
-                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {plugins.isLoading || draft === null ? (
