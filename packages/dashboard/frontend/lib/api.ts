@@ -84,7 +84,9 @@ export const apiURL = (pathOrURL: string) => {
   const backend = configuredBackendURL();
   return backend ? `${backend}${path}` : pathOrURL;
 };
-const api = axios.create({ baseURL: apiURL("/api") });
+// Plugins import this by name as well as through the default export; without
+// the named export a development server refuses the module outright.
+export const api = axios.create({ baseURL: apiURL("/api") });
 export const getAuthLoginURL = (
   referralCode?: string | null,
   agreementAccepted = false,
