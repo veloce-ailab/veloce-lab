@@ -6,9 +6,10 @@ export const provide = ["settings"];
 
 export function apply(ctx: Context) {
   // The settings shell and its pages live in this plugin, so the labels it
-  // renders are registered here as well. Group labels are read back as
-  // `settings.group.<id>`; contributors may override any group by registering
-  // the same key from their own package.
+  // renders are registered here as well. Section labels are declared by the
+  // contributing package itself (`group: { id, labelKey, order }`);
+  // `settings.group.<id>` only backstops the shell's own `general` bucket and
+  // any section a contribution joined without declaring a label.
   ctx.i18n({
     settings: {
       title: { zh: "设置", en: "Settings", ja: "設定" },

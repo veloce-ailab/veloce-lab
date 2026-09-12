@@ -13,9 +13,9 @@ import {
   cn,
   frameHome,
   isDesktopTarget,
-  nav,
   navItemForPath,
   navItemLabel,
+  navSections,
   pageForPath,
   subscribeExtensions,
   useI18n,
@@ -184,22 +184,46 @@ function SettingsSidebar({ homePath, user, onLogout, className, onNavigate }: {
   )
 }
 
-/** Groups follow the declared navigation order; labels come from `settings.group.<id>`. */
+/**
+ * Navigation sections come from the contributions themselves: a package that
+ * owns a capability declares its own heading (`group: { id, labelKey, order }`),
+ * and this shell only renders what it is given. `settings.group.<id>` stays as a
+ * fallback for the shell's own buckets (`general`, `system`), and the same table
+ * supplies their default order so undeclared and declared sections interleave
+ * predictably.
+ */
 function settingsNavigationGroups(t: Translate): SettingsNavGroup[] {
-  const groups = new Map<string, SettingsNavGroup>()
-  for (const item of nav("settings")) {
-    const id = item.group || "general"
-    const group = groups.get(id) ?? { id, label: settingsGroupLabel(id, t), items: [] }
-    group.items.push({ href: item.path, label: navItemLabel(item, t), icon: item.icon || SettingsIcon })
-    groups.set(id, group)
-  }
-  return [...groups.values()]
+  return navSections("settings")
+    .map((section, index) => ({ section, index, order: section.order ?? settingsGroupOrder(section.id) }))
+    .sort((a, b) => a.order - b.order || a.index - b.index)
+    .map(({ section }) => {
+      const declared = section.label ?? (section.labelKey ? translate(t, section.labelKey) : undefined)
+      return {
+        id: section.id,
+        label: declared ?? settingsGroupLabel(section.id, t),
+        items: section.items.map((item) => ({
+          href: item.path,
+          label: navItemLabel(item, t),
+          icon: item.icon || SettingsIcon,
+        })),
+      }
+    })
+}
+
+/** Default order of the shell's own buckets; a declared section keeps its own order. */
+function settingsGroupOrder(id: string) {
+  const order: Record<string, number> = { general: 10, ai: 20, chat: 30, system: 40 }
+  return order[id] ?? 100
 }
 
 function settingsGroupLabel(id: string, t: Translate) {
   const key = `settings.group.${id}`
+  return translate(t, key) ?? id
+}
+
+function translate(t: Translate, key: string) {
   const label = t(key)
-  return label === key ? id : label
+  return label === key ? undefined : label
 }
 
 function settingsPageTitle(pathname: string, t: Translate) {

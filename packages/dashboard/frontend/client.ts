@@ -1,6 +1,6 @@
 export * from "./runtime"
 export * from "./public"
-export { DashboardFrameOutlet, frameHome, frames, nav, navItemForPath, pages, pageForPath, pathMatches, subscribeExtensions } from "./extension"
+export { DashboardFrameOutlet, frameHome, frames, nav, navGroupId, navItemForPath, navSections, pages, pageForPath, pathMatches, subscribeExtensions } from "./extension"
 // `export *` intentionally excludes `default`. Plugin bundles compiled from
 // JSX can still request React's default import, so expose it explicitly from
 // the shared runtime.

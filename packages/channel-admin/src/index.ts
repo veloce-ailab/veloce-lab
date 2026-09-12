@@ -15,6 +15,7 @@ export const provide = ["channel-admin"];
 
 export function apply(ctx: Context) {
   ctx.i18n("channelAdmin.settings", { zh: "AI 服务商与模型", en: "AI providers and models", ja: "AIサービスとモデル" });
+  ctx.i18n("channelAdmin.settingsGroup", { zh: "智能体", en: "Agents", ja: "エージェント" });
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/channel-admin.js", import.meta.url).pathname, plugin: "channel-admin" });
   const db = ctx.component.database as Database;
   const adapters = ctx.component.adapters as AdapterRegistry;
