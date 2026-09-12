@@ -177,51 +177,21 @@ export default function SecuritySettings() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">{copy.securitySettings}</h1>
+      <div>
+        <h1 className="text-3xl font-bold">{copy.securitySettings}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{copy.securityDescription}</p>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {publicSettings.sms_enabled && (
           <Card>
-            <CardHeader>
-              <CardTitle>{copy.phoneBinding}</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound size={18} />{copy.phoneBinding}</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="text-sm text-muted-foreground">
-                {user?.phone ? copy.phoneBoundDescription.replace("{phone}", user.phone) : copy.phoneBindDescription}
-              </div>
-              {publicSettings.sms_binding_required && !user?.phone && (
-                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-400">
-                  {copy.phoneBindingRequiredHint}
-                </div>
-              )}
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  value={bindPhoneNumber}
-                  placeholder={copy.phonePlaceholder}
-                  onChange={(event) => setBindPhoneNumber(event.target.value)}
-                />
-                <Button
-                  variant="outline"
-                  className="shrink-0 gap-2"
-                  disabled={!bindPhoneNumber.trim() || sendPhoneBindCode.isPending}
-                  onClick={() => sendPhoneBindCode.mutate()}
-                >
-                  {copy.sendCode}
-                </Button>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  value={bindPhoneCode}
-                  placeholder={copy.phoneCodePlaceholder}
-                  onChange={(event) => setBindPhoneCode(event.target.value)}
-                />
-                <Button
-                  className="shrink-0 gap-2"
-                  disabled={!bindPhoneNumber.trim() || !bindPhoneCode.trim() || bindPhone.isPending}
-                  onClick={() => bindPhone.mutate()}
-                >
-                  {user?.phone ? copy.rebindPhone : copy.bindPhone}
-                </Button>
+              <div className="text-sm text-muted-foreground">{user?.phone ? copy.phoneBoundDescription.replace("{phone}", user.phone) : copy.phoneBindDescription}</div>
+              {publicSettings.sms_binding_required && !user?.phone && <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-400">{copy.phoneBindingRequiredHint}</div>}
+              <div className="space-y-4">
+                <div className="flex flex-col gap-2 sm:flex-row"><Input value={bindPhoneNumber} placeholder={copy.phonePlaceholder} onChange={(event) => setBindPhoneNumber(event.target.value)} /><Button variant="outline" className="shrink-0 gap-2" disabled={!bindPhoneNumber.trim() || sendPhoneBindCode.isPending} onClick={() => sendPhoneBindCode.mutate()}>{copy.sendCode}</Button></div>
+                <div className="flex flex-col gap-2 sm:flex-row"><Input value={bindPhoneCode} placeholder={copy.phoneCodePlaceholder} onChange={(event) => setBindPhoneCode(event.target.value)} /><Button className="shrink-0 gap-2" disabled={!bindPhoneNumber.trim() || !bindPhoneCode.trim() || bindPhone.isPending} onClick={() => bindPhone.mutate()}>{user?.phone ? copy.rebindPhone : copy.bindPhone}</Button></div>
               </div>
               {phoneStatus && <div className="text-sm text-muted-foreground">{phoneStatus}</div>}
             </CardContent>
@@ -230,56 +200,22 @@ export default function SecuritySettings() {
 
         {publicSettings.oidc_enabled && (
           <Card>
-            <CardHeader>
-              <CardTitle>{copy.oidcBinding}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="text-sm text-muted-foreground">
-                {user?.oidc_sub ? copy.oidcBoundDescription : copy.oidcBindDescription}
-              </div>
-              <Button className="gap-2" variant="outline" disabled={Boolean(user?.oidc_sub) || bindOIDC.isPending} onClick={() => bindOIDC.mutate()}>
-                <KeyRound size={16} />
-                {user?.oidc_sub ? copy.bound : copy.bindOIDC}
-              </Button>
-              {bindStatus && <div className="text-sm text-muted-foreground">{bindStatus}</div>}
+            <CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound size={18} />{copy.oidcBinding}</CardTitle></CardHeader>
+            <CardContent className="space-y-1">
+              <div className="flex min-h-16 items-center gap-3 border-b py-3 last:border-b-0"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><KeyRound size={17} /></div><div className="min-w-0 flex-1"><div className="text-sm font-medium">{copy.oidcBinding}</div><div className="mt-0.5 text-xs text-muted-foreground">{user?.oidc_sub ? copy.oidcBoundDescription : copy.oidcBindDescription}</div></div><div className="shrink-0"><Button className="gap-2" variant="outline" disabled={Boolean(user?.oidc_sub) || bindOIDC.isPending} onClick={() => bindOIDC.mutate()}><KeyRound size={16} />{user?.oidc_sub ? copy.bound : copy.bindOIDC}</Button></div></div>
+              {bindStatus && <div className="py-2 text-sm text-muted-foreground">{bindStatus}</div>}
             </CardContent>
           </Card>
         )}
 
         {publicSettings.passkey_enabled && (
           <Card>
-            <CardHeader>
-              <CardTitle>{copy.passkeys}</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound size={18} />{copy.passkeys}</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="text-sm text-muted-foreground">{copy.passkeyDescription}</div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input value={passkeyName} placeholder={copy.passkeyNamePlaceholder} onChange={(event) => setPasskeyName(event.target.value)} />
-                <Button className="shrink-0 gap-2" disabled={createPasskey.isPending} onClick={() => createPasskey.mutate()}>
-                  <KeyRound size={16} />
-                  {copy.addPasskey}
-                </Button>
-              </div>
-              <div className="space-y-2">
-                {passkeys.length === 0 ? (
-                  <div className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">{copy.noPasskeys}</div>
-                ) : (
-                  passkeys.map((passkey) => (
-                    <div key={passkey.id} className="grid gap-2 rounded-md border p-3 sm:grid-cols-[1fr_auto] sm:items-center">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{passkey.name || copy.defaultPasskeyName}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {copy.passkeyMeta
-                            .replace("{created}", formatDateTime(passkey.created_at))
-                            .replace("{last}", passkey.last_used_at ? formatDateTime(passkey.last_used_at) : copy.never)}
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm" disabled={deletePasskey.isPending} onClick={() => deletePasskey.mutate(passkey.id)}>
-                        {t("common.delete")}
-                      </Button>
-                    </div>
-                  ))
-                )}
+              <div className="flex flex-col gap-2 sm:flex-row"><Input value={passkeyName} placeholder={copy.passkeyNamePlaceholder} onChange={(event) => setPasskeyName(event.target.value)} /><Button className="shrink-0 gap-2" disabled={createPasskey.isPending} onClick={() => createPasskey.mutate()}><KeyRound size={16} />{copy.addPasskey}</Button></div>
+              <div className="space-y-1">
+                {passkeys.length === 0 ? <div className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">{copy.noPasskeys}</div> : passkeys.map((passkey) => <div key={passkey.id} className="flex min-h-16 items-center gap-3 border-b py-3 last:border-b-0"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><KeyRound size={17} /></div><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{passkey.name || copy.defaultPasskeyName}</div><div className="mt-0.5 text-xs text-muted-foreground">{copy.passkeyMeta.replace("{created}", formatDateTime(passkey.created_at)).replace("{last}", passkey.last_used_at ? formatDateTime(passkey.last_used_at) : copy.never)}</div></div><div className="shrink-0"><Button variant="outline" size="sm" disabled={deletePasskey.isPending} onClick={() => deletePasskey.mutate(passkey.id)}>{t("common.delete")}</Button></div></div>)}
               </div>
               {passkeyStatus && <div className="text-sm text-muted-foreground">{passkeyStatus}</div>}
             </CardContent>
@@ -287,68 +223,11 @@ export default function SecuritySettings() {
         )}
 
         <Card>
-          <CardHeader>
-            <CardTitle>{copy.changePassword}</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound size={18} />{copy.changePassword}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            {isPasswordMethodLoading ? (
-              <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
-            ) : passwordMethod?.method === "email_code" ? (
-              <div className="space-y-3">
-                <Field label={t("common.email")} value={passwordMethod.email || "-"} />
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input
-                    value={passwordEmailCode}
-                    placeholder={copy.emailCodePlaceholder}
-                    onChange={(event) => setPasswordEmailCode(event.target.value)}
-                  />
-                  <Button
-                    variant="outline"
-                    className="shrink-0 gap-2"
-                    disabled={sendPasswordCode.isPending}
-                    onClick={() => sendPasswordCode.mutate()}
-                  >
-                    <KeyRound size={16} />
-                    {copy.sendCode}
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <Input
-                  value={currentPassword}
-                  type="password"
-                  placeholder={copy.currentPasswordPlaceholder}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
-                />
-                {passwordMethod && !passwordMethod.password_set && (
-                  <div className="text-sm text-muted-foreground">{copy.noPasswordSet}</div>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <Input
-                value={newPassword}
-                type="password"
-                placeholder={copy.newPasswordPlaceholder}
-                onChange={(event) => setNewPassword(event.target.value)}
-              />
-              <Input
-                value={confirmPassword}
-                type="password"
-                placeholder={copy.confirmPasswordPlaceholder}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-              />
-            </div>
-            <Button
-              className="w-full gap-2"
-              disabled={!canChangePassword(passwordMethod, currentPassword, passwordEmailCode, newPassword, confirmPassword) || changePassword.isPending}
-              onClick={() => changePassword.mutate()}
-            >
-              <KeyRound size={16} />
-              {copy.savePassword}
-            </Button>
+            {isPasswordMethodLoading ? <div className="text-sm text-muted-foreground">{t("common.loading")}</div> : passwordMethod?.method === "email_code" ? <div className="space-y-3"><Field label={t("common.email")} value={passwordMethod.email || "-"} /><div className="flex flex-col gap-2 sm:flex-row"><Input value={passwordEmailCode} placeholder={copy.emailCodePlaceholder} onChange={(event) => setPasswordEmailCode(event.target.value)} /><Button variant="outline" className="shrink-0 gap-2" disabled={sendPasswordCode.isPending} onClick={() => sendPasswordCode.mutate()}><KeyRound size={16} />{copy.sendCode}</Button></div></div> : <div className="space-y-3"><Input value={currentPassword} type="password" placeholder={copy.currentPasswordPlaceholder} onChange={(event) => setCurrentPassword(event.target.value)} />{passwordMethod && !passwordMethod.password_set && <div className="text-sm text-muted-foreground">{copy.noPasswordSet}</div>}</div>}
+            <div className="space-y-3"><Input value={newPassword} type="password" placeholder={copy.newPasswordPlaceholder} onChange={(event) => setNewPassword(event.target.value)} /><Input value={confirmPassword} type="password" placeholder={copy.confirmPasswordPlaceholder} onChange={(event) => setConfirmPassword(event.target.value)} /></div>
+            <Button className="w-full gap-2" disabled={!canChangePassword(passwordMethod, currentPassword, passwordEmailCode, newPassword, confirmPassword) || changePassword.isPending} onClick={() => changePassword.mutate()}><KeyRound size={16} />{copy.savePassword}</Button>
             {passwordStatus && <div className="text-sm text-muted-foreground">{passwordStatus}</div>}
           </CardContent>
         </Card>
@@ -450,6 +329,7 @@ const zhSecurityCopy = {
   passwordMismatch: "两次输入的新密码不一致",
   noPasswordSet: "当前账号没有可校验的旧密码，需要管理员先配置 SMTP 后再通过邮箱验证码修改。",
   securitySettings: "安全设置",
+  securityDescription: "管理登录密码、通行密钥与第三方账号绑定。",
 }
 
 const enSecurityCopy: typeof zhSecurityCopy = {
@@ -499,4 +379,5 @@ const enSecurityCopy: typeof zhSecurityCopy = {
   passwordMismatch: "New passwords do not match",
   noPasswordSet: "This account has no current password to verify. Ask an administrator to configure SMTP, then change it with an email code.",
   securitySettings: "Security settings",
+  securityDescription: "Manage your login password, passkeys and linked accounts.",
 }

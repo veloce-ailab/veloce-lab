@@ -1,9 +1,12 @@
+import { Bot, ListRestart, MessageSquareText, Radio, Save, ShieldCheck, UserCheck } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Button,
   Card,
   CardContent,
+  CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
   Select,
@@ -99,25 +102,30 @@ export default function AssistantSettings() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">{copy.assistantSettings}</h1>
+      <div>
+        <h1 className="text-3xl font-bold">{copy.assistantSettings}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{copy.assistantDescription}</p>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>{copy.titleGeneration}</CardTitle>
+            <CardTitle className="flex items-center gap-2"><MessageSquareText size={18} />{copy.titleGeneration}</CardTitle>
+            <CardDescription>{copy.titleGenerationDescription}</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="text-sm text-muted-foreground">{copy.titleGenerationDescription}</div>
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">{copy.titleChannel}</span>
-              <Select value={String((titleUserChannelID || "") || "__shadcn_empty__")} onValueChange={(value) => {
+          <CardContent className="space-y-1">
+            <label className="flex min-h-16 items-center gap-3 border-b py-3 last:border-b-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><Radio size={17} /></div>
+              <div className="min-w-0 flex-1 text-sm font-medium">{copy.titleChannel}</div>
+              <div className="w-56 shrink-0">
+                <Select value={String((titleUserChannelID || "") || "__shadcn_empty__")} onValueChange={(value) => {
                   const nextID = Number((value === "__shadcn_empty__" ? "" : value)) || 0
                   setTitleUserChannelID(nextID)
                   const nextModels = modelsForChannel(catalog, nextID)
                   if (titleModelName && !nextModels.includes(titleModelName)) {
                     setTitleModelName("")
                   }
-                }}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+                }}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
                 <SelectItem value="__shadcn_empty__">{copy.anyChannel}</SelectItem>
                 {catalog.map((channel) => (
                   <SelectItem key={channel.id} value={String(channel.id)}>
@@ -125,10 +133,13 @@ export default function AssistantSettings() {
                   </SelectItem>
                 ))}
               </SelectContent></Select>
+              </div>
             </label>
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">{copy.titleModel}</span>
-              <Select value={String((titleModelName) || "__shadcn_empty__")} onValueChange={(value) => setTitleModelName((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+            <label className="flex min-h-16 items-center gap-3 border-b py-3 last:border-b-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><Bot size={17} /></div>
+              <div className="min-w-0 flex-1 text-sm font-medium">{copy.titleModel}</div>
+              <div className="w-56 shrink-0">
+                <Select value={String((titleModelName) || "__shadcn_empty__")} onValueChange={(value) => setTitleModelName((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
                 <SelectItem value="__shadcn_empty__">{copy.titleDisabled}</SelectItem>
                 {titleSelectOptions.map((model) => (
                   <SelectItem key={model} value={String(model)}>
@@ -136,39 +147,50 @@ export default function AssistantSettings() {
                   </SelectItem>
                 ))}
               </SelectContent></Select>
+              </div>
             </label>
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">{copy.titleScope}</span>
-              <Select value={String((titleGenerationScope) || "__shadcn_empty__")} onValueChange={(value) => setTitleGenerationScope(normalizeTitleScope((value === "__shadcn_empty__" ? "" : value)))}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+            <label className="flex min-h-16 items-center gap-3 border-b py-3 last:border-b-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><ListRestart size={17} /></div>
+              <div className="min-w-0 flex-1 text-sm font-medium">{copy.titleScope}</div>
+              <div className="w-56 shrink-0">
+                <Select value={String((titleGenerationScope) || "__shadcn_empty__")} onValueChange={(value) => setTitleGenerationScope(normalizeTitleScope((value === "__shadcn_empty__" ? "" : value)))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
                 <SelectItem value="recent">{copy.titleScopeRecent}</SelectItem>
                 <SelectItem value="all">{copy.titleScopeAll}</SelectItem>
               </SelectContent></Select>
+              </div>
             </label>
-            <Button className="gap-2" disabled={saveSettings.isPending} onClick={() => saveSettings.mutate()}>
-              {saveSettings.isPending ? copy.saving : copy.saveTitleSettings}
-            </Button>
           </CardContent>
+          <CardFooter className="border-t">
+            <Button className="gap-2" disabled={saveSettings.isPending} onClick={() => saveSettings.mutate()}>
+              <Save size={16} />{saveSettings.isPending ? copy.saving : copy.saveTitleSettings}
+            </Button>
+          </CardFooter>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>{copy.connectorApproval}</CardTitle>
+            <CardTitle className="flex items-center gap-2"><ShieldCheck size={18} />{copy.connectorApproval}</CardTitle>
+            <CardDescription>{copy.connectorApprovalDescription}</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="text-sm text-muted-foreground">{copy.connectorApprovalDescription}</div>
-            <label className="space-y-1 text-sm">
-              <span className="font-medium">{copy.approvalAssistant}</span>
-              <Select value={String((connectorApprovalAgentID) || "__shadcn_empty__")} onValueChange={(value) => setConnectorApprovalAgentID((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+          <CardContent className="space-y-1">
+            <label className="flex min-h-16 items-center gap-3 border-b py-3 last:border-b-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><UserCheck size={17} /></div>
+              <div className="min-w-0 flex-1 text-sm font-medium">{copy.approvalAssistant}</div>
+              <div className="w-56 shrink-0">
+                <Select value={String((connectorApprovalAgentID) || "__shadcn_empty__")} onValueChange={(value) => setConnectorApprovalAgentID((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
                 <SelectItem value="__shadcn_empty__">{copy.noApprovalAssistant}</SelectItem>
                 {advancedChatAgents.map((agent) => (
                   <SelectItem key={agent.id} value={String(agent.id)}>{agent.name}</SelectItem>
                 ))}
               </SelectContent></Select>
+              </div>
             </label>
-            <Button className="gap-2" disabled={saveSettings.isPending} onClick={() => saveSettings.mutate()}>
-              {saveSettings.isPending ? copy.saving : copy.saveApprovalSettings}
-            </Button>
           </CardContent>
+          <CardFooter className="border-t">
+            <Button className="gap-2" disabled={saveSettings.isPending} onClick={() => saveSettings.mutate()}>
+              <Save size={16} />{saveSettings.isPending ? copy.saving : copy.saveApprovalSettings}
+            </Button>
+          </CardFooter>
         </Card>
       </div>
     </div>
@@ -235,6 +257,7 @@ const zhAssistantCopy = {
   noApprovalAssistant: "暂不使用助手审批",
   saveApprovalSettings: "保存审批设置",
   assistantSettings: "助手设置",
+  assistantDescription: "配置会话标题生成与连接器审批所使用的模型。",
   saving: "保存中...",
 }
 
@@ -255,5 +278,6 @@ const enAssistantCopy: typeof zhAssistantCopy = {
   noApprovalAssistant: "Do not use assistant approval",
   saveApprovalSettings: "Save approval settings",
   assistantSettings: "Assistant settings",
+  assistantDescription: "Choose the models used for conversation titles and connector approval.",
   saving: "Saving...",
 }

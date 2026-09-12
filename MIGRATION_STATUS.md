@@ -76,6 +76,34 @@ backend does not implement yet (it exists only in the legacy Go service), so the
 network proxy form cannot load or save until a system-settings store and route
 are added. That store belongs to Phase 10 of the roadmap.
 
+## Design system ownership
+
+`@velocelab/dashboard` owns the only stylesheet in the repository
+(`frontend/index.css`) and the only copy of the UI kit
+(`frontend/components/ui`). Plugins consume both through
+`@velocelab/dashboard/frontend` — or the `@/components/ui/*` alias, which
+resolves to the same dashboard client bundle at build time. Plugins must not
+ship theme tokens, font faces or their own copy of a component.
+
+The stylesheet targets the shadcn preset `b27GcrRo` (base radix, style rhea,
+neutral theme, Inter, lucide, default radius) and follows the Tailwind v4
+conventions of that preset:
+
+- `@theme inline` maps every token to a Tailwind colour, radius and font
+  variable. Without that mapping no shadcn utility (`bg-background`,
+  `border-border`, `text-muted-foreground`, `rounded-lg`, …) is emitted at all,
+  which is what made pages render outside the design system.
+- `tw-animate-css` and `shadcn/tailwind.css` provide the animation and variant
+  layers that the kit's Radix components rely on.
+- `@fontsource-variable/inter` ships the preset font with the bundle.
+- `@source "../../*/frontend/**/*.tsx"` makes this single build scan every
+  plugin frontend, so plugin pages compile against the same tokens instead of
+  shipping a second stylesheet.
+
+Re-apply the preset after a shadcn upgrade with
+`yarn dlx shadcn@latest apply --preset b27GcrRo --only theme,font -c packages/dashboard`;
+`packages/dashboard/components.json` points the CLI at that stylesheet.
+
 When migrating an item, place its routes in that plugin's `apply` function and
 make all dependencies optional through `ctx.component` lookups. Do not add
 new routes to `service` or create an `api` catch-all package.
