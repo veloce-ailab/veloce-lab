@@ -1,7 +1,7 @@
 import type { ChangeEvent } from "react"
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Camera, UserCircle } from "lucide-react"
+import { Camera, Languages, UserCircle } from "lucide-react"
 import {
   Button,
   Card,
@@ -96,24 +96,28 @@ export default function ProfileSettings() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">{t("settings.profile")}</h1>
-
-      <div className="flex justify-end">
-        <Button type="button" variant="outline" onClick={resetOnboardingGuide}>重新回顾设置向导</Button>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">{t("settings.profile")}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{copy.subtitle}</p>
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" onClick={resetOnboardingGuide}>重新回顾设置向导</Button>
+        </div>
       </div>
 
       <PageTitleSlot />
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>{t("settings.profile")}</CardTitle>
+            <CardTitle className="flex items-center gap-2"><UserCircle size={18} />{t("settings.profile")}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-1">
             {isLoading ? (
-              <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+              <div className="py-3 text-sm text-muted-foreground">{t("common.loading")}</div>
             ) : (
               <>
-                <div className="flex items-center gap-4 border-b pb-4">
+                <div className="flex items-center gap-4 border-b py-3">
                   <div className="relative shrink-0">
                     <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border bg-muted text-lg font-semibold text-foreground">
                       {avatarPreview || user?.avatar_url ? (
@@ -152,7 +156,7 @@ export default function ProfileSettings() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t("common.language")}</CardTitle>
+            <CardTitle className="flex items-center gap-2"><Languages size={18} />{t("common.language")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="text-sm text-muted-foreground">{t("settings.languageSubtitle")}</div>
@@ -179,9 +183,9 @@ function apiErrorMessage(error: unknown, fallback: string) {
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b pb-3 last:border-b-0 last:pb-0">
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="min-w-0 truncate text-sm font-medium">{value}</div>
+    <div className="flex min-h-16 items-center justify-between gap-4 border-b py-3 last:border-b-0">
+      <div className="text-sm font-medium">{label}</div>
+      <div className="min-w-0 truncate text-sm text-muted-foreground">{value}</div>
     </div>
   )
 }
@@ -199,6 +203,7 @@ function avatarInitials(value: string) {
 }
 
 const zhProfileCopy = {
+  subtitle: "管理账号资料、头像和控制台语言。",
   avatar: "头像",
   uploadAvatar: "上传头像",
   avatarHint: "支持 JPEG、PNG、GIF 或 WebP，最大 2 MB。",
@@ -213,6 +218,7 @@ const zhProfileCopy = {
 }
 
 const enProfileCopy: typeof zhProfileCopy = {
+  subtitle: "Manage your account details, avatar and console language.",
   avatar: "Avatar",
   uploadAvatar: "Upload avatar",
   avatarHint: "JPEG, PNG, GIF, or WebP up to 2 MB.",

@@ -78,7 +78,7 @@ export default function AgentEditor() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><Button asChild variant="ghost" className="w-fit gap-2"><Link to="/chat/agents"><ArrowLeft size={16} />返回助理</Link></Button><Button className="gap-2" disabled={saving || !name.trim()} onClick={save}><Save size={16} />{saving ? "正在保存" : "保存"}</Button></div>
-      <div><h1 className="text-2xl font-semibold">编辑助理</h1><p className="mt-1 text-sm text-muted-foreground">配置助理身份、能力与每次会话前使用的预设对话。</p></div>
+      <div><h1 className="text-3xl font-bold">编辑助理</h1><p className="mt-2 text-sm text-muted-foreground">配置助理身份、能力与每次会话前使用的预设对话。</p></div>
 
       <Card><CardHeader><CardTitle>基本信息</CardTitle></CardHeader><CardContent className="space-y-4">
         <div className="grid gap-4 md:grid-cols-3">

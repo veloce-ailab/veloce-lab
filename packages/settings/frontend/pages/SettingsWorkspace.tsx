@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, ChevronRight, Home, LogOut, MessageSquare, Settings as SettingsIcon, UserCircle } from "lucide-react"
-import { Link, useLocation, useNavigate } from "react-router-dom"
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom"
 import { useEffect, useState } from "react"
 import {
   AppHeader,
@@ -97,26 +97,37 @@ export default function SettingsWorkspace() {
 
       <div className="flex min-h-0 flex-1">
         <ResizableSidebar storageKey="settings-navigation" side="left" defaultWidth={288} minWidth={216} maxWidth={440} className="hidden lg:block lg:h-full">
-          <SettingsSidebar className="h-full w-full" pathname={location.pathname} homePath={homePath} user={user} onLogout={logout} />
+          <SettingsSidebar className="h-full w-full" homePath={homePath} user={user} onLogout={logout} />
         </ResizableSidebar>
         <div className={cn("fixed inset-0 z-40 transition-opacity duration-200 lg:hidden", isDesktop ? "top-0" : "top-16", isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSidebarOpen}>
           <button type="button" className="absolute inset-0 bg-black/35 backdrop-blur-sm transition-opacity duration-200" aria-label={t("settings.closeMenu")} onClick={() => setIsSidebarOpen(false)} />
-          <SettingsSidebar className={cn("relative z-50 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")} pathname={location.pathname} homePath={homePath} user={user} onLogout={logout} onNavigate={() => setIsSidebarOpen(false)} />
+          <SettingsSidebar className={cn("relative z-50 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")} homePath={homePath} user={user} onLogout={logout} onNavigate={() => setIsSidebarOpen(false)} />
         </div>
-        <main className={cn("min-h-0 flex-1 transition-[filter] duration-200", fullHeight ? "overflow-hidden" : "overflow-y-auto", isSidebarOpen && "max-lg:blur-sm")}>
-          <div className={cn("w-full", fullHeight ? "h-full min-h-0" : "mx-auto max-w-6xl p-4 sm:p-7 lg:p-10")}>
-            <PageTransition transitionKey={location.pathname} className={cn("page-shell-transition", fullHeight && "h-full min-h-0")}>
+        <main className={cn("flex min-h-0 flex-1 flex-col transition-[filter] duration-200", fullHeight ? "overflow-hidden" : "overflow-y-auto", isSidebarOpen && "max-lg:blur-sm")}>
+          <DashboardSlot name="content.before" />
+          {fullHeight ? (
+            <PageTransition transitionKey={location.pathname} className="page-shell-transition h-full min-h-0">
               <DashboardFrameOutlet frame="settings" fallback={homePath} />
             </PageTransition>
-          </div>
+          ) : (
+            <div className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6 lg:p-8">
+              <PageTransition transitionKey={location.pathname} className="page-shell-transition">
+                <div className="space-y-6">
+                  <DashboardSlot name="content.header" />
+                  <DashboardSlot name="content.toolbar" />
+                  <DashboardFrameOutlet frame="settings" fallback={homePath} />
+                </div>
+              </PageTransition>
+            </div>
+          )}
+          <DashboardSlot name="content.after" />
         </main>
       </div>
     </div>
   )
 }
 
-function SettingsSidebar({ pathname, homePath, user, onLogout, className, onNavigate }: {
-  pathname: string
+function SettingsSidebar({ homePath, user, onLogout, className, onNavigate }: {
   homePath?: string
   user?: CurrentUser
   onLogout: () => void
@@ -132,7 +143,7 @@ function SettingsSidebar({ pathname, homePath, user, onLogout, className, onNavi
   const accountPath = homePath ?? "/chat"
 
   return (
-    <aside className={cn("flex h-full min-h-0 w-72 shrink-0 flex-col border-r bg-card", className)}>
+    <aside className={cn("flex h-full min-h-0 w-full shrink-0 flex-col border-r bg-card", className)}>
       <div className="shrink-0 border-b px-4 pb-3 pt-4">
         <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
           <Link to="/chat" onClick={onNavigate} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted" title={t("nav.chat")} aria-label={t("nav.chat")}><Home size={15} /></Link>
@@ -152,14 +163,13 @@ function SettingsSidebar({ pathname, homePath, user, onLogout, className, onNavi
           const collapsed = collapsedGroups.includes(group.id)
           return (
             <section key={group.id}>
-              <button type="button" className="flex h-8 w-full items-center justify-between rounded-md px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-muted" onClick={() => toggleGroup(group.id)} aria-expanded={!collapsed}>
+              <button type="button" className="flex h-8 w-full items-center justify-between rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted" onClick={() => toggleGroup(group.id)} aria-expanded={!collapsed}>
                 <span>{group.label}</span>
                 {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
               </button>
               {!collapsed && <div className="mt-1 space-y-0.5">{group.items.map((item) => {
                 const Icon = item.icon
-                const active = pathname === item.href
-                return <Link key={item.href} to={item.href} onClick={onNavigate} className={cn("flex h-9 items-center gap-3 rounded-md px-3 text-sm transition-colors", active ? "bg-primary font-medium text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}><Icon size={16} /><span className="truncate">{item.label}</span></Link>
+                return <NavLink key={item.href} to={item.href} onClick={onNavigate} className={({ isActive }) => cn("flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors", isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}><Icon size={16} /><span className="truncate">{item.label}</span></NavLink>
               })}</div>}
             </section>
           )

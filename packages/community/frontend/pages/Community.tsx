@@ -72,7 +72,7 @@ function CommunityBrowse() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1"><h1 className="text-2xl font-semibold">社区</h1><p className="text-sm text-muted-foreground">探索可导入的 AI 角色、知识库和技能。</p></div>
+      <div><h1 className="text-3xl font-bold">社区</h1><p className="mt-2 text-sm text-muted-foreground">探索可导入的 AI 角色、知识库和技能。</p></div>
       <PageTabs aria-label="社区导航">
         <PageTab active={activeTab === "characters"} onClick={() => changeTab("characters")}>角色</PageTab>
         <PageTab active={activeTab === "knowledge"} onClick={() => changeTab("knowledge")}>知识库</PageTab>

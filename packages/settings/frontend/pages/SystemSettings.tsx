@@ -1,7 +1,22 @@
 import type { ReactNode } from "react"
 import { useEffect, useState } from "react"
 import { Globe2, Info, KeyRound, Save, ShieldCheck } from "lucide-react"
-import { Button, Input, Switch, api, useMutation, useQuery, useQueryClient, useToast } from "@velocelab/dashboard/frontend"
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  Input,
+  Switch,
+  api,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  useToast,
+} from "@velocelab/dashboard/frontend"
 
 export type SystemSettingsSection = "proxy" | "about"
 
@@ -74,34 +89,65 @@ export default function SystemSettings({ section = "proxy" }: { section?: System
     ? { title: "软件信息", description: "查看当前服务端和桌面端构建版本。" }
     : { title: "网络代理", description: "配置群组和模型上游请求使用的网络代理。" }
   return (
-    <div className="mx-auto max-w-5xl space-y-7 pb-10">
-      <div className="flex flex-wrap items-end justify-between gap-4 border-b pb-6">
-        <div><h1 className="text-3xl font-semibold tracking-tight">{page.title}</h1><p className="mt-2 text-sm text-muted-foreground">{page.description}</p></div>
-        <Button className="gap-2" disabled={save.isPending || settings.isLoading} onClick={() => save.mutate()}><Save size={16} />保存更改</Button>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">{page.title}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{page.description}</p>
+        </div>
+        <div className="flex gap-2">
+          <Button className="gap-2" disabled={save.isPending || settings.isLoading} onClick={() => save.mutate()}><Save size={16} />保存更改</Button>
+        </div>
       </div>
 
-      {section === "proxy" && <><SettingGroup icon={<Globe2 size={18} />} title="网络代理" description="所有模型上游请求使用的全局代理。">
-        <SettingRow title="启用代理" description="开启后通过代理服务器访问外部网络"><Switch checked={proxyEnabled} onCheckedChange={setProxyEnabled} /></SettingRow>
-        <div className="space-y-5 border-t px-5 py-5">
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="text-sm font-medium">代理类型</div><p className="mt-1 text-xs text-muted-foreground">选择代理服务器支持的协议。</p></div><div className="flex rounded-md border p-1">{(["http", "https", "socks5"] as const).map((type) => <button type="button" key={type} onClick={() => setProxyType(type)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${proxyType === type ? "rounded bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{type.toUpperCase()}</button>)}</div></div>
-          <div className="grid gap-4 sm:grid-cols-[1fr_180px]"><Field label="服务器地址" hint="例如 127.0.0.1"><Input value={proxyHost} disabled={!proxyEnabled} onChange={(event) => setProxyHost(event.target.value)} placeholder="127.0.0.1" /></Field><Field label="端口" hint="1 - 65535"><Input type="number" min={1} max={65535} value={proxyPort} disabled={!proxyEnabled} onChange={(event) => setProxyPort(event.target.value)} placeholder="7890" /></Field></div>
-        </div>
-      </SettingGroup>
+      {section === "proxy" && <>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Globe2 size={18} />网络代理</CardTitle>
+            <CardDescription>所有模型上游请求使用的全局代理。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            <SettingsRow title="启用代理" description="开启后通过代理服务器访问外部网络"><Switch checked={proxyEnabled} onCheckedChange={setProxyEnabled} aria-label="启用代理" /></SettingsRow>
+            <div className="flex flex-col gap-4 border-b py-3 last:border-b-0">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div><div className="text-sm font-medium">代理类型</div><div className="mt-0.5 text-xs text-muted-foreground">选择代理服务器支持的协议。</div></div>
+                <div className="flex rounded-md border p-1">
+                  {(["http", "https", "socks5"] as const).map((type) => <button type="button" key={type} onClick={() => setProxyType(type)} className={`px-3 py-1.5 text-xs font-medium transition-colors ${proxyType === type ? "rounded bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{type.toUpperCase()}</button>)}
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-[1fr_180px]">
+                <Field label="服务器地址" hint="例如 127.0.0.1"><Input value={proxyHost} disabled={!proxyEnabled} onChange={(event) => setProxyHost(event.target.value)} placeholder="127.0.0.1" /></Field>
+                <Field label="端口" hint="1 - 65535"><Input type="number" min={1} max={65535} value={proxyPort} disabled={!proxyEnabled} onChange={(event) => setProxyPort(event.target.value)} placeholder="7890" /></Field>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-      <SettingGroup icon={<KeyRound size={18} />} title="代理认证" description="代理服务器需要账号密码时填写。">
-        <SettingRow title="需要认证" description="使用代理用户名和密码建立连接"><Switch checked={proxyAuthEnabled} disabled={!proxyEnabled} onCheckedChange={setProxyAuthEnabled} /></SettingRow>
-        {proxyAuthEnabled && <div className="grid gap-4 border-t px-5 py-5 sm:grid-cols-2"><Field label="用户名"><Input value={proxyUsername} disabled={!proxyEnabled} onChange={(event) => setProxyUsername(event.target.value)} /></Field><Field label="密码"><Input type="password" value={proxyPassword} disabled={!proxyEnabled} onChange={(event) => setProxyPassword(event.target.value)} /></Field></div>}
-      </SettingGroup>
-
-      <div className="flex items-start gap-3 rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground"><Info size={17} className="mt-0.5 shrink-0" /><p>代理配置保存后立即对新的上游请求生效。修改后如仍无法连接，请检查地址、端口和代理协议。</p></div></>}
-
-      {section === "about" && <>
-        <SettingGroup icon={<ShieldCheck size={18} />} title="软件信息" description="当前服务端和桌面端构建版本。">
-          <SettingRow title="后端版本" description="服务端 API 构建版本"><span className="font-mono text-sm">{form.backend_version || "dev"}</span></SettingRow>
-          <SettingRow title="Desktop 前端版本" description="Electron 应用内置 Web 前端版本"><span className="font-mono text-sm">{import.meta.env.VITE_APP_VERSION || "0.1.0"}</span></SettingRow>
-          <SettingRow title="站点名称" description="产品名称固定为 Veloce"><span className="text-sm text-muted-foreground">Veloce</span></SettingRow>
-        </SettingGroup>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><KeyRound size={18} />代理认证</CardTitle>
+            <CardDescription>代理服务器需要账号密码时填写。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            <SettingsRow title="需要认证" description="使用代理用户名和密码建立连接"><Switch checked={proxyAuthEnabled} disabled={!proxyEnabled} onCheckedChange={setProxyAuthEnabled} aria-label="需要认证" /></SettingsRow>
+            {proxyAuthEnabled && <div className="grid gap-4 border-b py-3 last:border-b-0 sm:grid-cols-2"><Field label="用户名"><Input value={proxyUsername} disabled={!proxyEnabled} onChange={(event) => setProxyUsername(event.target.value)} /></Field><Field label="密码"><Input type="password" value={proxyPassword} disabled={!proxyEnabled} onChange={(event) => setProxyPassword(event.target.value)} /></Field></div>}
+          </CardContent>
+          <CardFooter className="gap-3 border-t text-xs text-muted-foreground"><Info size={17} className="shrink-0" /><span>代理配置保存后立即对新的上游请求生效。修改后如仍无法连接，请检查地址、端口和代理协议。</span></CardFooter>
+        </Card>
       </>}
+
+      {section === "about" &&
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><ShieldCheck size={18} />软件信息</CardTitle>
+            <CardDescription>当前服务端和桌面端构建版本。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            <SettingsRow title="后端版本" description="服务端 API 构建版本"><span className="font-mono text-sm">{form.backend_version || "dev"}</span></SettingsRow>
+            <SettingsRow title="Desktop 前端版本" description="Electron 应用内置 Web 前端版本"><span className="font-mono text-sm">{import.meta.env.VITE_APP_VERSION || "0.1.0"}</span></SettingsRow>
+            <SettingsRow title="站点名称" description="产品名称固定为 Veloce"><span className="text-sm text-muted-foreground">Veloce</span></SettingsRow>
+          </CardContent>
+        </Card>}
     </div>
   )
 }
@@ -111,12 +157,8 @@ function buildProxyURL(input: { proxyType: string; proxyHost: string; proxyPort:
   return `${input.proxyType}://${auth}${input.proxyHost.trim()}:${input.proxyPort.trim()}`
 }
 
-function SettingGroup({ icon, title, description, children }: { icon: ReactNode; title: string; description: string; children: ReactNode }) {
-  return <section className="overflow-hidden rounded-lg border bg-card shadow-sm"><div className="flex items-center gap-3 px-5 py-4"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">{icon}</span><span className="min-w-0 flex-1"><span className="block font-semibold">{title}</span><span className="mt-0.5 block text-xs text-muted-foreground">{description}</span></span></div><div className="border-t">{children}</div></section>
-}
-
-function SettingRow({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <div className="flex min-h-[72px] items-center justify-between gap-5 px-5 py-4"><div className="min-w-0"><div className="text-sm font-medium">{title}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p></div><div className="shrink-0">{children}</div></div>
+function SettingsRow({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+  return <div className="flex min-h-16 items-center gap-3 border-b py-3 last:border-b-0"><div className="min-w-0 flex-1"><div className="text-sm font-medium">{title}</div><div className="mt-0.5 text-xs text-muted-foreground">{description}</div></div><div className="shrink-0">{children}</div></div>
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
