@@ -4,6 +4,7 @@ import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/advanced-chat";
 import "@velocelab/connector";
 import "@velocelab/file";
+import { ensureTables } from "./tables.js";
 export const depend = ["database", "dashboard", "connector", "file"];
 export const provide = ["workspace"];
 export interface WorkspaceService {
@@ -17,13 +18,14 @@ declare module "yumeri" {
     workspace: WorkspaceService;
   }
 }
-export function apply(ctx: Context) {
+export async function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/workspace.js", import.meta.url).pathname,
     plugin: "workspace",
   });
   const db = ctx.component.database as Database;
+  await ensureTables(db);
   const connector = ctx.component.connector;
   const files = ctx.component.file;
   const service: WorkspaceService = {

@@ -4,6 +4,7 @@ import "@velocelab/dashboard";
 import "@velocelab/file";
 import "@velocelab/advanced-chat";
 import "@velocelab/database-core";
+import { ensureTables } from "./tables.js";
 
 const communityKnowledgeAPIBaseURL = "https://veloce-community.flweb.cn/api/v1";
 const maxCommunityKnowledgeImport = 32 << 20;
@@ -107,13 +108,14 @@ declare module "yumeri" {
     knowledge: KnowledgeService;
   }
 }
-export function apply(ctx: Context) {
+export async function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/knowledge.js", import.meta.url).pathname,
     plugin: "knowledge",
   });
   const db = ctx.component.database;
+  await ensureTables(db);
   const files = ctx.component.file;
   const service: KnowledgeService = {
     list: (userId) =>

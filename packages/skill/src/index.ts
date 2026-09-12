@@ -5,6 +5,7 @@ import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/advanced-chat";
 import "@velocelab/file";
+import { ensureTables } from "./tables.js";
 export const depend = [
   "dashboard",
   "advanced-chat",
@@ -44,7 +45,7 @@ declare module "yumeri" {
     skill: SkillService;
   }
 }
-export function apply(ctx: Context) {
+export async function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/skill.js", import.meta.url).pathname,
@@ -52,6 +53,7 @@ export function apply(ctx: Context) {
   });
   const skills: SkillDefinition[] = [];
   const db = ctx.component.database as Database;
+  await ensureTables(db);
   const files = ctx.component.file;
   const service: SkillService = {
     list: async (userId) =>

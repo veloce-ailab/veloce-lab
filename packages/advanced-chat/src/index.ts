@@ -20,6 +20,7 @@ import { registerRunTools } from "./run-tools.js";
 import "@velocelab/dashboard";
 import "@velocelab/file";
 import "@velocelab/database-core";
+import { ensureTables } from "./tables.js";
 
 export * from "./types.js";
 
@@ -301,7 +302,7 @@ function decodeObject(value: unknown) {
   }
 }
 
-export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
+export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const dashboard = ctx.component.dashboard;
   const packageRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -323,6 +324,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const tools: ChatToolDefinition[] = [];
   const contextProviders: ChatContextProvider[] = [];
   const db = ctx.component.database;
+  await ensureTables(db);
   registerChatFileRoutes(
     ctx,
     db,
@@ -432,9 +434,13 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       const name = input.name.trim();
       if (!userId || !name) throw Error("agent name is required");
       const now = new Date().toISOString();
+      // `id` is a NOT NULL primary column in the existing schema and the API
+      // identifies agents by `stable_id`, so both carry the same value.
+      const id = newID("aca");
       return db.create("advanced_chat_agents", {
+        id,
         user_id: userId,
-        stable_id: newID("aca"),
+        stable_id: id,
         name: name.slice(0, 100),
         prompt: input.prompt.trim(),
         default_model: input.defaultModel.trim(),

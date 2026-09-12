@@ -2,6 +2,7 @@ import { Context, Database, Session } from "yumeri";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
+import { ensureTables } from "./tables.js";
 export const depend = ["dashboard", "database"];
 export const provide = ["connector"];
 export interface ConnectorService {
@@ -24,7 +25,7 @@ declare module "yumeri" {
     connector: ConnectorService;
   }
 }
-export function apply(ctx: Context) {
+export async function apply(ctx: Context) {
   ctx.i18n({ connector: { settings: { zh: "设备管理", en: "Device management", ja: "デバイス管理" } } });
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
@@ -33,6 +34,7 @@ export function apply(ctx: Context) {
   });
   const handlers: ConnectorHandler[] = [];
   const db = ctx.component.database as Database;
+  await ensureTables(db);
   const uid = (s: Session) =>
     Number((s.properties.user as { id?: number } | undefined)?.id ?? 0);
   const connectorToken = (s: Session) => {
