@@ -127,11 +127,6 @@ export function apply(ctx: Context) {
           en: "Select a plugin to view and edit its configuration.",
           ja: "左側からプラグインを選ぶと設定を表示します。",
         },
-        description: {
-          zh: "插件的启用状态和配置都保存在 yumeri.json 里。",
-          en: "A plugin's enabled state and configuration live in yumeri.json.",
-          ja: "プラグインの有効状態と設定は yumeri.json に保存されます。",
-        },
         status: {
           enabled: { zh: "已启用", en: "Enabled", ja: "有効" },
           pending: { zh: "未加载", en: "Not loaded", ja: "未読み込み" },
@@ -147,20 +142,10 @@ export function apply(ctx: Context) {
         reloaded: { zh: "插件已重载", en: "Plugin reloaded", ja: "プラグインを再読み込みしました" },
         failed: { zh: "操作失败", en: "The operation failed", ja: "操作に失敗しました" },
         loadFailed: { zh: "加载插件列表失败", en: "Could not load the plugin list", ja: "プラグイン一覧を読み込めませんでした" },
-        saveHint: {
-          zh: "保存会写回 yumeri.json,配置在插件下次加载时生效。",
-          en: "Saving writes yumeri.json; the values apply the next time the plugin loads.",
-          ja: "保存すると yumeri.json に書き戻され、次回の読み込み時に反映されます。",
-        },
-        disabledHint: {
-          zh: "该插件当前已禁用,保存的配置会在启用后生效。",
-          en: "This plugin is disabled; saved values apply once it is enabled.",
-          ja: "このプラグインは無効です。保存した設定は有効化後に反映されます。",
-        },
         pendingHint: {
-          zh: "该插件在配置里是启用的,但没能加载,通常是依赖没有满足。",
-          en: "The plugin is enabled in the configuration but did not load, usually because a dependency is missing.",
-          ja: "設定では有効ですが読み込まれていません。多くの場合、依存関係が満たされていません。",
+          zh: "这个插件是启用的,但没有加载起来,通常是因为依赖没有满足。",
+          en: "The plugin is enabled but did not load, usually because a dependency is missing.",
+          ja: "有効ですが読み込まれていません。多くの場合、依存関係が満たされていません。",
         },
         unloaded: {
           zh: "依赖它的插件一并卸载",
