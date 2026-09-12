@@ -49,6 +49,8 @@ interface DashboardEntryState {
 }
 interface DashboardState { assets: DashboardAsset[]; entries: Map<string, DashboardEntryState>; revision: number; }
 const states = new WeakMap<Core, DashboardState>();
+/** The development server this application of the plugin started, if any. */
+const devServers = new WeakMap<Core, DashboardDevServer>();
 
 /**
  * Whether the frontend is served from source. Entry registration happens while
@@ -180,8 +182,11 @@ export function apply(ctx: Context, pluginConfig?: DashboardConfig) {
   ctx.registerService("dashboard", Dashboard);
   development = pluginConfig?.dev ?? development;
   const state = stateFor(ctx);
-  const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "web");
+  const core = ctx.getCore();
+  // The plugin runs from `dist` after a build and from `src` in development, so
+  // the package root is the parent of either and the build output is under it.
   const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const webRoot = path.join(packageRoot, "dist", "web");
   let devServerPromise: Promise<DashboardDevServer | undefined> | undefined;
 
   /**
@@ -195,6 +200,11 @@ export function apply(ctx: Context, pluginConfig?: DashboardConfig) {
       devServerPromise = server
         ? startDashboardDevServer({ packageRoot, server, runtimePath, logger })
         : Promise.resolve(undefined);
+      void devServerPromise.then((dev) => {
+        // The watchers and the socket belong to this application of the plugin;
+        // a reload has to be able to take them apart again.
+        if (dev) devServers.set(core, dev);
+      });
     }
     return devServerPromise;
   };
@@ -245,37 +255,74 @@ export function apply(ctx: Context, pluginConfig?: DashboardConfig) {
   ctx.route("root").methods("GET").action(async (session: Session) => {
     const req = session.client.req as IncomingMessage | undefined;
     const res = session.client.res;
-    const dev = await devServerFor(req);
-    if (dev && req && res) {
-      if (await dev.handle(req, res)) return;
-      // Documents are rendered from source too, so the application itself is
-      // reloaded as it is edited.
-      if (!path.extname(session.pathname)) {
-        try {
-          const document = await dev.document();
-          session.setMime("text/html; charset=utf-8");
-          session.head["Cache-Control"] = "no-store";
-          session.respond(document, "plain");
+    try {
+      const dev = await devServerFor(req);
+      if (dev && req && res) {
+        if (await dev.handle(req, res)) {
+          // The development server writes the response itself; without this the
+          // core would write a second time and end the process.
+          session.responseHandled = true;
           return;
-        } catch (error) {
-          logger.warn(`Dashboard development document unavailable, serving the build instead: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        // Documents are rendered from source too, so the application itself is
+        // reloaded as it is edited.
+        if (!path.extname(session.pathname)) {
+          try {
+            const document = await dev.document();
+            session.setMime("text/html; charset=utf-8");
+            session.head["Cache-Control"] = "no-store";
+            session.respond(document, "plain");
+            return;
+          } catch (error) {
+            logger.warn(`Dashboard development document unavailable, serving the build instead: ${error instanceof Error ? error.message : String(error)}`);
+          }
         }
       }
-    }
-    const requested = session.pathname === "/" ? "index.html" : session.pathname.replace(/^\//, "");
-    const safe = requested.includes("..") ? "index.html" : requested;
-    const file = path.resolve(webRoot, safe);
-    try {
-      const mime = mimeFor(file);
-      if (mime) session.setMime(mime);
-      // The shared runtime is referenced by a stable URL from every plugin bundle.
-      // Do not let browsers keep an incompatible runtime after an upgrade.
-      const maxAge = safe === runtimePath.replace(/^\//, "") || safe === "index.html" ? 0 : 3600;
-      session.file(file, { maxAge, etag: true });
-    } catch {
-      const fallback = path.resolve(webRoot, "index.html");
-      session.setMime("text/html; charset=utf-8");
-      session.file(fallback, { maxAge: 60, etag: true });
+      const requested = session.pathname === "/" ? "index.html" : session.pathname.replace(/^\//, "");
+      const safe = requested.includes("..") ? "index.html" : requested;
+      const file = path.resolve(webRoot, safe);
+      try {
+        const mime = mimeFor(file);
+        if (mime) session.setMime(mime);
+        // The shared runtime is referenced by a stable URL from every plugin bundle.
+        // Do not let browsers keep an incompatible runtime after an upgrade.
+        const maxAge = safe === runtimePath.replace(/^\//, "") || safe === "index.html" ? 0 : 3600;
+        session.file(file, { maxAge, etag: true });
+      } catch {
+        const fallback = path.resolve(webRoot, "index.html");
+        session.setMime("text/html; charset=utf-8");
+        session.file(fallback, { maxAge: 60, etag: true });
+      }
+    } catch (error) {
+      // This route is the last stop for every path. Answering is what keeps a
+      // single failure from ending the process, since the core cannot write a
+      // response once one has started.
+      logger.error(`Dashboard could not answer ${session.pathname}: ${error instanceof Error ? error.message : String(error)}`);
+      if (res && !res.headersSent) {
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Dashboard error");
+        return;
+      }
+      session.status = 500;
+      session.respond("Dashboard error", "plain");
     }
   });
+}
+
+/**
+ * Yumeri unloads a plugin before applying it again, which runs the effects its
+ * context recorded — the `addEntry` registrations among them. The development
+ * server is not a context effect, so it is taken down here instead.
+ */
+export async function disable(ctx: Context) {
+  const core = ctx.getCore();
+  const dev = devServers.get(core);
+  if (!dev) return;
+  devServers.delete(core);
+  try {
+    await dev.close();
+    logger.info("Dashboard development server detached");
+  } catch (error) {
+    logger.warn(`Dashboard development server did not shut down cleanly: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }

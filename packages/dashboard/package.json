@@ -3,9 +3,11 @@
     "version": "0.1.0",
     "type": "module",
     "main": "dist/index.js",
+    "dev": "src/index.ts",
     "types": "dist/index.d.ts",
     "exports": {
         ".": "./dist/index.js",
+        "./package.json": "./package.json",
         "./frontend": {
             "types": "./frontend/client.ts",
             "default": "./dist/web/dashboard-client.js"
