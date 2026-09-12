@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Loader2, Play, Power, Puzzle, RefreshCw, Save, Search, ShieldAlert } from "lucide-react"
+import { Loader2, Play, Power, Puzzle, RefreshCw, Save, Search } from "lucide-react"
 import {
   Badge,
   Button,
@@ -124,21 +124,6 @@ export default function PluginsSettings() {
   const onValidity = (path: string, valid: boolean) =>
     setInvalid((current) => (valid ? current.filter((item) => item !== path) : current.includes(path) ? current : [...current, path]))
 
-  const forbidden = (plugins.error as { response?: { status?: number } } | null)?.response?.status === 403
-
-  if (forbidden) {
-    return (
-      <div className="p-4 sm:p-6 lg:p-8">
-        <Card className="mx-auto max-w-2xl">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><ShieldAlert size={18} />{t("settings.plugins.title")}</CardTitle>
-            <CardDescription>{t("settings.plugins.forbidden")}</CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    )
-  }
-
   const blocked = act.isPending || invalid.length > 0
   const status = pluginStatus(selected?.status)
 
@@ -155,7 +140,8 @@ export default function PluginsSettings() {
           </div>
           <nav className="min-h-0 flex-1 overflow-y-auto p-2">
             {plugins.isLoading && <div className="space-y-2 p-1">{[0, 1, 2, 3].map((key) => <Skeleton key={key} className="h-11 w-full" />)}</div>}
-            {!plugins.isLoading && !visible.length && <p className="p-3 text-sm text-muted-foreground">{t("settings.plugins.empty")}</p>}
+            {!plugins.isLoading && plugins.isError && <p className="p-3 text-sm text-destructive">{t("settings.plugins.loadFailed")}</p>}
+            {!plugins.isLoading && !plugins.isError && !visible.length && <p className="p-3 text-sm text-muted-foreground">{t("settings.plugins.empty")}</p>}
             {visible.map((plugin) => (
               <button
                 key={plugin.name}
@@ -188,7 +174,11 @@ export default function PluginsSettings() {
             </Select>
           </div>
 
-          {!selected && !plugins.isLoading && <p className="text-sm text-muted-foreground">{t("settings.plugins.select")}</p>}
+          {!selected && !plugins.isLoading && (
+            <p className={cn("text-sm", plugins.isError ? "text-destructive" : "text-muted-foreground")}>
+              {plugins.isError ? t("settings.plugins.loadFailed") : t("settings.plugins.select")}
+            </p>
+          )}
 
           {selected && (
             <>
