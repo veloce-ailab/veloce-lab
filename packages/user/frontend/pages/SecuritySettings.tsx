@@ -38,8 +38,9 @@ interface PasskeyCredential {
 }
 
 /**
- * Phone, OIDC, passkey and password management. Owned by the auth plugin: the
- * settings plugin only provides the shell around it.
+ * Phone, OIDC, passkey and password management. Account settings, so it lives
+ * with the account page: the package that authenticates requests keeps nothing
+ * that has to be rendered after a session exists.
  */
 export default function SecuritySettings() {
   const { language, t } = useI18n()
