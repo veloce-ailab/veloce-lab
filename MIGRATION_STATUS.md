@@ -157,6 +157,50 @@ entry resolves to `frameHome("settings")`, the settings frame's chat entry to
 `/settings/message-channel` path. `avatar_url`, `site_name` and the switchers come
 from the top bar package, so the dashboard no longer exports an `AppHeader`.
 
+## Authentication is a layer, not a page
+
+`@velocelab/auth` no longer contributes a frontend at all: it does not depend on
+`@velocelab/dashboard` and ships no page to the dashboard. Authentication cannot be
+a page of the application, because the application is what it protects — anything
+it wanted to render would have to be loaded before a session exists.
+
+Instead the package installs one global middleware and serves one document:
+
+- `ctx.use("authentication", …)` decides every request. A request that carries a
+  session — the `Authorization: Bearer` token the application sends, or the
+  `veloce_session` cookie a browser navigation carries — passes through with
+  `session.properties.user` set. Everything else is refused: a navigation is
+  answered with `302` to `/login?next=…`, an API call with `401`.
+- `GET /login` is a self-contained document with its own inlined styles and
+  script. It reads `/api/configuration` and `/api/public/settings` for the
+  agreement mode, the registration switch and the site name, posts to
+  `/auth/password/login` (and `/auth/password/register`), stores the token and
+  continues to `next`. `next` is validated as a same-site absolute path, so it
+  cannot be used as an open redirect.
+- The public surface is explicit and small: `/login`, `/setup` and the assets
+  those two load, `/api/public/settings`, `/api/configuration`, `/api/setup*`,
+  `/api/dashboard/manifest`, `/api/static/plugin`, the password endpoints,
+  `/auth/logout`, and the connector webhooks under
+  `/api/advanced-chat/connectors/`, which authenticate with their own token.
+  While an instance has no administrator, blocked requests are sent to `/setup`
+  rather than to the login page.
+- Password registration is refused unless
+  `password_registration_enabled` is set, matching what the page offers.
+- A session proven by the token is written back as a cookie, so the first-run
+  wizard — which holds a token but never logged in — survives a page reload.
+
+The account surface that used to live here (passwords, passkeys, phone and OIDC
+bindings) moved to `@velocelab/user` as `/settings/security`: it is a settings page
+about the signed-in account, and its API is `/user/*` either way.
+
+The application side follows the same rule: `lib/api.ts` answers a `401` by
+clearing the token and sending the browser to `/login?next=<current path>`, and
+logging out posts to `/auth/logout` — which revokes the token and clears the
+cookie — before leaving for the login page.
+
+`@velocelab/auth` is not enabled in `yumeri.json`, so the instance behind it is
+open as before; enabling the plugin puts every request behind a session.
+
 ## Design system ownership
 
 `@velocelab/dashboard` owns the only stylesheet in the repository

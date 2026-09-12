@@ -38,7 +38,7 @@ declare module "yumeri" {
 }
 
 export async function apply(ctx: Context) {
-  ctx.i18n({ user: { settings: { zh: "账户", en: "Account", ja: "アカウント" } } });
+  ctx.i18n({ user: { settings: { zh: "账户", en: "Account", ja: "アカウント" }, security: { zh: "安全", en: "Security", ja: "セキュリティ" } } });
   ctx.component.dashboard.addEntry({
     id: "user",
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,

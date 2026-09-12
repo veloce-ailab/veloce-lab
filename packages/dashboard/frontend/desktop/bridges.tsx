@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
-import api, { clearAuthToken, getAuthToken, getDesktopServerURL, setAuthToken } from "@/lib/api"
+import api, { apiURL, clearAuthToken, getAuthToken, getDesktopServerURL, setAuthToken } from "@/lib/api"
 import { getTokenFromURL } from "@/desktop/auth"
 
 export function TokenBridge() {
@@ -41,8 +41,11 @@ export function DesktopNavigationBridge() {
       if (!data || typeof data !== "object") return
       if (data.type === "veloce-desktop-navigate" && data.path === "/settings") navigate(data.path)
       if (data.type === "veloce-desktop-logout") {
+        // Logging out is the server's business now: it revokes the token and
+        // clears the session cookie the pages are loaded with.
+        void api.post("/auth/logout").catch(() => undefined)
         clearAuthToken()
-        navigate("/login", { replace: true })
+        window.location.assign(apiURL("/login"))
       }
     }
     window.addEventListener("message", receiveNavigation)

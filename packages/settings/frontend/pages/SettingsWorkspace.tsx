@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, ChevronRight, Home, LogOut, Menu, MessageSquare, Settings as SettingsIcon, UserCircle } from "lucide-react"
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom"
+import { Link, NavLink, useLocation } from "react-router-dom"
 import { useEffect, useState } from "react"
 import {
   Button,
@@ -10,6 +10,7 @@ import {
   ResizableSidebar,
   api,
   apiURL,
+  clearAuthToken,
   cn,
   frameHome,
   isDesktopTarget,
@@ -55,7 +56,6 @@ export default function SettingsWorkspace() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [, refreshNavigation] = useState(0)
   const location = useLocation()
-  const navigate = useNavigate()
   const { t } = useI18n()
   const isDesktop = isDesktopTarget()
   const { data: settings } = useQuery<PublicSettings>({
@@ -81,8 +81,11 @@ export default function SettingsWorkspace() {
   }, [isDesktop, location.pathname, title])
 
   const logout = () => {
-    localStorage.removeItem("token")
-    navigate("/login", { replace: true })
+    // The session is a cookie as well as a token, so the server has to be told
+    // before the browser leaves the application.
+    void api.post("/auth/logout").catch(() => undefined)
+    clearAuthToken()
+    window.location.assign(apiURL("/login"))
   }
 
   return (

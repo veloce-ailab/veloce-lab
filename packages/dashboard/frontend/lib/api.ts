@@ -117,4 +117,18 @@ api.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+// Authentication happens in front of the application: a 401 means the session
+// is gone, so the browser is sent back through the authentication page, which
+// the auth package serves on its own.
+api.interceptors.response.use(undefined, (error) => {
+  const status = error?.response?.status;
+  const url = String(error?.config?.url ?? "");
+  if (status === 401 && typeof window !== "undefined" && !url.includes("/auth/password/")) {
+    clearAuthToken();
+    const here = `${window.location.pathname}${window.location.search}`;
+    const login = apiURL(`/login?next=${encodeURIComponent(here)}`);
+    if (window.location.pathname !== "/login") window.location.assign(login);
+  }
+  return Promise.reject(error);
+});
 export default api;
