@@ -3,15 +3,17 @@ import { Context, Database, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/advanced-chat";
+import { ensureTables } from "./tables.js";
 export const depend = ["dashboard", "database", "advanced-chat"];
 export const provide = ["delivery"];
-export function apply(ctx: Context) {
+export async function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/delivery.js", import.meta.url).pathname,
     plugin: "delivery",
   });
   const db = ctx.component.database as Database;
+  await ensureTables(db);
   const chat = ctx.component["advanced-chat"];
   const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
   const fields = (input: any, old: any = {}) => ({

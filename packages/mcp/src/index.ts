@@ -4,6 +4,7 @@ import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/advanced-chat";
 import { McpClient } from "./client.js";
+import { ensureTables } from "./tables.js";
 export const depend = ["dashboard", "advanced-chat", "database"];
 export const provide = ["mcp"];
 export interface McpServer {
@@ -22,7 +23,7 @@ declare module "yumeri" {
     mcp: McpService;
   }
 }
-export function apply(ctx: Context) {
+export async function apply(ctx: Context) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/mcp.js", import.meta.url).pathname,
@@ -30,6 +31,7 @@ export function apply(ctx: Context) {
   });
   const servers: McpServer[] = [];
   const db = ctx.component.database as Database;
+  await ensureTables(db);
   const service: McpService = {
     list: async (userId) =>
       userId

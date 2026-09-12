@@ -5,6 +5,7 @@ import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/advanced-chat";
+import { ensureTables } from "./tables.js";
 export const depend = ["database", "dashboard", "advanced-chat"];
 export const provide = ["memory"];
 export interface MemoryConfig {
@@ -22,13 +23,14 @@ const kinds = new Set([
   "scratch",
   "custom",
 ]);
-export function apply(ctx: Context, cfg: MemoryConfig) {
+export async function apply(ctx: Context, cfg: MemoryConfig) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/memory.js", import.meta.url).pathname,
     plugin: "memory",
   });
   const db = ctx.component.database as Database;
+  await ensureTables(db);
   const root = path.resolve(cfg.root);
   void mkdir(root, { recursive: true });
   const chat = ctx.component["advanced-chat"];

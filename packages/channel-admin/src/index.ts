@@ -5,6 +5,7 @@ import "@velocelab/dashboard";
 import "@velocelab/billing";
 import "@velocelab/database-core";
 import type { AdapterRegistry } from "@velocelab/adapters";
+import { ensureTables } from "./tables.js";
 
 declare module "@yumerijs/types" {
   interface Tables { channels: Channel; models: Model; model_configs: ModelConfig; }
@@ -13,11 +14,12 @@ declare module "@yumerijs/types" {
 export const depend = ["database", "dashboard", "billing", "adapters"];
 export const provide = ["channel-admin"];
 
-export function apply(ctx: Context) {
+export async function apply(ctx: Context) {
   ctx.i18n("channelAdmin.settings", { zh: "AI 服务商与模型", en: "AI providers and models", ja: "AIサービスとモデル" });
   ctx.i18n("channelAdmin.settingsGroup", { zh: "智能体", en: "Agents", ja: "エージェント" });
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/channel-admin.js", import.meta.url).pathname, plugin: "channel-admin" });
   const db = ctx.component.database as Database;
+  await ensureTables(db);
   const adapters = ctx.component.adapters as AdapterRegistry;
   const channels = {
     list: async () => db.select("channels", {}),
