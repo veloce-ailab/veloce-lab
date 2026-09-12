@@ -138,6 +138,37 @@ preset's own choices are invisible on a white background in light mode:
 Both are decisions of the dashboard, not of the callers: plugins render
 `<Card>`, `<Input>` and friends and never restyle their edges.
 
+### The stylesheet is the only palette
+
+`lib/theme.tsx` used to write a full palette into a runtime `<style>` element
+(`windypear-theme-vars`) built from `defaultPublicSettings`. Two things made that
+fatal:
+
+- the defaults were the old slate palette, so the injected block silently
+  replaced the stylesheet's tokens everywhere, and
+- the values were emitted as bare HSL triples (`217.2 32.6% 17.5%`) while every
+  consumer uses the token as a colour (`border-color: var(--border)`,
+  `--tw-ring-color: var(--border)`).
+
+A bare triple is not a colour, so `border-color` fell back to `currentColor`
+and, worse, the invalid `--tw-ring-color` made the composed
+`box-shadow: var(--tw-inset-shadow), …, var(--tw-ring-shadow), var(--tw-shadow)`
+invalid as a whole — every card lost both its ring and its shadow and every
+`bg-card` surface computed to `transparent`. Symptom: "no borders anywhere".
+
+The rule that follows from it, and that the code now enforces:
+
+- `frontend/index.css` is the palette. A theme setting is an *override*, not a
+  default: an empty value means "use the stylesheet", and when nothing is
+  customised the injected element is removed entirely.
+- Injected values are complete colours (normalised hex), never component
+  triples, because tokens are consumed both directly and inside
+  `color-mix(in oklab, var(--token) x%, transparent)`.
+
+Verify a change to this area in a real render rather than by reading CSS: a
+kit-shaped element must compute a `box-shadow` containing
+`… 0px 0px 0px 1px` from `--border`.
+
 When migrating an item, place its routes in that plugin's `apply` function and
 make all dependencies optional through `ctx.component` lookups. Do not add
 new routes to `service` or create an `api` catch-all package.

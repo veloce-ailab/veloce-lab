@@ -20,6 +20,14 @@ type ThemeContextValue = {
 
 type ThemeColorSettingKey = Extract<keyof PublicSettings, `theme_${string}`>
 
+/**
+ * Palette overrides applied on top of `frontend/index.css`.
+ *
+ * Values reach the stylesheet through plain `var(--token)` consumers, so they
+ * must be complete colour values: emitting an `hsl` component triple here would
+ * make every `border-color`, `background-color`, `--tw-ring-color` and therefore
+ * every `box-shadow` invalid, which erases card edges, rings and shadows.
+ */
 const themeVariableMap: Array<readonly [string, ThemeColorSettingKey, ThemeColorSettingKey]> = [
   ["background", "theme_light_background", "theme_dark_background"],
   ["foreground", "theme_light_foreground", "theme_dark_foreground"],
@@ -138,15 +146,22 @@ function getSystemTheme(): ResolvedTheme {
 
 function applyThemeVariables(settings: PublicSettings, resolvedTheme: ResolvedTheme) {
   let styleElement = document.getElementById(themeStyleElementID) as HTMLStyleElement | null
-  if (!styleElement) {
-    styleElement = document.createElement("style")
-    styleElement.id = themeStyleElementID
-    document.head.appendChild(styleElement)
-  }
-  styleElement.textContent = [
+  const blocks = [
     buildThemeBlock(":root", settings, "light"),
     buildThemeBlock(".dark", settings, "dark"),
-  ].join("\n\n")
+  ].filter(Boolean)
+
+  if (blocks.length === 0) {
+    // Nothing is customised: the stylesheet in frontend/index.css is the palette.
+    styleElement?.remove()
+  } else {
+    if (!styleElement) {
+      styleElement = document.createElement("style")
+      styleElement.id = themeStyleElementID
+      document.head.appendChild(styleElement)
+    }
+    styleElement.textContent = blocks.join("\n\n")
+  }
   applyThemeCustomizations(settings)
   updateThemeColorMeta(settings, resolvedTheme)
 }
@@ -193,12 +208,12 @@ function buildThemeBlock(selector: string, settings: PublicSettings, theme: Reso
   const variables = themeVariableMap
     .map(([cssVariable, lightKey, darkKey]) => {
       const settingKey = theme === "dark" ? darkKey : lightKey
-      const hsl = hexToHsl(settings[settingKey])
-      return hsl ? `  --${cssVariable}: ${hsl};` : ""
+      const color = normalizeHexColor(settings[settingKey])
+      return color ? `  --${cssVariable}: ${color};` : ""
     })
     .filter(Boolean)
 
-  return `${selector} {\n${variables.join("\n")}\n}`
+  return variables.length > 0 ? `${selector} {\n${variables.join("\n")}\n}` : ""
 }
 
 function updateThemeColorMeta(settings: PublicSettings, resolvedTheme: ResolvedTheme) {
@@ -214,48 +229,4 @@ function updateThemeColorMeta(settings: PublicSettings, resolvedTheme: ResolvedT
     document.head.appendChild(meta)
   }
   meta.content = color
-}
-
-function hexToHsl(value: string) {
-  const hex = normalizeHexColor(value)
-  if (!hex) {
-    return ""
-  }
-
-  const red = Number.parseInt(hex.slice(1, 3), 16) / 255
-  const green = Number.parseInt(hex.slice(3, 5), 16) / 255
-  const blue = Number.parseInt(hex.slice(5, 7), 16) / 255
-
-  const max = Math.max(red, green, blue)
-  const min = Math.min(red, green, blue)
-  const lightness = (max + min) / 2
-  const delta = max - min
-  let hue = 0
-  let saturation = 0
-
-  if (delta !== 0) {
-    saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min)
-    switch (max) {
-      case red:
-        hue = (green - blue) / delta + (green < blue ? 6 : 0)
-        break
-      case green:
-        hue = (blue - red) / delta + 2
-        break
-      default:
-        hue = (red - green) / delta + 4
-        break
-    }
-    hue /= 6
-  }
-
-  return `${roundHue(hue * 360)} ${roundPercent(saturation * 100)}% ${roundPercent(lightness * 100)}%`
-}
-
-function roundHue(value: number) {
-  return Number(value.toFixed(1))
-}
-
-function roundPercent(value: number) {
-  return Number(value.toFixed(1))
 }
