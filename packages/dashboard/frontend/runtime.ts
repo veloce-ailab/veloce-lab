@@ -13,6 +13,20 @@ export interface DashboardPage extends DashboardRoute {
   home?: boolean
   layout?: DashboardPageLayout
 }
+/**
+ * Section a navigation item belongs to. Pass the plain id when another
+ * contribution already declares the section; pass the object form to declare the
+ * section itself, so the package that owns a capability also owns the heading,
+ * its label and its position instead of a central registry knowing about it.
+ */
+export interface DashboardNavGroup {
+  id: string
+  /** Literal group label. Use `labelKey` when the label follows the language. */
+  label?: string
+  labelKey?: string
+  /** Sort position of the whole group; the frame decides the fallback. */
+  order?: number
+}
 export interface DashboardNavItem {
   id: string
   path: string
@@ -23,7 +37,16 @@ export interface DashboardNavItem {
   icon?: DashboardIconComponent
   order?: number
   scope?: string
-  group?: string
+  group?: string | DashboardNavGroup
+}
+/** A rendered section: contributions grouped by id, in the order they were declared. */
+export interface DashboardNavSection {
+  id: string
+  label?: string
+  labelKey?: string
+  /** Only set when a contribution declared one; the frame decides the fallback. */
+  order?: number
+  items: DashboardNavItem[]
 }
 export type DashboardSlotName = string
 export interface DashboardExtensionApi {

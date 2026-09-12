@@ -312,6 +312,7 @@ export function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       settings: { zh: "聊天设置", en: "Chat settings", ja: "チャット設定" },
       assistant: { zh: "AI 助手", en: "AI assistant", ja: "AIアシスタント" },
       credentials: { zh: "凭据管理", en: "Credentials", ja: "資格情報" },
+      settingsGroup: { zh: "聊天", en: "Chat", ja: "チャット" },
     },
   });
   dashboard.addEntry({

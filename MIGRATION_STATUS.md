@@ -76,6 +76,15 @@ backend does not implement yet (it exists only in the legacy Go service), so the
 network proxy form cannot load or save until a system-settings store and route
 are added. That store belongs to Phase 10 of the roadmap.
 
+Settings sections are contributions too. A navigation item joins a section with
+`group: "chat"` or declares it with
+`group: { id: "chat", labelKey: "advancedChat.settingsGroup", order: 30 }`; the
+shell renders the sections it is given and keeps no registry of other packages'
+headings. `channel-admin` owns `ai`, `advanced-chat` owns `chat` and this package
+owns `system`, while `settings.group.<id>` only backstops the shell's own
+`general` bucket. Adding a whole new settings section therefore needs no edit
+here.
+
 ## Design system ownership
 
 `@velocelab/dashboard` owns the only stylesheet in the repository

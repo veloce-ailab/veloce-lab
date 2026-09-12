@@ -6,7 +6,10 @@ import ThemeSettings from "./pages/ThemeSettings";
 
 const ProxySettings = () => <SystemSettings section="proxy" />;
 const AboutSettings = () => <SystemSettings section="about" />;
-const SCOPE = { scope: "settings", group: "system" } as const;
+// The pages in this package declare their own section, like every other
+// contributor does: the shell renders what it is given and keeps no registry of
+// other packages' headings.
+const SCOPE = { scope: "settings", group: { id: "system", labelKey: "settings.group.system", order: 40 } } as const;
 
 /**
  * The settings plugin owns the settings shell and the platform-level settings

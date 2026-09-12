@@ -1,9 +1,9 @@
 import { createElement, useSyncExternalStore, type ComponentType } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
 import { dashboardSlots, type DashboardSlotName } from "@/lib/slots"
-import type { DashboardContext as DashboardContextType, DashboardPlugin, DashboardRoute, DashboardFrame, DashboardPage, DashboardNavItem } from "./runtime"
+import type { DashboardContext as DashboardContextType, DashboardPlugin, DashboardRoute, DashboardFrame, DashboardPage, DashboardNavItem, DashboardNavGroup, DashboardNavSection } from "./runtime"
 
-export type { DashboardRoute, DashboardFrame, DashboardPage, DashboardNavItem }
+export type { DashboardRoute, DashboardFrame, DashboardPage, DashboardNavItem, DashboardNavGroup, DashboardNavSection }
 export interface DashboardExtensionApi { route(route: DashboardRoute): () => void; frame(frame: DashboardFrame): () => void; page(page: DashboardPage): () => void; nav(item: DashboardNavItem): () => void; slot(name: DashboardSlotName, component: ComponentType<Record<string, unknown>>, id: string, order?: number, scope?: string): () => void }
 
 interface DashboardExtensionStore {
@@ -66,6 +66,40 @@ export function frames() { return [...store.frames] }
 export function pages(frame?: string) { return store.pages.filter((page) => frame === undefined || page.frame === frame) }
 export function nav(scope?: string) { return store.navItems.filter((item) => item.scope === scope).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) }
 export function subscribeExtensions(listener: () => void) { store.listeners.add(listener); return () => { store.listeners.delete(listener) } }
+
+/** Section id of a navigation item: `general` when the contribution did not name one. */
+export function navGroupId(group: DashboardNavItem["group"]): string {
+  if (!group) return "general"
+  return typeof group === "string" ? group : group.id
+}
+
+/**
+ * Navigation items of a scope grouped into sections, in first-appearance order.
+ *
+ * A contribution may declare its own section (`group: { id, labelKey, order }`)
+ * or simply join one by id (`group: "chat"`). The first declaration wins, so the
+ * package that owns a capability controls its own heading without any central
+ * list being edited. Ordering is left to the frame: it receives the declared
+ * `order` when there is one and applies its own default when there is not.
+ */
+export function navSections(scope?: string): DashboardNavSection[] {
+  const sections = new Map<string, DashboardNavSection>()
+  for (const item of nav(scope)) {
+    const id = navGroupId(item.group)
+    let section = sections.get(id)
+    if (!section) {
+      section = { id, items: [] }
+      sections.set(id, section)
+    }
+    if (typeof item.group === "object" && section.label === undefined && section.labelKey === undefined) {
+      section.label = item.group.label
+      section.labelKey = item.group.labelKey
+      if (typeof item.group.order === "number") section.order = item.group.order
+    }
+    section.items.push(item)
+  }
+  return [...sections.values()]
+}
 
 /** True when `pathname` is `target` itself or a nested path below it. */
 export function pathMatches(target: string, pathname: string) {

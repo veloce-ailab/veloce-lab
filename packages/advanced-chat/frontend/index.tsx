@@ -19,7 +19,7 @@ export function apply(ctx: DashboardContext) {
     frame: "settings",
     path: "/settings/chat",
     component: AdvancedChatManagement,
-    nav: { id: "advanced-chat-settings", labelKey: "advancedChat.settings", icon: MessageSquare, order: 10, scope: "settings", group: "chat" },
+    nav: { id: "advanced-chat-settings", labelKey: "advancedChat.settings", icon: MessageSquare, order: 10, scope: "settings", group: { id: "chat", labelKey: "advancedChat.settingsGroup", order: 30 } },
   });
   ctx.page({ frame: "settings", path: "/settings/advanced-chat", component: AdvancedChatRedirect });
   ctx.page({
