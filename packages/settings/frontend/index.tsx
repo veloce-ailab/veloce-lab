@@ -11,6 +11,9 @@ const AboutSettings = () => <SystemSettings section="about" />;
 // contributor does: the shell renders what it is given and keeps no registry of
 // other packages' headings.
 const SCOPE = { scope: "settings", group: { id: "system", labelKey: "settings.group.system", order: 40 } } as const;
+// Plugin management sits with the other general settings rather than the system
+// ones, alongside the pages the user, uptime and desktop plugins contribute.
+const GENERAL = { scope: "settings", group: { id: "general", labelKey: "settings.group.general", order: 10 } } as const;
 
 /**
  * The settings plugin owns the settings shell and the platform-level settings
@@ -30,7 +33,7 @@ export default function apply(ctx: DashboardContext) {
     path: "/settings/plugins",
     component: PluginsSettings,
     layout: "full",
-    nav: { id: "settings-plugins", labelKey: "settings.plugins.title", icon: Puzzle, order: 60, ...SCOPE },
+    nav: { id: "settings-plugins", labelKey: "settings.plugins.title", icon: Puzzle, order: 50, ...GENERAL },
   });
   ctx.page({
     frame: "settings",
