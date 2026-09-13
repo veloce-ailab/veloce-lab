@@ -3120,6 +3120,19 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@velocelab/guide@workspace:packages/guide":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/guide@workspace:packages/guide"
+  dependencies:
+    "@velocelab/dashboard": "workspace:*"
+    "@vitejs/plugin-react": "npm:^6.0.1"
+    react: "npm:^19.2.6"
+    vite: "npm:^8.0.12"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/home-redirect@workspace:packages/home-redirect":
   version: 0.0.0-use.local
   resolution: "@velocelab/home-redirect@workspace:packages/home-redirect"
