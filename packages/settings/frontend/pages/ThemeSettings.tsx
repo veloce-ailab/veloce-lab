@@ -7,6 +7,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  DashboardSlot,
   cn,
   useI18n,
   useTheme,
@@ -32,6 +33,7 @@ export default function ThemeSettings() {
 
   return (
     <div className="space-y-6">
+      <DashboardSlot name="settings.theme.before" />
       <div>
         <h1 className="text-3xl font-bold">{copy.title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{copy.description}</p>
@@ -75,6 +77,7 @@ export default function ThemeSettings() {
           {copy.current}: {mode === "system" ? `${copy.system} (${resolvedTheme === "dark" ? copy.dark : copy.light})` : mode === "dark" ? copy.dark : copy.light}
         </CardFooter>
       </Card>
+      <DashboardSlot name="settings.theme.after" />
     </div>
   )
 }

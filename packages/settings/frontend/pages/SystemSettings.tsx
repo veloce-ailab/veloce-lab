@@ -9,6 +9,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  DashboardSlot,
   Input,
   Switch,
   api,
@@ -90,6 +91,10 @@ export default function SystemSettings({ section = "proxy" }: { section?: System
     : { title: "网络代理", description: "配置群组和模型上游请求使用的网络代理。" }
   return (
     <div className="space-y-6">
+      {/* The page owns insertion points for the same reason every page here
+          does: another package should be able to meet the user on this page
+          rather than only on a page of its own. */}
+      <DashboardSlot name={`settings.${section}.before`} />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold">{page.title}</h1>
@@ -148,6 +153,7 @@ export default function SystemSettings({ section = "proxy" }: { section?: System
             <SettingsRow title="站点名称" description="产品名称固定为 Veloce"><span className="text-sm text-muted-foreground">Veloce</span></SettingsRow>
           </CardContent>
         </Card>}
+      <DashboardSlot name={`settings.${section}.after`} />
     </div>
   )
 }
