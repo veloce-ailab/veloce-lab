@@ -19,6 +19,7 @@
     "@velocelab/topbar": {},
     "@velocelab/home-redirect": {},
     "@velocelab/settings": {},
+    "@velocelab/guide": {},
     "@velocelab/community": {},
     "@velocelab/knowledge": {},
     "@velocelab/memory": {
