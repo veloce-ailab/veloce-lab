@@ -7,7 +7,9 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  DashboardSlot,
   Input,
+  PageTitleSlot,
   ResizableSidebar,
   Select,
   SelectContent,
@@ -141,6 +143,7 @@ export default function PluginsSettings() {
             </div>
           </div>
           <nav className="min-h-0 flex-1 overflow-y-auto p-2">
+            <DashboardSlot name="settings.plugins.list.before" />
             {plugins.isLoading && <div className="space-y-2 p-1">{[0, 1, 2, 3].map((key) => <Skeleton key={key} className="h-11 w-full" />)}</div>}
             {!plugins.isLoading && plugins.isError && <p className="p-3 text-sm text-destructive">{t("settings.plugins.loadFailed")}</p>}
             {!plugins.isLoading && !plugins.isError && !visible.length && <p className="p-3 text-sm text-muted-foreground">{t("settings.plugins.empty")}</p>}
@@ -161,12 +164,17 @@ export default function PluginsSettings() {
                 </span>
               </button>
             ))}
+            <DashboardSlot name="settings.plugins.list.after" />
           </nav>
         </aside>
       </ResizableSidebar>
 
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-4xl space-y-6 p-4 sm:p-6 lg:p-8">
+          {/* Page-level insertion points. A plugin-provided page has to offer
+              somewhere to land, otherwise a package like the setup guide can
+              only exist as a page of its own instead of meeting the user here. */}
+          <DashboardSlot name="settings.plugins.before" />
           <div className="lg:hidden">
             <Select value={selected?.name ?? ""} onValueChange={(next) => setSelectedName(next)}>
               <SelectTrigger className="w-full"><SelectValue placeholder={t("settings.plugins.select")} /></SelectTrigger>
@@ -192,6 +200,7 @@ export default function PluginsSettings() {
                   </h1>
                   <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{selected.name}</p>
                 </div>
+                <DashboardSlot name="settings.plugins.header" className="flex flex-wrap items-center gap-2" />
                 <div className="flex shrink-0 flex-wrap gap-2">
                   {selected.enabled ? (
                     <>
@@ -214,6 +223,16 @@ export default function PluginsSettings() {
                   )}
                 </div>
               </div>
+
+              <PageTitleSlot />
+
+              {/* Scoped to the plugin that is open, so guidance can be attached
+                  to one plugin instead of the whole page. */}
+              <DashboardSlot
+                name="settings.plugins.detail"
+                scope={selected.name}
+                data={{ name: selected.name, title: selected.title, enabled: selected.enabled, status: selected.status }}
+              />
 
               <Card>
                 <CardHeader>
@@ -264,6 +283,7 @@ export default function PluginsSettings() {
               )}
             </>
           )}
+          <DashboardSlot name="settings.plugins.after" />
         </div>
       </div>
       {confirmDialog}
