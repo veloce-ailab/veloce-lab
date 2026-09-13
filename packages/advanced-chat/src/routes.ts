@@ -69,7 +69,7 @@ export function registerAdvancedChatRoutes(
         );
         return;
       }
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => ctx.setTimeout(resolve, 150));
     }
     await db.update(
       "advanced_chat_connector_tasks",
