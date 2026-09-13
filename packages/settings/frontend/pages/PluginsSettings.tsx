@@ -54,7 +54,10 @@ interface ActionResult {
 export default function PluginsSettings() {
   const { t } = useI18n()
   const { success, error: toastError } = useToast()
-  const { confirm } = useConfirmDialog()
+  // `useConfirmDialog` hands back the element to render as well as the asker:
+  // without rendering it the confirmation never opens and the call never
+  // settles, which is exactly how the disable button stops responding.
+  const { confirm, confirmDialog } = useConfirmDialog()
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState("")
   const [selectedName, setSelectedName] = useState<string | null>(null)
@@ -263,6 +266,7 @@ export default function PluginsSettings() {
           )}
         </div>
       </div>
+      {confirmDialog}
     </div>
   )
 }
