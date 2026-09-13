@@ -16,12 +16,6 @@ export const depend = [
 ];
 export const provide = ["service"];
 
-export interface SetupInput {
-  username: string;
-  email: string;
-  password: string;
-}
-
 export interface ServiceConfig {
   environment: string;
   dataPath: string;
@@ -31,8 +25,6 @@ export interface ServiceConfig {
   oidcClientId: string;
   oidcClientSecret: string;
   oidcRedirectUrl: string;
-  bootstrapAdminEmails: string;
-  bootstrapAdminOidcSubs: string;
   authAgreementMode: string;
   passwordRegistrationEnabled: boolean;
   passwordHCaptchaEnabled: boolean;
@@ -40,7 +32,6 @@ export interface ServiceConfig {
 export interface ServiceRegistry {
   names(): string[];
   initialSetupRequired(): Promise<boolean>;
-  setupInitialAdmin(input: SetupInput): Promise<{ user: User; token: string }>;
   loginWithPassword(
     identifier: string,
     password: string,
@@ -63,8 +54,6 @@ export const config: Schema<ServiceConfig> = Schema.object({
   oidcClientId: Schema.string("OIDC client ID").default(""),
   oidcClientSecret: Schema.string("OIDC client secret").default(""),
   oidcRedirectUrl: Schema.string("OIDC redirect URL").default(""),
-  bootstrapAdminEmails: Schema.string("Bootstrap admin emails").default(""),
-  bootstrapAdminOidcSubs: Schema.string("Bootstrap admin OIDC subjects").default(""),
   authAgreementMode: Schema.string("Authentication agreement mode").default("notice"),
   passwordRegistrationEnabled: Schema.boolean("Enable password registration").default(false),
   passwordHCaptchaEnabled: Schema.boolean("Require hCaptcha for password authentication").default(false),
@@ -103,24 +92,6 @@ function hashPassword(password: string) {
   return bcrypt.hashSync(password, bcrypt.genSaltSync(10));
 }
 
-function generateReferralCode() {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const raw = randomBytes(8);
-  let value = "";
-  let buffer = 0;
-  let bits = 0;
-  for (const byte of raw) {
-    buffer = (buffer << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      value += alphabet[(buffer >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  if (bits > 0) value += alphabet[(buffer << (5 - bits)) & 31];
-  return value;
-}
-
 function verifyPassword(password: string, encoded: string) {
   return bcrypt.compareSync(password, encoded);
 }
@@ -134,7 +105,7 @@ function issueToken(user: User, secret: string) {
   const header = encodeJson({ alg: "HS256", typ: "JWT" });
   const payload = encodeJson({
     id: user.id,
-    is_admin: user.is_admin,
+    is_admin: Boolean(user.is_admin),
     exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
   });
   const signature = createHmac("sha256", secret)
@@ -156,7 +127,10 @@ function verifyJwt(token: string, secret: string): number | undefined {
     const claims = JSON.parse(
       Buffer.from(payload, "base64url").toString("utf8"),
     );
-    if (!Number.isInteger(claims.id) || typeof claims.is_admin !== "boolean")
+    // The claim is a shape check, and the value it checks arrives in whichever
+    // form the driver stores booleans in: SQLite hands back 0 and 1, so asking
+    // for a boolean here would reject every token this service issues on it.
+    if (!Number.isInteger(claims.id) || ![true, false, 0, 1].includes(claims.is_admin))
       return undefined;
     if (
       !Number.isFinite(claims.exp) ||
@@ -176,33 +150,6 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
   const service: ServiceRegistry = {
     names: () => ["auth", "billing", "chat"],
     initialSetupRequired: async () => !(await users.findAdmin()),
-    async setupInitialAdmin(input) {
-      const username = input.username.trim();
-      const email = input.email.trim().toLowerCase();
-      if (!username) throw Error("username is required");
-      if ([...username].length < 3) throw Error("username is too short");
-      if (!email.includes("@")) throw Error("valid email is required");
-      if (input.password.length < 8)
-        throw Error("password must be at least 8 characters");
-      if (!(await service.initialSetupRequired()))
-        throw Error("Initial setup is already complete");
-      const defaultGroup = await users.ensureDefaultGroup();
-      const user = await users.create({
-        username,
-        email,
-        phone: null,
-        oidc_sub: null,
-        password_hash: hashPassword(input.password),
-        is_admin: true,
-        email_verified: true,
-        avatar_url: "",
-        balance: "0",
-        group_id: defaultGroup.id ?? 0,
-        referral_code: generateReferralCode(),
-        referrer_id: null,
-      });
-      return { user, token: issueToken(user, jwtSecret) };
-    },
     async loginWithPassword(identifier, password) {
       if (await service.initialSetupRequired())
         throw Error("initial setup is required");

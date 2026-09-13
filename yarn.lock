@@ -2968,10 +2968,14 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/auth@workspace:packages/auth"
   dependencies:
+    "@velocelab/dashboard": "workspace:*"
     "@velocelab/database-core": "workspace:*"
     "@velocelab/service": "workspace:*"
     "@velocelab/user": "workspace:*"
+    "@vitejs/plugin-react": "npm:^6.0.1"
     bcryptjs: "npm:^3.0.2"
+    react: "npm:^19.2.6"
+    vite: "npm:^8.0.12"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -3208,16 +3212,6 @@ __metadata:
     "@velocelab/database-core": "workspace:*"
     mysql2: "npm:^3.15.3"
     yumeri: "npm:^3.0.0"
-  peerDependencies:
-    yumeri: ^3.0.0
-  languageName: unknown
-  linkType: soft
-
-"@velocelab/oobe@workspace:packages/oobe":
-  version: 0.0.0-use.local
-  resolution: "@velocelab/oobe@workspace:packages/oobe"
-  dependencies:
-    "@velocelab/service": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
