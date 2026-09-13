@@ -209,6 +209,22 @@ export function apply(ctx: Context, pluginConfig?: DashboardConfig) {
     return devServerPromise;
   };
 
+  /**
+   * What the shell may know before anyone signs in. It describes the dashboard
+   * rather than the installation, so it lives here; the authentication page and
+   * the top bar read it without a session.
+   */
+  ctx.route("/api/public/settings").methods("GET").action((session: Session) => {
+    session.respond(
+      {
+        backend_version: "0.1.0",
+        site_name: "Veloce",
+        edition: "community",
+        community_enabled: true,
+      },
+      "json",
+    );
+  });
   ctx.route("/api/dashboard/manifest").methods("GET").action(async (session: Session) => {
     const dev = await devServerFor(session.client.req as IncomingMessage | undefined);
     const entries = [...state.entries.values()].map((entry) => ({

@@ -20,6 +20,11 @@
     "@velocelab/home-redirect": {},
     "@velocelab/settings": {},
     "@velocelab/guide": {},
+    "~@velocelab/auth": {
+      "username": "",
+      "password": "",
+      "email": ""
+    },
     "@velocelab/community": {},
     "@velocelab/knowledge": {},
     "@velocelab/memory": {
@@ -48,8 +53,6 @@
       "oidcClientId": "",
       "oidcClientSecret": "",
       "oidcRedirectUrl": "",
-      "bootstrapAdminEmails": "",
-      "bootstrapAdminOidcSubs": "",
       "authAgreementMode": "notice",
       "passwordRegistrationEnabled": false,
       "passwordHCaptchaEnabled": false

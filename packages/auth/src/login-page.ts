@@ -25,8 +25,6 @@ interface Copy {
   agreementNotice: string
   agreementCheckbox: string
   agreementRequired: string
-  setupRequired: string
-  setupLink: string
   missingFields: string
   passwordTooShort: string
   failed: string
@@ -47,8 +45,6 @@ const copy: Record<string, Copy> = {
     agreementNotice: "继续即表示你已阅读并同意相关协议。",
     agreementCheckbox: "我已阅读并同意相关协议",
     agreementRequired: "请先勾选同意相关协议",
-    setupRequired: "这个实例还没有初始化。",
-    setupLink: "前往初始化",
     missingFields: "请填写所有字段",
     passwordTooShort: "密码至少需要 8 位",
     failed: "操作失败",
@@ -67,8 +63,6 @@ const copy: Record<string, Copy> = {
     agreementNotice: "By continuing you agree to the terms of service.",
     agreementCheckbox: "I have read and agree to the terms of service",
     agreementRequired: "Please accept the terms first",
-    setupRequired: "This instance has not been set up yet.",
-    setupLink: "Continue to setup",
     missingFields: "Fill in every field",
     passwordTooShort: "The password needs at least 8 characters",
     failed: "Something went wrong",
@@ -87,8 +81,6 @@ const copy: Record<string, Copy> = {
     agreementNotice: "続行すると利用規約に同意したものとみなされます。",
     agreementCheckbox: "利用規約を読み、同意します",
     agreementRequired: "先に利用規約に同意してください",
-    setupRequired: "このインスタンスはまだ初期化されていません。",
-    setupLink: "初期設定へ進む",
     missingFields: "すべての項目を入力してください",
     passwordTooShort: "パスワードは 8 文字以上必要です",
     failed: "処理に失敗しました",
@@ -160,7 +152,6 @@ button.primary:disabled{opacity:.6;cursor:progress}
     <p class="alert" id="alert" hidden></p>
     <button class="primary" id="submit" type="submit">${escapeHTML(fallback.submitLogin)}</button>
   </form>
-  <p class="hint" id="setup-hint" hidden></p>
 </main>
 <script type="module">
 const NEXT = ${embed(next)}
@@ -262,24 +253,7 @@ $("tab-register").addEventListener("click", () => { mode = "register"; showAlert
 
 async function boot() {
   try {
-    const [configuration, settings, setup] = await Promise.all([
-      fetch("/api/configuration").then((response) => (response.ok ? response.json() : {})),
-      fetch("/api/public/settings").then((response) => (response.ok ? response.json() : {})),
-      fetch("/api/setup/status").then((response) => (response.ok ? response.json() : {})),
-    ])
-    if (settings.site_name) {
-      document.title = settings.site_name
-      $("site-name").textContent = settings.site_name
-    }
-    if (setup.required) {
-      const hint = $("setup-hint")
-      hint.append(text.setupRequired + " ")
-      const link = document.createElement("a")
-      link.href = "/setup"
-      link.textContent = text.setupLink
-      hint.append(link)
-      hint.hidden = false
-    }
+    const configuration = await fetch("/api/auth/configuration").then((response) => (response.ok ? response.json() : {}))
     agreementMode = String(configuration.auth_agreement_mode || "notice").toLowerCase()
     registrationEnabled = configuration.password_registration_enabled === true
     $("tabs").hidden = !registrationEnabled

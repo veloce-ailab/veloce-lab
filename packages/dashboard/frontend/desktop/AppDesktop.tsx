@@ -4,7 +4,6 @@ import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-d
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Activity, Check, FolderOpen, Globe2, LogOut, PanelTop, Plus, Server, Settings, UserCircle } from "lucide-react"
 import Login from "@/pages/Login"
-import Setup from "@/pages/Setup"
 
 import api, {
   apiURL,
@@ -23,7 +22,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import logoURL from "@/assets/logo.png"
-import type { BuiltinServerStatus, DesktopCurrentUser, DesktopTab, SetupStatus } from "@/desktop/types"
+import type { BuiltinServerStatus, DesktopCurrentUser, DesktopTab } from "@/desktop/types"
 import { newDesktopTab, normalizeDesktopTabPath, readActiveDesktopTabID, readDesktopTabs, readServerList, serverAccountKey, writeActiveDesktopTabID, writeDesktopTabs, writeServerList } from "@/desktop/storage"
 import { DesktopApprovalDecisionBridge, DesktopConnectorBridge, DesktopNavigationBridge, DesktopTransparency, TokenBridge } from "@/desktop/bridges"
 import { DashboardPluginLoader } from "../plugin-loader"
@@ -40,33 +39,6 @@ const emptyDesktopSettings: DesktopSettings = {
   preparedUpdate: null,
 }
 
-function SetupGate({ children }: { children: ReactNode }) {
-  const location = useLocation()
-  const { t } = useI18n()
-  const { data, isLoading } = useQuery<SetupStatus>({
-    queryKey: ["setup-status"],
-    queryFn: async () => {
-      const res = await api.get("/setup/status")
-      return res.data
-    },
-    retry: false,
-  })
-
-  if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
-        {t("common.loading")}
-      </div>
-    )
-  }
-
-  if (data?.required && location.pathname !== "/setup") {
-    return <Navigate to="/setup" replace />
-  }
-
-  return <>{children}</>
-}
-
 function DocumentTitle() {
   const location = useLocation()
   const { language, t } = useI18n()
@@ -76,9 +48,7 @@ function DocumentTitle() {
       ? t("nav.chat")
       : location.pathname.startsWith("/settings")
           ? language === "zh" ? "设置" : "Settings"
-          : location.pathname === "/setup"
-            ? language === "zh" ? "初始化站点" : "Initial Setup"
-            : language === "zh" ? "登录" : "Sign in"
+          : language === "zh" ? "登录" : "Sign in"
     document.title = `${pageTitle} - Veloce Lab`
   }, [language, location.pathname, t])
 
@@ -266,14 +236,11 @@ function DesktopTitleBar({
       const nextURL = normalizeServerURL(status.serverURL)
       writeServerList([nextURL, ...servers])
       setBuiltinStatus({ ...status, message: copy.builtinWaiting })
-      const setupStatus = await waitForSetupStatus(nextURL)
       if (activeTab) {
         onUpdateTabServer(activeTab.id, nextURL)
         setDesktopServerURL(nextURL, activeTab.id)
       }
-      if (!setupStatus?.required) {
-        await api.put("/settings", { system_mode: "personal" }).catch(() => undefined)
-      }
+      await api.put("/settings", { system_mode: "personal" }).catch(() => undefined)
       queryClient.clear()
       setIsServerOpen(false)
     }
@@ -853,22 +820,6 @@ function defaultServerCandidate(servers: string[]) {
   return "http://"
 }
 
-async function waitForSetupStatus(serverURL: string) {
-  const endpoint = `${normalizeServerURL(serverURL)}/api/setup/status`
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    try {
-      const response = await fetch(endpoint, { cache: "no-store" })
-      if (response.ok) {
-        return await response.json() as SetupStatus
-      }
-    } catch {
-      // Keep polling until the just-started local server is ready.
-    }
-    await delay(500)
-  }
-  return null
-}
-
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
@@ -907,21 +858,18 @@ function DesktopPageRoutes({ className }: { className: string }) {
       <DesktopNavigationBridge />
       <DocumentTitle />
       <div className={className}>
-        <SetupGate>
-          {extensionsReady ? <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/setup" element={<Setup />} />
-              {registeredRoutes.map((route) => {
-                const Component = route.component
-                return <Route key={route.path} path={route.path} element={route.shell === "owned" ? <Component /> : <Component />} />
-              })}
-              {registeredFrames.map((frame) => {
-                const Component = frame.component
-                return <Route key={frame.id} path={`${frame.path.replace(/\/$/, "")}/*`} element={<Component />} />
-              })}
-              <Route path="*" element={null} />
-            </Routes> : null}
-        </SetupGate>
+        {extensionsReady ? <Routes>
+            <Route path="/login" element={<Login />} />
+            {registeredRoutes.map((route) => {
+              const Component = route.component
+              return <Route key={route.path} path={route.path} element={route.shell === "owned" ? <Component /> : <Component />} />
+            })}
+            {registeredFrames.map((frame) => {
+              const Component = frame.component
+              return <Route key={frame.id} path={`${frame.path.replace(/\/$/, "")}/*`} element={<Component />} />
+            })}
+            <Route path="*" element={null} />
+          </Routes> : null}
       </div>
     </HashRouter>
   )

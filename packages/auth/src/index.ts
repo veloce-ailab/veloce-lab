@@ -1,7 +1,9 @@
 import { Context, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
 import { ServiceRegistry } from "@velocelab/service";
+import type { User } from "@velocelab/user";
 import "@velocelab/database-core";
+import "@velocelab/dashboard";
 import type { EmailVerificationCode, PhoneVerificationCode, OIDCBindRequest, WebAuthnChallenge, PasskeyCredential } from "./types.js";
 import { renderLoginPage } from "./login-page.js";
 
@@ -14,10 +16,29 @@ declare module "@yumerijs/types" {
     passkey_credentials: PasskeyCredential;
   }
 }
-export const depend = ["service", "user", "database"];
+export const depend = ["service", "user", "database", "dashboard"];
 export const provide = ["auth"];
-export interface AuthConfig { }
-export const config: Schema<AuthConfig> = Schema.object({});
+
+/**
+ * Authentication owns the instance's front door and the accounts behind it.
+ *
+ * The configured account is the administrator: it is created on first start and
+ * written back on every later start, so the configuration is the source of
+ * truth and a lost password is recovered by editing the file rather than by a
+ * reset flow. The plugin ships disabled, and it refuses to load without
+ * credentials rather than standing in front of the application with no way in.
+ */
+export interface AuthConfig {
+  username: string;
+  password: string;
+  email: string;
+}
+export const config: Schema<AuthConfig> = Schema.object({
+  username: Schema.string("管理员账号,启动时创建或覆盖").required(),
+  password: Schema.string("管理员密码,每次启动都覆盖为该值").required(),
+  email: Schema.string("管理员邮箱,留空则使用 <用户名>@localhost"),
+});
+
 export interface AuthService {
   enabled(): boolean;
 }
@@ -34,16 +55,14 @@ const sessionLifetimeSeconds = 7 * 24 * 60 * 60;
 /**
  * Paths a request may reach without a session.
  *
- * Everything else is refused by the middleware below, so this list is the whole
- * of the public surface: the authentication page, the first-run wizard that has
- * to run before any account exists, and the assets both of them load.
+ * Everything else is refused by the middleware at the bottom of this file, so
+ * this list is the whole of the public surface: the authentication page, the
+ * endpoints it needs before anyone has signed in, and the assets both load.
  */
-const publicPaths = new Set(["/login", "/setup"]);
+const publicPaths = new Set(["/login"]);
 const publicAPIPaths = new Set([
   "/api/public/settings",
-  "/api/configuration",
-  "/api/setup",
-  "/api/setup/status",
+  "/api/auth/configuration",
   "/api/dashboard/manifest",
   "/api/static/plugin",
   "/auth/password/login",
@@ -89,7 +108,34 @@ export function sanitizeNext(value: string | null | undefined) {
   return next;
 }
 
-export async function apply(ctx: Context) {
+/** A user as the management API may show one: never the password hash. */
+export type PublicUser = Omit<User, "password_hash">;
+
+function publicUser(user: User): PublicUser {
+  const { password_hash, ...rest } = user;
+  return rest;
+}
+
+/** Bodies are read by hand so a malformed request is a 400, not a crash. */
+async function readBody(session: Session) {
+  try {
+    return (await session.parseRequestBody()) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function apply(ctx: Context, config: AuthConfig) {
+  const username = String(config?.username ?? "").trim();
+  const password = String(config?.password ?? "");
+  const email = String(config?.email ?? "").trim().toLowerCase() || `${username || "admin"}@localhost`;
+  if (!username || !password) {
+    // Left pending by the loader rather than gating the application with no
+    // account behind it: a missing credential is a configuration mistake, not a
+    // reason to lock the instance.
+    throw Error("authentication requires a username and a password; set them before enabling this plugin");
+  }
+
   const db = ctx.component.database;
   await db.extend("email_verification_codes", {
     id: { type: "integer", autoIncrement: true }, email: { type: "string", nullable: false }, code_hash: { type: "string", nullable: false }, purpose: { type: "string", nullable: false }, hcaptcha_verified: { type: "boolean", initial: false }, expires_at: "timestamp", used_at: "timestamp", created_at: "timestamp",
@@ -106,11 +152,101 @@ export async function apply(ctx: Context) {
   await db.extend("passkey_credentials", {
     id: { type: "integer", autoIncrement: true }, user_id: { type: "integer", nullable: false }, name: { type: "string", nullable: false }, credential_id: { type: "text", nullable: false }, public_key_cose: { type: "text", nullable: false }, aaguid: "text", sign_count: "integer", last_used_at: "timestamp", created_at: "timestamp", updated_at: "timestamp",
   }, { unique: ["credential_id"] });
+
+  ctx.i18n({
+    auth: {
+      users: {
+        title: { zh: "用户管理", en: "Users", ja: "ユーザー管理" },
+        subtitle: { zh: "这里的账号就是能访问这个实例的人。", en: "These are the accounts that may reach this instance.", ja: "ここに並ぶアカウントが、このインスタンスを利用できる人です。" },
+        search: { zh: "搜索用户名或邮箱", en: "Search username or email", ja: "ユーザー名またはメールで検索" },
+        empty: { zh: "没有匹配的账号。", en: "No accounts match.", ja: "該当するアカウントがありません。" },
+        loadFailed: { zh: "读取用户列表失败", en: "Could not read the user list", ja: "ユーザー一覧を取得できませんでした" },
+        create: { zh: "新建账号", en: "New account", ja: "アカウントを作成" },
+        createAction: { zh: "创建", en: "Create", ja: "作成" },
+        edit: { zh: "编辑账号", en: "Edit account", ja: "アカウントを編集" },
+        save: { zh: "保存", en: "Save", ja: "保存" },
+        cancel: { zh: "取消", en: "Cancel", ja: "キャンセル" },
+        remove: { zh: "删除", en: "Delete", ja: "削除" },
+        columnUser: { zh: "账号", en: "Account", ja: "アカウント" },
+        columnRole: { zh: "角色", en: "Role", ja: "権限" },
+        columnCreated: { zh: "创建时间", en: "Created", ja: "作成日時" },
+        columnActions: { zh: "操作", en: "Actions", ja: "操作" },
+        username: { zh: "用户名", en: "Username", ja: "ユーザー名" },
+        email: { zh: "邮箱", en: "Email", ja: "メールアドレス" },
+        password: { zh: "密码", en: "Password", ja: "パスワード" },
+        passwordKeep: { zh: "留空表示不修改", en: "Leave blank to keep the current one", ja: "空欄のままにすると変更しません" },
+        admin: { zh: "管理员", en: "Administrator", ja: "管理者" },
+        member: { zh: "普通用户", en: "Member", ja: "一般ユーザー" },
+        adminHint: { zh: "管理员可以看到并修改实例的每一项配置。", en: "Administrators can see and change every setting on the instance.", ja: "管理者はインスタンスのすべての設定を閲覧・変更できます。" },
+        created: { zh: "账号已创建", en: "Account created", ja: "アカウントを作成しました" },
+        updated: { zh: "账号已更新", en: "Account updated", ja: "アカウントを更新しました" },
+        deleted: { zh: "账号已删除", en: "Account deleted", ja: "アカウントを削除しました" },
+        confirmRemove: { zh: "删除账号", en: "Delete account", ja: "アカウントを削除" },
+        confirmRemoveBody: { zh: "该账号将无法再登录,这个操作不能撤销。", en: "This account will no longer be able to sign in, and this cannot be undone.", ja: "このアカウントはログインできなくなり、元に戻せません。" },
+        errorInvalid: { zh: "用户名、邮箱和密码都是必填的,密码至少 8 位。", en: "A username, an email and a password of at least 8 characters are required.", ja: "ユーザー名・メール・8文字以上のパスワードが必要です。" },
+        errorDuplicate: { zh: "用户名或邮箱已被占用。", en: "That username or email is already taken.", ja: "そのユーザー名またはメールは既に使われています。" },
+        errorConfigured: { zh: "这是配置里指定的管理员账号,不能删除或降级。", en: "This is the administrator named in the configuration; it cannot be deleted or demoted.", ja: "設定で指定された管理者アカウントのため、削除も降格もできません。" },
+        errorSelf: { zh: "不能删除当前登录的账号。", en: "You cannot delete the account you are signed in as.", ja: "ログイン中のアカウントは削除できません。" },
+        errorNotFound: { zh: "账号不存在。", en: "That account does not exist.", ja: "そのアカウントは存在しません。" },
+        errorForbidden: { zh: "需要管理员权限。", en: "Administrator access is required.", ja: "管理者権限が必要です。" },
+        errorFailed: { zh: "操作失败", en: "The operation failed", ja: "操作に失敗しました" },
+      },
+    },
+  });
+  ctx.component.dashboard.addEntry({
+    id: "auth",
+    dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
+    prod: new URL("./frontend/auth.js", import.meta.url).pathname,
+    plugin: "auth",
+  });
+
   const service = ctx.component.service as ServiceRegistry;
   const userService = ctx.component.user;
   const revokedTokens = new Set<string>();
   const auth: AuthService = { enabled: () => true };
   ctx.registerComponent("auth", auth);
+
+  /**
+   * The configured account becomes the instance's administrator. Every start
+   * writes the configured password back and keeps the row's other fields, so a
+   * forgotten password costs one edit and redeploy rather than a recovery flow,
+   * while balance, avatar and group survive the restart.
+   */
+  const bootstrap = async () => {
+    const password_hash = bcrypt.hashSync(password, bcrypt.genSaltSync(10));
+    const byUsername = await userService.findByIdentifier(username);
+    const byEmail = byUsername ? undefined : await userService.findByIdentifier(email);
+    const existing = byUsername ?? byEmail;
+    if (existing) {
+      const updated = await userService.update(existing.id, {
+        username,
+        email,
+        password_hash,
+        is_admin: true,
+        email_verified: true,
+      });
+      console.log(`[auth] administrator "${username}" adopted from configuration`);
+      return updated ?? existing;
+    }
+    const group = await userService.ensureDefaultGroup();
+    const created = await userService.create({
+      username,
+      email,
+      phone: null,
+      oidc_sub: null,
+      password_hash,
+      is_admin: true,
+      email_verified: true,
+      avatar_url: "",
+      balance: "0",
+      group_id: group.id ?? 0,
+      referral_code: null,
+      referrer_id: null,
+    });
+    console.log(`[auth] administrator "${username}" created from configuration`);
+    return created;
+  };
+  const administrator = await bootstrap();
 
   const setSessionCookie = (session: Session, token: string, expires: Date) => {
     session.setCookie(sessionCookieName, token, {
@@ -160,6 +296,19 @@ export async function apply(ctx: Context) {
       session.respond(renderLoginPage({ next }), "plain");
     });
 
+  /** What the authentication page needs before anyone has signed in. */
+  ctx.route("/api/auth/configuration").methods("GET").action((session: Session) => {
+    const configuration = service.publicConfiguration();
+    session.respond(
+      {
+        auth_agreement_mode: configuration.authAgreementMode,
+        password_registration_enabled: configuration.passwordRegistrationEnabled,
+        password_hcaptcha_enabled: configuration.passwordHCaptchaEnabled,
+      },
+      "json",
+    );
+  });
+
   ctx
     .route("/auth/password/login")
     .methods("POST")
@@ -171,7 +320,7 @@ export async function apply(ctx: Context) {
           String(body.password ?? ""),
         );
         setSessionCookie(session, result.token, new Date(Date.now() + sessionLifetimeSeconds * 1000));
-        session.respond(result, "json");
+        session.respond({ user: publicUser(result.user), token: result.token }, "json");
       } catch (error) {
         session.status = 401;
         session.respond(
@@ -188,25 +337,25 @@ export async function apply(ctx: Context) {
         if (!service.publicConfiguration().passwordRegistrationEnabled)
           throw Error("password registration is disabled");
         const body = (await session.parseRequestBody()) as any;
-        const username = String(body.username ?? "").trim();
-        const email = String(body.email ?? "")
+        const name = String(body.username ?? "").trim();
+        const address = String(body.email ?? "")
           .trim()
           .toLowerCase();
-        const password = String(body.password ?? "");
-        if (username.length < 3 || !email.includes("@") || password.length < 8)
+        const secret = String(body.password ?? "");
+        if (name.length < 3 || !address.includes("@") || secret.length < 8)
           throw Error("username, email, and password are required");
         if (
-          (await userService.findByIdentifier(username)) ||
-          (await userService.findByIdentifier(email))
+          (await userService.findByIdentifier(name)) ||
+          (await userService.findByIdentifier(address))
         )
           throw Error("user already exists");
         const group = await userService.ensureDefaultGroup();
         const user = await userService.create({
-          username,
-          email,
+          username: name,
+          email: address,
           phone: null,
           oidc_sub: null,
-          password_hash: bcrypt.hashSync(password, bcrypt.genSaltSync(10)),
+          password_hash: bcrypt.hashSync(secret, bcrypt.genSaltSync(10)),
           is_admin: false,
           email_verified: false,
           avatar_url: "",
@@ -216,7 +365,7 @@ export async function apply(ctx: Context) {
           referrer_id: null,
         });
         session.status = 201;
-        session.respond({ user }, "json");
+        session.respond({ user: publicUser(user) }, "json");
       } catch (error) {
         session.status = 400;
         session.respond(
@@ -241,6 +390,189 @@ export async function apply(ctx: Context) {
     });
 
   /**
+   * User management. Any signed-in caller could reach these routes — the gate
+   * above only asks whether someone is signed in — so the account operations
+   * check the role themselves: handing out administrator access is the one
+   * decision this surface exists to control.
+   */
+  const requireAdmin = (session: Session) => {
+    const caller = session.properties.user as User | undefined;
+    if (!caller?.is_admin) {
+      session.status = 403;
+      session.respond({ error: "forbidden" }, "json");
+      return undefined;
+    }
+    return caller;
+  };
+
+  ctx
+    .route("/api/auth/users")
+    .methods("GET")
+    .action(async (session: Session, query: URLSearchParams) => {
+      if (!requireAdmin(session)) return;
+      const rows = ((await db.select("users", {})) as User[]).map(publicUser);
+      const needle = String(query.get("query") ?? "").trim().toLowerCase();
+      const matched = needle
+        ? rows.filter((user) =>
+            [user.username, user.email].some((value) => String(value ?? "").toLowerCase().includes(needle)),
+          )
+        : rows;
+      session.respond(
+        {
+          users: matched.sort((left, right) => Number(right.is_admin) - Number(left.is_admin) || left.id - right.id),
+          total: rows.length,
+          configured: administrator?.id ?? 0,
+        },
+        "json",
+      );
+    });
+
+  ctx
+    .route("/api/auth/users")
+    .methods("POST")
+    .action(async (session: Session) => {
+      if (!requireAdmin(session)) return;
+      const body = await readBody(session);
+      if (!body) {
+        session.status = 400;
+        session.respond({ error: "invalid" }, "json");
+        return;
+      }
+      const name = String(body.username ?? "").trim();
+      const address = String(body.email ?? "").trim().toLowerCase();
+      const secret = String(body.password ?? "");
+      if (name.length < 3 || !address.includes("@") || secret.length < 8) {
+        session.status = 400;
+        session.respond({ error: "invalid" }, "json");
+        return;
+      }
+      if ((await userService.findByIdentifier(name)) || (await userService.findByIdentifier(address))) {
+        session.status = 409;
+        session.respond({ error: "duplicate" }, "json");
+        return;
+      }
+      const group = await userService.ensureDefaultGroup();
+      const created = await userService.create({
+        username: name,
+        email: address,
+        phone: null,
+        oidc_sub: null,
+        password_hash: bcrypt.hashSync(secret, bcrypt.genSaltSync(10)),
+        is_admin: body.is_admin === true,
+        email_verified: true,
+        avatar_url: "",
+        balance: "0",
+        group_id: group.id ?? 0,
+        referral_code: null,
+        referrer_id: null,
+      });
+      session.status = 201;
+      session.respond({ user: publicUser(created) }, "json");
+    });
+
+  ctx
+    .route("/api/auth/users/update")
+    .methods("POST")
+    .action(async (session: Session) => {
+      if (!requireAdmin(session)) return;
+      const body = await readBody(session);
+      if (!body) {
+        session.status = 400;
+        session.respond({ error: "invalid" }, "json");
+        return;
+      }
+      const target = await userService.findById(Number(body.id ?? 0));
+      if (!target) {
+        session.status = 404;
+        session.respond({ error: "not_found" }, "json");
+        return;
+      }
+      const updates: Partial<User> = {};
+      const name = String(body.username ?? "").trim();
+      const address = String(body.email ?? "").trim().toLowerCase();
+      if (name && name !== target.username) {
+        if (name.length < 3) {
+          session.status = 400;
+          session.respond({ error: "invalid" }, "json");
+          return;
+        }
+        if (await userService.findByIdentifier(name)) {
+          session.status = 409;
+          session.respond({ error: "duplicate" }, "json");
+          return;
+        }
+        updates.username = name;
+      }
+      if (address && address !== target.email) {
+        if (!address.includes("@")) {
+          session.status = 400;
+          session.respond({ error: "invalid" }, "json");
+          return;
+        }
+        if (await userService.findByIdentifier(address)) {
+          session.status = 409;
+          session.respond({ error: "duplicate" }, "json");
+          return;
+        }
+        updates.email = address;
+      }
+      const secret = String(body.password ?? "");
+      if (secret) {
+        if (secret.length < 8) {
+          session.status = 400;
+          session.respond({ error: "invalid" }, "json");
+          return;
+        }
+        updates.password_hash = bcrypt.hashSync(secret, bcrypt.genSaltSync(10));
+      }
+      // The configured account is re-promoted on the next start, so demoting it
+      // would look like it took and quietly undo itself; refuse instead.
+      if (typeof body.is_admin === "boolean" && body.is_admin !== target.is_admin) {
+        if (target.id === administrator?.id && body.is_admin === false) {
+          session.status = 409;
+          session.respond({ error: "configured" }, "json");
+          return;
+        }
+        updates.is_admin = body.is_admin;
+      }
+      const updated = await userService.update(target.id, updates);
+      session.respond({ user: updated ? publicUser(updated) : publicUser(target) }, "json");
+    });
+
+  ctx
+    .route("/api/auth/users/delete")
+    .methods("POST")
+    .action(async (session: Session) => {
+      const caller = requireAdmin(session);
+      if (!caller) return;
+      const body = await readBody(session);
+      const id = Number(body?.id ?? 0);
+      if (!body || !id) {
+        session.status = 400;
+        session.respond({ error: "invalid" }, "json");
+        return;
+      }
+      if (id === caller.id) {
+        session.status = 409;
+        session.respond({ error: "self" }, "json");
+        return;
+      }
+      const target = await userService.findById(id);
+      if (!target) {
+        session.status = 404;
+        session.respond({ error: "not_found" }, "json");
+        return;
+      }
+      if (id === administrator?.id) {
+        session.status = 409;
+        session.respond({ error: "configured" }, "json");
+        return;
+      }
+      await db.remove("users", { id });
+      session.respond({ success: true }, "json");
+    });
+
+  /**
    * Authentication is a layer in front of everything, not a page inside the
    * application: a request either carries a session or is answered with a
    * redirect to the authentication page (a navigation) or a 401 (an API call).
@@ -253,8 +585,7 @@ export async function apply(ctx: Context) {
       if (resolved) {
         session.properties.user = resolved.user;
         // A session proven by the authorization header also becomes a cookie,
-        // so a browser that holds a token can reload the page it is on. This is
-        // what carries the first-run wizard: it has a token but no login yet.
+        // so a browser that holds a token can reload the page it is on.
         if (resolved.source === "bearer" && String(session.cookie?.[sessionCookieName] ?? "") !== resolved.token)
           setSessionCookie(session, resolved.token, new Date(Date.now() + sessionLifetimeSeconds * 1000));
         await next();
@@ -264,12 +595,10 @@ export async function apply(ctx: Context) {
         await next();
         return;
       }
-      const target = (await service.initialSetupRequired()) ? "/setup" : "/login";
       const headers = session.client.req?.headers as Record<string, string> | undefined;
       if (isNavigation(pathname, headers)) {
         session.status = 302;
-        session.head.Location =
-          target === "/login" ? `${target}?next=${encodeURIComponent(pathname)}` : target;
+        session.head.Location = `/login?next=${encodeURIComponent(pathname)}`;
         session.respond("", "plain");
         return;
       }

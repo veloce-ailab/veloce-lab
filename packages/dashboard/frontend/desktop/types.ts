@@ -14,10 +14,6 @@ export interface BuiltinServerStatus {
   version: string
 }
 
-export interface SetupStatus {
-  required: boolean
-}
-
 export interface DesktopCurrentUser {
   username?: string
   email?: string
