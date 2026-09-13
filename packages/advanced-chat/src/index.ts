@@ -1068,6 +1068,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         ...(input.stream ? { Accept: "text/event-stream" } : {}),
       };
       const response = await fetchCompletionWithRetry(
+        ctx,
         `${String(channel.base_url).replace(/\\\/$/, "")}${request.urlPath}`,
         { method: "POST", headers, body: JSON.stringify(request.body) },
         String(input.mode ?? "chat"),

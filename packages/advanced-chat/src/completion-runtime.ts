@@ -1,4 +1,7 @@
+import type { Context } from "yumeri";
+
 export async function fetchCompletionWithRetry(
+  ctx: Context,
   url: string,
   init: RequestInit,
   mode: string,
@@ -30,8 +33,10 @@ export async function fetchCompletionWithRetry(
       lastError = error;
       if (attempt === maxAttempts - 1) throw error;
     }
+    // The wait between attempts belongs to the plugin's context, so unloading
+    // the plugin takes it with it instead of leaving a stray timer behind.
     await new Promise((resolve) =>
-      setTimeout(
+      ctx.setTimeout(
         resolve,
         Math.min(options.retryMaxDelayMs, options.retryDelayMs * 2 ** attempt),
       ),

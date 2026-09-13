@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { Context, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
-import "@velocelab/advanced-chat";
 import { ensureTables } from "./tables.js";
 interface ScheduledTaskRun { id?: number; task_name: string; status: string; trigger: string; node_name: string; message: string; duration_ms: number; started_at: string; created_at: string }
 declare module "@yumerijs/types" { interface Tables { scheduled_task_runs: ScheduledTaskRun } }
@@ -33,18 +32,20 @@ export async function apply(ctx: Context) {
     plugin: "scheduler",
   });
   const jobs = new Map<string, ScheduledJob>();
-  const timers = new Map<string, ReturnType<typeof setInterval>>();
+  const timers = new Map<string, NodeJS.Timeout>();
   const service: SchedulerService = {
     register(job) {
       jobs.set(job.name, job);
-      if (job.intervalMs)
-        timers.set(
-          job.name,
-          setInterval(() => void job.run(), job.intervalMs),
-        );
+      if (job.intervalMs) {
+        // A job's timer belongs to the plugin that registered it: the context
+        // clears it when the plugin is unloaded, so a reload no longer leaves a
+        // second loop running beside the new one.
+        const timer = ctx.setInterval(() => void job.run(), job.intervalMs);
+        if (timer) timers.set(job.name, timer);
+      }
       return () => {
         const timer = timers.get(job.name);
-        if (timer) clearInterval(timer);
+        if (timer) ctx.clearInterval(timer);
         timers.delete(job.name);
         jobs.delete(job.name);
       };
@@ -139,7 +140,7 @@ export async function apply(ctx: Context) {
       }
     }
   };
-  setInterval(() => void dispatchDue(), 30_000);
+  ctx.setInterval(() => void dispatchDue(), 30_000);
   ctx
     .route("/api/user/advanced-chat/scheduled-tasks")
     .methods("GET")

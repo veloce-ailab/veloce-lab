@@ -143,7 +143,7 @@ export async function apply(ctx: Context) {
             throw Error(
               String(completed.error_message || "Connector MCP task failed"),
             );
-          await new Promise((resolve) => setTimeout(resolve, 200));
+          await new Promise((resolve) => ctx.setTimeout(resolve, 200));
         }
         throw Error("Connector MCP task timed out");
       }
