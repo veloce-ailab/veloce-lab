@@ -107,6 +107,16 @@ export interface AdvancedChatService {
     sessionId: string,
     input: Partial<SessionInput> & { folderId?: string },
   ): Promise<Record<string, unknown> | undefined>;
+  /**
+   * The frontend owns a session's id: it creates the session locally and
+   * persists it with a PUT. That PUT has to create the row, or the first message
+   * of every new chat fails with "session not found".
+   */
+  saveSessionSnapshot(
+    userId: number,
+    sessionId: string,
+    input: SessionSnapshotInput,
+  ): Promise<Record<string, unknown> | undefined>;
   deleteSession(userId: number, sessionId: string): Promise<boolean>;
   getRun(
     userId: number,
@@ -276,6 +286,33 @@ export interface SessionInput {
   title?: string;
   modelName?: string;
   userChannelId?: number;
+}
+
+/**
+ * A whole session as the frontend owns it. The client generates the id and
+ * persists everything it knows with one PUT, which is why every field is
+ * optional: what it omits is meant to fall back to a default.
+ */
+export interface SessionSnapshotInput {
+  title?: string;
+  runMode?: string;
+  agentId?: string;
+  agentGroupId?: string;
+  skillIds?: unknown[];
+  mcpServerIds?: unknown[];
+  knowledgeBaseIds?: unknown[];
+  connectorDeviceId?: string;
+  connectorWorkspacePath?: string;
+  connectorAutoApprove?: boolean;
+  connectorApprovalMode?: string;
+  connectorCommandPrefixes?: unknown[];
+  modelName?: string;
+  userChannelId?: number;
+  maxTokens?: number;
+  temperature?: number | null;
+  reasoningEffort?: string;
+  autoCompressContext?: boolean;
+  disabledToolGroups?: unknown[];
 }
 
 export interface ScheduledTaskInput {
@@ -741,6 +778,65 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       );
       return service.getSession(userId, sessionId);
     },
+    async saveSessionSnapshot(userId, sessionId, input) {
+      const id = String(sessionId ?? "").trim();
+      // An id the client made up still has to be usable as a key, so keep it
+      // small and refuse the empty one.
+      if (userId === undefined || !id || id.length > 191) return undefined;
+      const mode = ["chat", "assistant", "agent_group"].includes(
+        String(input.runMode ?? ""),
+      )
+        ? String(input.runMode)
+        : "assistant";
+      let agentId = String(input.agentId ?? "").trim();
+      if (mode === "agent_group") agentId = "";
+      else if (!agentId) agentId = DEFAULT_AGENT_ID;
+      // A session may name the default agent, so make sure it exists before the
+      // row points at it.
+      if (agentId === DEFAULT_AGENT_ID) await service.ensureDefaultAgent(userId);
+      const now = new Date().toISOString();
+      const fields = {
+        title: String(input.title ?? "").trim().slice(0, 200),
+        run_mode: mode,
+        agent_id: agentId,
+        agent_group_id: mode === "agent_group" ? String(input.agentGroupId ?? "") : "",
+        skill_ids: JSON.stringify(input.skillIds ?? []),
+        mcp_server_ids: JSON.stringify(input.mcpServerIds ?? []),
+        knowledge_base_ids: JSON.stringify(input.knowledgeBaseIds ?? []),
+        connector_device_id: String(input.connectorDeviceId ?? ""),
+        connector_workspace_path: String(input.connectorWorkspacePath ?? ""),
+        connector_auto_approve: input.connectorAutoApprove === true,
+        connector_approval_mode: String(input.connectorApprovalMode ?? "manual"),
+        connector_command_prefixes: JSON.stringify(
+          input.connectorCommandPrefixes ?? [],
+        ),
+        model_name: String(input.modelName ?? "").trim(),
+        user_channel_id: input.userChannelId || null,
+        max_tokens: Number(input.maxTokens ?? 0) || 0,
+        temperature: input.temperature ?? null,
+        reasoning_effort: String(input.reasoningEffort ?? ""),
+        auto_compress_context: input.autoCompressContext !== false,
+        disabled_tool_groups: JSON.stringify(input.disabledToolGroups ?? []),
+        updated_at: now,
+      };
+      const existing = await db.selectOne("advanced_chat_sessions", {
+        id,
+        user_id: userId,
+      });
+      if (existing)
+        // `folder_id` is left alone: the frontend moves sessions between folders
+        // through its own route and never sends the field here.
+        await db.update("advanced_chat_sessions", { id, user_id: userId }, fields);
+      else
+        await db.create("advanced_chat_sessions", {
+          id,
+          user_id: userId,
+          folder_id: "",
+          ...fields,
+          created_at: now,
+        });
+      return service.getSession(userId, id);
+    },
     async deleteSession(userId, sessionId) {
       const runs = await db.select("advanced_chat_runs", {
         session_id: sessionId,
@@ -1060,11 +1156,36 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         throw Error("model and messages are required");
       const emit = (type: ChatStreamEvent["type"], payload: Record<string, unknown>) =>
         hooks?.onEvent?.({ type, payload });
+      // The client owns the session id and saves the session itself, so a run
+      // that arrives first must still work: an unknown id is created rather than
+      // answered with "session not found", which is what a first message used to
+      // get when its snapshot had not landed yet.
       const session = input.sessionId
-        ? await db.selectOne("advanced_chat_sessions", {
+        ? ((await db.selectOne("advanced_chat_sessions", {
             id: input.sessionId,
             user_id: userId,
-          })
+          })) ??
+          (await service.saveSessionSnapshot(userId, input.sessionId, {
+            title: input.title,
+            runMode: input.mode,
+            agentId: input.agentId,
+            agentGroupId: input.agentGroupId,
+            skillIds: input.skillIds,
+            mcpServerIds: input.mcpServerIds,
+            knowledgeBaseIds: input.knowledgeBaseIds,
+            connectorDeviceId: input.connectorDeviceId,
+            connectorWorkspacePath: input.connectorWorkspacePath,
+            connectorAutoApprove: input.connectorAutoApprove,
+            connectorApprovalMode: input.connectorApprovalMode,
+            connectorCommandPrefixes: input.connectorCommandPrefixes,
+            modelName: input.model,
+            userChannelId: input.userChannelId,
+            maxTokens: input.maxTokens,
+            temperature: input.temperature,
+            reasoningEffort: input.reasoningEffort,
+            autoCompressContext: input.autoCompressContext,
+            disabledToolGroups: input.disabledToolGroups,
+          })))
         : await db.create("advanced_chat_sessions", {
             id: newID("acs"),
             user_id: userId,
@@ -1095,7 +1216,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           });
-      if (!session) throw Error("session not found");
+      // Only a malformed id can get here now: an unknown one is created above.
+      if (!session) throw Error("Invalid session id");
       const sessionId = String(session.id);
       const now = new Date().toISOString();
       // Resolve everything the run uses before touching the upstream: the

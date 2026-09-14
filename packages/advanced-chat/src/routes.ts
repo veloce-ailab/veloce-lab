@@ -488,16 +488,57 @@ export function registerAdvancedChatRoutes(
       const current = await user(session);
       if (current?.id === undefined) return;
       const input = await body(session);
-      session.respond(
-        await service.updateSession(current.id, id, {
-          title: typeof input.title === "string" ? input.title : undefined,
-          modelName:
-            typeof input.model_name === "string" ? input.model_name : undefined,
-          agentId:
-            typeof input.agent_id === "string" ? input.agent_id : undefined,
-        }),
-        "json",
-      );
+      // The frontend sends a whole snapshot and owns the id, so this creates the
+      // session when it is new — otherwise the first message of a chat fails
+      // with "session not found".
+      const saved = await service.saveSessionSnapshot(current.id, id, {
+        title: typeof input.title === "string" ? input.title : undefined,
+        runMode: typeof input.run_mode === "string" ? input.run_mode : undefined,
+        agentId: typeof input.agent_id === "string" ? input.agent_id : undefined,
+        agentGroupId:
+          typeof input.agent_group_id === "string"
+            ? input.agent_group_id
+            : undefined,
+        skillIds: list(input.skill_ids),
+        mcpServerIds: list(input.mcp_server_ids),
+        knowledgeBaseIds: list(input.knowledge_base_ids),
+        connectorDeviceId:
+          typeof input.connector_device_id === "string"
+            ? input.connector_device_id
+            : undefined,
+        connectorWorkspacePath:
+          typeof input.connector_workspace_path === "string"
+            ? input.connector_workspace_path
+            : undefined,
+        connectorAutoApprove: input.connector_auto_approve === true,
+        connectorApprovalMode:
+          typeof input.connector_approval_mode === "string"
+            ? input.connector_approval_mode
+            : undefined,
+        connectorCommandPrefixes: list(input.connector_command_prefixes),
+        modelName:
+          typeof input.model_name === "string" ? input.model_name : undefined,
+        userChannelId:
+          typeof input.user_channel_id === "number"
+            ? input.user_channel_id
+            : undefined,
+        maxTokens:
+          typeof input.max_tokens === "number" ? input.max_tokens : undefined,
+        temperature:
+          typeof input.temperature === "number" ? input.temperature : null,
+        reasoningEffort:
+          typeof input.reasoning_effort === "string"
+            ? input.reasoning_effort
+            : undefined,
+        autoCompressContext: input.auto_compress_context !== false,
+        disabledToolGroups: list(input.disabled_tool_groups),
+      });
+      if (!saved) {
+        session.status = 400;
+        session.respond({ error: "Invalid session id" }, "json");
+        return;
+      }
+      session.respond(saved, "json");
     });
   ctx
     .route("/api/user/advanced-chat/sessions/:id/folder")
