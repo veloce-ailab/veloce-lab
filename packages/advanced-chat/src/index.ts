@@ -25,7 +25,7 @@ import { ensureTables } from "./tables.js";
 
 export * from "./types.js";
 
-export const depend = ["database", "dashboard", "file"];
+export const depend = ["database", "dashboard", "file", "adapters"];
 export const provide = ["advanced-chat"];
 
 declare module "@yumerijs/types" {
@@ -1182,34 +1182,48 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       }
 
       async function executeRun(): Promise<ChatResult> {
-        const channelRows = await db.select("channels", { enabled: true });
-        const configs = await db.select("model_configs", { enabled: true });
-        const requestedChannel = userChannelId
-          ? channelRows.filter(
-              (row: any) => Number(row.user_channel_id) === userChannelId,
-            )
-          : channelRows;
-        const selected = configs.find(
-          (config: any) =>
-            String(config.upstream_model_name || "") === modelName &&
-            requestedChannel.some(
-              (channel: any) =>
-                Number(channel.id) === Number(config.channel_id) && channel.enabled,
-            ),
+        const [channelRows, configs, catalogModels] = await Promise.all([
+          db.select("channels", { enabled: true }),
+          db.select("model_configs", { enabled: true }),
+          db.select("models", { enabled: true }),
+        ]);
+        const channelsByID = new Map(
+          channelRows.map((row: any) => [Number(row.id), row]),
         );
-        // Only fall back to an unrelated channel when the caller did not pin one:
-        // picking an arbitrary enabled channel would send a model to an upstream
-        // that has never heard of it.
-        const channel = selected
-          ? channelRows.find((row: any) => row.id === selected.channel_id)
-          : userChannelId
-            ? undefined
-            : requestedChannel.find((row: any) => row.enabled);
-        if (!channel)
+        const catalogByID = new Map(
+          catalogModels.map((row: any) => [Number(row.id), row]),
+        );
+        // Candidates are enabled bindings on enabled channels whose enabled
+        // catalog model carries the requested name — the name the picker
+        // offered, not the upstream alias. `userChannelId` pins a channel by its
+        // own id (old/internal/service/chat_executor.go `serverChatCandidates`
+        // filters `channels.id`, not the legacy `channels.user_channel_id`).
+        const candidates = configs
+          .flatMap((config: any) => {
+            const channel = channelsByID.get(Number(config.channel_id));
+            if (!channel) return [];
+            if (userChannelId && Number(channel.id) !== userChannelId) return [];
+            const catalog = catalogByID.get(Number(config.model_id));
+            if (!catalog || String(catalog.model_name ?? "") !== modelName)
+              return [];
+            return [{ config, channel }];
+          })
+          // Same order as the old query: priority DESC, weight DESC, id ASC.
+          .sort(
+            (left: any, right: any) =>
+              Number(right.channel.priority ?? 0) -
+                Number(left.channel.priority ?? 0) ||
+              Number(right.channel.weight ?? 0) - Number(left.channel.weight ?? 0) ||
+              Number(left.channel.id) - Number(right.channel.id),
+          );
+        const selected = candidates[0];
+        if (!selected)
           throw Error(
             `no enabled upstream channel serves model ${modelName}`,
           );
-        const upstreamModel = selected?.upstream_model_name || modelName;
+        const channel = selected.channel;
+        const upstreamModel =
+          String(selected.config.upstream_model_name ?? "").trim() || modelName;
         const messages = [
           ...prior.map((message: any) => ({
             role: message.role,
