@@ -845,3 +845,46 @@ dashboard 的 `build` 脚本是**三步**：`tsc` → `vite build`（网页外�
 新增守卫 `.dsh-tmp/build-artifacts-check.mjs`：读每个包的 `build` 脚本与 vite 配置，断言每一步的产物都在 —— 有 `main` 的包要有 `dist/index.js`；build 里出现第二个 `vite build --config X` 的，要能从 X 里解析出 `outDir` 与 `fileName` 且文件存在；有前端且配置带 `lib.fileName` 的包要有对应 bundle（不带的按外壳 `index.html` 检查）；另外显式检查共享 client 与网页外壳。当前 74 项全过。反向验证：把 client 改名藏起来 → 立刻报 3 条 FAIL，再改回来。
 
 **教训**：重建某个包要用它自己的 `build` 脚本（`yarn workspace @velocelab/<pkg> build`），不要只手敲其中一条命令 —— 同一个输出目录被多步构建共用时，"少跑一步"的后果是**删掉别人的产物**，而且只在你刷新页面时才炸。
+
+## 17. "发了之后说 session not found"
+
+### 17.1 现象与根因
+
+新开一个聊天、发出第一条消息就报 **session not found**（这句就是后端 `complete()` 抛的）。只发生在**新**会话上，历史会话一切正常。
+
+原因是会话的所有权约定没被移植过来。前端**自己生成会话 id**（`createSession()` 用 `crypto.randomUUID()`），并把它知道的一切用一次 `PUT /sessions/:id` 存回去 —— 那个函数就叫 `saveAdvancedChatSessionSnapshot`，名字直接来自旧 Go 的同名函数。前端从头到尾**只**用 GET / PUT / DELETE，**从不调用 `POST /sessions`**（那个接口发号，是服务端生成 id 的路子）。
+
+而我们的 `PUT` 做的是：`updateSession()` 先按 id 查，查不到就 `return undefined` —— **它不会创建**，而且只认 `title` / `model_name` / `agent_id` 三个字段。于是新会话在服务端**永远不存在**，紧接着的 `POST /completions` 带着那个 id 过来，`complete()` 查不到就抛了 `session not found`。历史会话之所以没事，是因为它们的行来自 `POST /sessions`（服务端 id，确实存在）。
+
+旧实现写得明明白白（`old/internal/service/advanced_chat_runs.go:1625-1654`）：
+
+```go
+if existing.ID != "" {
+    tx.Model(&existing).Updates(map[string]interface{}{ "title": …, "run_mode": …,
+        "agent_id": …, "agent_group_id": …, "skill_ids": …, "mcp_server_ids": …,
+        "knowledge_base_ids": …, "connector_device_id": …, "connector_workspace_path": …,
+        "cloud_sandbox_id": …, "connector_auto_approve": …, "connector_approval_mode": …,
+        "connector_command_prefixes": …, "model_name": …, "user_channel_id": …,
+        "max_tokens": …, "temperature": …, "reasoning_effort": …,
+        "auto_compress_context": …, "disabled_tool_groups": … })
+} else {
+    tx.Create(&session)      // 没找到就按客户端给的 id 建
+}
+```
+
+移植时两半都丢了：**不创建**，且只写 3 个字段 —— 后者还意味着 `run_mode`、连接器设备/工作区、技能、`max_tokens`、`temperature` 这些设置**发出去就被丢掉**，会话行里一直是默认值。
+
+### 17.2 改了什么
+
+- 新增 `service.saveSessionSnapshot(userId, sessionId, input)`：**有就整体更新，没有就按客户端给的 id 建**；覆盖上表那 19 个字段；`folder_id` 刻意不动（前端用单独的 `/sessions/:id/folder` 接口移动会话，快照里从不带这个字段）；id 为空或超过 191 字符直接拒绝，路由返回 400 而不是留下一行没法用的数据；会话点名默认代理时先 `ensureDefaultAgent`，保证外键有意义。
+- `PUT /sessions/:id` 改为把整个快照透传进去；响应仍是**会话本身**（前端 `saveAdvancedSessionSnapshot` 直接 `normalizeSession(res.data)`）。
+- `complete()`：id 已知但库里没有时**按需创建**（前端快照与发送存在竞态，先到的请求不该失败），而不是抛 `session not found`；剩下那个兜底分支现在只会因为 id 畸形触发，措辞改成 "Invalid session id"。
+- 特意**没做**：`PUT` 仍不写 `messages`。运行路径自己写 user/assistant 消息（自造 id），若把客户端那份也写进去就会重复；消息持久化的口径另议。
+
+### 17.3 验证
+
+`.dsh-tmp/session-snapshot-e2e.mjs`（真服务器 + 真库，**26 项全过**）：客户端命名的会话被创建且字段逐个落库（run_mode / agent_id / connector_device_id / model_name / max_tokens / temperature / reasoning_effort）；能按 id 读回、出现在会话列表里；再存一次是原地更新（行数仍为 1）；先移动到文件夹再存快照，`folder_id` 保留；畸形 id 返回 400；**未知 id 的 completions 不再回 session not found，并且按需建出了会话**。
+
+反向验证也做了：用 `PROBE_OLD_BEHAVIOUR` 环境变量临时恢复"查不到就不创建"的旧行为，同一份探针立刻大面积 FAIL（"saving a session the client named creates it"、"the row exists" 等），确认这套检查真的能抓住这个 bug；随后还原文件（确认无残留标记）、重新编译、重跑全绿。
+
+顺带记一笔环境事实：这个部署在 `yumeri.json` 里声明了 `@velocelab/auth` 管理员，插件启动时会把管理员**落到 users 表**并打日志 `[auth] administrator "FireGuo" adopted from configuration`。users 表为空时匿名请求按 uid 0 处理，一旦这行存在就要求登录（`/auth/password/login`），所以现在探针都要先登录取 token —— 这也解释了为什么之前几轮的探针不需要认证。
