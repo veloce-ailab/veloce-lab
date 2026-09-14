@@ -796,3 +796,25 @@ advancedChatDefaultAgentName = "Default"
 探针结束时清掉了自己造的行，数据库回到"0 个代理"的原始状态——**下次打开代理页就会看到那条默认代理**，这正是它按需创建的意义。
 
 其余检查照旧全过：全包 `tsc`、三份契约、路由影子/组件依赖/默认值/模型分组、选择器路径单测 20 项、device-local 单元 52 项；172 条路由无重复、无不可达。前端重建了 `advanced-chat`（代理页标记）与 `dashboard`（i18n 文案，`@/lib/*` 走的是 dashboard 那个外部客户端）。
+
+### 15.5 跟进：为什么"选择代理"里看不到
+
+补上默认代理解释不了全部现象——用户反馈**选择代理里看不到**。查下去是第二个、更直接的原因：`Chat.tsx` 里那份代理列表的 query 写的是
+
+```ts
+const { data: agents = [], isFetched: agentsFetched } = useQuery<ChatAgent[]>({
+  queryKey: agentsQueryKey,
+  enabled: false,
+  ...
+```
+
+`enabled: false` 意味着**这个页面自己永远不拉列表**。它只在这份缓存被别的页面（代理页、记忆页、渠道页……它们都用同一个 queryKey）先填过时才有数据；而解构时又只取了 `data` 和 `isFetched`，连个 `refetch` 句柄都没留，所以本页面也没有任何办法去补拉。于是：按钮上显示的是 `selectedAgent?.name || copy.selectAgent`，而 `selectedAgent` 也是从这份空列表里 find 出来的——**按钮就一直写着"选择代理"，点开是空的**，正是用户看到的样子。前面那条默认代理虽然已经建出来了，界面上依然一处都看不到。
+
+改动：
+
+- `enabled: false` → `enabled: isAdvanced`（与同页 skills 的写法一致），页面自己负责拉。
+- 顺带解决"看不到名字"的第二层问题：默认代理在库里叫 `Default`（沿用 Go 的名字），中文界面里等于没说。加 `agentDisplayName()`：默认代理且名字仍是 `Default` 时显示 `t("chat.defaultAgent")`（"默认代理"），用户改过名就尊重用户的名字。composer 的下拉与最近使用条都用它。
+
+新增守卫 `.dsh-tmp/agent-picker-check.mjs`：扫全部前端源码，凡是 queryKey 指向 `advanced-chat-agents` / `advanced-chat-skills` 的 query，选项里出现 `enabled: false` 就报错（queryKey 常写成旁边的 `const ... as const`，所以先解析常量再比对；只找字面量会扫到声明那一行而**空过**）。
+
+这个守卫本身也验证过不是摆设：`.dsh-tmp/agent-picker-negative.mjs` 把 `enabled` 改回 `false`、导入守卫、确认它报错、再还原文件——结果是 `guard caught the broken query: true`。中间还踩到一个坑值得记下：最初用 `execFileSync` 跑子进程，而这个沙箱**禁止 Node 起子进程**（`spawn EPERM`），异常被 catch 成空输出，看起来就像"守卫没抓到"——把守卫**在同一进程内 import** 才测出真实结果。凡是用子进程做验证的地方都要防这种假阴性。
