@@ -57,10 +57,16 @@ export async function apply(ctx: Context) {
   const chat = ctx.component["advanced-chat"];
   chat.registerContextProvider({
     id: "mcp",
-    provide: async ({ userId }) => {
+    provide: async ({ userId, mcpServerIds }) => {
       const enabled = await service.list(userId);
-      return enabled.length
-        ? `Enabled MCP servers:\n${enabled.map((server) => `- ${server.name}: ${server.url}`).join("\n")}`
+      // The session's selection decides which servers are offered to the model.
+      const selected = mcpServerIds?.length
+        ? enabled.filter((server) =>
+            mcpServerIds.includes(String(server.id)),
+          )
+        : enabled;
+      return selected.length
+        ? `Enabled MCP servers:\n${selected.map((server) => `- ${server.name}: ${server.url}`).join("\n")}`
         : undefined;
     },
   });

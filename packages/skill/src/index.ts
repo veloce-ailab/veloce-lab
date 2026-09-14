@@ -86,11 +86,21 @@ export async function apply(ctx: Context) {
   const chat = ctx.component["advanced-chat"];
   chat.registerContextProvider({
     id: "skill",
-    provide: async ({ userId }) => {
+    provide: async ({ userId, skillIds }) => {
       const enabled = await service.list(userId);
-      return enabled.length
-        ? `Enabled skills:\n${enabled.map((skill) => `- ${skill.name}: ${skill.description}`).join("\n")}`
-        : undefined;
+      // A selection narrows the prompt to the skills the session actually
+      // chose; without one every enabled skill is advertised.
+      const selected = skillIds?.length
+        ? enabled.filter((skill) => skillIds.includes(String(skill.id)))
+        : enabled;
+      if (!selected.length) return undefined;
+      return `Enabled skills:\n${selected
+        .map((skill) =>
+          skillIds?.length
+            ? `- ${skill.name}\n${String(skill.content ?? "").trim()}`
+            : `- ${skill.name}: ${skill.description}`,
+        )
+        .join("\n")}`;
     },
   });
   chat.registerTool({
