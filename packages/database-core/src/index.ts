@@ -49,19 +49,33 @@ function fieldType(type: FieldType): string {
   )[type];
 }
 
-function where(query: Query<any>, params: unknown[]): string {
+/**
+ * Build a WHERE clause.
+ *
+ * `strict` is set by the destructive operations. An `undefined` filter value is
+ * a filter the caller asked for but could not supply — dropping it silently
+ * turns `{ id, user_id: undefined }` into a delete by `id` alone, which crosses
+ * users. Reads stay permissive so that optional filters keep working.
+ */
+function where(query: Query<any>, params: unknown[], strict = false): string {
   const parts: string[] = [];
   for (const [key, value] of Object.entries(query)) {
     if (key === "$or" || key === "$and") {
       const expressions = (value as Query<any>[])
-        .map((item) => where(item, params))
+        .map((item) => where(item, params, strict))
         .filter(Boolean);
       if (expressions.length)
         parts.push(`(${expressions.join(key === "$or" ? " OR " : " AND ")})`);
       continue;
     }
     const column = identifier(key);
-    if (value === undefined) continue;
+    if (value === undefined) {
+      if (strict)
+        throw new Error(
+          `Refusing to run a query whose filter "${key}" is undefined`,
+        );
+      continue;
+    }
     if (value === null) {
       parts.push(`${column} IS NULL`);
       continue;
@@ -176,6 +190,13 @@ export class SqlDatabase implements Database {
       `INSERT INTO ${identifier(String(table))} (${keys.map(identifier).join(", ")}) VALUES (${keys.map(() => "?").join(", ")})`,
       values,
     );
+    // The driver's insert id is only a fallback for tables that let the
+    // database assign the primary key. `lastInsertRowid` is the implicit rowid,
+    // which is unrelated to a TEXT primary key the caller generated itself, and
+    // Node's `DatabaseSync.run()` always reports it — so an explicit `id` wins.
+    const explicitId = (data as Record<string, unknown>).id;
+    if (explicitId !== undefined && explicitId !== null)
+      return { ...data } as Tables[K];
     return {
       ...data,
       ...(result.insertId === undefined ? {} : { id: Number(result.insertId) }),
@@ -217,9 +238,13 @@ export class SqlDatabase implements Database {
       params.push(value);
       return `${identifier(key)} = ?`;
     });
-    const condition = where(query, params);
+    if (!assignments.length)
+      throw new Error(`Refusing to update ${String(table)} without any values`);
+    const condition = where(query, params, true);
+    if (!condition)
+      throw new Error(`Refusing to update ${String(table)} without a filter`);
     const result = await this.driver.execute(
-      `UPDATE ${identifier(String(table))} SET ${assignments.join(", ")}${condition ? ` WHERE ${condition}` : ""}`,
+      `UPDATE ${identifier(String(table))} SET ${assignments.join(", ")} WHERE ${condition}`,
       params,
     );
     return result.changes ?? 0;
@@ -229,9 +254,11 @@ export class SqlDatabase implements Database {
     query: Query<Tables[K]>,
   ): Promise<number> {
     const params: unknown[] = [];
-    const condition = where(query, params);
+    const condition = where(query, params, true);
+    if (!condition)
+      throw new Error(`Refusing to delete from ${String(table)} without a filter`);
     const result = await this.driver.execute(
-      `DELETE FROM ${identifier(String(table))}${condition ? ` WHERE ${condition}` : ""}`,
+      `DELETE FROM ${identifier(String(table))} WHERE ${condition}`,
       params,
     );
     return result.changes ?? 0;
