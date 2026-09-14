@@ -73,7 +73,7 @@ export async function apply(ctx: Context) {
     created_at: "timestamp",
   });
   const chat = ctx.component["advanced-chat"];
-  const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
+  const user = (s: Session) => (s.properties.user as { id?: number } | undefined)?.id;
   const dispatchDue = async () => {
     const now = new Date();
     const tasks: any[] = await db.select("advanced_chat_scheduled_tasks", {
@@ -146,7 +146,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
-      if (id)
+      if (id !== undefined)
         s.respond(
           await db.select("advanced_chat_scheduled_tasks", { user_id: id }),
           "json",
@@ -157,7 +157,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       const scheduleType = String(
         input.schedule_type ?? "manual",
@@ -207,7 +207,7 @@ export async function apply(ctx: Context) {
     .methods("PUT")
     .action(async (s, _p, taskId) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       await db.update(
         "advanced_chat_scheduled_tasks",
@@ -227,7 +227,7 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, taskId) => {
       const id = user(s);
-      if (id) {
+      if (id !== undefined) {
         await db.remove("advanced_chat_scheduled_tasks", {
           id: taskId,
           user_id: id,
@@ -240,7 +240,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s, _p, taskId) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const task: any = await db.selectOne("advanced_chat_scheduled_tasks", {
         id: taskId,
         user_id: id,
@@ -313,7 +313,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, taskId) => {
       const id = user(s);
-      if (id) {
+      if (id !== undefined) {
         const task: any = await db.selectOne("advanced_chat_scheduled_tasks", {
           id: taskId,
           user_id: id,

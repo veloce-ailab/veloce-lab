@@ -15,7 +15,7 @@ export async function apply(ctx: Context) {
   const db = ctx.component.database as Database;
   await ensureTables(db);
   const chat = ctx.component["advanced-chat"];
-  const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
+  const user = (s: Session) => (s.properties.user as { id?: number } | undefined)?.id;
   const fields = (input: any, old: any = {}) => ({
     name: String(input.name ?? old.name ?? "Delivery")
       .trim()
@@ -131,7 +131,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
-      if (id)
+      if (id !== undefined)
         s.respond(
           await db.select("advanced_chat_deliveries", { user_id: id }),
           "json",
@@ -142,7 +142,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const now = new Date().toISOString();
       try {
         const input = await s.parseRequestBody();
@@ -171,7 +171,7 @@ export async function apply(ctx: Context) {
     .methods("PUT")
     .action(async (s, _p, rid) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const old = await db.selectOne("advanced_chat_deliveries", {
         id: rid,
         user_id: id,
@@ -211,7 +211,7 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, rid) => {
       const id = user(s);
-      if (id) {
+      if (id !== undefined) {
         const tasks = await db.select("advanced_chat_scheduled_tasks", {
           user_id: id,
           delivery_id: rid,

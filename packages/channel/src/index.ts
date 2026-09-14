@@ -152,7 +152,7 @@ export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
     .methods("GET")
     .action(async (session) => {
       const user = currentUser(session);
-      if (!user?.id) return;
+      if (user?.id === undefined) return;
       const rows = await db.select("message_channel_integrations", {
         user_id: user.id,
       });
@@ -166,7 +166,7 @@ export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
     .methods("POST")
     .action(async (session) => {
       const user = currentUser(session);
-      if (!user?.id) return;
+      if (user?.id === undefined) return;
       const input = await body(session);
       const provider = (input.provider ? String(input.provider) : "")
         .trim()
@@ -214,7 +214,7 @@ export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
     .methods("PUT")
     .action(async (session, _params, id) => {
       const user = currentUser(session);
-      if (!user?.id) return;
+      if (user?.id === undefined) return;
       const existing = await db.selectOne("message_channel_integrations", {
         id: Number(id),
         user_id: user.id,
@@ -268,7 +268,7 @@ export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
       .methods("POST")
       .action(async (session, _params, id) => {
         const user = currentUser(session);
-        if (!user?.id) return;
+        if (user?.id === undefined) return;
         await db.update(
           "message_channel_integrations",
           { id: Number(id), user_id: user.id },
@@ -282,7 +282,7 @@ export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
     .methods("DELETE")
     .action(async (session, _params, id) => {
       const user = currentUser(session);
-      if (!user?.id) return;
+      if (user?.id === undefined) return;
       await db.remove("message_channel_messages", {
         integration_id: Number(id),
         user_id: user.id,
@@ -299,7 +299,7 @@ export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
     .methods("GET")
     .action(async (session, params, id) => {
       const user = currentUser(session);
-      if (!user?.id) return;
+      if (user?.id === undefined) return;
       const limit = Math.min(
         200,
         Math.max(1, Number(params.get("limit") ?? 50) || 50),

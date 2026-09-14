@@ -88,14 +88,14 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
-      if (id) s.respond(await service.list(id), "json");
+      if (id !== undefined) s.respond(await service.list(id), "json");
     });
   ctx
     .route("/api/user/advanced-chat/workspaces")
     .methods("POST")
     .action(async (s) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       s.status = 201;
       s.respond(
         await service.create(id, (await s.parseRequestBody()) as any),
@@ -107,7 +107,7 @@ export async function apply(ctx: Context) {
     .methods("PUT")
     .action(async (s, _p, workspaceId) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       const existing = await db.selectOne("advanced_chat_workspaces", {
         id: workspaceId,
@@ -144,7 +144,7 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, workspaceId) => {
       const id = user(s);
-      if (id) {
+      if (id !== undefined) {
         await db.remove("advanced_chat_workspace_files", {
           workspace_id: workspaceId,
           user_id: id,
@@ -161,14 +161,14 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, workspaceId) => {
       const id = user(s);
-      if (id) s.respond(await service.files(id, workspaceId), "json");
+      if (id !== undefined) s.respond(await service.files(id, workspaceId), "json");
     });
   ctx
     .route("/api/user/advanced-chat/workspaces/:id/files")
     .methods("POST")
     .action(async (s, _p, workspaceId) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const workspace: any = await db.selectOne("advanced_chat_workspaces", {
         id: workspaceId,
         user_id: id,
@@ -222,7 +222,7 @@ export async function apply(ctx: Context) {
     .methods("PUT")
     .action(async (s, _p, workspaceId, fileId) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const row: any = await db.selectOne("advanced_chat_workspace_files", {
         id: fileId,
         workspace_id: workspaceId,
@@ -267,7 +267,7 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, workspaceId, fileId) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const row: any = await db.selectOne("advanced_chat_workspace_files", {
         id: fileId,
         workspace_id: workspaceId,
@@ -291,7 +291,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const query = s.client.req?.url?.split("?")[1] ?? "";
       const params = new URLSearchParams(query);
       const deviceId = params.get("connector_device_id") ?? "";
@@ -317,7 +317,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const query = s.client.req?.url?.split("?")[1] ?? "";
       const params = new URLSearchParams(query);
       try {
@@ -341,7 +341,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       try {
         s.respond(await connector.execute(id, "git_action", input), "json");
