@@ -1,4 +1,5 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { channelIDForModel, groupModelsByChannel } from "../lib/model-groups"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -12,7 +13,7 @@ import { useI18n, type TranslationKey } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
 import { withPublicSettingsDefaults } from "@/lib/public-settings"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -1077,12 +1078,11 @@ export default function Chat() {
     () => catalog.find((channel) => channel.id === selectedUserChannelID) || catalog[0],
     [catalog, selectedUserChannelID]
   )
-  const channelModelOptions = useMemo(() => {
-    return selectedUserChannel ? selectedUserChannel.models : modelOptions
-  }, [modelOptions, selectedUserChannel])
-  const modelSelectOptions = useMemo(
-    () => activeModelName && !channelModelOptions.includes(activeModelName) ? [activeModelName, ...channelModelOptions] : channelModelOptions,
-    [activeModelName, channelModelOptions]
+  // The model picker lists models grouped by the upstream channel that serves
+  // them, so a model is chosen together with the channel it comes from.
+  const modelChannelGroups = useMemo(
+    () => groupModelsByChannel(catalog, selectedUserChannelID, activeModelName),
+    [activeModelName, catalog, selectedUserChannelID]
   )
   const mcpServers = useMemo(() => {
     if (currentAdvancedSettings.mcp_servers.length > 0) {
@@ -1969,6 +1969,23 @@ export default function Chat() {
       return
     }
     setModelName(value)
+  }
+
+  // Picking a model from a channel's group also pins that channel: the model
+  // name alone is ambiguous when two channels serve it, and the run has to know
+  // which upstream to call.
+  const handleGroupedModelChange = (value: string) => {
+    const model = value === "__shadcn_empty__" ? "" : value
+    const groupID = channelIDForModel(modelChannelGroups, model)
+    if (groupID && groupID !== selectedUserChannelID) {
+      setSelectedUserChannelID(groupID)
+      if (isAdvanced && currentSession) {
+        updateSession(currentSession.id, (session) => ({ ...session, user_channel_id: groupID || undefined, model_name: model }), { persist: true })
+        setModelName(model)
+        return
+      }
+    }
+    handleSessionModelChange(model)
   }
 
   const setSessionRunMode = (mode: ChatRunMode) => {
@@ -3170,8 +3187,13 @@ export default function Chat() {
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="min-h-8 text-xs">{copy.selectModel}</DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="max-h-56 w-56 overflow-y-auto">
-              <DropdownMenuRadioGroup value={activeModelName} onValueChange={handleSessionModelChange}>
-                {modelSelectOptions.map((model) => <DropdownMenuRadioItem key={model} value={model} className="min-h-8 text-xs"><span className="truncate">{model}</span></DropdownMenuRadioItem>)}
+              <DropdownMenuRadioGroup value={activeModelName} onValueChange={handleGroupedModelChange}>
+                {modelChannelGroups.map((group) => (
+                  <div key={`${group.id}:${group.name}`}>
+                    {group.name ? <DropdownMenuLabel className="text-[10px] font-medium text-muted-foreground">{group.name}</DropdownMenuLabel> : null}
+                    {group.models.map((model) => <DropdownMenuRadioItem key={`${group.id}:${model}`} value={model} className="min-h-8 text-xs"><span className="truncate">{model}</span></DropdownMenuRadioItem>)}
+                  </div>
+                ))}
               </DropdownMenuRadioGroup>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
@@ -4383,12 +4405,17 @@ export default function Chat() {
                   {activeRunMode !== "agent_group" && (
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">{copy.sessionModel}</span>
-                      <Select value={String((activeModelName) || "__shadcn_empty__")} onValueChange={(value) => handleSessionModelChange((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+                      <Select value={String((activeModelName) || "__shadcn_empty__")} onValueChange={handleGroupedModelChange}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
                         <SelectItem value="__shadcn_empty__">{copy.selectModel}</SelectItem>
-                        {modelSelectOptions.map((model) => (
-                          <SelectItem key={model} value={String(model)}>
-                            {model}
-                          </SelectItem>
+                        {modelChannelGroups.map((group) => (
+                          <SelectGroup key={`${group.id}:${group.name}`}>
+                            {group.name ? <SelectLabel>{group.name}</SelectLabel> : null}
+                            {group.models.map((model) => (
+                              <SelectItem key={`${group.id}:${model}`} value={String(model)}>
+                                {model}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
                         ))}
                       </SelectContent></Select>
                     </label>
