@@ -364,6 +364,7 @@ export async function apply(ctx: Context) {
     }
     const input = (await s.parseRequestBody()) as any;
     const now = new Date().toISOString();
+    const name = String(input.name ?? "").trim().slice(0, 120);
     await db.update(
       "advanced_chat_connector_devices",
       { id: device.id },
@@ -381,6 +382,9 @@ export async function apply(ctx: Context) {
             .filter((key) => input[key] !== undefined)
             .map((key) => [key, String(input[key])]),
         ),
+        // An empty name keeps the current one, so renaming stays an explicit
+        // act instead of a side effect of every heartbeat.
+        ...(name ? { name } : {}),
         status: "online",
         last_seen_at: now,
         updated_at: now,
@@ -415,21 +419,42 @@ export async function apply(ctx: Context) {
         s.respond({ error: "Invalid connector token" }, "json");
         return;
       }
-      const task = await db.selectOne("advanced_chat_connector_tasks", {
+      const queued: any[] = await db.select("advanced_chat_connector_tasks", {
         device_id: device.id,
-        status: "approved",
+        status: "queued",
       });
-      if (task)
-        await db.update(
-          "advanced_chat_connector_tasks",
-          { id: task.id },
-          {
-            status: "running",
-            started_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        );
-      s.respond({ task: task ?? null }, "json");
+      // Tasks are queued by the chat runtime (`chat.createConnectorTask` writes
+      // `queued`), and `select` has no ORDER BY, so the oldest candidate is
+      // chosen here to keep dispatch first-in-first-out.
+      const candidate = queued.sort((left, right) =>
+        String(left.created_at).localeCompare(String(right.created_at)),
+      )[0];
+      if (!candidate) {
+        s.respond({ task: null }, "json");
+        return;
+      }
+      const now = new Date().toISOString();
+      // Only the run that flips `queued` to `running` may hand the task out, so
+      // two concurrent long polls cannot both receive the same task.
+      const changed = await db.update(
+        "advanced_chat_connector_tasks",
+        { id: candidate.id, status: "queued" },
+        {
+          status: "running",
+          started_at: now,
+          updated_at: now,
+        },
+      );
+      s.respond(
+        {
+          task: changed
+            ? await db.selectOne("advanced_chat_connector_tasks", {
+                id: candidate.id,
+              })
+            : null,
+        },
+        "json",
+      );
     });
   ctx
     .route("/api/advanced-chat/connectors/tasks/:id/result")
@@ -451,18 +476,20 @@ export async function apply(ctx: Context) {
         return;
       }
       const input = (await s.parseRequestBody()) as any;
-      await db.update(
+      // A result only counts for a task this device is currently running, so a
+      // stale or duplicated report cannot flip a finished task again.
+      const changed = await db.update(
         "advanced_chat_connector_tasks",
-        { id: taskId },
+        { id: taskId, device_id: device.id, status: "running" },
         {
           status: input.success === true ? "completed" : "failed",
-          result: String(input.result ?? ""),
-          error_message: String(input.error_message ?? ""),
+          result: String(input.result ?? "").slice(0, 1_000_000),
+          error_message: String(input.error_message ?? "").slice(0, 100_000),
           finished_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
       );
-      s.respond({ ok: true }, "json");
+      s.respond({ ok: true, ignored: changed === 0 }, "json");
     });
   ctx
     .route("/api/user/advanced-chat/connector-credentials")

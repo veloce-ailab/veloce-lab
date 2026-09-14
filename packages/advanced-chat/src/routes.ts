@@ -13,12 +13,6 @@ export function registerAdvancedChatRoutes(
   };
   const body = async (session: Session) =>
     (await session.parseRequestBody()) as Record<string, unknown>;
-  const token = (session: Session) => {
-    const headers = session.client.req?.headers ?? {};
-    const value = headers["x-connector-token"] ?? headers.authorization ?? "";
-    const raw = Array.isArray(value) ? value[0] : value;
-    return typeof raw === "string" ? raw.replace(/^bearer\s+/i, "").trim() : "";
-  };
   const list = (value: unknown) =>
     Array.isArray(value)
       ? value.filter((item): item is string => typeof item === "string")
@@ -251,34 +245,11 @@ export function registerAdvancedChatRoutes(
       });
   }
 
-  ctx
-    .route("/api/user/advanced-chat/devices")
-    .methods("GET")
-    .action(async (session) => {
-      const current = await user(session);
-      if (!current?.id) return;
-      session.respond(
-        (await service.listConnectors(current.id)).map(
-          ({ token_hash: _hash, ...item }) => item,
-        ),
-        "json",
-      );
-    });
-  ctx
-    .route("/api/user/advanced-chat/devices/token")
-    .methods("POST")
-    .action(async (session) => {
-      const current = await user(session);
-      if (!current?.id) return;
-      const input = await body(session);
-      const created = await service.createConnector(
-        current.id,
-        String(input.name ?? ""),
-        String(input.remark ?? ""),
-      );
-      const { token_hash: _hash, ...device } = created.device;
-      session.respond({ ...device, token: created.token }, "json");
-    });
+  // Device and connector routes live in `@velocelab/connector`, which owns the
+  // credential storage and the MCP process control around them. Keeping copies
+  // here would silently shadow one of the two implementations: the router keys
+  // its table by path, so the later registration wins the method.
+
   ctx
     .route("/api/user/advanced-chat/agents")
     .methods("GET")
@@ -1434,64 +1405,5 @@ export function registerAdvancedChatRoutes(
           })
         : [];
       s.respond({ member, events }, "json");
-    });
-  ctx
-    .route("/api/advanced-chat/connectors/register")
-    .methods("POST")
-    .action(async (session) => {
-      const input = await body(session);
-      const value = await service.heartbeatConnector(
-        token(session),
-        input as any,
-      );
-      if (!value) {
-        session.status = 401;
-        session.respond({ error: "Invalid connector token" }, "json");
-      } else {
-        const { token_hash: _hash, ...device } = value;
-        session.respond(device, "json");
-      }
-    });
-  ctx
-    .route("/api/advanced-chat/connectors/heartbeat")
-    .methods("POST")
-    .action(async (session) => {
-      const value = await service.heartbeatConnector(
-        token(session),
-        (await body(session)) as any,
-      );
-      if (!value) session.status = 401;
-      session.respond(
-        value
-          ? { ok: true, device_id: value.id }
-          : { error: "Invalid connector token" },
-        "json",
-      );
-    });
-  ctx
-    .route("/api/advanced-chat/connectors/tasks/next")
-    .methods("GET")
-    .action(async (session) => {
-      const value = await service.nextConnectorTask(token(session));
-      session.respond({ task: value ?? null }, "json");
-    });
-  ctx
-    .route("/api/advanced-chat/connectors/tasks/:id/result")
-    .methods("POST")
-    .action(async (session, _params, id) => {
-      const input = await body(session);
-      session.respond(
-        {
-          ok: true,
-          ignored: !(await service.completeConnectorTask(
-            token(session),
-            id,
-            input.success === true,
-            String(input.result ?? ""),
-            String(input.error_message ?? ""),
-          )),
-        },
-        "json",
-      );
     });
 }
