@@ -15,6 +15,7 @@ import { registerAskUserTool } from "./ask-user.js";
 import { filterToolsByDisabledGroups } from "./tool-groups.js";
 import { attachImageFiles, registerChatFileRoutes } from "./files.js";
 import { fetchCompletionWithRetry } from "./completion-runtime.js";
+import type { ChatStreamEvent } from "./stream.js";
 import { registerSessionTaskTools } from "./session-tasks.js";
 import { registerRunTools } from "./run-tools.js";
 import "@velocelab/dashboard";
@@ -164,7 +165,11 @@ export interface AdvancedChatService {
     result: string,
     errorMessage: string,
   ): Promise<boolean>;
-  complete(userId: number, input: ChatInput): Promise<ChatResult>;
+  complete(
+    userId: number,
+    input: ChatInput,
+    hooks?: ChatCompletionHooks,
+  ): Promise<ChatResult>;
 }
 export interface ChatToolDefinition {
   name: string;
@@ -172,7 +177,18 @@ export interface ChatToolDefinition {
   parameters: Record<string, unknown>;
   execute?(
     input: unknown,
-    context: { userId: number; sessionId?: string; runId?: string; agentId?: string },
+    context: {
+      userId: number;
+      sessionId?: string;
+      runId?: string;
+      agentId?: string;
+      /** Selections the run resolved, so tools can scope themselves to them. */
+      skillIds?: string[];
+      knowledgeBaseIds?: string[];
+      mcpServerIds?: string[];
+      mode?: string;
+      disabledToolGroups?: string[];
+    },
   ): Promise<unknown>;
 }
 export interface ChatContextProvider {
@@ -181,11 +197,16 @@ export interface ChatContextProvider {
     userId: number;
     sessionId?: string;
     agentId?: string;
+    skillIds?: string[];
+    knowledgeBaseIds?: string[];
+    mcpServerIds?: string[];
+    mode?: string;
   }): Promise<string | undefined> | string | undefined;
 }
 
 export interface ChatInput {
   sessionId?: string;
+  title?: string;
   model: string;
   messages: Array<{
     role: string;
@@ -200,6 +221,17 @@ export interface ChatInput {
   reasoningEffort?: string;
   disabledToolGroups?: string[];
   mode?: string;
+  agentId?: string;
+  agentGroupId?: string;
+  skillIds?: string[];
+  knowledgeBaseIds?: string[];
+  mcpServerIds?: string[];
+  connectorDeviceId?: string;
+  connectorWorkspacePath?: string;
+  connectorAutoApprove?: boolean;
+  connectorApprovalMode?: string;
+  connectorCommandPrefixes?: string[];
+  autoCompressContext?: boolean;
 }
 
 export interface ChatResult {
@@ -214,6 +246,15 @@ export interface ChatResult {
   finishReason: string;
   inputTokens: number;
   outputTokens: number;
+  /** Set when the run was stopped or the caller went away mid-flight. */
+  cancelled?: boolean;
+}
+
+export interface ChatCompletionHooks {
+  /** Aborted when the caller (or the browser) goes away. */
+  signal?: AbortSignal;
+  /** Receives the events of the `text/event-stream` contract, in order. */
+  onEvent?: (event: ChatStreamEvent) => void;
 }
 
 export interface AgentInput {
@@ -301,6 +342,30 @@ function decodeObject(value: unknown) {
     return {};
   }
 }
+
+/**
+ * Selections reach a run from three places: the request, the session the run
+ * belongs to, and the agent that session pins. The request wins, then the
+ * session, and the agent only fills a gap the session never set — so clearing a
+ * selection in the UI really clears it instead of falling back to the agent.
+ */
+function resolveList(
+  fromRequest: string[] | undefined,
+  fromSession: unknown,
+  fromAgent: unknown,
+) {
+  if (Array.isArray(fromRequest)) return fromRequest.map(String);
+  const session = decodeList(fromSession).map(String);
+  if (session.length) return session;
+  return decodeList(fromAgent).map(String);
+}
+
+/**
+ * Runs currently executing in this process, so a stop request can abort the
+ * upstream call instead of only marking the row. A run executes inside the HTTP
+ * handler that started it, which is what makes this registry necessary.
+ */
+const inFlightRuns = new Map<string, AbortController>();
 
 export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const dashboard = ctx.component.dashboard;
@@ -635,10 +700,15 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       if (!existing) return undefined;
       if (["completed", "failed", "cancelled"].includes(existing.status))
         return service.getRun(userId, runId);
+      // Abort the upstream request too. Marking the row alone would leave the
+      // call running to completion and overwrite this status afterwards.
+      inFlightRuns.get(runId)?.abort();
       const now = new Date().toISOString();
-      await db.update(
+      // The status is part of the filter, so two stop requests racing each
+      // other cannot both write the terminal row and its event.
+      const changed = await db.update(
         "advanced_chat_runs",
-        { id: runId, user_id: userId },
+        { id: runId, user_id: userId, status: existing.status },
         {
           status: "cancelled",
           status_message: "cancelled",
@@ -646,15 +716,16 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           updated_at: now,
         },
       );
-      await db.create("advanced_chat_run_events", {
-        run_id: runId,
-        session_id: existing.session_id,
-        user_id: userId,
-        seq: 999999,
-        event: "cancelled",
-        payload: "{}",
-        created_at: now,
-      });
+      if (changed)
+        await db.create("advanced_chat_run_events", {
+          run_id: runId,
+          session_id: existing.session_id,
+          user_id: userId,
+          seq: 999999,
+          event: "cancelled",
+          payload: "{}",
+          created_at: now,
+        });
       return service.getRun(userId, runId);
     },
     async listRunEvents(userId, runId, after) {
@@ -901,10 +972,12 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       );
       return changed > 0;
     },
-    async complete(userId, input) {
-      const modelName = input.model.trim();
-      if (!modelName || !input.messages.length)
+    async complete(userId, input, hooks) {
+      const requestedModel = String(input.model ?? "").trim();
+      if (!input.messages.length)
         throw Error("model and messages are required");
+      const emit = (type: ChatStreamEvent["type"], payload: Record<string, unknown>) =>
+        hooks?.onEvent?.({ type, payload });
       const session = input.sessionId
         ? await db.selectOne("advanced_chat_sessions", {
             id: input.sessionId,
@@ -914,31 +987,103 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             id: newID("acs"),
             user_id: userId,
             folder_id: "",
-            title: "",
-            run_mode: "assistant",
-            agent_id: "",
-            agent_group_id: "",
-            skill_ids: "[]",
-            mcp_server_ids: "[]",
-            knowledge_base_ids: "[]",
-            connector_device_id: "",
-            connector_workspace_path: "",
-            connector_auto_approve: false,
-            connector_approval_mode: "manual",
-            connector_command_prefixes: "[]",
-            model_name: modelName,
+            title: String(input.title ?? "").slice(0, 200),
+            run_mode: String(input.mode ?? "assistant"),
+            agent_id: String(input.agentId ?? ""),
+            agent_group_id: String(input.agentGroupId ?? ""),
+            skill_ids: JSON.stringify(input.skillIds ?? []),
+            mcp_server_ids: JSON.stringify(input.mcpServerIds ?? []),
+            knowledge_base_ids: JSON.stringify(input.knowledgeBaseIds ?? []),
+            connector_device_id: String(input.connectorDeviceId ?? ""),
+            connector_workspace_path: String(input.connectorWorkspacePath ?? ""),
+            connector_auto_approve: input.connectorAutoApprove === true,
+            connector_approval_mode: String(
+              input.connectorApprovalMode ?? "manual",
+            ),
+            connector_command_prefixes: JSON.stringify(
+              input.connectorCommandPrefixes ?? [],
+            ),
+            model_name: requestedModel,
             user_channel_id: input.userChannelId || null,
             max_tokens: input.maxTokens || 0,
             temperature: input.temperature ?? null,
             reasoning_effort: input.reasoningEffort || "",
-            auto_compress_context: true,
-            disabled_tool_groups: "[]",
+            auto_compress_context: input.autoCompressContext !== false,
+            disabled_tool_groups: JSON.stringify(input.disabledToolGroups ?? []),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           });
       if (!session) throw Error("session not found");
       const sessionId = String(session.id);
       const now = new Date().toISOString();
+      // Resolve everything the run uses before touching the upstream: the
+      // request wins, the session is the fallback, and the agent only fills a
+      // gap the session never set.
+      const agentKey = String(input.agentId ?? session.agent_id ?? "").trim();
+      const agent =
+        agentKey && agentKey !== "default"
+          ? ((await db.selectOne("advanced_chat_agents", {
+              user_id: userId,
+              stable_id: agentKey,
+            })) ??
+            (await db.selectOne("advanced_chat_agents", {
+              user_id: userId,
+              id: agentKey,
+            })))
+          : undefined;
+      const modelName = String(agent?.default_model ?? "").trim() || requestedModel;
+      if (!modelName) throw Error("model and messages are required");
+      const mode = String(input.mode ?? session.run_mode ?? "chat").trim() || "chat";
+      const userChannelId =
+        input.userChannelId ??
+        (agent?.user_channel_id ? Number(agent.user_channel_id) : undefined) ??
+        (session.user_channel_id ? Number(session.user_channel_id) : undefined);
+      const maxTokens =
+        input.maxTokens ?? (Number(session.max_tokens ?? 0) || 0);
+      const temperature =
+        input.temperature ??
+        (session.temperature === null || session.temperature === undefined
+          ? undefined
+          : Number(session.temperature));
+      const reasoningEffort =
+        input.reasoningEffort ?? String(session.reasoning_effort ?? "");
+      const disabledToolGroups =
+        input.disabledToolGroups ??
+        decodeList(session.disabled_tool_groups).map(String);
+      const skillIds = resolveList(
+        input.skillIds,
+        session.skill_ids,
+        agent?.skill_ids,
+      );
+      const knowledgeBaseIds = resolveList(
+        input.knowledgeBaseIds,
+        session.knowledge_base_ids,
+        agent?.knowledge_base_ids,
+      );
+      const mcpServerIds = resolveList(
+        input.mcpServerIds,
+        session.mcp_server_ids,
+        agent?.mcp_server_ids,
+      );
+      const connectorDeviceId = String(
+        input.connectorDeviceId ?? session.connector_device_id ?? "",
+      );
+      await db.update(
+        "advanced_chat_sessions",
+        { id: sessionId, user_id: userId },
+        {
+          model_name: modelName,
+          run_mode: mode,
+          agent_id: agentKey,
+          user_channel_id: userChannelId ?? null,
+          auto_compress_context: input.autoCompressContext !== false,
+          skill_ids: JSON.stringify(skillIds),
+          knowledge_base_ids: JSON.stringify(knowledgeBaseIds),
+          mcp_server_ids: JSON.stringify(mcpServerIds),
+          disabled_tool_groups: JSON.stringify(disabledToolGroups),
+          updated_at: now,
+        },
+      );
       const prior = await db.select("advanced_chat_messages", {
         session_id: sessionId,
         user_id: userId,
@@ -957,6 +1102,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         created_at: now,
         updated_at: now,
       });
+      void userMessage;
       const runId = newID("acr");
       await db.create("advanced_chat_runs", {
         id: runId,
@@ -964,7 +1110,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         user_id: userId,
         status: "running",
         assistant_message_id: "",
-        mode: "chat",
+        mode,
         status_message: "",
         current_round: 0,
         error_message: "",
@@ -976,307 +1122,544 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         finished_at: null,
         updated_at: now,
       });
-      const channelRows = await db.select("channels", { enabled: true });
-      const configs = await db.select("model_configs", { enabled: true });
-      const requestedChannel = input.userChannelId
-        ? channelRows.filter(
-            (row: any) => row.user_channel_id === input.userChannelId,
+      // The run executes inside this call, so the only way a stop request can
+      // reach it is through a registry the handler can find by run id.
+      const runController = new AbortController();
+      const abortRun = () => runController.abort();
+      if (hooks?.signal) {
+        if (hooks.signal.aborted) runController.abort();
+        else hooks.signal.addEventListener("abort", abortRun, { once: true });
+      }
+      inFlightRuns.set(runId, runController);
+      const cancelled = async () => {
+        const row = await db.selectOne("advanced_chat_runs", {
+          id: runId,
+          user_id: userId,
+        });
+        return String(row?.status ?? "") === "cancelled";
+      };
+      const markCancelled = async () => {
+        const finishedAt = new Date().toISOString();
+        // `stopRun` may already have written the terminal state; never move a
+        // finished run back out of it.
+        const changed = await db.update(
+          "advanced_chat_runs",
+          { id: runId, user_id: userId, status: "running" },
+          {
+            status: "cancelled",
+            status_message: "cancelled",
+            finished_at: finishedAt,
+            updated_at: finishedAt,
+          },
+        );
+        // A stop request that arrived first wrote both the row and its own
+        // event; a second event would collide with it on (run_id, seq).
+        if (!changed) return;
+        await db.create("advanced_chat_run_events", {
+          run_id: runId,
+          session_id: sessionId,
+          user_id: userId,
+          seq: 999999,
+          event: "cancelled",
+          payload: "{}",
+          created_at: finishedAt,
+        });
+      };
+      const cancelledResult = (): ChatResult => ({
+        sessionId,
+        runId,
+        message: { id: "", role: "assistant", content: "", tool_calls: [] },
+        finishReason: "cancelled",
+        inputTokens: 0,
+        outputTokens: 0,
+        cancelled: true,
+      });
+      try {
+        return await executeRun();
+      } finally {
+        inFlightRuns.delete(runId);
+        hooks?.signal?.removeEventListener("abort", abortRun);
+      }
+
+      async function executeRun(): Promise<ChatResult> {
+        const channelRows = await db.select("channels", { enabled: true });
+        const configs = await db.select("model_configs", { enabled: true });
+        const requestedChannel = userChannelId
+          ? channelRows.filter(
+              (row: any) => Number(row.user_channel_id) === userChannelId,
+            )
+          : channelRows;
+        const selected = configs.find(
+          (config: any) =>
+            String(config.upstream_model_name || "") === modelName &&
+            requestedChannel.some(
+              (channel: any) =>
+                Number(channel.id) === Number(config.channel_id) && channel.enabled,
+            ),
+        );
+        // Only fall back to an unrelated channel when the caller did not pin one:
+        // picking an arbitrary enabled channel would send a model to an upstream
+        // that has never heard of it.
+        const channel = selected
+          ? channelRows.find((row: any) => row.id === selected.channel_id)
+          : userChannelId
+            ? undefined
+            : requestedChannel.find((row: any) => row.enabled);
+        if (!channel)
+          throw Error(
+            `no enabled upstream channel serves model ${modelName}`,
+          );
+        const upstreamModel = selected?.upstream_model_name || modelName;
+        const messages = [
+          ...prior.map((message: any) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          ...input.messages,
+        ].map((message: any) => ({
+          role: ["system", "user", "assistant", "tool"].includes(message.role)
+            ? message.role
+            : "user",
+          content: String(message.content ?? ""),
+          ...(Array.isArray(message.tool_calls)
+            ? {
+                toolCalls: message.tool_calls.map((call: any) => ({
+                  id: String(call.id ?? ""),
+                  name: String(call.function?.name ?? call.name ?? ""),
+                  arguments: String(
+                    call.function?.arguments ?? call.arguments ?? "{}",
+                  ),
+                })),
+              }
+            : {}),
+          ...(message.tool_call_id
+            ? { toolCallId: String(message.tool_call_id) }
+            : {}),
+        }));
+        await attachImageFiles(
+          userId,
+          messages as any,
+          db,
+          ctx.component.file as import("@velocelab/file").FileService,
+        );
+        const optionalContext = "";
+        const injectedContext = (
+          await Promise.all(
+            contextProviders.map((provider) =>
+              provider.provide({
+                userId,
+                sessionId,
+                agentId: agentKey,
+                skillIds,
+                knowledgeBaseIds,
+                mcpServerIds,
+                mode,
+              }),
+            ),
           )
-        : channelRows;
-      const selected = configs.find(
-        (config: any) =>
-          String(config.upstream_model_name || "") === modelName &&
-          requestedChannel.some(
-            (channel: any) =>
-              channel.id === config.channel_id && channel.enabled,
-          ),
-      );
-      const channel = selected
-        ? channelRows.find((row: any) => row.id === selected.channel_id)
-        : requestedChannel.find((row: any) => row.enabled);
-      if (!channel) throw Error("no enabled upstream channel");
-      const upstreamModel = selected?.upstream_model_name || modelName;
-      const messages = [
-        ...prior.map((message: any) => ({
-          role: message.role,
-          content: message.content,
-        })),
-        ...input.messages,
-      ].map((message: any) => ({
-        role: ["system", "user", "assistant", "tool"].includes(message.role)
-          ? message.role
-          : "user",
-        content: String(message.content ?? ""),
-        ...(Array.isArray(message.tool_calls)
-          ? {
-              toolCalls: message.tool_calls.map((call: any) => ({
-                id: String(call.id ?? ""),
-                name: String(call.function?.name ?? call.name ?? ""),
-                arguments: String(
-                  call.function?.arguments ?? call.arguments ?? "{}",
-                ),
-              })),
-            }
-          : {}),
-        ...(message.tool_call_id
-          ? { toolCallId: String(message.tool_call_id) }
-          : {}),
-      }));
-      await attachImageFiles(
-        userId,
-        messages as any,
-        db,
-        ctx.component.file as import("@velocelab/file").FileService,
-      );
-      const optionalContext = "";
-      const injectedContext = (
-        await Promise.all(
-          contextProviders.map((provider) =>
-            provider.provide({ userId, sessionId, agentId: session.agent_id }),
-          ),
         )
-      )
-        .filter(Boolean)
-        .join("\n\n");
-      const availableTools = filterToolsByDisabledGroups(
-        service.tools(),
-        input.disabledToolGroups,
-      );
-      const request = adapters.build({
-        channelType: channel.type,
-        model: upstreamModel,
-        apiKey: channel.api_key || "",
-        stream: input.stream === true,
-        messages,
-        maxTokens: input.maxTokens,
-        temperature: input.temperature,
-        reasoningEffort: input.reasoningEffort,
-        system:
-          [optionalContext, injectedContext].filter(Boolean).join("\n\n") ||
-          undefined,
-        tools: availableTools
+          .filter(Boolean)
+          .join("\n\n");
+        const availableTools = filterToolsByDisabledGroups(
+          service.tools(),
+          disabledToolGroups,
+        );
+        emit("status", { message: "loading_tools" });
+        const systemPrompt =
+          [
+            String(agent?.prompt ?? "").trim(),
+            optionalContext,
+            injectedContext,
+          ]
+            .filter(Boolean)
+            .join("\n\n") || undefined;
+        const toolPayload = availableTools
           .filter((tool) => tool?.name)
           .map((tool) => ({
             name: String(tool.name),
             description: String(tool.description ?? ""),
             parameters: tool.parameters ?? {},
-          })),
-      });
-      if (!request) throw Error("no adapter registered for upstream channel");
-      const headers = {
-        ...request.headers,
-        ...(input.stream ? { Accept: "text/event-stream" } : {}),
-      };
-      const response = await fetchCompletionWithRetry(
-        ctx,
-        `${String(channel.base_url).replace(/\\\/$/, "")}${request.urlPath}`,
-        { method: "POST", headers, body: JSON.stringify(request.body) },
-        String(input.mode ?? "chat"),
-        {
-          retryAttempts: Math.max(1, Number(pluginConfig.retryAttempts) || 3),
-          assistantRetryAttempts: Math.max(
-            1,
-            Number(pluginConfig.assistantRetryAttempts) || 10,
-          ),
-          retryDelayMs: Math.max(50, Number(pluginConfig.retryDelayMs) || 500),
-          retryMaxDelayMs: Math.max(
-            100,
-            Number(pluginConfig.retryMaxDelayMs) || 30000,
-          ),
-          requestTimeoutMs: Math.max(
-            1000,
-            Number(pluginConfig.requestTimeoutMs) || 120000,
-          ),
-        },
-      );
-      let streamedContent = "";
-      if (
-        input.stream &&
-        response.ok &&
-        response.headers.get("content-type")?.includes("text/event-stream")
-      ) {
-        await adapters.stream(channel.type, response.clone(), (delta) => {
-          streamedContent += delta;
-        });
-      }
-      const text = await response.text();
-      if (!response.ok) {
-        await db.update(
-          "advanced_chat_runs",
-          { id: runId },
-          {
-            status: "failed",
-            error_message: text.slice(0, 10000),
-            finished_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        );
-        throw Error(text || `upstream request failed (${response.status})`);
-      }
-      let data: any;
-      if (input.stream && text.includes("data:")) {
-        const chunks = text
-          .split(/\r?\n/)
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trim())
-          .filter((line) => line && line !== "[DONE]");
-        const parsed = chunks.map((chunk) => {
-          try {
-            return JSON.parse(chunk);
-          } catch {
-            return {};
-          }
-        });
-        const content = parsed
-          .map(
-            (item) =>
-              item.choices?.[0]?.delta?.content ||
-              item.delta?.text ||
-              item.candidates?.[0]?.content?.parts
-                ?.map((part: any) => part.text || "")
-                .join("") ||
-              "",
-          )
-          .join("");
-        data = { choices: [{ message: { content }, finish_reason: "stop" }] };
-      } else {
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = {};
-        }
-      }
-      const parsed = adapters.parse(channel.type, data);
-      let content = parsed?.content || streamedContent;
-      const toolCalls = parsed?.toolCalls || [];
-      const finishReason = parsed?.finishReason || "stop";
-      const toolResults: unknown[] = [];
-      if (Array.isArray(toolCalls)) {
-        for (const call of toolCalls as any[]) {
-          const name = String(call.function?.name ?? call.name ?? "");
-          const definition = availableTools.find((tool) => tool.name === name);
-          if (!definition?.execute) continue;
-          let args: unknown = {};
-          try {
-            args = JSON.parse(
-              String(call.function?.arguments ?? call.arguments ?? "{}"),
-            );
-          } catch {
-            args = {};
-          }
-          try {
-            toolResults.push({
-              id: String(call.id ?? ""),
-              result: await definition.execute(args, {
-                userId,
-                sessionId,
-                runId,
-              }),
-            });
-          } catch (error) {
-            toolResults.push({
-              id: String(call.id ?? ""),
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-      }
-      if (toolResults.length > 0 && toolCalls.length > 0) {
-        const followupMessages: any[] = [
-          ...messages,
-          { role: "assistant", content, toolCalls },
-          ...toolResults.map((item: any) => ({
-            role: "tool",
-            content: JSON.stringify(item.result ?? { error: item.error }),
-            toolCallId: item.id,
-          })),
-        ];
-        const followup = adapters.build({
+          }));
+        const request = adapters.build({
           channelType: channel.type,
           model: upstreamModel,
           apiKey: channel.api_key || "",
-          stream: false,
-          messages: followupMessages,
-          maxTokens: input.maxTokens,
-          temperature: input.temperature,
-          reasoningEffort: input.reasoningEffort,
+          stream: input.stream === true,
+          messages,
+          maxTokens,
+          temperature,
+          reasoningEffort,
+          system: systemPrompt,
+          tools: toolPayload,
         });
-        if (followup) {
-          const followupResponse = await fetch(
-            `${String(channel.base_url).replace(/\\\/$/, "")}${followup.urlPath}`,
+        if (!request) throw Error("no adapter registered for upstream channel");
+        const headers = {
+          ...request.headers,
+          ...(input.stream ? { Accept: "text/event-stream" } : {}),
+        };
+        emit("status", { message: "stream_started" });
+        let response: Response;
+        try {
+          response = await fetchCompletionWithRetry(
+            ctx,
+            // The trailing slash has to be stripped before the path is appended;
+            // a channel configured as `https://host/v1/` would otherwise produce
+            // `https://host/v1//chat/completions`.
+            `${String(channel.base_url).replace(/\/$/, "")}${request.urlPath}`,
+            { method: "POST", headers, body: JSON.stringify(request.body) },
+            mode,
             {
-              method: "POST",
-              headers: followup.headers,
-              body: JSON.stringify(followup.body),
+              retryAttempts: Math.max(1, Number(pluginConfig.retryAttempts) || 3),
+              assistantRetryAttempts: Math.max(
+                1,
+                Number(pluginConfig.assistantRetryAttempts) || 10,
+              ),
+              retryDelayMs: Math.max(50, Number(pluginConfig.retryDelayMs) || 500),
+              retryMaxDelayMs: Math.max(
+                100,
+                Number(pluginConfig.retryMaxDelayMs) || 30000,
+              ),
+              requestTimeoutMs: Math.max(
+                1000,
+                Number(pluginConfig.requestTimeoutMs) || 120000,
+              ),
+              signal: runController.signal,
+              onRetry: (attempt, total) =>
+                emit("status", { message: `retrying:${attempt}/${total}` }),
             },
           );
-          if (followupResponse.ok) {
-            const followupData = await followupResponse
-              .json()
-              .catch(() => ({}));
-            const followupParsed = adapters.parse(channel.type, followupData);
-            if (followupParsed?.content) content = followupParsed.content;
+        } catch (error) {
+          if (runController.signal.aborted || (await cancelled())) {
+            await markCancelled();
+            return cancelledResult();
+          }
+          throw error;
+        }
+        let streamedContent = "";
+        const streaming =
+          input.stream === true &&
+          response.headers.get("content-type")?.includes("text/event-stream") ===
+            true;
+        if (streaming && response.ok) {
+          emit("status", { message: "assistant_started" });
+          await adapters.stream(channel.type, response.clone(), (delta) => {
+            streamedContent += delta;
+            emit("text", { delta, round: 1 });
+          });
+        }
+        const text = await response.text();
+        if (!response.ok) {
+          await db.update(
+            "advanced_chat_runs",
+            { id: runId },
+            {
+              status: "failed",
+              error_message: text.slice(0, 10000),
+              finished_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          );
+          throw Error(text || `upstream request failed (${response.status})`);
+        }
+        let data: any;
+        if (input.stream && text.includes("data:")) {
+          const chunks = text
+            .split(/\r?\n/)
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice(5).trim())
+            .filter((line) => line && line !== "[DONE]");
+          const parsed = chunks.map((chunk) => {
+            try {
+              return JSON.parse(chunk);
+            } catch {
+              return {};
+            }
+          });
+          const content = parsed
+            .map(
+              (item) =>
+                item.choices?.[0]?.delta?.content ||
+                item.delta?.text ||
+                item.candidates?.[0]?.content?.parts
+                  ?.map((part: any) => part.text || "")
+                  .join("") ||
+                "",
+            )
+            .join("");
+          data = { choices: [{ message: { content }, finish_reason: "stop" }] };
+        } else {
+          try {
+            data = JSON.parse(text);
+          } catch {
+            data = {};
           }
         }
-      }
-      const assistant = await db.create("advanced_chat_messages", {
-        id: newID("acm"),
-        session_id: sessionId,
-        user_id: userId,
-        role: "assistant",
-        content,
-        content_parts: "[]",
-        tool_calls: JSON.stringify(toolCalls),
-        input_tokens: Number(data.usage?.prompt_tokens || 0),
-        output_tokens: Number(data.usage?.completion_tokens || 0),
-        sort_order: prior.length + 1,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-      await db.create("advanced_chat_run_events", {
-        run_id: runId,
-        session_id: sessionId,
-        user_id: userId,
-        seq: 1,
-        event: "completed",
-        payload: JSON.stringify({
-          content,
-          finish_reason: finishReason,
-          tool_calls: toolCalls,
-          tool_results: toolResults,
-        }),
-        created_at: new Date().toISOString(),
-      });
-      await db.update(
-        "advanced_chat_runs",
-        { id: runId },
-        {
-          tool_calls: toolCalls.length,
-          current_round: toolCalls.length > 0 ? 1 : 0,
-          status: "completed",
-          assistant_message_id: assistant.id,
-          finished_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      );
-      await db.update(
-        "advanced_chat_sessions",
-        { id: sessionId },
-        { updated_at: new Date().toISOString(), model_name: modelName },
-      );
-      return {
-        sessionId,
-        runId,
-        message: {
-          id: String(assistant.id),
+        let parsed = adapters.parse(channel.type, data);
+        let content = parsed?.content || streamedContent;
+        let toolCalls: unknown[] = parsed?.toolCalls ?? [];
+        let finishReason = parsed?.finishReason || "stop";
+        const inputTokens = Number(parsed?.inputTokens || 0);
+        const outputTokens = Number(parsed?.outputTokens || 0);
+        const contentParts: Array<{ round: number; content: string }> =
+          streamedContent.trim()
+            ? [{ round: 1, content: streamedContent }]
+            : [];
+        const toolCallDetails: Array<Record<string, unknown>> = [];
+        let runEventSeq = 0;
+        // An assistant turn is not a single question and answer: a tool call has
+        // to be able to start another round. The limits match the ones the Go
+        // implementation used per run mode.
+        const maxToolRounds =
+          mode === "assistant" || mode === "agent_group" ? 20 : 8;
+        const conversation: any[] = [...messages];
+        let round = 1;
+        for (
+          let step = 0;
+          Array.isArray(toolCalls) && toolCalls.length > 0 && step < maxToolRounds;
+          step += 1
+        ) {
+          const calls = toolCalls as any[];
+          const results: Array<{
+            id: string;
+            name: string;
+            status: string;
+            arguments: unknown;
+            result?: string;
+            error?: string;
+          }> = [];
+          for (const call of calls) {
+            const name = String(call.function?.name ?? call.name ?? "");
+            const id = String(call.id ?? "");
+            let args: unknown = {};
+            try {
+              args = JSON.parse(
+                String(call.function?.arguments ?? call.arguments ?? "{}"),
+              );
+            } catch {
+              args = {};
+            }
+            const definition = availableTools.find((tool) => tool.name === name);
+            if (!definition?.execute) {
+              const message = `unknown tool: ${name}`;
+              results.push({ id, name, status: "error", arguments: args, error: message });
+              emit("tool_call", {
+                id,
+                name,
+                status: "error",
+                arguments: args,
+                result: JSON.stringify({ error: message }),
+                round,
+              });
+              continue;
+            }
+            try {
+              const value = await definition.execute(args, {
+                userId,
+                sessionId,
+                runId,
+                agentId: agentKey,
+                skillIds,
+                knowledgeBaseIds,
+                mcpServerIds,
+                mode,
+                disabledToolGroups,
+              });
+              const serialized = JSON.stringify(value ?? null);
+              results.push({ id, name, status: "ok", arguments: args, result: serialized });
+              emit("tool_call", {
+                id,
+                name,
+                status: "ok",
+                arguments: args,
+                result: serialized,
+                round,
+              });
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              results.push({ id, name, status: "error", arguments: args, error: message });
+              emit("tool_call", {
+                id,
+                name,
+                status: "error",
+                arguments: args,
+                result: JSON.stringify({ error: message }),
+                round,
+              });
+            }
+          }
+          toolCallDetails.push(...results);
+          // `agent_task` belongs to the Agent Studio convention for sub-agent
+          // snapshots, whose payloads carry `task_id`/`agent_id`; a tool round is
+          // this run's own progress and is recorded under its own name so it does
+          // not masquerade as a sub-agent.
+          await db.create("advanced_chat_run_events", {
+            run_id: runId,
+            session_id: sessionId,
+            user_id: userId,
+            seq: (runEventSeq += 1),
+            event: "tool_round",
+            payload: JSON.stringify({ round, tool_calls: results }),
+            created_at: new Date().toISOString(),
+          });
+          conversation.push({ role: "assistant", content, toolCalls });
+          conversation.push(
+            ...results.map((item) => ({
+              role: "tool",
+              content: item.result ?? JSON.stringify({ error: item.error }),
+              toolCallId: item.id,
+            })),
+          );
+          round += 1;
+          emit("status", { message: "model_round" });
+          await db.update(
+            "advanced_chat_runs",
+            { id: runId, user_id: userId },
+            {
+              current_round: round,
+              tool_calls: toolCallDetails.length,
+              updated_at: new Date().toISOString(),
+            },
+          );
+          const followup = adapters.build({
+            channelType: channel.type,
+            model: upstreamModel,
+            apiKey: channel.api_key || "",
+            stream: false,
+            messages: conversation as any,
+            maxTokens,
+            temperature,
+            reasoningEffort,
+            system: systemPrompt,
+            // Without tools on the follow-up the agent could not chain a second
+            // step, which made the previous single round the whole run.
+            tools: toolPayload,
+          });
+          if (!followup) break;
+          let followupResponse: Response;
+          try {
+            followupResponse = await fetchCompletionWithRetry(
+              ctx,
+              `${String(channel.base_url).replace(/\/$/, "")}${followup.urlPath}`,
+              {
+                method: "POST",
+                headers: followup.headers,
+                body: JSON.stringify(followup.body),
+              },
+              mode,
+              {
+                retryAttempts: Math.max(1, Number(pluginConfig.retryAttempts) || 3),
+                assistantRetryAttempts: Math.max(
+                  1,
+                  Number(pluginConfig.assistantRetryAttempts) || 10,
+                ),
+                retryDelayMs: Math.max(50, Number(pluginConfig.retryDelayMs) || 500),
+                retryMaxDelayMs: Math.max(
+                  100,
+                  Number(pluginConfig.retryMaxDelayMs) || 30000,
+                ),
+                requestTimeoutMs: Math.max(
+                  1000,
+                  Number(pluginConfig.requestTimeoutMs) || 120000,
+                ),
+                signal: runController.signal,
+              },
+            );
+          } catch (error) {
+            if (runController.signal.aborted || (await cancelled())) {
+              await markCancelled();
+              return cancelledResult();
+            }
+            throw error;
+          }
+          if (!followupResponse.ok) {
+            // Keep the rounds that already succeeded instead of losing the turn.
+            finishReason = "error";
+            break;
+          }
+          const followupData = await followupResponse.json().catch(() => ({}));
+          parsed = adapters.parse(channel.type, followupData);
+          const roundContent = parsed?.content ?? "";
+          if (roundContent) {
+            content = roundContent;
+            contentParts.push({ round, content: roundContent });
+          }
+          finishReason = parsed?.finishReason || "stop";
+          toolCalls = parsed?.toolCalls ?? [];
+        }
+        // A stop request may have landed while the last round was in flight; the
+        // run must not come back to life as `completed` after that.
+        if (runController.signal.aborted || (await cancelled())) {
+          await markCancelled();
+          return cancelledResult();
+        }
+        const finishedAt = new Date().toISOString();
+        const assistant = await db.create("advanced_chat_messages", {
+          id: newID("acm"),
+          session_id: sessionId,
+          user_id: userId,
           role: "assistant",
           content,
-          tool_calls: toolCalls,
-        },
-        finishReason,
-        inputTokens: parsed?.inputTokens || 0,
-        outputTokens: parsed?.outputTokens || 0,
-      };
+          content_parts: JSON.stringify(contentParts),
+          tool_calls: JSON.stringify(toolCallDetails),
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          sort_order: prior.length + 1,
+          created_at: finishedAt,
+          updated_at: finishedAt,
+        });
+        await db.create("advanced_chat_run_events", {
+          run_id: runId,
+          session_id: sessionId,
+          user_id: userId,
+          seq: (runEventSeq += 1),
+          event: "completed",
+          payload: JSON.stringify({
+            content,
+            content_parts: contentParts,
+            finish_reason: finishReason,
+            tool_call_details: toolCallDetails,
+          }),
+          created_at: finishedAt,
+        });
+        await db.update(
+          "advanced_chat_runs",
+          { id: runId, user_id: userId },
+          {
+            tool_calls: toolCallDetails.length,
+            current_round: round,
+            status: "completed",
+            status_message: "",
+            assistant_message_id: String(assistant.id),
+            tool_call_details: JSON.stringify(toolCallDetails),
+            finished_at: finishedAt,
+            updated_at: finishedAt,
+          },
+        );
+        await db.update(
+          "advanced_chat_sessions",
+          { id: sessionId, user_id: userId },
+          { updated_at: finishedAt, model_name: modelName },
+        );
+        emit("done", {
+          message: { content, content_parts: contentParts },
+          tool_call_details: toolCallDetails,
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+        });
+        return {
+          sessionId,
+          runId,
+          message: {
+            id: String(assistant.id),
+            role: "assistant",
+            content,
+            tool_calls: toolCallDetails,
+          },
+          finishReason,
+          inputTokens,
+          outputTokens,
+        };
+      }
     },
   };
   ctx.registerComponent("advanced-chat", service);

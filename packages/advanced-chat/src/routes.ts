@@ -1,6 +1,7 @@
 import { Context, Session } from "yumeri";
 import { randomUUID } from "node:crypto";
 import type { AdvancedChatService } from "./index.js";
+import { openChatStream } from "./stream.js";
 
 export function registerAdvancedChatRoutes(
   ctx: Context,
@@ -696,26 +697,80 @@ export function registerAdvancedChatRoutes(
             tool_call_id: item.tool_call_id,
           }))
         : [];
-      session.respond(
-        await service.complete(current.id, {
-          sessionId:
-            typeof input.session_id === "string" ? input.session_id : undefined,
-          model: String(input.model ?? ""),
-          messages,
-          userChannelId: Number(input.channel_id ?? 0) || undefined,
-          stream: input.stream === true,
-          maxTokens: Number(input.max_tokens ?? 0) || undefined,
-          temperature:
-            typeof input.temperature === "number"
-              ? input.temperature
-              : undefined,
-          reasoningEffort:
-            typeof input.reasoning_effort === "string"
-              ? input.reasoning_effort
-              : undefined,
-        }),
-        "json",
-      );
+      const list = (value: unknown) =>
+        Array.isArray(value) ? value.map(String) : undefined;
+      const payload = {
+        sessionId:
+          typeof input.session_id === "string" ? input.session_id : undefined,
+        title: typeof input.title === "string" ? input.title : undefined,
+        model: String(input.model ?? ""),
+        messages,
+        userChannelId: Number(input.channel_id ?? 0) || undefined,
+        stream: input.stream === true,
+        maxTokens: Number(input.max_tokens ?? 0) || undefined,
+        temperature:
+          typeof input.temperature === "number" ? input.temperature : undefined,
+        reasoningEffort:
+          typeof input.reasoning_effort === "string"
+            ? input.reasoning_effort
+            : undefined,
+        // Every one of these selects something the run uses: dropping any of
+        // them silently turned the request into a plain chat with no agent,
+        // skills, knowledge or tools.
+        mode: typeof input.mode === "string" ? input.mode : undefined,
+        agentId: typeof input.agent_id === "string" ? input.agent_id : undefined,
+        agentGroupId:
+          typeof input.agent_group_id === "string"
+            ? input.agent_group_id
+            : undefined,
+        skillIds: list(input.skill_ids),
+        mcpServerIds: list(input.mcp_server_ids),
+        knowledgeBaseIds: list(input.knowledge_base_ids),
+        connectorDeviceId:
+          typeof input.connector_device_id === "string"
+            ? input.connector_device_id
+            : undefined,
+        connectorWorkspacePath:
+          typeof input.connector_workspace_path === "string"
+            ? input.connector_workspace_path
+            : undefined,
+        connectorAutoApprove: input.connector_auto_approve === true,
+        connectorApprovalMode:
+          typeof input.connector_approval_mode === "string"
+            ? input.connector_approval_mode
+            : undefined,
+        connectorCommandPrefixes: list(input.connector_command_prefixes),
+        autoCompressContext: input.auto_compress_context !== false,
+        disabledToolGroups: list(input.disabled_tool_groups),
+      };
+      if (!payload.stream) {
+        session.respond(await service.complete(current.id, payload), "json");
+        return;
+      }
+      // The client asked for `text/event-stream`, so this route writes the
+      // response itself. Answering with JSON here is what made the UI's reader
+      // see a body it could not parse.
+      const stream = openChatStream(session);
+      if (!stream) {
+        session.status = 500;
+        session.respond({ error: "Streaming is unavailable" }, "json");
+        return;
+      }
+      try {
+        await service.complete(current.id, payload, {
+          signal: stream.signal,
+          onEvent: (event) => stream.send(event),
+        });
+      } catch (error) {
+        stream.send({
+          type: "error",
+          payload: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      } finally {
+        stream.close();
+      }
     });
   ctx
     .route("/api/user/advanced-chat/runs/:id")
@@ -760,16 +815,195 @@ export function registerAdvancedChatRoutes(
     .action(async (session, _params, id) => {
       const current = await user(session);
       if (!current?.id) return;
+      const run = await db.selectOne("advanced_chat_runs", {
+        id,
+        user_id: current.id,
+      });
+      if (!run) {
+        session.status = 404;
+        session.respond({ error: "Run not found" }, "json");
+        return;
+      }
+      const chatSession = await db.selectOne("advanced_chat_sessions", {
+        id: run.session_id,
+        user_id: current.id,
+      });
+      const groupId = String(chatSession?.agent_group_id ?? "");
+      const group = groupId
+        ? await db.selectOne("advanced_chat_chat_groups", {
+            id: groupId,
+            user_id: current.id,
+          })
+        : undefined;
+      const groupName = String(group?.name ?? "");
+      const members = groupId
+        ? await db.select("advanced_chat_chat_group_members", {
+            group_id: groupId,
+            user_id: current.id,
+          })
+        : [];
+      const agents = new Map<
+        string,
+        {
+          agent_id: string;
+          agent_name: string;
+          agent_type: string;
+          group_id: string;
+          group_name: string;
+          status: string;
+          working: boolean;
+          updated_at?: string;
+          messages: Array<Record<string, unknown>>;
+        }
+      >();
+      for (const member of members as any[]) {
+        const agentId = String(member.agent_id ?? "");
+        if (!agentId) continue;
+        agents.set(agentId, {
+          agent_id: agentId,
+          agent_name: String(member.agent_name ?? agentId),
+          agent_type: String(member.agent_type ?? "worker"),
+          group_id: groupId,
+          group_name: groupName,
+          status: String(member.status ?? "idle") || "idle",
+          working: false,
+          messages: [],
+        });
+      }
+      // Sub-agent progress arrives as `agent_task` events — the same convention
+      // the Agent Studio tools write — so the panel reflects real work.
       const events = await db.select("advanced_chat_run_events", {
         run_id: id,
         user_id: current.id,
       });
+      for (const row of (events as any[])
+        .filter((item) => String(item.event ?? "") === "agent_task")
+        .sort((a, b) => Number(a.seq ?? 0) - Number(b.seq ?? 0))) {
+        let payload: any = {};
+        try {
+          payload = JSON.parse(String(row.payload ?? "{}"));
+        } catch {
+          payload = {};
+        }
+        const agentId = String(payload.agent_id ?? payload.task_id ?? "");
+        if (!agentId) continue;
+        const status = String(payload.status ?? "");
+        const existing = agents.get(agentId) ?? {
+          agent_id: agentId,
+          agent_name: String(payload.agent_name ?? agentId),
+          agent_type: String(payload.agent_type ?? "worker"),
+          group_id: groupId,
+          group_name: groupName,
+          status: "idle",
+          working: false,
+          messages: [],
+        };
+        if (status) existing.status = status;
+        existing.working = ["running", "approval_required", "queued"].includes(
+          existing.status,
+        );
+        existing.updated_at = String(row.created_at ?? existing.updated_at ?? "");
+        const content = String(payload.message ?? payload.content ?? "");
+        if (content.trim())
+          existing.messages.push({
+            role: String(payload.role ?? "assistant"),
+            content: content.slice(0, 2000),
+            status: existing.status,
+            tool: payload.tool ? String(payload.tool) : undefined,
+            created_at: String(row.created_at ?? ""),
+          });
+        agents.set(agentId, existing);
+      }
+      const list = [...agents.values()];
+      // Without a studio group the run still belongs to one agent; reporting it
+      // keeps the panel useful instead of showing nothing at all.
+      if (!list.length) {
+        const agentName = String(chatSession?.agent_id ?? "") || "assistant";
+        list.push({
+          agent_id: agentName,
+          agent_name: agentName,
+          agent_type: "primary",
+          group_id: groupId,
+          group_name: groupName,
+          status: String(run.status ?? "idle") || "idle",
+          working: ["queued", "running"].includes(String(run.status ?? "")),
+          updated_at: String(run.updated_at ?? ""),
+          messages: [],
+        });
+      }
+      const messages = await db.select("advanced_chat_messages", {
+        session_id: run.session_id,
+        user_id: current.id,
+      });
+      const primary = list[0];
+      primary.messages = (messages as any[])
+        .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
+        .filter((message) => String(message.content ?? "").trim())
+        .map((message) => ({
+          role: String(message.role ?? ""),
+          content: String(message.content ?? "").slice(0, 2000),
+          created_at: String(message.created_at ?? ""),
+        }));
+      // The run's own tool rounds are progress too, and they are what the panel
+      // has to show when no sub-agent has reported anything.
+      for (const row of (events as any[])
+        .filter((item) => String(item.event ?? "") === "tool_round")
+        .sort((a, b) => Number(a.seq ?? 0) - Number(b.seq ?? 0))) {
+        let payload: any = {};
+        try {
+          payload = JSON.parse(String(row.payload ?? "{}"));
+        } catch {
+          payload = {};
+        }
+        const calls = Array.isArray(payload.tool_calls) ? payload.tool_calls : [];
+        for (const call of calls) {
+          const name = String(call?.name ?? "");
+          if (!name) continue;
+          primary.messages.push({
+            role: "tool",
+            content: String(
+              call?.result ?? JSON.stringify({ error: call?.error ?? "" }),
+            ).slice(0, 2000),
+            status: String(call?.status ?? ""),
+            tool: name,
+            created_at: String(row.created_at ?? ""),
+          });
+        }
+      }
+      const tasks = await db.select("advanced_chat_connector_tasks", {
+        run_id: id,
+        user_id: current.id,
+      });
       session.respond(
-        events.filter(
-          (event: any) =>
-            String(event.event_type ?? "").includes("agent") ||
-            String(event.type ?? "").includes("agent"),
-        ),
+        {
+          run_id: String(run.id),
+          session_id: String(run.session_id),
+          group_id: groupId,
+          group_name: groupName,
+          agents: list,
+          connector_tasks: (tasks as any[]).map((task) => {
+            let payload: unknown = {};
+            try {
+              payload = JSON.parse(String(task.payload ?? "{}"));
+            } catch {
+              payload = {};
+            }
+            return {
+              id: String(task.id),
+              device_id: String(task.device_id ?? ""),
+              action: String(task.action ?? ""),
+              status: String(task.status ?? "queued"),
+              workspace_path: String(task.workspace_path ?? ""),
+              payload,
+              result: String(task.result ?? ""),
+              error_message: String(task.error_message ?? ""),
+              created_at: String(task.created_at ?? ""),
+              updated_at: String(task.updated_at ?? ""),
+              started_at: task.started_at ?? undefined,
+              finished_at: task.finished_at ?? undefined,
+            };
+          }),
+        },
         "json",
       );
     });
