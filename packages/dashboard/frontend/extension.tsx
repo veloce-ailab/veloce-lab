@@ -35,7 +35,7 @@ export const dashboardExtension: DashboardExtensionApi = {
   frame(frame) { store.frames.push(frame); notifyExtensions(); return () => { const i = store.frames.indexOf(frame); if (i >= 0) store.frames.splice(i, 1); notifyExtensions() } },
   page(page) {
     store.pages.push(page)
-    const navItem = page.nav ? { ...page.nav, path: page.path } : undefined
+    const navItem = page.nav ? { ...page.nav, path: navPath(page.path) } : undefined
     if (navItem) store.navItems.push(navItem)
     notifyExtensions()
     return () => {
@@ -179,4 +179,24 @@ function relativePath(path: string, basePath: string) {
   if (path === basePath) return ""
   if (basePath && path.startsWith(`${basePath}/`)) return path.slice(basePath.length + 1)
   return path.replace(/^\//, "")
+}
+
+/**
+ * Link target of a navigation item contributed by a page.
+ *
+ * A page registers a router pattern (`/chat/agent-groups/*`, `/chat/agents/:id`)
+ * and a pattern is matched, not visited: linking to it verbatim puts a literal
+ * `*` or `:id` in the address bar, and the page's own nested routes then read it
+ * as a real id. The studio page opened as `/chat/agent-groups/` + `*` +
+ * `/operations` for exactly that reason. Navigation points at the pattern's
+ * static prefix instead, where the page's index route lives.
+ */
+function navPath(path: string): string {
+  const parts = path.replace(/\/$/, "").split("/")
+  while (parts.length > 1) {
+    const last = parts[parts.length - 1]
+    if (last !== "*" && !last.startsWith(":")) break
+    parts.pop()
+  }
+  return parts.join("/") || "/"
 }
