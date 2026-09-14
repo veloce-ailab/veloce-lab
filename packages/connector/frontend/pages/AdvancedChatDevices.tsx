@@ -19,6 +19,7 @@ interface ConnectorTypeInfo {
   label: { zh: string; en: string }
   auto_connect: boolean
   creatable: boolean
+  removable: boolean
   capabilities: string[]
 }
 
@@ -97,6 +98,11 @@ function connectorTypeAutoConnect(types: ConnectorTypeInfo[], kind?: string) {
   return types.find((entry) => entry.id === kind)?.auto_connect === true
 }
 
+/** A connector the host provides for itself is not the user's to remove. */
+function connectorTypeRemovable(types: ConnectorTypeInfo[], kind?: string) {
+  return types.find((entry) => entry.id === kind)?.removable !== false
+}
+
 function normalizeConnectorType(value: unknown): ConnectorTypeInfo | null {
   if (typeof value !== "object" || value === null) {
     return null
@@ -115,6 +121,9 @@ function normalizeConnectorType(value: unknown): ConnectorTypeInfo | null {
     },
     auto_connect: item.auto_connect === true,
     creatable: item.creatable !== false,
+    // Absent means the server predates the flag: fall back to "not removable"
+    // for auto-connecting connectors, which is what it enforces anyway.
+    removable: typeof item.removable === "boolean" ? item.removable : item.auto_connect !== true,
     capabilities: Array.isArray(item.capabilities) ? item.capabilities.filter((entry): entry is string => typeof entry === "string") : [],
   }
 }
@@ -424,7 +433,7 @@ export default function AdvancedChatDevices() {
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <span>{copy.lastSeen}: {formatDateTime(device.last_seen_at) || "-"}</span>
                         {connectorTypeAutoConnect(connectorTypes, device.kind) && (
-                          <span className="rounded-md bg-muted px-2 py-0.5">{copy.autoConnect}</span>
+                          <span className="rounded-md bg-muted px-2 py-0.5">{copy.defaultConnector}</span>
                         )}
                       </div>
                     </div>
@@ -454,17 +463,25 @@ export default function AdvancedChatDevices() {
                       >
                         <Settings size={15} />
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => deleteDevice(device)}
-                        disabled={Boolean(deletingDeviceID)}
-                        aria-label={copy.deleteDevice}
-                        title={copy.deleteDevice}
-                      >
-                        <Trash2 size={15} />
-                      </Button>
+                      {connectorTypeRemovable(connectorTypes, device.kind) ? (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => deleteDevice(device)}
+                          disabled={Boolean(deletingDeviceID)}
+                          aria-label={copy.deleteDevice}
+                          title={copy.deleteDevice}
+                        >
+                          <Trash2 size={15} />
+                        </Button>
+                      ) : (
+                        // A host-provided connector cannot be removed, so the
+                        // control is absent rather than present and failing.
+                        <span className="flex h-8 items-center rounded-md border border-dashed px-2 text-xs text-muted-foreground">
+                          {copy.cannotDelete}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1008,7 +1025,8 @@ const zhCopy = {
   online: "在线",
   offline: "离线",
   lastSeen: "最后在线",
-  autoConnect: "自动连接",
+  defaultConnector: "默认连接器",
+        cannotDelete: "由本机提供，不能删除",
   editDevice: "设备设置",
   deviceDetail: "设备详情",
   deviceDetailSubtitle: "查看这个连接器正在执行的任务和它托管的 MCP 子进程。",
@@ -1096,7 +1114,8 @@ const enCopy: typeof zhCopy = {
   online: "Online",
   offline: "Offline",
   lastSeen: "Last seen",
-  autoConnect: "Auto connect",
+  defaultConnector: "Default connector",
+        cannotDelete: "Provided by the host",
   editDevice: "Device settings",
   deviceDetail: "Device detail",
   deviceDetailSubtitle: "Inspect active connector tasks and MCP subprocesses managed by this connector.",
@@ -1166,4 +1185,6 @@ const jaCopy: typeof zhCopy = {
   runningTasks: "実行中タスク",
   recentTasks: "最近のタスク",
   mcpProcesses: "MCPサブプロセス",
+  defaultConnector: "既定のコネクター",
+  cannotDelete: "ホスト提供のため削除できません",
 }

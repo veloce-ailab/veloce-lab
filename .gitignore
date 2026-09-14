@@ -20,5 +20,4 @@ node_modules/
 .tmp-koishi-webui/
 dist/
 **/dist/
-.dsh-tmp/model-groups-build/
-.dsh-tmp/device-local-build/
+.dsh-tmp/*-build/
