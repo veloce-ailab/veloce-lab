@@ -35,7 +35,9 @@ export function apply(ctx: Context) {
     ["web_search", "Search the web through the connector.", "web_search", { query: { type: "string" } }],
     ["web_fetch", "Fetch a web page through the connector.", "web_fetch", { url: { type: "string" } }],
     ["file_sha256", "Calculate a file SHA-256 through the connector.", "file_sha256", { path: { type: "string" } }],
-    ["ask_user", "Ask the user for additional information.", "ask_user", { prompt: { type: "string" } }],
+    // `ask_user` belongs to the chat runtime (`ask-user.ts`), which owns the
+    // question/options payload and the turn-ending semantics. Registering a
+    // second one here would put a duplicate function name in every request.
   ];
   for (const [name, description, action, properties] of connectorTools) {
     register({
