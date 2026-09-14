@@ -1,10 +1,12 @@
 import { Context, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
+import { createHash } from "node:crypto";
 import { ServiceRegistry } from "@velocelab/service";
 import type { User } from "@velocelab/user";
 import "@velocelab/database-core";
 import "@velocelab/dashboard";
 import type { EmailVerificationCode, PhoneVerificationCode, OIDCBindRequest, WebAuthnChallenge, PasskeyCredential } from "./types.js";
+import { ensureTables } from "./tables.js";
 import { renderLoginPage } from "./login-page.js";
 
 declare module "@yumerijs/types" {
@@ -68,6 +70,7 @@ const publicAPIPaths = new Set([
   "/auth/password/login",
   "/auth/password/register",
   "/auth/logout",
+  "/api/auth/logout",
 ]);
 const publicAPIPrefixes = ["/api/advanced-chat/connectors/"];
 const assetPattern = /\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx|css|map|json|txt|svg|png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|wasm)$/i;
@@ -202,9 +205,70 @@ export async function apply(ctx: Context, config: AuthConfig) {
 
   const service = ctx.component.service as ServiceRegistry;
   const userService = ctx.component.user;
-  const revokedTokens = new Set<string>();
   const auth: AuthService = { enabled: () => true };
   ctx.registerComponent("auth", auth);
+  await ensureTables(db);
+
+  /**
+   * Revoked sessions.
+   *
+   * A set in memory would forget every logout on restart and grow without bound
+   * while the process lives, so the list is kept in the database keyed by the
+   * token's hash. The set here is only a cache of hits, and it is dropped when
+   * it gets large, because the database — not the set — is what decides.
+   */
+  const revokedCache = new Set<string>();
+  const hashToken = (token: string) =>
+    createHash("sha256").update(token).digest("hex");
+  const tokenExpiry = (token: string) => {
+    const payload = token.split(".")[1] ?? "";
+    try {
+      const claims = JSON.parse(
+        Buffer.from(payload, "base64url").toString("utf8"),
+      );
+      if (Number.isFinite(claims?.exp) && claims.exp > 0)
+        return new Date(Number(claims.exp) * 1000);
+    } catch {
+      // A token that is not a JWT still has to be revocable, so it falls back
+      // to the lifetime this plugin hands out.
+    }
+    return new Date(Date.now() + sessionLifetimeSeconds * 1000);
+  };
+  const revokeToken = async (token: string, userId: number) => {
+    if (!token) return;
+    const id = hashToken(token);
+    if (revokedCache.size > 10000) revokedCache.clear();
+    revokedCache.add(id);
+    await db.upsert(
+      "auth_revoked_tokens",
+      [
+        {
+          id,
+          user_id: userId,
+          expires_at: tokenExpiry(token).toISOString(),
+          created_at: new Date().toISOString(),
+        },
+      ],
+      "id",
+    );
+  };
+  const isRevoked = async (token: string) => {
+    const id = hashToken(token);
+    if (revokedCache.has(id)) return true;
+    const row = await db.selectOne("auth_revoked_tokens", {
+      id,
+      expires_at: { $gt: new Date().toISOString() },
+    });
+    if (row) revokedCache.add(id);
+    return Boolean(row);
+  };
+  ctx.setInterval(() => {
+    void db
+      .remove("auth_revoked_tokens", {
+        expires_at: { $lte: new Date().toISOString() },
+      })
+      .catch(() => undefined);
+  }, 3600_000);
 
   /**
    * The configured account becomes the instance's administrator. Every start
@@ -267,7 +331,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
     const bearer = parts.length === 2 && parts[0].toLowerCase() === "bearer" ? parts[1] : "";
     const cookie = String(session.cookie?.[sessionCookieName] ?? "");
     for (const [token, source] of [[bearer, "bearer"], [cookie, "cookie"]] as const) {
-      if (!token || revokedTokens.has(token)) continue;
+      if (!token || (await isRevoked(token))) continue;
       const user = await service.verifyToken(token);
       if (user) return { user, token, source };
     }
@@ -374,20 +438,23 @@ export async function apply(ctx: Context, config: AuthConfig) {
         );
       }
     });
-  ctx
-    .route("/auth/logout")
-    .methods("POST", "GET")
-    .action(async (session) => {
-      const header = session.client.req?.headers.authorization ?? "";
-      const token = String(header)
-        .replace(/^bearer\s+/i, "")
-        .trim();
-      if (token) revokedTokens.add(token);
-      const cookie = String(session.cookie?.[sessionCookieName] ?? "");
-      if (cookie) revokedTokens.add(cookie);
-      setSessionCookie(session, "", new Date(0));
-      session.respond({ success: true }, "json");
-    });
+  const logout = async (session: Session) => {
+    const header = session.client.req?.headers.authorization ?? "";
+    const token = String(header)
+      .replace(/^bearer\s+/i, "")
+      .trim();
+    const cookie = String(session.cookie?.[sessionCookieName] ?? "");
+    const caller = session.properties.user as User | undefined;
+    for (const value of [token, cookie]) {
+      if (value) await revokeToken(value, Number(caller?.id ?? 0));
+    }
+    setSessionCookie(session, "", new Date(0));
+    session.respond({ success: true }, "json");
+  };
+  // The application calls this through its `/api` client, which is what the
+  // dashboard sends; the unprefixed path stays because the login page uses it.
+  for (const path of ["/auth/logout", "/api/auth/logout"])
+    ctx.route(path).methods("POST", "GET").action(logout);
 
   /**
    * User management. Any signed-in caller could reach these routes — the gate
