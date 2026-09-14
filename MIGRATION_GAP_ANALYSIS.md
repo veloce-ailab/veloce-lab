@@ -417,3 +417,50 @@ console.log(r.lastInsertRowid, r.lastInsertRowid===undefined);"
 | 路由表同路径同方法重复 | 0 条；跨包重名 0 条 |
 
 **注意**：正在 3000 端口上跑的进程是改动前起的，需要重启才会加载新的 `dist/`。
+
+## 9. 从上级同步模型列表
+
+### 9.1 前端有界面，后端没有端点
+
+渠道页每个渠道的"模型配置"对话框（`ListTree` 按钮）里已经有完整的同步流程：选同步格式 → "同步模型" → 勾选预览结果 → "提交同步"，失败时还会打开"浏览器抓取"兜底对话框。它调用三个端点：
+
+| 调用 | 期望 |
+| --- | --- |
+| `POST /api/models/sync/preview` | `{channel_id, format, path}` → `{channel_id, channel_name, source, models:[{model_name, provider, provider_name, provider_icon_url, exists}]}` |
+| `POST /api/models/sync/preview/browser` | `{channel_id, source, payload}`（payload 是浏览器自己抓到的 JSON） |
+| `POST /api/models/sync/apply` | `{channel_id, models}` → `{results:[{created, updated, …}]}` |
+
+这三个路径在任何插件里都没有实现，所以按钮必然失败；而失败又会打开兜底对话框，那里同样 404。`service` 插件里其实有一段三路由的实现，但它躺在 185 行的块注释里（前面还有一句无条件 `return;`），从未执行，而且比这里需要的弱得多（只抓一个路径、不识别 new-api 的 `{model_name}` 形状、不做 HTML 嗅探、不做供应商推断、`created` 计的是目录行而不是渠道绑定）。它的注释还写着同步归 `model-catalog` 管，但 `model-catalog` 只有 `GET /api/models`。
+
+### 9.2 实现
+
+新增 `packages/channel-admin/src/sync.ts`（与 `channels`/`model_configs` 同包，前端也在这一包），从 `old/internal/service/sync.go` 与 `providers.go` 移植：
+
+- **同步格式**与对话框的选项一一对应：`auto`（依次试 `/v1/models` → `/models` → `/api/models`，哪条先返回模型用哪条）、`openai_models`、`generic_models`、`api_models`、`custom`（自定义路径，绝对 URL 会被剥成路径）。显式格式只打一条路径，不再兜底；`auto` 失败时把每条路径的失败原因串起来返回。
+- **模型名解析**覆盖上游真实的几种形状：OpenAI `{data:[{id}]}`、new-api `/api/models` 与 `/api/pricing` 的 `{data:[{model_name}]}`、new-api 以模型名为键的 `{data:{"gpt-4o":{…}}}`、one-api 的 `{model_ratio:{"gpt-4o":15}}`、纯字符串数组、`{models:[…]}`/`{items:[…]}`。键为模型名的映射与载荷元数据（`model_ratio`、`count`、`success` 等）区分开，纯数字的 `id` 不当模型名（`{id:1, model_name:"x"}` 取 `x`）。
+- **供应商推断**移植 `providers.go` 的 40 个预设与按模型名的有序匹配规则，返回的 `provider` id 与前端 `providerPresets` 对得上，前端据此显示名称与图标；显式 provider 优先，未知 provider 保留原样。
+- **应用语义**：先按 `model_name` 找/建目录行（已存在时只补空的 provider/图标，不覆盖手工设置），再按 `(channel_id, model_id)` upsert 渠道绑定（`upstream_model_name` + `enabled`），因此重复同步幂等：首次 `created:4`，再次 `created:0, updated:4`。
+- **路由**在 `channel-admin` 注册，与其余 12 条渠道路由一样用 `if (!admin(session)) return;` 把关；格式非法/自定义缺路径/未选模型 → 400，渠道不存在 → 404，上游不可达 → 502（带 `GET <url> failed/returned status/HTML instead of JSON` 详情，正是兜底对话框要展示的东西）。
+- **出站防护**：目标地址由操作者填写而由服务端请求，因此拒绝非 http(s)、回环、link-local 与元数据主机（仓库里 `delivery` 的 webhook 校验是同一风格）。与本机/内网上游中转站同机部署是真实场景，所以 `VELOCELAB_ALLOW_PRIVATE_UPSTREAM=1` 可以放行——集成测试也是靠它连本地假上游。
+
+同时删掉 `service` 里那 149 行死代码，留一行指向新位置。
+
+### 9.3 顺带修掉的工具缺陷
+
+`.dsh-tmp/extract-new-routes.ps1` 是纯正则扫描，会把**注释里的**路由当成活路由：这次它把 `service` 注释块里的三条报成与 `channel-admin` 重复（上一轮 `ask_user` 的"重复"也是同一类误报）。现在扫描前先把块注释与行注释按字符数替换成空白（保持行号不变），路由总数从 172 降到 169，重复数为 0。
+
+### 9.4 验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `.dsh-tmp/models-sync-unit.mjs`（对 `dist/sync.js` 直接跑） | **52 项全过**：12 种载荷形状、18 条供应商推断、目标/URL/路径规范化、回环拦截、正常抓取、HTML 与 404 失败、auto 逐源报错 |
+| `.dsh-tmp/models-sync-e2e.mjs`（真服务器 + 真数据库 + 本地假上游） | **35 项全过**：预览（名字/供应商/图标/排序/剔除纯数字 id）→ 应用 `created:4` → 渠道绑定 4 条 → 再预览 `exists:true` → 再应用 `created:0,updated:4` 且无重复绑定 → 浏览器载荷路径（new-api pricing 形状）再加 2 条 → 400/404/502 各条失败路径 |
+| 测试后数据清理 | 目录行删除 6 条、绑定与测试渠道全部删除；跑完 `models=0 model_configs=0 channels=1`（剩下那条是用户自己在浏览器里建的 `111`） |
+| 全包 `tsc -p` | 42 个包全部 exit 0 |
+| `sse-contract` / `persistence-contract` / `nav-path-check` | 全部通过 |
+| 路由表 | 同路径同方法重复 0、跨包重名 0；`/api/models/sync/*` 仅 `channel-admin` 注册 |
+| 生产模式启动日志 | 无 `Failed to load plugin` |
+
+单元测试在实现过程中抓到一个真问题：`{data:{model_ratio:{"qwen-max":2}}}` 曾经把映射本身的键名 `model_ratio` 当成模型名收进来（"键为模型名的映射"判定没有排除元数据键），现在会先排除元数据键再采信键名。
+
+**注意**：3000 端口上正在跑的进程仍是改动前起的，重启后新的 `dist/` 与这三个端点才生效。

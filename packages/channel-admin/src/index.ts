@@ -6,6 +6,7 @@ import "@velocelab/billing";
 import "@velocelab/database-core";
 import type { AdapterRegistry } from "@velocelab/adapters";
 import { ensureTables } from "./tables.js";
+import { applyChannelModels, buildPreview, fetchUpstreamModelNames, parseModelNames, resolveSyncTargets, toSyncChannel } from "./sync.js";
 
 declare module "@yumerijs/types" {
   interface Tables { channels: Channel; models: Model; model_configs: ModelConfig; }
@@ -159,5 +160,44 @@ export async function apply(ctx: Context) {
     if (!admin(session)) return;
     await db.remove("model_configs", { id: Number(id) });
     session.respond({ success: true }, "json");
+  });
+  // Model list sync: preview the upstream list, then bind what was selected.
+  ctx.route("/api/models/sync/preview").methods("POST").action(async (session) => {
+    if (!admin(session)) return;
+    const input = await body(session);
+    const channel = toSyncChannel(await channels.findById(Number(input.channel_id ?? 0)));
+    if (!channel) { session.status = 404; session.respond({ error: "Channel not found" }, "json"); return; }
+    const targets = resolveSyncTargets(String(input.format ?? "auto"), String(input.path ?? ""));
+    if ("error" in targets) { session.status = 400; session.respond({ error: targets.error }, "json"); return; }
+    try {
+      const { names, source } = await fetchUpstreamModelNames(channel, targets);
+      session.respond(await buildPreview(db, channel, source, names), "json");
+    } catch (error) {
+      session.status = 502;
+      session.respond({ error: error instanceof Error ? error.message : String(error) }, "json");
+    }
+  });
+  // Same preview from a payload the browser fetched: the server may be unable
+  // to reach the upstream (or the upstream may refuse requests from it).
+  ctx.route("/api/models/sync/preview/browser").methods("POST").action(async (session) => {
+    if (!admin(session)) return;
+    const input = await body(session);
+    const channel = toSyncChannel(await channels.findById(Number(input.channel_id ?? 0)));
+    if (!channel) { session.status = 404; session.respond({ error: "Channel not found" }, "json"); return; }
+    const names = parseModelNames(input.payload);
+    if (!names.length) { session.status = 400; session.respond({ error: "payload did not contain a model list" }, "json"); return; }
+    const source = String(input.source ?? "").trim() || "browser";
+    session.respond(await buildPreview(db, channel, source, names), "json");
+  });
+  ctx.route("/api/models/sync/apply").methods("POST").action(async (session) => {
+    if (!admin(session)) return;
+    const input = await body(session);
+    const channel = toSyncChannel(await channels.findById(Number(input.channel_id ?? 0)));
+    if (!channel) { session.status = 404; session.respond({ error: "Channel not found" }, "json"); return; }
+    const items = Array.isArray(input.models) ? (input.models as Array<Record<string, unknown>>) : [];
+    if (!items.length) { session.status = 400; session.respond({ error: "no models selected" }, "json"); return; }
+    const result = await applyChannelModels(db, channel, items);
+    if (result.error) { session.status = 500; session.respond({ error: result.error, results: [result] }, "json"); return; }
+    session.respond({ results: [result] }, "json");
   });
 }
