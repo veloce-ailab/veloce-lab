@@ -255,11 +255,14 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session) => {
       const current = await user(session);
-      if (current?.id !== undefined)
-        session.respond(
-          (await service.listAgents(current.id)).map(agent),
-          "json",
-        );
+      if (current?.id === undefined) return;
+      // A user who has never made an agent still has the default one, so the
+      // list is never empty and a chat always has something to start from.
+      await service.ensureDefaultAgent(current.id);
+      session.respond(
+        (await service.listAgents(current.id)).map(agent),
+        "json",
+      );
     });
   ctx
     .route("/api/user/advanced-chat/agents")
@@ -364,10 +367,21 @@ export function registerAdvancedChatRoutes(
     .methods("DELETE")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (current?.id !== undefined) {
-        await service.deleteAgent(current.id, id);
-        session.respond({ success: true }, "json");
+      if (current?.id === undefined) return;
+      if (await service.agentIsDefault(current.id, id)) {
+        // Rejecting beats deleting and watching it come back on the next list.
+        session.status = 403;
+        session.respond(
+          {
+            error: "默认代理不能删除",
+            error_en: "The default agent cannot be deleted",
+          },
+          "json",
+        );
+        return;
       }
+      await service.deleteAgent(current.id, id);
+      session.respond({ success: true }, "json");
     });
   ctx
     .route("/api/user/advanced-chat/agents/:id")

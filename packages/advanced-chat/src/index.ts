@@ -85,12 +85,16 @@ export interface AdvancedChatService {
   ): Promise<{ device: HarnessConnectorDevice; token: string }>;
   listConnectors(userId: number): Promise<HarnessConnectorDevice[]>;
   listAgents(userId: number): Promise<HarnessAgent[]>;
+  /** Creates the agent that always exists, if this user does not have it yet. */
+  ensureDefaultAgent(userId: number): Promise<HarnessAgent | undefined>;
   createAgent(userId: number, input: AgentInput): Promise<HarnessAgent>;
   updateAgent(
     userId: number,
     id: string,
     input: AgentInput,
   ): Promise<HarnessAgent | undefined>;
+  /** Whether this agent is the default one, which cannot be removed. */
+  agentIsDefault(userId: number, id: string): Promise<boolean>;
   deleteAgent(userId: number, id: string): Promise<void>;
   listSessions(userId: number): Promise<HarnessSession[]>;
   createSession(userId: number, input: SessionInput): Promise<HarnessSession>;
@@ -439,6 +443,20 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         ? "When the request is ambiguous or requires a user decision, call ask_user with one clear question and preset options. After calling it, end the turn and wait for the user's next message."
         : undefined,
   });
+  // The one agent that always exists. Its identity is the reserved `stable_id`
+  // the Go implementation used, which the agents page already relies on, rather
+  // than a new flag: renaming the agent must not be able to orphan the rule.
+  const DEFAULT_AGENT_ID = "default";
+  const DEFAULT_AGENT_NAME = "Default";
+  /**
+   * An agent is identified by `stable_id`, but rows written before that column
+   * existed only have `id`, so both are matched.
+   */
+  const agentByID = async (userId: number, id: string) =>
+    db.selectOne("advanced_chat_agents", {
+      user_id: userId,
+      $or: [{ stable_id: id }, { id }],
+    });
   const service: AdvancedChatService = {
     registerTool(tool) {
       tools.push(tool);
@@ -493,7 +511,65 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       const agents = await db.select("advanced_chat_agents", {
         user_id: userId,
       });
-      return agents.sort((left, right) => left.name.localeCompare(right.name));
+      return agents.sort((left, right) => {
+        // The default agent leads the list: it is what a chat starts from when
+        // nothing else has been chosen.
+        const leftDefault = String(left.stable_id ?? "") === DEFAULT_AGENT_ID;
+        const rightDefault = String(right.stable_id ?? "") === DEFAULT_AGENT_ID;
+        if (leftDefault !== rightDefault) return leftDefault ? -1 : 1;
+        return left.name.localeCompare(right.name);
+      });
+    },
+    /**
+     * The agent that always exists. Without it a user who has never created one
+     * has nothing to chat with, and deleting the last agent leaves them there.
+     * Created on first use, then kept — the same shape the Go implementation
+     * gave it, so a database carried over from it keeps working.
+     */
+    async ensureDefaultAgent(userId) {
+      if (userId === undefined) return undefined;
+      const existing = await db.selectOne("advanced_chat_agents", {
+        user_id: userId,
+        stable_id: DEFAULT_AGENT_ID,
+      });
+      if (existing) return existing;
+      // An agent the user happens to have named after the default is adopted
+      // rather than colliding with the unique (user_id, name) index.
+      const named = await db.selectOne("advanced_chat_agents", {
+        user_id: userId,
+        name: DEFAULT_AGENT_NAME,
+      });
+      const now = new Date().toISOString();
+      if (named) {
+        await db.update(
+          "advanced_chat_agents",
+          { id: named.id, user_id: userId },
+          { stable_id: DEFAULT_AGENT_ID, updated_at: now },
+        );
+        return db.selectOne("advanced_chat_agents", {
+          id: named.id,
+          user_id: userId,
+        });
+      }
+      return db.create("advanced_chat_agents", {
+        id: newID("aca"),
+        user_id: userId,
+        stable_id: DEFAULT_AGENT_ID,
+        name: DEFAULT_AGENT_NAME,
+        // Empty on purpose, as it was before: the model comes from the composer,
+        // and an empty prompt means no system message. Editing it changes a run
+        // like any other agent.
+        prompt: "",
+        default_model: "",
+        user_channel_id: null,
+        stream: false,
+        skill_ids: "[]",
+        mcp_server_ids: "[]",
+        knowledge_base_ids: "[]",
+        preset_messages: "[]",
+        created_at: now,
+        updated_at: now,
+      });
     },
     async createAgent(userId, input) {
       const name = input.name.trim();
@@ -520,16 +596,13 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       });
     },
     async updateAgent(userId, id, input) {
-      const existing = await db.selectOne("advanced_chat_agents", {
-        stable_id: id,
-        user_id: userId,
-      });
+      const existing: any = await agentByID(userId, id);
       if (!existing) return undefined;
       const name = input.name.trim();
       if (!name) throw Error("agent name is required");
       await db.update(
         "advanced_chat_agents",
-        { stable_id: id, user_id: userId },
+        { id: existing.id, user_id: userId },
         {
           name: name.slice(0, 100),
           prompt: input.prompt.trim(),
@@ -542,15 +615,24 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         },
       );
       return db.selectOne("advanced_chat_agents", {
-        stable_id: id,
+        id: existing.id,
         user_id: userId,
       });
     },
     async deleteAgent(userId, id) {
+      const existing: any = await agentByID(userId, id);
+      if (!existing) return;
       await db.remove("advanced_chat_agents", {
-        stable_id: id,
         user_id: userId,
+        $or: [{ stable_id: id }, { id }],
       });
+    },
+    async agentIsDefault(userId, id) {
+      const existing: any = await agentByID(userId, id);
+      return (
+        String(existing?.stable_id ?? "") === DEFAULT_AGENT_ID ||
+        String(existing?.id ?? "") === DEFAULT_AGENT_ID
+      );
     },
     async listSessions(userId) {
       const sessions = await db.select("advanced_chat_sessions", {
@@ -1018,19 +1100,21 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       const now = new Date().toISOString();
       // Resolve everything the run uses before touching the upstream: the
       // request wins, the session is the fallback, and the agent only fills a
-      // gap the session never set.
-      const agentKey = String(input.agentId ?? session.agent_id ?? "").trim();
+      // gap the session never set. A chat with no agent chosen runs the default
+      // one, which is why it is created on demand rather than left missing.
+      const agentKey =
+        String(input.agentId ?? session.agent_id ?? "").trim() || DEFAULT_AGENT_ID;
       const agent =
-        agentKey && agentKey !== "default"
-          ? ((await db.selectOne("advanced_chat_agents", {
+        agentKey === DEFAULT_AGENT_ID
+          ? await service.ensureDefaultAgent(userId)
+          : ((await db.selectOne("advanced_chat_agents", {
               user_id: userId,
               stable_id: agentKey,
             })) ??
             (await db.selectOne("advanced_chat_agents", {
               user_id: userId,
               id: agentKey,
-            })))
-          : undefined;
+            })));
       const modelName = String(agent?.default_model ?? "").trim() || requestedModel;
       if (!modelName) throw Error("model and messages are required");
       const mode = String(input.mode ?? session.run_mode ?? "chat").trim() || "chat";
