@@ -84,6 +84,7 @@
       "root": "./data"
     },
     "@velocelab/connector": {},
+    "@velocelab/device-local": {},
     "@velocelab/skill": {},
     "@velocelab/mcp": {},
     "@velocelab/delivery": {},

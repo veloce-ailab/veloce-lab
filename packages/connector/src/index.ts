@@ -5,6 +5,110 @@ import "@velocelab/advanced-chat";
 import { ensureTables } from "./tables.js";
 export const depend = ["dashboard", "database"];
 export const provide = ["connector"];
+/** A row of `advanced_chat_connector_devices`, without its token hash. */
+export interface ConnectorDeviceRecord {
+  id: string;
+  user_id: number;
+  name: string;
+  remark?: string;
+  hostname?: string;
+  os?: string;
+  arch?: string;
+  version?: string;
+  kind: string;
+  desktop_instance_id?: string;
+  mode?: string;
+  status?: string;
+  last_seen_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+/** A row of `advanced_chat_connector_tasks`. */
+export interface ConnectorTaskRecord {
+  id: string;
+  user_id: number;
+  device_id: string;
+  action: string;
+  workspace_path?: string;
+  payload?: string;
+  status: string;
+  result?: string;
+  error_message?: string;
+  [key: string]: unknown;
+}
+export interface LocalizedText {
+  zh: string;
+  en: string;
+  ja?: string;
+}
+/**
+ * A connector type is what a device of that kind can do.
+ *
+ * Devices carry their type id in `advanced_chat_connector_devices.kind`, so a
+ * plugin adds a connector simply by registering one here: `actions` answer
+ * connector actions, `ensureDevice` brings an auto-connecting device online
+ * without any agent process or token, and `pickDirectory` decides how *that*
+ * connector lets the user choose a folder (a native dialog on the host, the
+ * desktop app's own dialog, a remote browser, …).
+ */
+export interface ConnectorType {
+  id: string;
+  label: LocalizedText;
+  description?: LocalizedText;
+  /** Online whenever the host is: no token, no polling agent. */
+  autoConnect?: boolean;
+  /** Whether a user may mint a token for this type (default true). */
+  creatable?: boolean;
+  /** Action names this type answers; published by the connector-types route. */
+  capabilities?: string[];
+  /** Auto-connect hook: create or refresh this user's device row. */
+  ensureDevice?(userId: number): Promise<ConnectorDeviceRecord>;
+  /** Action handlers, keyed by action name. */
+  actions?: Record<
+    string,
+    (
+      userId: number,
+      input: Record<string, unknown>,
+      device: ConnectorDeviceRecord,
+    ) => Promise<unknown> | unknown
+  >;
+  /**
+   * How this connector picks a folder. Resolving to an empty path with
+   * `cancelled` set means the user dismissed the picker.
+   */
+  pickDirectory?(
+    userId: number,
+    input: Record<string, unknown>,
+    device: ConnectorDeviceRecord,
+  ): Promise<{ path: string; cancelled: boolean }>;
+  /**
+   * Runs one queued task. Present on types that execute their own queue (an
+   * auto-connect type is its own agent); absent when an external process polls
+   * `connectors/tasks/next` instead.
+   */
+  runTask?(
+    task: ConnectorTaskRecord,
+    device: ConnectorDeviceRecord,
+  ): Promise<{ success: boolean; result?: string; error_message?: string }>;
+}
+export interface ConnectorTypeInfo {
+  id: string;
+  label: LocalizedText;
+  description: LocalizedText | null;
+  auto_connect: boolean;
+  creatable: boolean;
+  capabilities: string[];
+}
+export interface ConnectorTaskInput {
+  device_id: string;
+  action: string;
+  workspace_path?: string;
+  payload?: Record<string, unknown>;
+  /** A task needing approval waits for the decision route before it runs. */
+  requiresApproval?: boolean;
+  run_id?: string;
+}
 export interface ConnectorService {
   execute(
     userId: number,
@@ -12,6 +116,28 @@ export interface ConnectorService {
     input: Record<string, unknown>,
   ): Promise<unknown>;
   register(handler: ConnectorHandler): () => void;
+  /** Adds a connector type; the returned function removes it again. */
+  registerType(type: ConnectorType): () => void;
+  types(): ConnectorTypeInfo[];
+  /**
+   * Asks the connector behind `device_id` to pick a folder. The connector type
+   * decides how — this is the hook a plugin customises.
+   */
+  pickDirectory(
+    userId: number,
+    deviceId: string,
+    input: Record<string, unknown>,
+  ): Promise<{ path: string; cancelled: boolean }>;
+  /** Queues a task for a device and runs it when the type can run its own. */
+  createTask(
+    userId: number,
+    input: ConnectorTaskInput,
+  ): Promise<ConnectorTaskRecord>;
+  /**
+   * Runs one queued task through the connector type of its device, for types
+   * that execute their own queue. Resolves to whether the task was taken.
+   */
+  executeTask(userId: number, taskId: string): Promise<boolean>;
 }
 export interface ConnectorHandler {
   execute(
@@ -33,10 +159,78 @@ export async function apply(ctx: Context) {
     plugin: "connector",
   });
   const handlers: ConnectorHandler[] = [];
+  const types: ConnectorType[] = [];
   const db = ctx.component.database as Database;
   await ensureTables(db);
   const uid = (s: Session) =>
     (s.properties.user as { id?: number } | undefined)?.id;
+  const typeByID = (id: string) => types.find((type) => type.id === id);
+  const deviceOf = async (userId: number, deviceId: string) =>
+    db.selectOne("advanced_chat_connector_devices", {
+      id: deviceId,
+      user_id: userId,
+    });
+  /**
+   * Auto-connecting types have no agent process to report in, so the device row
+   * is created and kept online by the type itself.
+   */
+  const connectAutoDevices = async (userId: number) => {
+    for (const type of types) {
+      if (!type.autoConnect || !type.ensureDevice) continue;
+      try {
+        await type.ensureDevice(userId);
+      } catch (error) {
+        // A type that cannot establish its device must not take the whole
+        // listing down; the device simply does not appear.
+        console.warn(
+          `[connector] type "${type.id}" failed to connect: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  };
+  const runGeneric = async (
+    userId: number,
+    action: string,
+    input: Record<string, unknown>,
+  ) => {
+    for (const handler of [...handlers].reverse()) {
+      try {
+        return await handler.execute(userId, action, input);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message !== "Unsupported connector action"
+        )
+          throw error;
+      }
+    }
+    throw Error("No connector runtime is enabled");
+  };
+  const dispatchTask = async (task: ConnectorTaskRecord, device: ConnectorDeviceRecord) => {
+    const type = typeByID(String(device.kind ?? ""));
+    if (!type?.runTask) return undefined;
+    const changed = await db.update(
+      "advanced_chat_connector_tasks",
+      { id: task.id, status: task.status },
+      { status: "running", started_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    );
+    // Only the run that flipped the task to `running` may execute it, so a
+    // repeated dispatch cannot run the same task twice.
+    if (changed === 0) return undefined;
+    const outcome = await type.runTask(task, device);
+    await db.update(
+      "advanced_chat_connector_tasks",
+      { id: task.id },
+      {
+        status: outcome.success ? "completed" : "failed",
+        result: String(outcome.result ?? "").slice(0, 1_000_000),
+        error_message: String(outcome.error_message ?? "").slice(0, 100_000),
+        finished_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    );
+    return outcome;
+  };
   const connectorToken = (s: Session) => {
     const value =
       s.client.req?.headers["x-connector-token"] ??
@@ -59,13 +253,35 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s) => {
       const id = uid(s);
-      if (id !== undefined)
+      if (id !== undefined) {
+        await connectAutoDevices(id);
         s.respond(
           (
             await db.select("advanced_chat_connector_devices", { user_id: id })
           ).map(({ token_hash: _hash, ...row }) => row),
           "json",
         );
+      }
+    });
+  // Published so a client can label devices and know which of them can pick a
+  // folder itself. Declared before any `/devices/:id` route for clarity, though
+  // the paths do not overlap.
+  ctx
+    .route("/api/user/advanced-chat/connector-types")
+    .methods("GET")
+    .action(async (s) => {
+      if (uid(s) === undefined) return;
+      s.respond(
+        types.map((type) => ({
+          id: type.id,
+          label: type.label,
+          description: type.description ?? null,
+          auto_connect: type.autoConnect === true,
+          creatable: type.creatable !== false,
+          capabilities: [...(type.capabilities ?? [])],
+        })),
+        "json",
+      );
     });
   ctx
     .route("/api/user/advanced-chat/devices/token")
@@ -216,6 +432,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, deviceId) => {
       const id = uid(s);
+      if (id !== undefined) await connectAutoDevices(id);
       const device = id !== undefined
         ? await db.selectOne("advanced_chat_connector_devices", {
             id: deviceId,
@@ -229,6 +446,37 @@ export async function apply(ctx: Context) {
       }
       const { token_hash: _hash, ...safe } = device;
       s.respond(safe, "json");
+    });
+  // Asks the connector behind the device to pick a folder. Which window opens —
+  // a native dialog on the host, the desktop app's picker, something else — is
+  // the connector type's decision, so the client stays generic.
+  ctx
+    .route("/api/user/advanced-chat/devices/:id/pick-directory")
+    .methods("POST")
+    .action(async (s, _p, deviceId) => {
+      const id = uid(s);
+      if (id === undefined) return;
+      const input = (await s.parseRequestBody()) as any;
+      try {
+        s.respond(
+          await service.pickDirectory(
+            id,
+            deviceId,
+            input && typeof input === "object" ? input : {},
+          ),
+          "json",
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        s.status = /not found/i.test(message)
+          ? 404
+          : /does not support|cannot pick/i.test(message)
+            ? 400
+            : /timed out/i.test(message)
+              ? 504
+              : 502;
+        s.respond({ error: message }, "json");
+      }
     });
   ctx
     .route("/api/user/advanced-chat/devices/:id")
@@ -637,7 +885,7 @@ export async function apply(ctx: Context) {
       if (id === undefined) return;
       try {
         s.respond(
-          await (ctx.component.connector as ConnectorService).execute(
+          await service.execute(
             id,
             "list_mcp_processes",
             { device_id: deviceId },
@@ -661,7 +909,7 @@ export async function apply(ctx: Context) {
       const input = (await s.parseRequestBody()) as any;
       try {
         s.respond(
-          await (ctx.component.connector as ConnectorService).execute(
+          await service.execute(
             id,
             "stop_mcp_process",
             { device_id: deviceId, key: String(input.key ?? "") },
@@ -676,20 +924,52 @@ export async function apply(ctx: Context) {
         );
       }
     });
-  ctx.registerComponent("connector", {
+  /**
+   * The device an action runs on when it names none: a connector type that is
+   * online by itself (the machine running this instance) is the obvious default,
+   * and a user who has exactly one of those has already made the choice.
+   */
+  const defaultAutoDevice = async (userId: number) => {
+    const autoIDs = types.filter((type) => type.autoConnect).map((type) => type.id);
+    if (autoIDs.length === 0) return undefined;
+    const devices: any[] = await db.select("advanced_chat_connector_devices", {
+      user_id: userId,
+    });
+    const candidates = devices.filter(
+      (device) => autoIDs.includes(String(device.kind ?? "")) && device.status === "online",
+    );
+    return candidates.length === 1 ? candidates[0] : undefined;
+  };
+  // A plugin cannot read its own component back through `ctx.component` — that
+  // table only carries the names the loader injected from other plugins — so the
+  // routes below call this object directly.
+  const service: ConnectorService = {
     async execute(userId, action, input) {
-      for (const handler of [...handlers].reverse()) {
-        try {
-          return await handler.execute(userId, action, input);
-        } catch (error) {
-          if (
-            error instanceof Error &&
-            error.message !== "Unsupported connector action"
-          )
-            throw error;
+      const deviceId = String(input?.device_id ?? "").trim();
+      const device: any = deviceId
+        ? await deviceOf(userId, deviceId)
+        : await defaultAutoDevice(userId);
+      if (deviceId && !device) throw Error("Connector device not found");
+      if (device) {
+        const type = typeByID(String(device.kind ?? ""));
+        const handler = type?.actions?.[action];
+        if (handler) {
+          // An auto-connect device is online by definition; refresh the row so
+          // the client does not see a stale timestamp on a device it just used.
+          if (type?.autoConnect && device.status !== "online" && type.ensureDevice)
+            await type.ensureDevice(userId).catch(() => undefined);
+          const { token_hash: _hash, ...record } = device;
+          return handler(
+            userId,
+            { ...input, device_id: String(device.id) },
+            record as ConnectorDeviceRecord,
+          );
         }
+        // A known type that does not answer this action, and a type nobody
+        // registered at all, both fall through to the generic runtimes so an
+        // external agent can still serve them.
       }
-      throw Error("No connector runtime is enabled");
+      return runGeneric(userId, action, input);
     },
     register(handler) {
       handlers.push(handler);
@@ -698,5 +978,91 @@ export async function apply(ctx: Context) {
         if (index >= 0) handlers.splice(index, 1);
       };
     },
-  });
+    registerType(type) {
+      const existing = types.findIndex((item) => item.id === type.id);
+      if (existing >= 0) types.splice(existing, 1, type);
+      else types.push(type);
+      return () => {
+        const index = types.indexOf(type);
+        if (index >= 0) types.splice(index, 1);
+      };
+    },
+    types() {
+      return types.map((type) => ({
+        id: type.id,
+        label: type.label,
+        description: type.description ?? null,
+        auto_connect: type.autoConnect === true,
+        creatable: type.creatable !== false,
+        capabilities: [...(type.capabilities ?? [])],
+      }));
+    },
+    async pickDirectory(userId, deviceId, input) {
+      const device: any = await deviceOf(userId, deviceId);
+      if (!device) throw Error("Connector device not found");
+      const type = typeByID(String(device.kind ?? ""));
+      const { token_hash: _hash, ...record } = device;
+      if (type?.pickDirectory)
+        return type.pickDirectory(
+          userId,
+          input,
+          record as ConnectorDeviceRecord,
+        );
+      // Fall back to a runtime that exposes folder selection as an action, so a
+      // connector written before types existed still works.
+      const viaAction = await runGeneric(userId, "pick_directory", {
+        ...input,
+        device_id: deviceId,
+      }).catch(() => undefined);
+      if (viaAction && typeof viaAction === "object")
+        return viaAction as { path: string; cancelled: boolean };
+      throw Error(
+        `Connector type "${device.kind}" does not support folder selection`,
+      );
+    },
+    async createTask(userId, input) {
+      const device: any = await deviceOf(userId, input.device_id);
+      if (!device) throw Error("Connector device not found");
+      const now = new Date().toISOString();
+      const task: any = await db.create("advanced_chat_connector_tasks", {
+        id: `act-${randomUUID()}`,
+        user_id: userId,
+        device_id: input.device_id,
+        run_id: String(input.run_id ?? ""),
+        action: input.action.trim(),
+        workspace_path: String(input.workspace_path ?? ""),
+        payload: JSON.stringify(input.payload ?? {}),
+        status: input.requiresApproval ? "pending_approval" : "queued",
+        result: "",
+        error_message: "",
+        started_at: null,
+        finished_at: null,
+        created_at: now,
+        updated_at: now,
+      } as any);
+      const { token_hash: _hash, ...record } = device;
+      if (!input.requiresApproval)
+        await dispatchTask(task, record as ConnectorDeviceRecord);
+      return (await db.selectOne("advanced_chat_connector_tasks", {
+        id: task.id,
+      })) as ConnectorTaskRecord;
+    },
+    async executeTask(userId, taskId) {
+      const task: any = await db.selectOne("advanced_chat_connector_tasks", {
+        id: taskId,
+        user_id: userId,
+      });
+      if (!task) throw Error("Connector task not found");
+      // Only a task that is waiting to run may be picked up; anything already
+      // running, finished or awaiting a decision is left alone.
+      if (!["queued", "approved"].includes(String(task.status))) return false;
+      const device: any = await deviceOf(userId, String(task.device_id));
+      if (!device) return false;
+      const { token_hash: _hash, ...record } = device;
+      return (
+        (await dispatchTask(task, record as ConnectorDeviceRecord)) !== undefined
+      );
+    },
+  };
+  ctx.registerComponent("connector", service);
 }

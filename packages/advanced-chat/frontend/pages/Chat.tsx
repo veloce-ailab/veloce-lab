@@ -359,6 +359,14 @@ interface MCPServer {
   request_mode: "backend" | "frontend" | string
 }
 
+interface ConnectorTypeInfo {
+  id: string
+  label: { zh: string; en: string }
+  auto_connect: boolean
+  creatable: boolean
+  capabilities: string[]
+}
+
 interface ConnectorDevice {
   id: string
   name: string
@@ -545,6 +553,11 @@ const advancedSessionsQueryKey = ["advanced-chat-sessions"] as const
 const advancedSessionFoldersQueryKey = ["advanced-chat-session-folders"] as const
 const advancedFilesQueryKey = ["advanced-chat-files"] as const
 const connectorDevicesQueryKey = ["advanced-chat-connector-devices"] as const
+const connectorTypesQueryKey = ["advanced-chat-connector-types"] as const
+/** Action names the connector type of `kind` answers; empty when unknown. */
+function connectorTypeCapabilities(types: ConnectorTypeInfo[], kind?: string) {
+  return types.find((type) => type.id === kind)?.capabilities || []
+}
 const connectorApprovalsQueryKey = (runID: string) => ["advanced-chat-connector-approvals", runID] as const
 const agentWorkQueryKey = (runID: string) => ["advanced-chat-agent-work", runID] as const
 const agentGroupsQueryKey = ["advanced-chat-agent-groups"] as const
@@ -636,6 +649,7 @@ export default function Chat() {
   const [pendingConnectorApprovalMode, setPendingConnectorApprovalMode] = useState<ConnectorApprovalMode>("manual")
   const [pendingConnectorCommandPrefixes, setPendingConnectorCommandPrefixes] = useState("")
   const [isWorkspacePickerOpen, setIsWorkspacePickerOpen] = useState(false)
+  const [isPickingWorkspaceFolder, setIsPickingWorkspaceFolder] = useState(false)
   const [workspacePickerDeviceID, setWorkspacePickerDeviceID] = useState("")
   const [workspacePickerPath, setWorkspacePickerPath] = useState("")
   const [workspacePickerTarget, setWorkspacePickerTarget] = useState<WorkspacePickerTarget>("session")
@@ -802,6 +816,16 @@ export default function Chat() {
     queryFn: async () => {
       const res = await api.get("/user/advanced-chat/devices")
       return Array.isArray(res.data) ? res.data.map(normalizeConnectorDevice).filter((device): device is ConnectorDevice => Boolean(device)) : []
+    },
+  })
+
+  const { data: connectorTypes = [] } = useQuery<ConnectorTypeInfo[]>({
+    queryKey: connectorTypesQueryKey,
+    enabled: isAdvanced,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get("/user/advanced-chat/connector-types")
+      return Array.isArray(res.data) ? res.data.map(normalizeConnectorType).filter((entry): entry is ConnectorTypeInfo => Boolean(entry)) : []
     },
   })
 
@@ -1153,6 +1177,29 @@ export default function Chat() {
       .catch(() => setDesktopInstanceID(""))
   }, [isDesktop])
   const workspacePickerDevice = connectorDevices.find((device) => device.id === workspacePickerDeviceID)
+  // A connector can offer its own folder window — the local one opens a native
+  // dialog on the machine running the instance. Which connectors can is the
+  // connector type's business, so it is read from the type table.
+  const canPickFolderOnDevice = Boolean(workspacePickerDevice && connectorTypeCapabilities(connectorTypes, workspacePickerDevice.kind).includes("pick_directory"))
+  const pickFolderOnDevice = async () => {
+    if (!workspacePickerDeviceID || isPickingWorkspaceFolder) {
+      return
+    }
+    setIsPickingWorkspaceFolder(true)
+    try {
+      const res = await api.post(`/user/advanced-chat/devices/${encodeURIComponent(workspacePickerDeviceID)}/pick-directory`, { path: workspacePickerPath })
+      const picked = typeof res.data?.path === "string" ? res.data.path : ""
+      if (res.data?.cancelled === true || !picked) {
+        return
+      }
+      setWorkspacePickerPath(picked)
+      await queryClient.invalidateQueries({ queryKey: ["advanced-chat-workspace-directories"] })
+    } catch (err) {
+      error(apiErrorMessage(err, workspacePickerCopy.pickFolderFailed))
+    } finally {
+      setIsPickingWorkspaceFolder(false)
+    }
+  }
   const workspaceDirectoriesQuery = useQuery<WorkspaceDirectories>({
     queryKey: ["advanced-chat-workspace-directories", workspacePickerDeviceID, workspacePickerPath],
     enabled: isWorkspacePickerOpen && Boolean(workspacePickerDeviceID),
@@ -4283,6 +4330,12 @@ export default function Chat() {
               </div>
             </div>
             <DialogFooter className="border-t px-5 py-4">
+              {canPickFolderOnDevice && (
+                <Button type="button" variant="outline" className="mr-auto" disabled={isPickingWorkspaceFolder} onClick={() => void pickFolderOnDevice()}>
+                  <FolderOpen size={16} />
+                  {isPickingWorkspaceFolder ? workspacePickerCopy.pickingFolder : workspacePickerCopy.pickFolder}
+                </Button>
+              )}
               <Button type="button" variant="ghost" onClick={() => setIsWorkspacePickerOpen(false)}>{workspacePickerCopy.cancel}</Button>
               <Button type="button" disabled={!workspacePickerPath || workspaceDirectoriesQuery.isLoading} onClick={selectWorkspacePickerPath}>
                 <Folder size={16} />
@@ -6466,6 +6519,24 @@ function mcpServerSummary(server: MCPServer) {
     return [server.command, ...(Array.isArray(server.args) ? server.args : [])].filter(Boolean).join(" ")
   }
   return server.url || ""
+}
+
+function normalizeConnectorType(value: unknown): ConnectorTypeInfo | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const id = stringFromUnknown(value.id)
+  if (!id) {
+    return null
+  }
+  const label = isRecord(value.label) ? value.label : {}
+  return {
+    id,
+    label: { zh: stringFromUnknown(label.zh) || id, en: stringFromUnknown(label.en) || id },
+    auto_connect: value.auto_connect === true,
+    creatable: value.creatable !== false,
+    capabilities: stringArrayFromUnknown(value.capabilities),
+  }
 }
 
 function normalizeConnectorDevice(value: unknown): ConnectorDevice | null {
@@ -8665,6 +8736,9 @@ const zhWorkspacePickerCopy = {
   empty: "该文件夹中没有子文件夹",
   cancel: "取消",
   selectCurrent: "选择当前文件夹",
+  pickFolder: "浏览本机文件夹…",
+  pickingFolder: "等待文件夹窗口",
+  pickFolderFailed: "打开文件夹窗口失败",
 }
 
 const enWorkspacePickerCopy: typeof zhWorkspacePickerCopy = {
@@ -8677,6 +8751,9 @@ const enWorkspacePickerCopy: typeof zhWorkspacePickerCopy = {
   empty: "No subfolders in this folder",
   cancel: "Cancel",
   selectCurrent: "Select current folder",
+  pickFolder: "Browse this computer…",
+  pickingFolder: "Waiting for the folder window",
+  pickFolderFailed: "Could not open the folder window",
 }
 
 const zhTaskChangeCopy = {

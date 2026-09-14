@@ -3116,6 +3116,16 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@velocelab/device-local@workspace:packages/device-local":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/device-local@workspace:packages/device-local"
+  dependencies:
+    "@velocelab/connector": "workspace:*"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/file@workspace:*, @velocelab/file@workspace:packages/file":
   version: 0.0.0-use.local
   resolution: "@velocelab/file@workspace:packages/file"
