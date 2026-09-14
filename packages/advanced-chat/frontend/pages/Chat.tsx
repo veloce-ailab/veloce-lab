@@ -724,7 +724,10 @@ export default function Chat() {
 
   const { data: agents = [], isFetched: agentsFetched } = useQuery<ChatAgent[]>({
     queryKey: agentsQueryKey,
-    enabled: false,
+    // This used to be disabled, so the picker stayed empty unless some other
+    // page happened to load the list first — "选择代理" showed nothing, and the
+    // default agent could not be chosen at all.
+    enabled: isAdvanced,
     queryFn: async () => {
       const res = await api.get("/user/advanced-chat/agents")
       return Array.isArray(res.data)
@@ -1014,6 +1017,15 @@ export default function Chat() {
     const agentID = currentSession?.agent_id || defaultAgentID
     return agents.find((agent) => agent.id === agentID)
   }, [currentSession?.agent_id, agents, isAdvanced])
+  /**
+   * The default agent is stored under the name the Go implementation gave it
+   * ("Default"), which says nothing in a Chinese UI. Show the translated name
+   * until the user renames it, then show their name.
+   */
+  const agentDisplayName = (agent: ChatAgent) =>
+    agent.id === defaultAgentID && agent.name === "Default"
+      ? t("chat.defaultAgent")
+      : agent.name || agent.id
   const activeRunMode: ChatRunMode = isAdvanced && assistantModeEnabled ? currentSession?.run_mode || "chat" : "chat"
   const activeRun = isAdvanced ? currentSession?.latest_run : undefined
   const isActiveRunRunning = isRunActive(activeRun)
@@ -3176,7 +3188,7 @@ export default function Chat() {
     if (!isAdvanced || activeRunMode === "agent_group") {
       return null
     }
-    const label = selectedAgent?.name || copy.selectAgent
+    const label = selectedAgent ? agentDisplayName(selectedAgent) : copy.selectAgent
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -3193,7 +3205,7 @@ export default function Chat() {
             <DropdownMenuRadioGroup value={currentSession?.agent_id || defaultAgentID} onValueChange={setSessionAgent}>
               {agents.map((agent) => (
                 <DropdownMenuRadioItem key={agent.id} value={agent.id} className="min-h-9">
-                  <span className="truncate">{agent.name || agent.id}</span>
+                  <span className="truncate">{agentDisplayName(agent)}</span>
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
@@ -3964,7 +3976,7 @@ export default function Chat() {
                                 onClick={() => setSessionAgent(agent.id)}
                               >
                                 <span className="flex size-5 items-center justify-center rounded-lg bg-primary/10 text-primary"><Bot size={13} /></span>
-                                <span className="max-w-32 truncate text-sm">{agent.name || agent.id}</span>
+                                <span className="max-w-32 truncate text-sm">{agentDisplayName(agent)}</span>
                               </Button>
                             )
                           })}
