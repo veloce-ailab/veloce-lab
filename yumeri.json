@@ -36,13 +36,27 @@
     "@velocelab/user": {},
     "@velocelab/model-catalog": {},
     "@velocelab/adapters": {},
+    "@velocelab/adapter-claude": {},
+    "@velocelab/adapter-dashscope": {},
+    "@velocelab/adapter-deepseek": {},
+    "@velocelab/adapter-gemini": {},
+    "@velocelab/adapter-kling": {},
+    "@velocelab/adapter-midjourney": {},
+    "@velocelab/adapter-moonshot": {},
+    "@velocelab/adapter-openai": {},
+    "@velocelab/adapter-openai-compatible": {},
+    "@velocelab/adapter-openai-video": {},
+    "@velocelab/adapter-responses": {},
+    "@velocelab/adapter-siliconflow": {},
+    "@velocelab/adapter-xai": {},
+    "@velocelab/adapter-zhipu": {},
     "@velocelab/channel": {
       "contextMessageCount": "12",
       "webhookPayloadMaxBytes": "1048576"
     },
     "@velocelab/ratelimit": {
-      "requestsPerMinute": "60",
-      "burst": "10"
+      "requestsPerMinute": "600",
+      "burst": "100"
     },
     "@velocelab/service": {
       "environment": "development",
@@ -69,6 +83,13 @@
     "@velocelab/file": {
       "root": "./data"
     },
+    "@velocelab/connector": {},
+    "@velocelab/skill": {},
+    "@velocelab/mcp": {},
+    "@velocelab/delivery": {},
+    "@velocelab/uptime": {},
+    "@velocelab/tools": {},
+    "@velocelab/inner-tools": {},
     "@velocelab/audit": {},
     "@velocelab/channel-admin": {}
   }
