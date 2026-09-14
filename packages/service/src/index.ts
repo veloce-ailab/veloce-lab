@@ -5,7 +5,7 @@ import {
 } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { Context, Database, Schema, Session } from "yumeri";
+import { Context, Database, Schema } from "yumeri";
 import bcrypt from "bcryptjs";
 import { User } from "@velocelab/user";
 
@@ -101,7 +101,7 @@ function encodeJson(value: unknown) {
 }
 
 function issueToken(user: User, secret: string) {
-  if (!user.id) throw Error("user is required");
+  if (user.id === undefined) throw Error("user is required");
   const header = encodeJson({ alg: "HS256", typ: "JWT" });
   const payload = encodeJson({
     id: user.id,
@@ -170,153 +170,6 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
   };
   ctx.registerComponent("service", service);
 
-  const authenticate = async (session: Session) => {
-    const user = session.properties.user as User | undefined;
-    if (!user) {
-      session.status = 401;
-      session.respond({ error: "Authorization is required" }, "json");
-      return undefined;
-    }
-    return user;
-  };
-
-  // Model synchronization routes are owned by model-catalog.
-  return;
-/*
-  ctx.route("/api/models/sync/preview").methods("POST").action(async (session) => {
-    const user = await authenticate(session);
-    if (!user?.is_admin) return;
-    const input = (await session.parseRequestBody()) as Record<string, unknown>;
-    const channel = await model.channels.findById(Number(input.channel_id));
-    if (!channel) {
-      session.status = 404;
-      session.respond({ error: "Channel not found" }, "json");
-      return;
-    }
-    const syncPath = String(input.path ?? "/v1/models").trim() || "/v1/models";
-    const response = await fetch(
-      `${channel.base_url.replace(/\/$/, "")}${syncPath.startsWith("/") ? syncPath : `/${syncPath}`}`,
-      {
-        headers: channel.api_key
-          ? { Authorization: `Bearer ${channel.api_key}` }
-          : {},
-      },
-    );
-    const data = (await response.json().catch(() => ({}))) as any;
-    const items = Array.isArray(data.data)
-      ? data.data
-      : Array.isArray(data.models)
-        ? data.models
-        : [];
-    const existing = await model.models.list();
-    session.respond(
-      {
-        channel_id: channel.id,
-        channel_name: channel.name,
-        source: "upstream",
-        models: items.map((item: any) => {
-          const modelName = String(item.id ?? item.name ?? "");
-          return {
-          model_name: modelName,
-          provider: channel.type,
-          exists: existing.some((entry) => entry.model_name === modelName),
-          };
-        }),
-      },
-      "json",
-    );
-  });
-  ctx.route("/api/models/sync/preview/browser").methods("POST").action(async (session) => {
-    const user = await authenticate(session);
-    if (!user?.is_admin) return;
-    const input = (await session.parseRequestBody()) as Record<string, unknown>;
-    const payload = (input.payload ?? {}) as any;
-    const items = Array.isArray(payload.data)
-      ? payload.data
-      : Array.isArray(payload.models)
-        ? payload.models
-        : Array.isArray(payload)
-          ? payload
-          : [];
-    const channel = await model.channels.findById(Number(input.channel_id));
-    session.respond({
-      channel_id: channel?.id ?? Number(input.channel_id),
-      channel_name: channel?.name ?? "",
-      source: String(input.source ?? "browser"),
-      models: items.map((item: any) => ({
-        model_name: String(item.id ?? item.name ?? item.model_name ?? ""),
-        provider: channel?.type ?? "",
-        exists: false,
-      })),
-    }, "json");
-  });
-  ctx.route("/api/models/sync/apply").methods("POST").action(async (session) => {
-    const user = await authenticate(session);
-    if (!user?.is_admin) return;
-    const input = (await session.parseRequestBody()) as Record<string, unknown>;
-    const channelId = Number(input.channel_id);
-    const selected = Array.isArray(input.models) ? input.models : [];
-    let created = 0;
-    let updated = 0;
-    for (const value of selected as any[]) {
-      const modelName = String(value.model_name ?? value.id ?? "").trim();
-      if (!modelName) continue;
-      let catalogModel = await model.models.findByName(modelName);
-      if (!catalogModel) {
-        catalogModel = await model.models.create({
-          model_name: modelName,
-          provider: String(value.provider ?? ""),
-          provider_icon_url: String(value.provider_icon_url ?? ""),
-          quota_type: 0,
-          input_price: String(value.input_price ?? "0"),
-          output_price: String(value.output_price ?? "0"),
-          cached_input_price: "0",
-          cache_write_input_price: "0",
-          cache_write_1h_input_price: "0",
-          image_input_price: "0",
-          image_output_price: "0",
-          audio_input_price: "0",
-          audio_output_price: "0",
-          input_price_tiers: "[]",
-          output_price_tiers: "[]",
-          cached_input_price_tiers: "[]",
-          cache_write_input_price_tiers: "[]",
-          cache_write_1h_input_price_tiers: "[]",
-          image_input_price_tiers: "[]",
-          image_output_price_tiers: "[]",
-          audio_input_price_tiers: "[]",
-          audio_output_price_tiers: "[]",
-          video_billing_config: "{}",
-          enabled: true,
-        } as any);
-        created++;
-      }
-      const existing = await db.selectOne("model_configs", {
-        channel_id: channelId,
-        model_id: catalogModel.id,
-      });
-      const data = {
-        channel_id: channelId,
-        model_id: catalogModel.id,
-        upstream_model_name: String(value.upstream_model_name ?? modelName),
-        input_price: String(value.input_price ?? catalogModel.input_price ?? "0"),
-        output_price: String(value.output_price ?? catalogModel.output_price ?? "0"),
-        enabled: value.enabled !== false,
-        updated_at: new Date().toISOString(),
-      } as any;
-      if (existing) {
-        await db.update("model_configs", { id: existing.id }, data);
-        updated++;
-      } else {
-        await db.create("model_configs", {
-          ...data,
-          created_at: new Date().toISOString(),
-        });
-      }
-    }
-    session.respond({
-      results: [{ channel_id: channelId, source: "upstream", created, updated }],
-    }, "json");
-  });
-*/
+  // Model list sync is implemented in `@velocelab/channel-admin` (`/api/models/sync/*`),
+  // next to the channel bindings it writes.
 }
