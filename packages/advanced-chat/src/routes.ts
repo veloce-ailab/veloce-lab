@@ -82,7 +82,7 @@ export function registerAdvancedChatRoutes(
   const terminalDevice = async (session: Session, value: unknown) => {
     const current = await user(session);
     const deviceId = String(value ?? "").trim();
-    if (!current?.id || !deviceId) return undefined;
+    if (current?.id === undefined || !deviceId) return undefined;
     const device: any = await db.selectOne("advanced_chat_connector_devices", {
       id: deviceId,
       user_id: current.id,
@@ -255,7 +255,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(
           (await service.listAgents(current.id)).map(agent),
           "json",
@@ -266,7 +266,7 @@ export function registerAdvancedChatRoutes(
     .methods("POST")
     .action(async (session) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const input = await body(session);
       const value = await service.createAgent(current.id, {
         name: String(input.name ?? ""),
@@ -285,7 +285,7 @@ export function registerAdvancedChatRoutes(
     .methods("POST")
     .action(async (session) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const input = await body(session);
       const requirements = String(input.requirements ?? "").trim();
       const sourceId = String(input.source_agent_id ?? "");
@@ -364,7 +364,7 @@ export function registerAdvancedChatRoutes(
     .methods("DELETE")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (current?.id) {
+      if (current?.id !== undefined) {
         await service.deleteAgent(current.id, id);
         session.respond({ success: true }, "json");
       }
@@ -374,7 +374,7 @@ export function registerAdvancedChatRoutes(
     .methods("PUT")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const input = await body(session);
       const value = await service.updateAgent(current.id, id, {
         name: String(input.name ?? ""),
@@ -397,7 +397,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(await service.listSessions(current.id), "json");
     });
   ctx
@@ -405,7 +405,7 @@ export function registerAdvancedChatRoutes(
     .methods("POST")
     .action(async (session) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const input = await body(session);
       const value = await service.createSession(current.id, {
         agentId:
@@ -423,7 +423,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const value = await service.getSession(current.id, id);
       if (!value) {
         session.status = 404;
@@ -435,7 +435,7 @@ export function registerAdvancedChatRoutes(
     .methods("DELETE")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(
           { success: await service.deleteSession(current.id, id) },
           "json",
@@ -446,7 +446,7 @@ export function registerAdvancedChatRoutes(
     .methods("PUT")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const input = await body(session);
       session.respond(
         await service.updateSession(current.id, id, {
@@ -464,7 +464,7 @@ export function registerAdvancedChatRoutes(
     .methods("PUT")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(
           await service.updateSession(current.id, id, {
             folderId: String((await body(session)).folder_id ?? ""),
@@ -477,7 +477,7 @@ export function registerAdvancedChatRoutes(
     .methods("POST")
     .action(async (request, _params, id) => {
       const current = await user(request);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const currentSession = await service.getSession(current.id, id);
       if (!currentSession) {
         request.status = 404;
@@ -519,7 +519,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(await service.listSessionTasks(current.id, id), "json");
     });
   ctx
@@ -527,7 +527,7 @@ export function registerAdvancedChatRoutes(
     .methods("POST")
     .action(async (session, _params, sessionId) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const owned = await service.getSession(current.id, sessionId);
       if (!owned) {
         session.status = 404;
@@ -560,7 +560,7 @@ export function registerAdvancedChatRoutes(
     .methods("PUT")
     .action(async (session, _params, sessionId, taskId) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const task = await db.selectOne("advanced_chat_session_tasks", {
         id: taskId,
         session_id: sessionId,
@@ -602,7 +602,7 @@ export function registerAdvancedChatRoutes(
     .methods("DELETE")
     .action(async (session, _params, sessionId, taskId) => {
       const current = await user(session);
-      if (current?.id) {
+      if (current?.id !== undefined) {
         await db.remove("advanced_chat_session_tasks", {
           id: taskId,
           session_id: sessionId,
@@ -616,7 +616,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(await service.listSessionFolders(current.id), "json");
     });
   ctx
@@ -624,7 +624,7 @@ export function registerAdvancedChatRoutes(
     .methods("POST")
     .action(async (session) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       session.status = 201;
       session.respond(
         await service.createSessionFolder(
@@ -639,7 +639,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(await service.getUserSettings(current.id), "json");
     });
   ctx
@@ -647,7 +647,7 @@ export function registerAdvancedChatRoutes(
     .methods("PUT")
     .action(async (session) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(
           await service.updateUserSettings(current.id, await body(session)),
           "json",
@@ -658,7 +658,7 @@ export function registerAdvancedChatRoutes(
     .methods("POST")
     .action(async (session) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const input = await body(session);
       const messages = Array.isArray(input.messages)
         ? input.messages.map((item: any) => ({
@@ -748,7 +748,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(
           (await service.getRun(current.id, id)) ?? { error: "Run not found" },
           "json",
@@ -759,7 +759,7 @@ export function registerAdvancedChatRoutes(
     .methods("POST")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(
           (await service.stopRun(current.id, id)) ?? { error: "Run not found" },
           "json",
@@ -770,7 +770,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session, params, id) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(
           await service.listRunEvents(
             current.id,
@@ -785,7 +785,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const run = await db.selectOne("advanced_chat_runs", {
         id,
         user_id: current.id,
@@ -983,7 +983,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session) => {
       const current = await user(session);
-      if (!current?.id) return;
+      if (current?.id === undefined) return;
       const runs: any[] = await db.select("advanced_chat_runs", {
         user_id: current.id,
       });
@@ -1017,7 +1017,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (session, _params, id) => {
       const current = await user(session);
-      if (current?.id)
+      if (current?.id !== undefined)
         session.respond(
           await service.listPendingConnectorTasks(current.id, id),
           "json",
@@ -1053,7 +1053,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (s) => {
       const u = await user(s);
-      if (u?.id) {
+      if (u?.id !== undefined) {
         const groups = await db.select("advanced_chat_chat_groups", {
           user_id: u.id,
         });
@@ -1070,7 +1070,7 @@ export function registerAdvancedChatRoutes(
     .methods("POST")
     .action(async (s) => {
       const u = await user(s);
-      if (!u?.id) return;
+      if (u?.id === undefined) return;
       const input = await body(s);
       const now = new Date().toISOString();
       const id = randomUUID();
@@ -1120,7 +1120,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (s, _p, id) => {
       const u = await user(s);
-      const value = u?.id ? await hydrateGroup(u.id, id) : undefined;
+      const value = u?.id !== undefined ? await hydrateGroup(u.id, id) : undefined;
       if (!value) {
         s.status = 404;
         s.respond({ error: "Chat group not found" }, "json");
@@ -1131,7 +1131,7 @@ export function registerAdvancedChatRoutes(
     .methods("PUT")
     .action(async (s, _p, id) => {
       const u = await user(s);
-      if (!u?.id) return;
+      if (u?.id === undefined) return;
       if (!(await groupFor(u.id, id))) {
         s.status = 404;
         s.respond({ error: "Chat group not found" }, "json");
@@ -1190,7 +1190,7 @@ export function registerAdvancedChatRoutes(
     .methods("DELETE")
     .action(async (s, _p, id) => {
       const u = await user(s);
-      if (!u?.id) return;
+      if (u?.id === undefined) return;
       if (!(await groupFor(u.id, id))) {
         s.status = 404;
         s.respond({ error: "Chat group not found" }, "json");
@@ -1216,7 +1216,7 @@ export function registerAdvancedChatRoutes(
     .methods("POST")
     .action(async (s, _p, id) => {
       const u = await user(s);
-      if (!u?.id || !(await groupFor(u.id, id))) {
+      if (u?.id === undefined || !(await groupFor(u.id, id))) {
         s.status = 404;
         s.respond({ error: "Chat group not found" }, "json");
         return;
@@ -1306,7 +1306,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (s, _p, id) => {
       const u = await user(s);
-      if (u?.id && (await groupFor(u.id, id)))
+      if (u?.id !== undefined && (await groupFor(u.id, id)))
         s.respond(
           await db.select("advanced_chat_private_conversations", {
             group_id: id,
@@ -1322,7 +1322,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (s, _p, id, conversationId) => {
       const u = await user(s);
-      if (!u?.id) return;
+      if (u?.id === undefined) return;
       const conversation = await db.selectOne(
         "advanced_chat_private_conversations",
         { id: conversationId, group_id: id, user_id: u.id },
@@ -1343,7 +1343,7 @@ export function registerAdvancedChatRoutes(
         .methods("POST")
         .action(async (s, _p, groupId, conversationId) => {
           const u = await user(s);
-          if (!u?.id) return;
+          if (u?.id === undefined) return;
           const conversation: any = await db.selectOne(
             "advanced_chat_private_conversations",
             { id: conversationId, group_id: groupId, user_id: u.id },
@@ -1387,7 +1387,7 @@ export function registerAdvancedChatRoutes(
     .methods("GET")
     .action(async (s, _p, id, memberId) => {
       const u = await user(s);
-      if (!u?.id) return;
+      if (u?.id === undefined) return;
       const member = await db.selectOne("advanced_chat_chat_group_members", {
         id: memberId,
         group_id: id,

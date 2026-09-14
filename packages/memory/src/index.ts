@@ -270,13 +270,13 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
     },
   });
   const user = (s: Session) =>
-    Number((s.properties.user as { id?: number } | undefined)?.id ?? 0);
+    (s.properties.user as { id?: number } | undefined)?.id;
   ctx
     .route("/api/user/advanced-chat/memories")
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
-      if (id)
+      if (id !== undefined)
         s.respond(
           {
             memories: await db.select("advanced_chat_memory_documents", {
@@ -291,7 +291,7 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
     .methods("GET")
     .action(async (s, _p, memoryId) => {
       const uid = user(s);
-      const row = uid
+      const row = uid !== undefined
         ? await db.selectOne("advanced_chat_memory_documents", {
             id: memoryId,
             user_id: uid,
@@ -316,7 +316,7 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
     });
   const save = async (s: Session, memoryId?: string) => {
     const uid = user(s);
-    if (!uid) return;
+    if (uid === undefined) return;
     const input = (await s.parseRequestBody()) as any;
     const kind = String(input.kind ?? "facts");
     if (!kinds.has(kind)) {
@@ -405,7 +405,7 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
     .methods("PATCH")
     .action(async (s, _p, id) => {
       const uid = user(s);
-      if (!uid) return;
+      if (uid === undefined) return;
       const existing: any = await db.selectOne(
         "advanced_chat_memory_documents",
         { id, user_id: uid },
@@ -457,7 +457,7 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
     .methods("DELETE")
     .action(async (s, _p, id) => {
       const uid = user(s);
-      const row = uid
+      const row = uid !== undefined
         ? await db.selectOne("advanced_chat_memory_documents", {
             id,
             user_id: uid,
@@ -465,7 +465,7 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
         : undefined;
       if (row?.storage_path)
         await unlink(String(row.storage_path)).catch(() => undefined);
-      if (uid)
+      if (uid !== undefined)
         await db.remove("advanced_chat_memory_documents", { id, user_id: uid });
       s.respond({ success: true }, "json");
     });
@@ -497,7 +497,7 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
     .methods("GET")
     .action(async (s, _p, groupId, memoryId) => {
       const uid = user(s);
-      const row = uid ? await groupMemory(uid, groupId, memoryId) : undefined;
+      const row = uid !== undefined ? await groupMemory(uid, groupId, memoryId) : undefined;
       if (!row) {
         s.status = 404;
         s.respond({ error: "Memory not found" }, "json");
@@ -510,7 +510,7 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
     });
   const saveGroup = async (s: Session, groupId: string, memoryId?: string) => {
     const uid = user(s);
-    if (!uid || !(await ownedGroup(uid, groupId))) {
+    if (uid === undefined || !(await ownedGroup(uid, groupId))) {
       s.status = 404;
       s.respond({ error: "Chat group not found" }, "json");
       return;
@@ -579,10 +579,10 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
     .methods("DELETE")
     .action(async (s, _p, groupId, memoryId) => {
       const uid = user(s);
-      const row = uid ? await groupMemory(uid, groupId, memoryId) : undefined;
+      const row = uid !== undefined ? await groupMemory(uid, groupId, memoryId) : undefined;
       if (row?.storage_path)
         await unlink(String(row.storage_path)).catch(() => undefined);
-      if (uid)
+      if (uid !== undefined)
         await db.remove("advanced_chat_memory_documents", {
           id: memoryId,
           user_id: uid,

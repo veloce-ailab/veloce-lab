@@ -145,14 +145,14 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
-      if (id) s.respond(await service.list(id), "json");
+      if (id !== undefined) s.respond(await service.list(id), "json");
     });
   ctx
     .route("/api/user/advanced-chat/knowledge-bases")
     .methods("POST")
     .action(async (s) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       s.status = 201;
       s.respond(
         await service.create(id, (await s.parseRequestBody()) as any),
@@ -164,14 +164,14 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, baseId) => {
       const id = user(s);
-      if (id) s.respond(await service.documents(id, baseId), "json");
+      if (id !== undefined) s.respond(await service.documents(id, baseId), "json");
     });
   ctx
     .route("/api/user/advanced-chat/knowledge-bases/:id")
     .methods("PUT")
     .action(async (s, _p, baseId) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       await db.update(
         "advanced_chat_knowledge_bases",
@@ -195,7 +195,7 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, baseId) => {
       const id = user(s);
-      if (id) {
+      if (id !== undefined) {
         await db.remove("advanced_chat_knowledge_bases", {
           id: baseId,
           user_id: id,
@@ -208,7 +208,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s, _p, baseId) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       const query = String(input.query ?? "").toLowerCase();
       const rows = await service.documents(id, baseId);
@@ -274,7 +274,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s, _p, baseId) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const documents: any[] = await service.documents(id, baseId);
       const base: any = await db.selectOne("advanced_chat_knowledge_bases", {
         id: baseId,
@@ -329,7 +329,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s, _p, communityId) => {
       const userId = user(s);
-      if (!userId) return;
+      if (userId === undefined) return;
       const id = String(communityId ?? "").trim();
       if (!id || id.length > 120) {
         s.status = 400;
@@ -462,7 +462,7 @@ export async function apply(ctx: Context) {
     });
   const createDocument = async (s: Session, baseId: string) => {
     const userId = user(s);
-    if (!userId) return;
+    if (userId === undefined) return;
     const base = await db.selectOne("advanced_chat_knowledge_bases", {
       id: baseId,
       user_id: userId,
@@ -527,7 +527,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, baseId, documentId) => {
       const userId = user(s);
-      const row = userId
+      const row = userId !== undefined
         ? await db.selectOne("advanced_chat_knowledge_documents", {
             id: documentId,
             knowledge_base_id: baseId,
@@ -551,7 +551,7 @@ export async function apply(ctx: Context) {
     .methods("PUT")
     .action(async (s, _p, baseId, documentId) => {
       const userId = user(s);
-      const row = userId
+      const row = userId !== undefined
         ? await db.selectOne("advanced_chat_knowledge_documents", {
             id: documentId,
             knowledge_base_id: baseId,
@@ -607,7 +607,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s, _p, baseId, documentId) => {
       const userId = user(s);
-      const row = userId
+      const row = userId !== undefined
         ? await db.selectOne("advanced_chat_knowledge_documents", {
             id: documentId,
             knowledge_base_id: baseId,
@@ -674,7 +674,7 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, baseId, documentId) => {
       const userId = user(s);
-      const row = userId
+      const row = userId !== undefined
         ? await db.selectOne("advanced_chat_knowledge_documents", {
             id: documentId,
             knowledge_base_id: baseId,

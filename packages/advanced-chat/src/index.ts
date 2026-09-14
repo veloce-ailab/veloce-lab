@@ -458,7 +458,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
     async createConnector(userId, name, remark) {
       if (!adapters) throw Error("upstream adapters are not enabled");
       const trimmedName = name.trim();
-      if (!userId || !trimmedName) throw Error("connector name is required");
+      if (userId === undefined || !trimmedName) throw Error("connector name is required");
       const token = randomBytes(32).toString("base64url");
       const now = new Date().toISOString();
       const device = await db.create("advanced_chat_connector_devices", {
@@ -497,7 +497,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
     },
     async createAgent(userId, input) {
       const name = input.name.trim();
-      if (!userId || !name) throw Error("agent name is required");
+      if (userId === undefined || !name) throw Error("agent name is required");
       const now = new Date().toISOString();
       // `id` is a NOT NULL primary column in the existing schema and the API
       // identifies agents by `stable_id`, so both carry the same value.
@@ -862,7 +862,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
     async createScheduledTask(userId, input) {
       const name = input.name.trim();
       const scheduleType = input.scheduleType.trim();
-      if (!userId || !name || !scheduleType || !input.message.trim()) {
+      if (userId === undefined || !name || !scheduleType || !input.message.trim()) {
         throw Error("name, schedule type, and message are required");
       }
       if (!["manual", "once", "interval"].includes(scheduleType)) {

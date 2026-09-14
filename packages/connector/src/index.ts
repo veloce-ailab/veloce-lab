@@ -36,7 +36,7 @@ export async function apply(ctx: Context) {
   const db = ctx.component.database as Database;
   await ensureTables(db);
   const uid = (s: Session) =>
-    Number((s.properties.user as { id?: number } | undefined)?.id ?? 0);
+    (s.properties.user as { id?: number } | undefined)?.id;
   const connectorToken = (s: Session) => {
     const value =
       s.client.req?.headers["x-connector-token"] ??
@@ -59,7 +59,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s) => {
       const id = uid(s);
-      if (id)
+      if (id !== undefined)
         s.respond(
           (
             await db.select("advanced_chat_connector_devices", { user_id: id })
@@ -72,7 +72,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s) => {
       const id = uid(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       const token = randomBytes(32).toString("base64url");
       const now = new Date().toISOString();
@@ -103,7 +103,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s, _p, deviceId) => {
       const id = uid(s);
-      if (!id) return;
+      if (id === undefined) return;
       const token = randomBytes(32).toString("base64url");
       const existing = await db.selectOne("advanced_chat_connector_devices", {
         id: deviceId,
@@ -134,7 +134,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s) => {
       const id = uid(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       const instance = String(input.desktop_instance_id ?? "")
         .trim()
@@ -203,7 +203,7 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, deviceId) => {
       const id = uid(s);
-      if (id) {
+      if (id !== undefined) {
         await db.remove("advanced_chat_connector_devices", {
           id: deviceId,
           user_id: id,
@@ -216,7 +216,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, deviceId) => {
       const id = uid(s);
-      const device = id
+      const device = id !== undefined
         ? await db.selectOne("advanced_chat_connector_devices", {
             id: deviceId,
             user_id: id,
@@ -235,7 +235,7 @@ export async function apply(ctx: Context) {
     .methods("PUT")
     .action(async (s, _p, deviceId) => {
       const id = uid(s);
-      if (!id) return;
+      if (id === undefined) return;
       const existing = await db.selectOne("advanced_chat_connector_devices", {
         id: deviceId,
         user_id: id,
@@ -269,7 +269,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, deviceId) => {
       const id = uid(s);
-      if (id)
+      if (id !== undefined)
         s.respond(
           await db.select("advanced_chat_connector_tasks", {
             device_id: deviceId,
@@ -283,7 +283,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s, _p, deviceId, taskId) => {
       const id = uid(s);
-      const task = id
+      const task = id !== undefined
         ? await db.selectOne("advanced_chat_connector_tasks", {
             id: taskId,
             device_id: deviceId,
@@ -311,7 +311,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, deviceId) => {
       const id = uid(s);
-      if (!id) return;
+      if (id === undefined) return;
       const bindings = await db.select(
         "advanced_chat_connector_credential_bindings",
         { device_id: deviceId, user_id: id },
@@ -336,7 +336,7 @@ export async function apply(ctx: Context) {
     .methods("PUT")
     .action(async (s, _p, deviceId) => {
       const id = uid(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       await db.remove("advanced_chat_connector_credential_bindings", {
         device_id: deviceId,
@@ -496,7 +496,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s) => {
       const id = uid(s);
-      if (id)
+      if (id !== undefined)
         s.respond(
           await db.select("advanced_chat_connector_credentials", {
             user_id: id,
@@ -509,7 +509,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s) => {
       const id = uid(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       const now = new Date().toISOString();
       const row = await db.create("advanced_chat_connector_credentials", {
@@ -530,7 +530,7 @@ export async function apply(ctx: Context) {
     .methods("PUT")
     .action(async (s, _p, credentialId) => {
       const id = uid(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       const existing = await db.selectOne(
         "advanced_chat_connector_credentials",
@@ -563,7 +563,7 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, credentialId) => {
       const id = uid(s);
-      if (id) {
+      if (id !== undefined) {
         await db.remove("advanced_chat_connector_credential_bindings", {
           credential_id: credentialId,
           user_id: id,
@@ -580,7 +580,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, taskId) => {
       const id = uid(s);
-      const task = id
+      const task = id !== undefined
         ? await db.selectOne("advanced_chat_connector_tasks", {
             id: taskId,
             user_id: id,
@@ -598,7 +598,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s, _p, taskId) => {
       const id = uid(s);
-      if (!id) return;
+      if (id === undefined) return;
       const task: any = await db.selectOne("advanced_chat_connector_tasks", {
         id: taskId,
         user_id: id,
@@ -634,7 +634,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, deviceId) => {
       const id = uid(s);
-      if (!id) return;
+      if (id === undefined) return;
       try {
         s.respond(
           await (ctx.component.connector as ConnectorService).execute(
@@ -657,7 +657,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s, _p, deviceId) => {
       const id = uid(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       try {
         s.respond(

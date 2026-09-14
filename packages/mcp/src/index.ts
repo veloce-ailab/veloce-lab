@@ -175,20 +175,20 @@ export async function apply(ctx: Context) {
       throw Error("MCP only supports tools/list and tools/call");
     },
   });
-  const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
+  const user = (s: Session) => (s.properties.user as { id?: number } | undefined)?.id;
   ctx
     .route("/api/user/advanced-chat/mcp-servers")
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
-      if (id) s.respond(await service.list(id), "json");
+      if (id !== undefined) s.respond(await service.list(id), "json");
     });
   ctx
     .route("/api/user/advanced-chat/mcp-servers")
     .methods("PUT")
     .action(async (s) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       const rows = Array.isArray(input.servers) ? input.servers : [];
       for (const row of rows) {
@@ -225,7 +225,7 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, serverId) => {
       const id = user(s);
-      if (id) {
+      if (id !== undefined) {
         await db.remove("advanced_chat_mcp_servers", {
           id: serverId,
           user_id: id,

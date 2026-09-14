@@ -30,7 +30,14 @@ export interface UserService {
   update(id: number, data: Partial<User>): Promise<User | undefined>;
 }
 
-const guestUser = { id: 0, is_admin: false } as User;
+/**
+ * The session user when `@velocelab/auth` is not enabled: the deployment has no
+ * accounts to resolve, so every request runs as this built-in default user. It
+ * keeps `id: 0` — outside the range of any real row, so its data stays separate
+ * — and it administers the deployment, because otherwise nothing that requires
+ * an administrator (channels, models, providers) could be configured at all.
+ */
+const defaultUser = { id: 0, is_admin: true } as User;
 declare module "yumeri" {
   interface Components {
     user: UserService;
@@ -119,9 +126,9 @@ export async function apply(ctx: Context) {
       const raw = session.client.req?.headers.cookie ?? "";
       const match = String(raw).match(/(?:^|;\s*)userid=(\d+)/);
       const id = match ? Number(match[1]) : 0;
-      if (!id) return ctx.component.auth ? undefined : guestUser;
+      if (!id) return ctx.component.auth ? undefined : defaultUser;
       const user = await users.findById(id);
-      return user ?? (ctx.component.auth ? undefined : guestUser);
+      return user ?? (ctx.component.auth ? undefined : defaultUser);
     },
   };
   ctx.registerComponent("user", service);

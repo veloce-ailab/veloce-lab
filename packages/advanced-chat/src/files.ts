@@ -57,7 +57,7 @@ export function registerChatFileRoutes(
   files: FileService,
 ) {
   const user = (session: Session) =>
-    Number((session.properties.user as any)?.id ?? 0);
+    (session.properties.user as { id?: number } | undefined)?.id;
   const response = (row: any) => ({
     id: row.id,
     name: row.name,
@@ -74,7 +74,7 @@ export function registerChatFileRoutes(
     .methods("GET")
     .action(async (session) => {
       const id = user(session);
-      if (id)
+      if (id !== undefined)
         session.respond(
           {
             files: (
@@ -89,7 +89,7 @@ export function registerChatFileRoutes(
     .methods("POST")
     .action(async (session) => {
       const id = user(session);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await session.parseRequestBody()) as any;
       const raw = String(input.data ?? input.base64 ?? "").trim();
       if (!raw) {
@@ -149,7 +149,7 @@ export function registerChatFileRoutes(
     });
   const load = async (session: Session, fileId: string) => {
     const id = user(session);
-    const row = id
+    const row = id !== undefined
       ? await db.selectOne("advanced_chat_files", { id: fileId, user_id: id })
       : undefined;
     if (!row) {

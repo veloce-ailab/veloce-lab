@@ -371,3 +371,49 @@ console.log(r.lastInsertRowid, r.lastInsertRowid===undefined);"
 | `node .dsh-tmp/nav-path-check.mjs` | 8 条断言通过，`/chat/agent-groups/*` → `/chat/agent-groups` |
 
 开发模式（`yarn dev`）在本会话的沙箱内无法验证：`@hirarijs/loader-ts` 依赖 esbuild，而沙箱禁止 esbuild 启动它的 service 子进程（`spawn EPERM`，与 `yarn workspaces` 同一处边界）。生产模式走 `dist/`，不需要 esbuild，因此以上验证是在生产模式下取得的。**正在 3000 端口上的那个进程是旧配置**（其 manifest 只注册了 10 个插件前端），需要重启才能加载新配置。
+
+## 8. 未开 auth 时的默认用户（id 0）
+
+### 8.1 默认用户不是管理员
+
+`user` 插件在 `@velocelab/auth` 未启用时把每个请求都当成内置的默认用户，但那个对象是 `{ id: 0, is_admin: false }`。而全仓库的管理员判定都是 `session.properties.user?.is_admin`，于是所有管理员端点（`channel-admin` 的 12 条、`model-catalog`、`uptime`、`service`）在未开 auth 时一律走 `if (!admin(session)) return;`：**返回 200 空 body**。
+
+前端拿到空 body 后解析失败（不是 `[]`，是"没有响应体"），`/api/channel-adapters` 的类型集合为空，`providerTypes ∩ ∅ = ∅`，于是"上级渠道类型"下拉框是空的 —— 启用适配器插件是必要条件，但不充分。
+
+改为 `defaultUser = { id: 0, is_admin: true }`（同时把 `guestUser` 改名为 `defaultUser`，并写明它为什么是管理员：否则渠道/模型/供应商这些必须由管理员配置的东西根本无法配置）。`id: 0` 落在任何真实行之外（SQLite 自增从 1 开始），默认用户的数据天然隔离。
+
+### 8.2 `id: 0` 被全仓库的 `if (!id)` 当成"没有用户"
+
+默认用户被修成管理员后，管理员端点通了（`/api/channel-adapters` 返回 26 个类型），但**用户自己的端点全部返回 200 空 body**：`/api/user/advanced-chat/{sessions,agents,memories,workspaces,devices,skills,mcp-servers,chat-groups,scheduled-tasks,deliveries}`、`/api/user/message-channels` 等，一个不剩。
+
+原因是各包的会话用户取值helper把"没有会话用户"和"默认用户 id 0"混成了同一个值：
+
+| 形状 | 文件 | 问题 |
+| --- | --- | --- |
+| `Number((s.properties.user as any)?.id ?? 0)` | connector, memory, delivery, skill, mcp, scheduler, files.ts | 没有用户时返回 `0`，与默认用户无法区分 |
+| `(s.properties.user as any)?.id as number \| undefined` | knowledge, workspace | 类型已是 `number \| undefined`，但守卫仍用真值判断 |
+| `session.properties.user as {...} \| undefined`（对象） | advanced-chat/routes.ts, channel | 守卫 `if (!current?.id) return;` / `if (current?.id)` 用真值判断 |
+
+统一改成"**判断有无用户**，而不是判断 id 是否为真"：
+
+- 数值helper一律收敛为 `(s.properties.user as { id?: number } | undefined)?.id`（`number | undefined`），与 knowledge/workspace 原有写法一致；
+- 守卫改为 `if (id === undefined) return;` / `if (current?.id === undefined) return;` / `if (current?.id !== undefined)`，三元条件同样显式比较（`const row = id !== undefined ? await ... : undefined`，保持分支顺序不变）；
+- `advanced-chat` 的 `createAgent/createConnector/createScheduledTask` 里的 `if (!userId || ...)` 也一并改掉 —— 否则默认用户建智能体会得到 "agent name is required" 这种误导性报错；
+- 保留 `if (!id || id.length > 120)`（knowledge/skill 的社区 id 是字符串，空串本就非法）、`assertSafeId`（memory 的 id 是路径片段）以及 `/api/user/*` cookie 解析里的 `if (!id)`（无 cookie 与 `userid=0` 都应落到默认用户）。
+
+共 130 处（`.dsh-tmp/fix-user-id-guards.ps1`，逐条精确字面量替换 + 计数；其余 4 处单独修改）。`ratelimit.allowUserChannel` 的 `!userId` 未改：它目前没有任何调用方，改动会引入"匿名请求消耗默认用户配额"的新语义，留待有调用方时再定。
+
+### 8.3 验证（未开 auth，无 cookie，端口 3311，生产模式）
+
+| 检查 | 结果 |
+| --- | --- |
+| `GET /api/user/me` | `{"id":0,"is_admin":true}` |
+| `GET /api/channel-adapters` | 200，26 个适配器类型（此前空 body） |
+| `GET /api/channels` / `/api/channel-usage` | `[]` / `{"upstream_channels":[]}`（此前空 body） |
+| 22 个用户/管理端点全量探测 | **22/22 返回数据**（改前：8 个全空，改后仅剩 sessions/agents/chat-groups/settings 为空，补上正向真值守卫后也恢复） |
+| 默认用户写-读-删往返 | `POST /api/user/advanced-chat/agents` → 201 且 `user_id: 0`；`GET` 读回同一条；`DELETE` 后 `[]`（会话同样）——证明 id 0 可写可查，不是只读空集 |
+| 11 个受改包 `tsc -p` | 全部 exit 0 |
+| `sse-contract.mjs` / `persistence-contract.mjs` / `nav-path-check.mjs` | 全部通过 |
+| 路由表同路径同方法重复 | 0 条；跨包重名 0 条 |
+
+**注意**：正在 3000 端口上跑的进程是改动前起的，需要重启才会加载新的 `dist/`。

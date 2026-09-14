@@ -109,13 +109,13 @@ export async function apply(ctx: Context) {
     parameters: { type: "object", properties: {} },
     execute: (_input, context) => service.list(context.userId),
   });
-  const user = (s: Session) => Number((s.properties.user as any)?.id ?? 0);
+  const user = (s: Session) => (s.properties.user as { id?: number } | undefined)?.id;
   ctx
     .route("/api/user/advanced-chat/community/skills/:id/import")
     .methods("POST")
     .action(async (s, _p, communityId) => {
       const userId = user(s);
-      if (!userId) return;
+      if (userId === undefined) return;
       const id = String(communityId ?? "").trim();
       if (!id || id.length > 120) {
         s.status = 400;
@@ -185,14 +185,14 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
-      if (id) s.respond(await service.list(id), "json");
+      if (id !== undefined) s.respond(await service.list(id), "json");
     });
   ctx
     .route("/api/user/advanced-chat/skills")
     .methods("POST")
     .action(async (s) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       const now = new Date().toISOString();
       const row = await db.create("advanced_chat_packaged_skills", {
@@ -221,7 +221,7 @@ export async function apply(ctx: Context) {
     .methods("PUT")
     .action(async (s, _p, skillId) => {
       const id = user(s);
-      if (!id) return;
+      if (id === undefined) return;
       const existing = await db.selectOne("advanced_chat_packaged_skills", {
         id: skillId,
         user_id: id,
@@ -258,7 +258,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, skillId) => {
       const id = user(s);
-      const row: any = id
+      const row: any = id !== undefined
         ? await db.selectOne("advanced_chat_packaged_skills", {
             id: skillId,
             user_id: id,
@@ -283,7 +283,7 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, skillId) => {
       const id = user(s);
-      if (id) {
+      if (id !== undefined) {
         await db.remove("advanced_chat_packaged_skills", {
           id: skillId,
           user_id: id,
@@ -296,7 +296,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
-      if (id)
+      if (id !== undefined)
         s.respond(
           await Promise.all(
             (
@@ -317,7 +317,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, packageId) => {
       const id = user(s);
-      const row = id
+      const row = id !== undefined
         ? await db.selectOne("advanced_chat_skill_packages", {
             id: packageId,
             user_id: id,
@@ -339,7 +339,7 @@ export async function apply(ctx: Context) {
     .methods("GET")
     .action(async (s, _p, packageId) => {
       const id = user(s);
-      const row: any = id
+      const row: any = id !== undefined
         ? await db.selectOne("advanced_chat_skill_packages", {
             id: packageId,
             user_id: id,
@@ -370,7 +370,7 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, packageId) => {
       const id = user(s);
-      if (id) {
+      if (id !== undefined) {
         const row: any = await db.selectOne("advanced_chat_skill_packages", {
           id: packageId,
           user_id: id,
@@ -397,7 +397,7 @@ export async function apply(ctx: Context) {
     .methods("POST")
     .action(async (s) => {
       const id = user(s);
-      if (id)
+      if (id !== undefined)
         s.respond(
           {
             success: true,
