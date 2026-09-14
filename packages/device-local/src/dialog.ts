@@ -1,12 +1,14 @@
 // Opens a folder-selection window on the machine running this instance.
 //
 // There is no portable Node API for this, so the platform's own picker is
-// spawned: a WinForms dialog through PowerShell on Windows, `choose folder` via
-// osascript on macOS, zenity or kdialog on Linux. `DEVICE_LOCAL_PICK_COMMAND`
-// replaces the whole thing with a command that is handed the initial folder as
-// its only argument and prints the chosen folder — which is how a headless
-// server, a container or a test supplies its own picker.
+// spawned: PowerShell and `pick-folder.ps1` on Windows (which shows the modern
+// Explorer-style dialog), `choose folder` via osascript on macOS, zenity or
+// kdialog on Linux. `DEVICE_LOCAL_PICK_COMMAND` replaces the whole thing with a
+// command that is handed the initial folder as its only argument and prints the
+// chosen folder — which is how a headless server, a container or a test supplies
+// its own picker.
 import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
@@ -27,29 +29,19 @@ export interface FolderPickerCommand {
   args: string[];
 }
 
-/** Quotes a value for a single-quoted PowerShell string literal. */
-const powerShellLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
-
 /** Quotes a value for an AppleScript double-quoted string literal. */
 const appleScriptLiteral = (value: string) =>
   `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
-function windowsScript(options: FolderDialogOptions): string {
-  const title = options.title ?? "Select a folder";
-  const lines = [
-    "Add-Type -AssemblyName System.Windows.Forms | Out-Null",
-    "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
-    "$dialog.UseDescriptionForTitle = $true",
-    `$dialog.Description = ${powerShellLiteral(title)}`,
-  ];
-  if (options.initialPath)
-    lines.push(
-      `if (Test-Path -LiteralPath ${powerShellLiteral(options.initialPath)} -PathType Container) { $dialog.SelectedPath = ${powerShellLiteral(options.initialPath)} }`,
-    );
-  lines.push(
-    "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dialog.SelectedPath) }",
-  );
-  return lines.join("; ");
+/**
+ * The picker script shipped with this plugin. It sits at the package root, one
+ * level above both `src/dialog.ts` and its compiled `dist/dialog.js`, so the
+ * same relative lookup works whether the plugin was loaded from source or build.
+ */
+export function windowsPickerScriptPath(): string {
+  const override = (process.env.DEVICE_LOCAL_PICK_SCRIPT ?? "").trim();
+  if (override) return override;
+  return fileURLToPath(new URL("../pick-folder.ps1", import.meta.url));
 }
 
 function macScript(options: FolderDialogOptions): string {
@@ -135,15 +127,22 @@ export function folderPickerCommand(
   if (platform === "win32")
     return {
       // Windows PowerShell rather than pwsh: 5.1 is always present, and -STA is
-      // required or the dialog throws on a multi-threaded apartment thread.
+      // required or the shell dialogs refuse to open on a multi-threaded
+      // apartment thread. The script itself picks the dialog, preferring the
+      // modern IFileOpenDialog over the two older fallbacks.
       command: "powershell.exe",
       args: [
         "-NoProfile",
         "-STA",
         "-ExecutionPolicy",
         "Bypass",
-        "-Command",
-        windowsScript(options),
+        "-File",
+        windowsPickerScriptPath(),
+        "-Title",
+        options.title ?? "Select a folder",
+        ...(options.initialPath
+          ? ["-InitialPath", options.initialPath]
+          : []),
       ],
     };
   if (platform === "darwin")

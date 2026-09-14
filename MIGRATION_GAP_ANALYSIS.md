@@ -666,7 +666,13 @@ export interface ConnectorType {
 
 **它自己消化队列**：聊天运行时创建的任务是直接写表的，而本机既是调度方也是执行方，所以插件每 2 秒扫一次自己的设备、只领 `queued`/`approved` 的任务执行——等价于外部连接器那次长轮询，只是发生在进程内。需要审批的任务（`pending_approval`）不碰，等用户在界面上批准。
 
-**文件夹窗口**：Windows 用 `powershell.exe -STA` 调 WinForms 的 `FolderBrowserDialog`（必须是 STA，否则线程模型不对会抛错），macOS 用 `osascript` 的 `choose folder`，Linux 先试 `zenity` 再退到 `kdialog`。`DEVICE_LOCAL_PICK_COMMAND` 可以整体替换这条命令（把初始目录作为唯一参数传进去、把选中的目录打到 stdout），这是无桌面环境、容器或测试用的自定义选择器；`DEVICE_LOCAL_PICK_TIMEOUT_MS` 调整等待上限（默认 120 秒，超时按 504 报，而不是假装用户取消了）。**退出码 1 且没有输出**才算"用户取消"；其它退出码、被拒绝的 spawn、缺失的 picker 都是真错误——把后者说成"用户取消"会让一个坏掉的环境看起来像用户在犹豫。
+**文件夹窗口**：Windows 走 `pick-folder.ps1` + `pick-folder.cs` 两个随包资产（放在包根目录，`src` 与 `dist` 都能用同一个相对路径找到，不需要构建时拷贝），用 `powershell.exe -STA -File` 调起来，窗口是 **`IFileOpenDialog` + `FOS_PICKFOLDERS`**——也就是资源管理器自己在用的那个"选择文件夹"：导航窗格、面包屑、搜索框、新建文件夹按钮。**不是** WinForms 的 `FolderBrowserDialog`：那是 Windows 95 那代的树形窗口，第一版实现用的就是它，被指出"太老"之后换掉。COM interop 单独放一个 `.cs`，好处是它自己能被编译检查，而不是埋在字符串里。
+
+弹不出新窗口的场合有两层退路，按顺序：`Shell.Application` 的 `BrowseForFolder`（带 `BIF_NEWDIALOGSTYLE`，可缩放、带文本框和新建文件夹），最后才是 WinForms 那个老的。顺序是有讲究的：新窗口不可用，不等于"选文件夹"这件事就该失败。
+
+macOS 用 `osascript` 的 `choose folder`，Linux 先试 `zenity` 再退到 `kdialog`——都是各自平台的原生窗口，不需要换。
+
+`DEVICE_LOCAL_PICK_COMMAND` 可以整体替换这条命令（把初始目录作为唯一参数传进去、把选中的目录打到 stdout），`DEVICE_LOCAL_PICK_SCRIPT` 单独换掉那个 PowerShell 脚本路径，`DEVICE_LOCAL_PICK_TIMEOUT_MS` 调整等待上限（默认 120 秒，超时按 504 报，而不是假装用户取消了）。**退出码 1 且没有输出**才算"用户取消"；其它退出码、被拒绝的 spawn、缺失的 picker 都是真错误（脚本自己也守这条：三层都弹不出来时写 stderr 并 `exit 2`）——把后者说成"用户取消"会让一个坏掉的环境看起来像用户在犹豫。
 
 ### 13.3 前端
 
@@ -683,12 +689,12 @@ export interface ConnectorType {
 
 | 检查 | 结果 |
 | --- | --- |
-| `.dsh-tmp/device-local-unit.mjs`（编译真实源码后直接调用） | **36 项全过**：三个平台各自的窗口命令与参数（含 Windows 必须 `-STA`、只在 OK 时输出）、带空格的覆盖命令切分、结果解释的六种情形（选中/取消/取消但仍打印/超时/缺命令/被拒绝的 spawn/崩溃）、路径规则（相对、工作区内绝对、`..` 越界、无工作区）、目录列举（只列文件夹、缺目录报错）、读写/替换/哈希/条目类型、越界读写被拒 |
+| `.dsh-tmp/device-local-unit.mjs`（编译真实源码后直接调用） | **52 项全过**：三个平台各自的窗口命令与参数（含 Windows 必须 `-STA`、`-File` 指向随包脚本、初始目录按需传入、脚本路径可覆盖）、**新窗口没有被人换回旧的**（`IFileOpenDialog` 的 GUID、`FOS_PICKFOLDERS`、`SIGDN_FILESYSPATH`、取消判定、两层退路的先后、退路使用 `BIF_NEWDIALOGSTYLE`、弹不出来时 `exit 2`、`src`/`dist` 解析到同一个脚本）、带空格的覆盖命令切分、结果解释的七种情形（选中/取消/取消但仍打印/超时/缺命令/被拒绝的 spawn/崩溃）、路径规则（相对、工作区内绝对、`..` 越界、无工作区）、目录列举（只列文件夹、缺目录报错）、读写/替换/哈希/条目类型、越界读写被拒 |
 | `.dsh-tmp/device-local-e2e.mjs`（真服务器 + 真库） | **25 项全过**：类型已发布且标记自动连接、不提供 `run_command`、标签有中英；宿主设备**无需任何人创建**就出现、在线、带本机信息、不下发 token_hash、且只有一个；按设备列目录、只给文件夹、下钻读到指定目录、空目录为空、**不点名设备也落在本机**、缺目录报错；选文件夹的端点会给出答案而不是挂住（本环境不允许 spawn，所以走 502 分支并带上原因）；未知设备 404；空路径从"此电脑"开始 |
 | `.dsh-tmp/device-local-tasks-e2e.mjs`（真服务器 + 真库） | **12 项全过**：`pending_approval` 的任务不会被自动执行；批准之后由设备自己领走并写回状态、开始/结束时间与失败原因；聊天页 git 按钮排的任务确实属于所选设备；`full_access` 的任务不经批准就被执行；探针任务全部清理 |
 | 全包 `tsc` / 三份契约 / 路由影子 / 默认值 / 组件依赖 / 模型分组单测 | 全部通过；172 条路由、无重复、无不可达；组件依赖检查覆盖 51 个包、0 问题 |
 | 数据库 | 设备表只剩本机设备；任务表无残留；`yumeri.json` 端口已还原 3000 |
 
-**本环境无法验证的部分（如实记录）**：这个工作沙箱禁止 Node 子进程带管道 stdio 启动（`spawn EPERM`，`inherit`/`ignore` 同样被拒），所以**真正弹窗**与**真正调用 git** 这两条路径没能在这里跑通。已验证的是"命令怎么构造、结果怎么解释、动作怎么被派发、任务怎么被领走"；`gitStatus`/`gitAction` 的 git 调用本身与 PowerShell 弹窗需要在真实桌面上跑（单元测试里那两段会自动跳过并打印原因）。
+**本环境无法验证的部分（如实记录）**：这个工作沙箱禁止 Node 子进程带管道 stdio 启动（`spawn EPERM`，`inherit`/`ignore` 同样被拒），所以**真正弹出窗口**与**真正调用 git** 这两条路径没能在这里跑通（弹窗那次的 502 回应是 `The folder window could not be opened: spawn EPERM`，说明请求确实走到了 picker 并把原因带回来了）。窗口脚本与 interop 本身做了能做的静态检查：`pick-folder.ps1` 用 PowerShell 自己的 parser 解析通过（350 个 token、0 错误），`pick-folder.cs` 用 Roslyn 编译通过（`VeloceFolderPicker.Pick` 存在）。已验证的是"命令怎么构造、结果怎么解释、动作怎么被派发、任务怎么被领走"；`gitStatus`/`gitAction` 的 git 调用本身与 PowerShell 弹窗需要在真实桌面上跑（单元测试里那两段会自动跳过并打印原因）。
 
 **要生效需要**：在每个包构建之后（`packages/device-local` 是新包，没有 `dist` 就加载不了）重启 3000 端口的服务并强刷页面。
