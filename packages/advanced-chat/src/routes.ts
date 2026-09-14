@@ -718,7 +718,21 @@ export function registerAdvancedChatRoutes(
         disabledToolGroups: list(input.disabled_tool_groups),
       };
       if (!payload.stream) {
-        session.respond(await service.complete(current.id, payload), "json");
+        // A thrown error here escapes to the router, whose error path writes a
+        // second response (`ERR_HTTP_HEADERS_SENT`) and takes the worker down —
+        // so run failures are answered as JSON instead of being raised.
+        try {
+          session.respond(await service.complete(current.id, payload), "json");
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          session.status = /not found/i.test(message)
+            ? 404
+            : /required|not specified|invalid/i.test(message)
+              ? 400
+              : 503;
+          session.respond({ error: message }, "json");
+        }
         return;
       }
       // The client asked for `text/event-stream`, so this route writes the

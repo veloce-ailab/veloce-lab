@@ -526,3 +526,64 @@ useEffect(() => {
 | 三份契约 + 路由表 | 全部通过；169 条路由无同路径同方法重复 |
 
 **要生效需要重启 3000 端口的服务**：后端路由顺序在 `dist/routes.js`，前端已在 `packages/advanced-chat/dist/frontend/advanced-chat.js` 重新构建（用旧包的浏览器建议硬刷新一次）。
+
+## 11. "渠道里有模型，聊天里选不到"：目录端点缺失 + 运行链路四个 bug
+
+现象是渠道页看得到模型，聊天页的模型下拉是空的。查下来不是一个 bug，是一串：模型列表的来源端点根本没实现，而它下游的运行链路还有三个移植错误加一个漏声明的依赖。
+
+### 11.1 模型列表的来源端点不存在
+
+聊天页（以及 Agents、AgentEditor）的模型下拉来自 `GET /api/user/catalog`：
+
+```tsx
+const modelOptions = useMemo(() => uniqueModels(catalog), [catalog])   // 所有渠道模型的并集
+const channelModelOptions = selectedUserChannel ? selectedUserChannel.models : modelOptions
+```
+
+期望的形状是**渠道数组**，每个渠道带它可服务的模型名：`[{id, name, enabled, models, model_icons, video_billing_configs}]`。新后端里这个路径**任何插件都没注册**（全库 `/api/user/*` 路由里只有 message-channels 这类无关端点），所以请求 404，`catalog` 空数组，下拉自然空——而渠道页是直接读 `channels`/`model_configs` 的，所以那边看得到模型。
+
+旧后端在 `old/internal/app/app.go:738` 注册了它，处理函数是 `ChannelAPI.Catalog`（`old/internal/api/admin.go:3938`）：取**启用**的渠道（按名字排序），再取其**启用**的 `model_configs` 所指向的、**启用**的目录模型，汇成去重排序后的模型名集合，并附带 `model_icons`（模型图标）与 `video_billing_configs`。已在 `packages/channel-admin`（与 `channels`/`model_configs` 同包）按此实现，为面向用户的接口（登录即可读，不做管理员门禁）。
+
+两个刻意的取舍：`video_billing_configs` 恒为 `{}`——新库的 `models` 表没有这一列，而视频计费配置属于计费域，本轮明确不动；三个前端都只读 `id`/`name`/`models`，不影响显示。
+
+### 11.2 聊天运行链路上的四个 bug
+
+问出"选不到模型"之后紧接着就会问"为什么发不出去"，所以顺着 `executeRun` 查了一遍，四个都是真问题：
+
+1. **少了 `adapters` 依赖**（致命）。`advanced-chat` 的 `depend = ["database", "dashboard", "file"]`，而代码里 `ctx.component.adapters` 取适配器注册表。加载器只把**声明过的**依赖注入上下文，所以拿到的是 `undefined`，每次运行都在 `adapters.build(...)` 抛 `Cannot read properties of undefined (reading 'build')`。也就是说**聊天从来没有成功发出过一次请求**，只是此前模型列表是空的，没人走到这一步。修法是把它加进 `depend`（`channel-admin` 一直有这一项，是同类的正确写法）。
+2. **按错的列找渠道**。前端发的是 `channel_id: selectedUserChannel?.id`，即**渠道自己的 id**（目录返回的就是它），而后端在 `channels` 上过滤 `row.user_channel_id === userChannelId`——`user_channel_id` 是旧库"上游渠道归属某个用户渠道组"的遗留列，在当前单用户构建里没人写。结果：只要用户在下拉里选了渠道，就一个候选都找不到，直接报"没有渠道提供该模型"。旧后端的权威查询是 `serverChatCandidates`（`old/internal/service/chat_executor.go:267`）：`... WHERE channels.enabled AND model_configs.enabled AND models.enabled AND models.model_name = ?`，钉住渠道时用 `channels.id = ?`。
+3. **按上游别名找模型**。旧查询匹配的是 `models.model_name`（用户在界面上看到、并原样发回来的名字），再把 `upstream_model_name` 作为真正发给上游的模型名；新代码却拿 `upstream_model_name` 去比对请求里的名字。两者相等的常见情况下侥幸能用，一旦某渠道把目录模型映射成别的上游名（sync 的自定义映射、手工改别名）就找不到绑定。
+4. **无候选时挑一个不相关的渠道**。旧代码在没有候选时返回 503 "No available channel for this model"；新代码会在"调用方没钉渠道"时随便挑一个启用渠道发出去，把模型名送到从未听说过它的上游。已按旧行为改为直接报错（错误信息里带模型名和"没有启用的上游渠道提供该模型"）。
+
+顺带把候选排序也按旧查询补上：`priority DESC, weight DESC, id ASC`（旧库的多候选还支持用户渠道组上的轮询/加权轮询，当前构建没有该概念，故选第一个）。
+
+### 11.3 路由抛错会把 worker 打死
+
+测试上述修复时发现：运行失败（例如 session 不存在）时不仅返回 500，**整个服务进程会退出**。原因是框架的错误处理会先写一次响应，`handleRoute` 随后又走一遍 `res.writeHead`，抛出的 `ERR_HTTP_HEADERS_SENT` 没有人接，进程直接死：
+
+```
+[E] core Unhandled error in route execution ... Error: session not found
+Error [ERR_HTTP_HEADERS_SENT]: Cannot write headers after they are sent to the client
+    at handleRoute (node_modules/@yumerijs/core/dist/server.js:134:21)
+```
+
+框架在 `@yumerijs/core`（依赖包，不属本仓库），所以本轮在**本仓库**能守的地方守住：`completions` 的非流式分支原来是 `session.respond(await service.complete(...))`，错误会逃到路由层；现在改为捕获后按语义回 404/400/503 + `{error}`，绝不再抛（流式分支本来就有 `try/catch` 并发 `error` 事件）。集成测试里专门加了一条"跑完各条失败路径后服务仍活着"的断言。
+
+**仍待处理**：其它路由只要抛出未捕获的错误，同样会打死 worker（这是框架层的问题，修在 `@yumerijs/core` 或加一个兜底中间件）。本轮没有擅自新增插件，留待确认。
+
+### 11.4 新工具：组件依赖检查
+
+`adapters` 这类"少声明一个依赖 → 运行期 undefined → 在很远的地方崩"的问题，静态看一眼依赖列表就能发现，于是加了 `.dsh-tmp/component-dep-check.mjs`：比对每个包 `ctx.component.X`/`ctx.service.X` 用到的名字与 `depend`/`provide` 声明，顺带查出声明了却无人提供的名字（拼写错误）。当前 50 个包、31 个被提供的名字、0 问题；`user` 里 `ctx.component.auth` 是**故意的**存在性探测（未声明即为 undefined，恰好表示 auth 插件未安装），作为已复核项写在脚本里。第一版把 `guide` 注释里提到的 `ctx.component.name` 当成违规报了——又是"正则扫源码不看注释"的老问题，现已先剥离注释再扫。
+
+### 11.5 验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `.dsh-tmp/user-catalog-e2e.mjs`（真服务器 + 真库） | **8 项全过**：200、数组、每个启用渠道一项、模型名与其启用绑定一致且有序、图标只覆盖本渠道模型、并集非空。真实返回：`[{"id":1,"name":"111","models":["deepseek-v4.1-flash"],"model_icons":{...deepseek.svg}}]` |
+| `.dsh-tmp/chat-run-e2e.mjs`（真服务器 + 真库 + 本地假上游） | **20 项全过**：不钉渠道可发；钉目录给出的渠道 id 可发；绑定别名与目录名不同时仍按目录名解析、且上游收到的是别名；上游收到 `Bearer secret`；钉错渠道被拒且不多发请求；未绑定模型被拒；**失败路径跑完服务仍存活** |
+| 网关错误信息 | 失败时返回 `{error:"no enabled upstream channel serves model dsh-not-bound"}` 一类可读信息，而不是 500 空响应或进程退出 |
+| `component-dep-check` | 修复前报 `advanced-chat` 缺 `adapters`，修复后 0 问题 |
+| 全包 `tsc` / 三份契约 / 路由影子检查 / 不稳定默认值检查 | 全部通过；170 条路由无重复 |
+| 测试数据 | 探针渠道、绑定、目录行、会话、运行记录全部清理，库回到 `channels=1 bindings=1 models=1`（只剩用户自己的 `111` 与其 `deepseek-v4.1-flash`） |
+
+**要生效需要重启 3000 端口的服务**（`channel-admin` 与 `advanced-chat` 的 `dist` 都已重建）。

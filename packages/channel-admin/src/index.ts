@@ -32,6 +32,8 @@ export async function apply(ctx: Context) {
   const models = { list: () => db.select("models", {}) };
   const admin = (session: Session) =>
     (session.properties.user as { is_admin?: boolean } | undefined)?.is_admin;
+  const userID = (session: Session) =>
+    (session.properties.user as { id?: number } | undefined)?.id;
   const body = async (session: Session) =>
     (await session.parseRequestBody()) as Record<string, unknown>;
   ctx.registerComponent("channel-admin", {
@@ -199,5 +201,48 @@ export async function apply(ctx: Context) {
     const result = await applyChannelModels(db, channel, items);
     if (result.error) { session.status = 500; session.respond({ error: result.error, results: [result] }, "json"); return; }
     session.respond({ results: [result] }, "json");
+  });
+  // The upstream catalog the chat model picker and the agent editors read:
+  // enabled channels with the models they may serve. Ported from
+  // old/internal/api/admin.go `ChannelAPI.Catalog`, which was registered at
+  // `GET /api/user/catalog`; without it the picker had nothing to offer even
+  // though the channels had models.
+  ctx.route("/api/user/catalog").methods("GET").action(async (session) => {
+    if (userID(session) === undefined) return;
+    const [channelRows, configs, catalogModels] = await Promise.all([
+      channels.list(),
+      db.select("model_configs", {}),
+      models.list(),
+    ]);
+    const enabledChannels = (channelRows as Channel[])
+      .filter((channel) => channel.enabled !== false)
+      // Byte order, matching the old `ORDER BY name ASC`.
+      .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+    const byID = new Map((catalogModels as Model[]).map((model) => [Number(model.id), model]));
+    session.respond(enabledChannels.map((channel) => {
+      const names = new Set<string>();
+      const icons: Record<string, string> = {};
+      for (const config of configs as ModelConfig[]) {
+        if (Number(config.channel_id) !== Number(channel.id) || config.enabled === false) continue;
+        const model = byID.get(Number(config.model_id));
+        if (!model || model.enabled === false) continue;
+        const name = String(model.model_name ?? "").trim();
+        if (!name) continue;
+        names.add(name);
+        const icon = String(model.provider_icon_url ?? "").trim();
+        if (icon) icons[name] = icon;
+      }
+      return {
+        id: channel.id,
+        name: channel.name,
+        enabled: true,
+        models: [...names].sort(),
+        model_icons: icons,
+        // The old API also returned per-model video billing configs. This build's
+        // `models` table has no such column (billing is out of scope), so the map
+        // stays empty rather than inventing entries.
+        video_billing_configs: {},
+      };
+    }), "json");
   });
 }
