@@ -23,6 +23,33 @@ const kinds = new Set([
   "scratch",
   "custom",
 ]);
+/**
+ * Memory ids arrive from the URL on PUT, and are used as a file name under the
+ * memory root. Reject anything that could address a different directory, then
+ * check the resolved path anyway: `path.join` normalises `..` segments, so a
+ * bare join would let a request write outside the storage root. `@velocelab/file`
+ * guards its own root the same way; memory does its own path building and has to
+ * repeat the guard.
+ */
+function assertSafeId(id: string) {
+  if (
+    !id ||
+    id.length > 200 ||
+    id === "." ||
+    id === ".." ||
+    id.includes("..") ||
+    /[\\/\0]/.test(id)
+  )
+    throw Error("invalid memory id");
+  return id;
+}
+function memoryPath(root: string, directories: string[], id: string) {
+  const target = path.join(root, ...directories, `${assertSafeId(id)}.md`);
+  const base = path.resolve(root);
+  if (target !== base && !target.startsWith(`${base}${path.sep}`))
+    throw Error("memory path escapes storage root");
+  return target;
+}
 export async function apply(ctx: Context, cfg: MemoryConfig) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
@@ -152,11 +179,14 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
       if (Buffer.byteLength(content) > 512 * 1024)
         throw Error("Memory is too large");
       const now = new Date().toISOString();
-      const storagePath = path.join(
+      const storagePath = memoryPath(
         root,
-        String(context.userId),
-        scope,
-        `${scope === "agent" ? String(value.agent_id ?? context.agentId ?? "default") : "global"}-${id}.md`,
+        [String(context.userId), scope],
+        `${assertSafeId(
+          scope === "agent"
+            ? String(value.agent_id ?? context.agentId ?? "default")
+            : "global",
+        )}-${assertSafeId(id)}`,
       );
       await mkdir(path.dirname(storagePath), { recursive: true });
       await writeFile(storagePath, content, "utf8");
@@ -242,7 +272,7 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
   const user = (s: Session) =>
     Number((s.properties.user as { id?: number } | undefined)?.id ?? 0);
   ctx
-    .route("/api/advanced-chat/memories")
+    .route("/api/user/advanced-chat/memories")
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
@@ -257,7 +287,7 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
         );
     });
   ctx
-    .route("/api/advanced-chat/memories/:id")
+    .route("/api/user/advanced-chat/memories/:id")
     .methods("GET")
     .action(async (s, _p, memoryId) => {
       const uid = user(s);
@@ -313,7 +343,28 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
       s.respond({ error: "Memory is too large" }, "json");
       return;
     }
-    const file = path.join(root, String(uid), scope, `${id}.md`);
+    let file: string;
+    try {
+      file = memoryPath(root, [String(uid), scope], id);
+    } catch {
+      s.status = 400;
+      s.respond({ error: "Invalid memory id" }, "json");
+      return;
+    }
+    const existing = await db.selectOne("advanced_chat_memory_documents", {
+      id,
+      user_id: uid,
+    });
+    // The row is keyed by id alone, so an id owned by somebody else would fail
+    // the insert instead of surfacing as "not found".
+    if (!existing && memoryId) {
+      const taken = await db.selectOne("advanced_chat_memory_documents", { id });
+      if (taken) {
+        s.status = 404;
+        s.respond({ error: "Memory not found" }, "json");
+        return;
+      }
+    }
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, content, "utf8");
     const value = {
@@ -329,13 +380,9 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
       hash: createHash("sha256").update(content).digest("hex"),
       enabled: input.enabled !== false,
       updated_by: "user",
-      created_at: now,
+      created_at: existing ? existing.created_at : now,
       updated_at: now,
     };
-    const existing = await db.selectOne("advanced_chat_memory_documents", {
-      id,
-      user_id: uid,
-    });
     if (existing)
       await db.update(
         "advanced_chat_memory_documents",
@@ -346,15 +393,15 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
     s.respond(value, "json");
   };
   ctx
-    .route("/api/advanced-chat/memories")
+    .route("/api/user/advanced-chat/memories")
     .methods("POST")
     .action((s) => save(s));
   ctx
-    .route("/api/advanced-chat/memories/:id")
+    .route("/api/user/advanced-chat/memories/:id")
     .methods("PUT")
     .action((s, _p, id) => save(s, id));
   ctx
-    .route("/api/advanced-chat/memories/:id")
+    .route("/api/user/advanced-chat/memories/:id")
     .methods("PATCH")
     .action(async (s, _p, id) => {
       const uid = user(s);
@@ -406,7 +453,7 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
       );
     });
   ctx
-    .route("/api/advanced-chat/memories/:id")
+    .route("/api/user/advanced-chat/memories/:id")
     .methods("DELETE")
     .action(async (s, _p, id) => {
       const uid = user(s);
@@ -483,7 +530,14 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
     }
     const id = memoryId ?? randomUUID();
     const now = new Date().toISOString();
-    const file = path.join(root, String(uid), "group", groupId, `${id}.md`);
+    let file: string;
+    try {
+      file = memoryPath(root, [String(uid), "group", assertSafeId(groupId)], id);
+    } catch {
+      s.status = 400;
+      s.respond({ error: "Invalid memory id" }, "json");
+      return;
+    }
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, content, "utf8");
     const value = {
