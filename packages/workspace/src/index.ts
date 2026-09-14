@@ -324,6 +324,11 @@ export async function apply(ctx: Context) {
         s.respond(
           await connector.execute(id, "list_directories", {
             device_id: params.get("connector_device_id") ?? "",
+            // The picker sends `path`; the git routes use the longer name. Both
+            // mean the folder being browsed, and ignoring `path` made every
+            // drill-down list the root again.
+            path:
+              params.get("path") ?? params.get("connector_workspace_path") ?? "",
             workspace_path: params.get("connector_workspace_path") ?? "",
           }),
           "json",
@@ -344,7 +349,18 @@ export async function apply(ctx: Context) {
       if (id === undefined) return;
       const input = (await s.parseRequestBody()) as any;
       try {
-        s.respond(await connector.execute(id, "git_action", input), "json");
+        // The connector dispatches on `device_id`/`workspace_path`, while the
+        // chat client speaks `connector_device_id`/`connector_workspace_path`;
+        // passing the body through unchanged sent the action to whatever device
+        // happened to be the default instead of the one the user picked.
+        s.respond(
+          await connector.execute(id, "git_action", {
+            ...input,
+            device_id: String(input.connector_device_id ?? ""),
+            workspace_path: String(input.connector_workspace_path ?? ""),
+          }),
+          "json",
+        );
       } catch (error) {
         s.status = 502;
         s.respond(

@@ -621,3 +621,74 @@ Error [ERR_HTTP_HEADERS_SENT]: Cannot write headers after they are sent to the c
 | 测试数据 | 探针渠道与其绑定、目录行全部清理，库回到 `channels=1 models=1 bindings=1` |
 
 **要生效需要重启 3000 端口的服务并强刷页面**（dashboard 在重启时重新读取各插件的 `dist/frontend/*.js`）。
+
+## 13. 本机连接器：把运行 Yumeri 的计算机接成一个设备
+
+原来的连接器只有一种存在形式：**另起一个进程**，拿令牌、连服务器、长轮询领任务。桌面上那个 `window.veloceDesktop.startConnector`、页面上那行 `app.exe -server ... -token ...` 都是这个模式。而**跑 Yumeri 的这台机器本身就是能干活的那台机器**，再让它去连自己、领自己的任务没有意义。于是加了一个插件让本机直接作为连接器，并且顺手把"连接器类型"变成其他插件可以注册的东西——因为"怎么弹文件夹选择窗口"这种能力本来就该由连接器自己决定。
+
+顺带补上的是一个更基础的缺口：**在此之前没有任何插件实现连接器的动作**。`connector.execute` 的处理器链是空的，所以工作区页的目录浏览（`list_directories`）、git 面板（`git_status`/`git_action`）以及 `inner-tools` 那批连接器工具**全部**只会得到 `No connector runtime is enabled`。本机的文件系统与 git 正好补上这块。
+
+### 13.1 连接器插件：类型注册表
+
+`ConnectorService` 新增三个能力，原有的 `register(handler)` 处理器链原样保留（外部代理那条路不受影响）：
+
+```ts
+export interface ConnectorType {
+  id: string;                    // 写进 advanced_chat_connector_devices.kind
+  label: LocalizedText;
+  description?: LocalizedText;
+  autoConnect?: boolean;         // 不需要令牌、也没有代理进程：主机在它就在
+  creatable?: boolean;
+  capabilities?: string[];       // 该类型能应答的动作名，供界面判断
+  ensureDevice?(userId): Promise<ConnectorDeviceRecord>;              // 自动连接的钩子
+  actions?: Record<string, (userId, input, device) => Promise<unknown>>;
+  pickDirectory?(userId, input, device): Promise<{path, cancelled}>;  // 该连接器自己决定怎么选文件夹
+  runTask?(task, device): Promise<{success, result?, error_message?}>; // 自己消化任务队列
+}
+```
+
+- **动作分发**：`execute` 先按 `input.device_id` 找到设备行，取它的类型，命中动作就交给类型；类型存在但没有这个动作、或者压根没有这个类型，都回落到原来的处理器链（外部代理仍可服务）。指定了不存在的设备会明确报 `Connector device not found`，而不是悄悄换一台机器执行。
+- **默认设备**：动作没点名设备时，若该用户恰有一个在线的自动连接设备，就用它。这就是"本机连接器开着，聊天里的连接器工具就直接作用在本机"的由来，也让 `inner-tools` 那批不带 `device_id` 的工具第一次真正能跑。
+- **任务**：`createTask(userId, {device_id, action, workspace_path, payload, requiresApproval})` 统一负责入队、按需即时执行；`executeTask(userId, taskId)` 只吃 `queued`/`approved` 的任务，并且用"只有把状态从 queued 改成 running 的那一次才执行"来防止重复执行（与外部连接器 `tasks/next` 的写法一致）。
+- 新增两个端点：`GET /api/user/advanced-chat/connector-types`（前端据此标注设备、判断某台设备能否自己弹文件夹窗口）与 `POST /api/user/advanced-chat/devices/:id/pick-directory`（把"选文件夹"这件事派给设备背后的连接器，按 404/400/504/502 区分"设备不存在/类型不支持/窗口超时/其它失败"）。
+
+**顺手修掉的一个潜在崩溃**：插件读不到自己注册的组件——`ctx.component` 只装加载器从**别的**插件注入进来的名字。连接器插件里原本有两条路由（MCP 进程列表/停止）用 `ctx.component.connector` 取自己，取到的是 `undefined`，一调用就 `Cannot read properties of undefined (reading 'execute')`。现在服务对象存成局部变量，路由直接引用它。这次是本机连接器的取文件夹路由先踩到，才把这个既有 bug 暴露出来。
+
+### 13.2 新插件 device-local
+
+注册一个 `local` 类型，并在 `GET /devices`、`GET /devices/:id` 时通过 `ensureDevice` **自动建立并保持在线**这台机器的设备行（`kind = "local"`，带主机名/系统/架构/内核版本）。它不需要客户端、不需要令牌——设备行里的 `token_hash` 只是为了让表的唯一约束不冲突而随机生成的，永远不会被用来认证。
+
+动作（也就是"本机作为连接器会干什么"）：`list_directories`、`list_windows_drives`、`pick_directory`、`list_directory`、`list_files`、`read_file`、`write_file`、`replace_text`、`file_sha256`、`git_status`、`git_action`。
+
+**两类路径，两种规则**（这是本插件唯一需要小心的设计）：浏览（`list_directories`）故意允许机器上任意绝对路径——选工作区本来就得先看得到整台机器；而工作区内的文件操作（读/写/替换/哈希）在给了 `workspace_path` 时**不许越出该目录**，`..` 也不行，这样模型或过期会话给出的路径不能溜到别处。相对路径一律相对工作区（而非进程 cwd）解析。
+
+**刻意不做 `run_command`**，也不做 `web_search`/`web_fetch`：在主机上从聊天工具执行任意命令需要审批链路，静默打开等于把服务器的 shell 交给模型。这不是遗漏，是选择；能力列表里也没有它们，所以界面与模型都能看出来。
+
+**它自己消化队列**：聊天运行时创建的任务是直接写表的，而本机既是调度方也是执行方，所以插件每 2 秒扫一次自己的设备、只领 `queued`/`approved` 的任务执行——等价于外部连接器那次长轮询，只是发生在进程内。需要审批的任务（`pending_approval`）不碰，等用户在界面上批准。
+
+**文件夹窗口**：Windows 用 `powershell.exe -STA` 调 WinForms 的 `FolderBrowserDialog`（必须是 STA，否则线程模型不对会抛错），macOS 用 `osascript` 的 `choose folder`，Linux 先试 `zenity` 再退到 `kdialog`。`DEVICE_LOCAL_PICK_COMMAND` 可以整体替换这条命令（把初始目录作为唯一参数传进去、把选中的目录打到 stdout），这是无桌面环境、容器或测试用的自定义选择器；`DEVICE_LOCAL_PICK_TIMEOUT_MS` 调整等待上限（默认 120 秒，超时按 504 报，而不是假装用户取消了）。**退出码 1 且没有输出**才算"用户取消"；其它退出码、被拒绝的 spawn、缺失的 picker 都是真错误——把后者说成"用户取消"会让一个坏掉的环境看起来像用户在犹豫。
+
+### 13.3 前端
+
+- 聊天页的工作区选择对话框多了一个「浏览本机文件夹…」按钮，**只在所选设备的连接器类型声明了 `pick_directory` 时出现**（能力来自 `/connector-types`，所以它跟着连接器走，而不是跟着页面走）。点开就是主机上的原生窗口，选完直接落到路径框（因为 browser 给不出真实路径，这件事只能由后端做）。
+- 设备页每台设备显示**它自己的类型名**（来自类型表，而不是"CLI 设备/桌面端设备"的二选一），自动连接的类型加一个「自动连接」标记，并且不再提供"重新生成命令"——它没有令牌可发。
+
+### 13.4 顺带修掉的三个既有 bug
+
+1. **工作区目录浏览永远只列根目录**。前端发的是 `path`，工作区插件读的是 `connector_workspace_path`，于是每次下钻都被忽略、又回到起点。现在两个名字都接受。
+2. **git 动作可能作用在错的机器上**。`POST /workspace/git/action` 把请求体原样透传给连接器，而分发读的是 `device_id`、请求体里叫 `connector_device_id`，所以用户选的设备被忽略、动作落到"默认设备"上。现在显式映射（`connector_workspace_path` → `workspace_path` 同理）。
+3. **本机设备最初被写成 `cli`**。`ensureDevice` 插入时没写 `kind`，落到了表默认值 `cli` 上，于是它看起来像个"没人启动的外部代理"。集成测试第一次跑就抓到了。
+
+### 13.5 验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `.dsh-tmp/device-local-unit.mjs`（编译真实源码后直接调用） | **36 项全过**：三个平台各自的窗口命令与参数（含 Windows 必须 `-STA`、只在 OK 时输出）、带空格的覆盖命令切分、结果解释的六种情形（选中/取消/取消但仍打印/超时/缺命令/被拒绝的 spawn/崩溃）、路径规则（相对、工作区内绝对、`..` 越界、无工作区）、目录列举（只列文件夹、缺目录报错）、读写/替换/哈希/条目类型、越界读写被拒 |
+| `.dsh-tmp/device-local-e2e.mjs`（真服务器 + 真库） | **25 项全过**：类型已发布且标记自动连接、不提供 `run_command`、标签有中英；宿主设备**无需任何人创建**就出现、在线、带本机信息、不下发 token_hash、且只有一个；按设备列目录、只给文件夹、下钻读到指定目录、空目录为空、**不点名设备也落在本机**、缺目录报错；选文件夹的端点会给出答案而不是挂住（本环境不允许 spawn，所以走 502 分支并带上原因）；未知设备 404；空路径从"此电脑"开始 |
+| `.dsh-tmp/device-local-tasks-e2e.mjs`（真服务器 + 真库） | **12 项全过**：`pending_approval` 的任务不会被自动执行；批准之后由设备自己领走并写回状态、开始/结束时间与失败原因；聊天页 git 按钮排的任务确实属于所选设备；`full_access` 的任务不经批准就被执行；探针任务全部清理 |
+| 全包 `tsc` / 三份契约 / 路由影子 / 默认值 / 组件依赖 / 模型分组单测 | 全部通过；172 条路由、无重复、无不可达；组件依赖检查覆盖 51 个包、0 问题 |
+| 数据库 | 设备表只剩本机设备；任务表无残留；`yumeri.json` 端口已还原 3000 |
+
+**本环境无法验证的部分（如实记录）**：这个工作沙箱禁止 Node 子进程带管道 stdio 启动（`spawn EPERM`，`inherit`/`ignore` 同样被拒），所以**真正弹窗**与**真正调用 git** 这两条路径没能在这里跑通。已验证的是"命令怎么构造、结果怎么解释、动作怎么被派发、任务怎么被领走"；`gitStatus`/`gitAction` 的 git 调用本身与 PowerShell 弹窗需要在真实桌面上跑（单元测试里那两段会自动跳过并打印原因）。
+
+**要生效需要**：在每个包构建之后（`packages/device-local` 是新包，没有 `dist` 就加载不了）重启 3000 端口的服务并强刷页面。

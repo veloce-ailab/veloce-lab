@@ -14,6 +14,14 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog"
 import { cn } from "@/lib/utils"
 import { withPublicSettingsDefaults, type PublicSettings } from "@/lib/public-settings"
 
+interface ConnectorTypeInfo {
+  id: string
+  label: { zh: string; en: string }
+  auto_connect: boolean
+  creatable: boolean
+  capabilities: string[]
+}
+
 interface ConnectorDevice {
   id: string
   name: string
@@ -73,6 +81,44 @@ interface ConnectorDeviceCredentialsResponse {
 }
 
 const devicesQueryKey = ["advanced-chat-connector-devices"] as const
+const connectorTypesQueryKey = ["advanced-chat-connector-types"] as const
+
+/** The type's own label, falling back to the kind's historic wording. */
+function connectorTypeLabel(types: ConnectorTypeInfo[], device: ConnectorDevice, language: string) {
+  const type = types.find((entry) => entry.id === device.kind)
+  if (type) {
+    return (language === "zh" ? type.label.zh : type.label.en) || type.id
+  }
+  return device.kind === "desktop" ? (language === "zh" ? "桌面端设备" : "Desktop device") : (language === "zh" ? "CLI 设备" : "CLI device")
+}
+
+/** Auto-connecting types are online by themselves and need no token. */
+function connectorTypeAutoConnect(types: ConnectorTypeInfo[], kind?: string) {
+  return types.find((entry) => entry.id === kind)?.auto_connect === true
+}
+
+function normalizeConnectorType(value: unknown): ConnectorTypeInfo | null {
+  if (typeof value !== "object" || value === null) {
+    return null
+  }
+  const item = value as Record<string, unknown>
+  const id = typeof item.id === "string" ? item.id : ""
+  if (!id) {
+    return null
+  }
+  const label = typeof item.label === "object" && item.label !== null ? (item.label as Record<string, unknown>) : {}
+  return {
+    id,
+    label: {
+      zh: typeof label.zh === "string" ? label.zh : id,
+      en: typeof label.en === "string" ? label.en : id,
+    },
+    auto_connect: item.auto_connect === true,
+    creatable: item.creatable !== false,
+    capabilities: Array.isArray(item.capabilities) ? item.capabilities.filter((entry): entry is string => typeof entry === "string") : [],
+  }
+}
+
 
 export default function AdvancedChatDevices() {
   const { language } = useI18n()
@@ -96,6 +142,17 @@ export default function AdvancedChatDevices() {
     queryFn: async () => {
       const res = await api.get("/user/advanced-chat/devices")
       return Array.isArray(res.data) ? res.data.map(normalizeDevice).filter((device): device is ConnectorDevice => Boolean(device)) : []
+    },
+  })
+
+  // Which connector kinds exist, and what each of them can do, is decided by
+  // whichever plugin registered the type.
+  const { data: connectorTypes = [] } = useQuery<ConnectorTypeInfo[]>({
+    queryKey: connectorTypesQueryKey,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get("/user/advanced-chat/connector-types")
+      return Array.isArray(res.data) ? res.data.map(normalizeConnectorType).filter((type): type is ConnectorTypeInfo => Boolean(type)) : []
     },
   })
 
@@ -362,12 +419,17 @@ export default function AdvancedChatDevices() {
                         </span>
                       </div>
                       <div className="mt-1 truncate text-xs text-muted-foreground">
-                        {[device.kind === "desktop" ? (language === "zh" ? "桌面端设备" : "Desktop device") : (language === "zh" ? "CLI 设备" : "CLI device"), device.hostname, device.os, device.arch, device.version, "platform"].filter(Boolean).join(" / ") || "-"}
+                        {[connectorTypeLabel(connectorTypes, device, language), device.hostname, device.os, device.arch, device.version, "platform"].filter(Boolean).join(" / ") || "-"}
                       </div>
-                      <div className="mt-1 text-xs text-muted-foreground">{copy.lastSeen}: {formatDateTime(device.last_seen_at) || "-"}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>{copy.lastSeen}: {formatDateTime(device.last_seen_at) || "-"}</span>
+                        {connectorTypeAutoConnect(connectorTypes, device.kind) && (
+                          <span className="rounded-md bg-muted px-2 py-0.5">{copy.autoConnect}</span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end" onClick={(event) => event.stopPropagation()}>
-                      {device.kind !== "desktop" && (
+                      {device.kind !== "desktop" && !connectorTypeAutoConnect(connectorTypes, device.kind) && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -946,6 +1008,7 @@ const zhCopy = {
   online: "在线",
   offline: "离线",
   lastSeen: "最后在线",
+  autoConnect: "自动连接",
   editDevice: "设备设置",
   deviceDetail: "设备详情",
   deviceDetailSubtitle: "查看这个连接器正在执行的任务和它托管的 MCP 子进程。",
@@ -1033,6 +1096,7 @@ const enCopy: typeof zhCopy = {
   online: "Online",
   offline: "Offline",
   lastSeen: "Last seen",
+  autoConnect: "Auto connect",
   editDevice: "Device settings",
   deviceDetail: "Device detail",
   deviceDetailSubtitle: "Inspect active connector tasks and MCP subprocesses managed by this connector.",
