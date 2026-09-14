@@ -367,6 +367,11 @@ export default function Agents() {
                   <div className="flex min-w-0 items-center gap-2">
                     <Bot className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="truncate text-sm font-medium">{agent.name}</span>
+                    {agent.id === defaultAgentID && (
+                      <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground" title={t("chat.defaultAgentHint")}>
+                        {t("chat.defaultAgent")}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">
                     {[agent.default_model || t("chat.noDefaultModel"), agent.user_channel_id ? channelName.get(agent.user_channel_id) || `#${agent.user_channel_id}` : copy.noChannel].join(" · ")}
