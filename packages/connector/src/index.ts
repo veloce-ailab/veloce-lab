@@ -60,6 +60,13 @@ export interface ConnectorType {
   autoConnect?: boolean;
   /** Whether a user may mint a token for this type (default true). */
   creatable?: boolean;
+  /**
+   * Whether a user may remove this type's device. Defaults to the opposite of
+   * `autoConnect`: a device the host provides for itself is part of the
+   * installation, not something the user set up, so deleting it would only make
+   * it reappear (or leave the deployment with no connector at all).
+   */
+  removable?: boolean;
   /** Action names this type answers; published by the connector-types route. */
   capabilities?: string[];
   /** Auto-connect hook: create or refresh this user's device row. */
@@ -98,7 +105,18 @@ export interface ConnectorTypeInfo {
   description: LocalizedText | null;
   auto_connect: boolean;
   creatable: boolean;
+  removable: boolean;
   capabilities: string[];
+}
+
+/**
+ * Whether this type's device may be removed. A connector the host provides for
+ * itself (auto-connect) is part of the installation rather than something the
+ * user set up, so removing it would either just recreate it or leave the
+ * deployment with no connector at all.
+ */
+export function connectorTypeIsRemovable(type: ConnectorType): boolean {
+  return type.removable ?? type.autoConnect !== true;
 }
 export interface ConnectorTaskInput {
   device_id: string;
@@ -258,7 +276,16 @@ export async function apply(ctx: Context) {
         s.respond(
           (
             await db.select("advanced_chat_connector_devices", { user_id: id })
-          ).map(({ token_hash: _hash, ...row }) => row),
+          )
+            .map(({ token_hash: _hash, ...row }) => row)
+            // The connector the host provides for itself is the default one, so
+            // it leads the list instead of following whatever was added first.
+            .sort((left: any, right: any) => {
+              const leftDefault = typeByID(String(left.kind ?? ""))?.autoConnect === true;
+              const rightDefault = typeByID(String(right.kind ?? ""))?.autoConnect === true;
+              if (leftDefault !== rightDefault) return leftDefault ? -1 : 1;
+              return String(left.created_at ?? "").localeCompare(String(right.created_at ?? ""));
+            }),
           "json",
         );
       }
@@ -278,6 +305,7 @@ export async function apply(ctx: Context) {
           description: type.description ?? null,
           auto_connect: type.autoConnect === true,
           creatable: type.creatable !== false,
+          removable: connectorTypeIsRemovable(type),
           capabilities: [...(type.capabilities ?? [])],
         })),
         "json",
@@ -328,6 +356,19 @@ export async function apply(ctx: Context) {
       if (!existing) {
         s.status = 404;
         s.respond({ error: "Device not found" }, "json");
+        return;
+      }
+      const existingType = typeByID(String(existing.kind ?? ""));
+      if (existingType && existingType.creatable === false) {
+        // A host-provided connector has no agent to hand a token to.
+        s.status = 400;
+        s.respond(
+          {
+            error: `${existingType.label?.zh || existingType.label?.en || existingType.id} 由本机提供，不需要令牌`,
+            error_en: "This connector is provided by the host and needs no token",
+          },
+          "json",
+        );
         return;
       }
       await db.update(
@@ -419,13 +460,34 @@ export async function apply(ctx: Context) {
     .methods("DELETE")
     .action(async (s, _p, deviceId) => {
       const id = uid(s);
-      if (id !== undefined) {
-        await db.remove("advanced_chat_connector_devices", {
-          id: deviceId,
-          user_id: id,
-        });
-        s.respond({ success: true }, "json");
+      if (id === undefined) return;
+      const device: any = await db.selectOne(
+        "advanced_chat_connector_devices",
+        { id: deviceId, user_id: id },
+      );
+      if (!device) {
+        s.status = 404;
+        s.respond({ error: "Device not found" }, "json");
+        return;
       }
+      const type = typeByID(String(device.kind ?? ""));
+      if (type && !connectorTypeIsRemovable(type)) {
+        // Rejecting beats deleting and watching it come back on the next list.
+        s.status = 403;
+        s.respond(
+          {
+            error: `${type.label?.zh || type.label?.en || type.id} 由本机提供，是默认连接器，不能删除`,
+            error_en: `This connector is provided by the host and cannot be removed`,
+          },
+          "json",
+        );
+        return;
+      }
+      await db.remove("advanced_chat_connector_devices", {
+        id: deviceId,
+        user_id: id,
+      });
+      s.respond({ success: true }, "json");
     });
   ctx
     .route("/api/user/advanced-chat/devices/:id")
@@ -994,6 +1056,7 @@ export async function apply(ctx: Context) {
         description: type.description ?? null,
         auto_connect: type.autoConnect === true,
         creatable: type.creatable !== false,
+        removable: connectorTypeIsRemovable(type),
         capabilities: [...(type.capabilities ?? [])],
       }));
     },

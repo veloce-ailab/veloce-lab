@@ -90,22 +90,26 @@ async function isDirectory(target: string): Promise<boolean> {
 }
 
 /** Drive letters that exist, so "This PC" has something to show on Windows. */
-async function windowsDrives(): Promise<Array<{ name: string; path: string }>> {
+async function windowsDrives(): Promise<DirectoryEntry[]> {
   const letters = "CDEFGHIJKLMNOPQRSTUVWXYZAB".split("");
   const found = await Promise.all(
     letters.map(async (letter) => {
       const root = `${letter}:\\`;
-      return (await isDirectory(root)) ? { name: root, path: root } : undefined;
+      return (await isDirectory(root))
+        ? { name: `${letter}:`, path: root, kind: "drive" as const }
+        : undefined;
     }),
   );
   return found
-    .filter((entry): entry is { name: string; path: string } => Boolean(entry))
+    .filter((entry): entry is { name: string; path: string; kind: "drive" } => Boolean(entry))
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 export interface DirectoryEntry {
   name: string;
   path: string;
+  /** Drives are browsable like folders but are not folders. */
+  kind?: "folder" | "drive";
 }
 
 /**
@@ -135,7 +139,8 @@ export async function listDirectories(
   )) {
     if (directories.length >= MAX_DIRECTORY_ENTRIES) break;
     const child = path.join(target, name);
-    if (await isDirectory(child)) directories.push({ name, path: child });
+    if (await isDirectory(child))
+      directories.push({ name, path: child, kind: "folder" });
   }
   return { path: target, directories };
 }
@@ -234,10 +239,21 @@ export async function hostInfo(): Promise<{
 }> {
   return {
     hostname: hostname(),
-    os: platform(),
+    // The device pages compare this against "windows", so the Node platform
+    // name ("win32") must not leak through: a host device reported as win32 was
+    // treated as some other system and the picker lost its Windows rules.
+    os: osName(),
     arch: arch(),
     version: release(),
   };
+}
+
+/** Node's platform name in the vocabulary the device pages speak. */
+export function osName(): string {
+  const value = platform();
+  if (value === "win32") return "windows";
+  if (value === "darwin") return "macos";
+  return value;
 }
 
 const git = async (cwd: string, args: string[]) => {

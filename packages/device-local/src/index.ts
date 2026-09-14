@@ -178,6 +178,10 @@ export async function apply(ctx: Context) {
     autoConnect: true,
     // Nothing to install and nothing to authorise, so no token is minted for it.
     creatable: false,
+    // Part of the installation rather than something the user set up: it would
+    // come back on the next listing anyway, and a deployment without it has no
+    // connector at all.
+    removable: false,
     capabilities: CAPABILITIES,
     ensureDevice,
     pickDirectory: async (_userId, input) => {

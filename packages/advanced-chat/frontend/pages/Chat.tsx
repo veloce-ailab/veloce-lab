@@ -1,5 +1,6 @@
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { channelIDForModel, groupModelsByChannel } from "../lib/model-groups"
+import { workspacePickerCanGoUp, workspacePickerIsDriveRoot, workspacePickerIsWindows, workspacePickerParentPath } from "../lib/workspace-picker"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -413,7 +414,7 @@ interface ConnectorTaskStatus {
 
 interface WorkspaceDirectories {
   path: string
-  directories: Array<{ name: string; path: string }>
+  directories: Array<{ name: string; path: string; kind?: "drive" }>
 }
 
 interface TaskFileChange {
@@ -4288,6 +4289,18 @@ export default function Chat() {
                 >
                   <ChevronLeft size={17} />
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 shrink-0"
+                  disabled={!workspacePickerPath || !workspacePickerIsWindows(workspacePickerDevice?.os)}
+                  onClick={() => setWorkspacePickerPath("")}
+                  aria-label={workspacePickerCopy.computer}
+                  title={workspacePickerCopy.computer}
+                >
+                  <Monitor size={16} />
+                </Button>
                 <div className="min-w-0 flex-1 truncate rounded-md border bg-muted/30 px-3 py-2 text-sm" title={workspacePickerPath || workspacePickerCopy.computer}>
                   {workspacePickerPath || workspacePickerCopy.computer}
                 </div>
@@ -4314,17 +4327,24 @@ export default function Chat() {
                   <div className="flex min-h-56 items-center justify-center text-sm text-muted-foreground">{workspacePickerCopy.empty}</div>
                 ) : (
                   <div className="p-1">
-                    {(workspaceDirectoriesQuery.data?.directories || []).map((directory) => (
-                      <button
-                        key={directory.path}
-                        type="button"
-                        className="flex h-10 w-full items-center gap-2 rounded px-2 text-left text-sm hover:bg-muted"
-                        onClick={() => setWorkspacePickerPath(directory.path)}
-                      >
-                        <Folder size={16} className="shrink-0 text-primary" />
-                        <span className="truncate">{directory.name}</span>
-                      </button>
-                    ))}
+                    {(workspaceDirectoriesQuery.data?.directories || []).map((directory) => {
+                      const isDrive = directory.kind === "drive" || workspacePickerIsDriveRoot(directory.path)
+                      return (
+                        <button
+                          key={directory.path}
+                          type="button"
+                          className="flex h-10 w-full items-center gap-2 rounded px-2 text-left text-sm hover:bg-muted"
+                          onClick={() => setWorkspacePickerPath(directory.path)}
+                        >
+                          {isDrive ? (
+                            <HardDrive size={16} className="shrink-0 text-muted-foreground" />
+                          ) : (
+                            <Folder size={16} className="shrink-0 text-primary" />
+                          )}
+                          <span className="truncate">{directory.name}</span>
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -6595,7 +6615,8 @@ function normalizeWorkspaceDirectories(value: unknown): WorkspaceDirectories {
       if (!path) {
         return []
       }
-      return [{ name: stringFromUnknown(entry.name) || path, path }]
+      const kind = stringFromUnknown(entry.kind)
+      return [{ name: stringFromUnknown(entry.name) || path, path, kind: kind === "drive" ? ("drive" as const) : undefined }]
     })
     : []
   return {
@@ -6641,32 +6662,6 @@ function isActiveConnectorTask(status?: string) {
   return status === "pending_approval" || status === "queued" || status === "running"
 }
 
-function workspacePickerIsWindows(os?: string) {
-  return os?.toLowerCase() === "windows"
-}
-
-function workspacePickerCanGoUp(path: string, os?: string) {
-  if (!path) {
-    return false
-  }
-  if (workspacePickerIsWindows(os)) {
-    return !/^[a-z]:[\\/]?$/i.test(path)
-  }
-  return path !== "/"
-}
-
-function workspacePickerParentPath(path: string, os?: string) {
-  if (!workspacePickerCanGoUp(path, os)) {
-    return path
-  }
-  if (workspacePickerIsWindows(os)) {
-    const normalized = path.replace(/\//g, "\\").replace(/\\+$/, "")
-    const separatorIndex = normalized.lastIndexOf("\\")
-    return separatorIndex <= 2 ? normalized.slice(0, 3) : normalized.slice(0, separatorIndex)
-  }
-  const separatorIndex = path.replace(/\/+$/, "").lastIndexOf("/")
-  return separatorIndex <= 0 ? "/" : path.slice(0, separatorIndex)
-}
 
 function normalizeWorkspaceSkill(value: unknown): WorkspaceSkill | null {
   if (!isRecord(value)) {
