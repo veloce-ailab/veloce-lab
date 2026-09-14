@@ -302,7 +302,7 @@ console.log(r.lastInsertRowid, r.lastInsertRowid===undefined);"
 | §2.14 | `stopRun` 只改数据库 | `in-flight` 运行注册表（`Map<runId, AbortController>`）：`stopRun` 先 abort 上游请求再落状态；完成路径在收尾前检查取消，不会把 `cancelled` 覆盖回 `completed`；`markCancelled` 只在真正改到行时才写事件，避免与 `stopRun` 的 `seq=999999` 事件撞唯一索引 |
 | §2.15 | `/runs/:id/agent-work` 用错列名、返回类型也不对 | 该端点按契约返回 `{run_id, session_id, group_id, group_name, agents, connector_tasks}`（原实现返回数组，前端 `normalizeAgentWorkResponse` 直接丢弃）；子智能体取 `agent_task` 事件，运行自身的工具轮次作为主智能体消息附上 |
 | §2.19 | 渠道选择退化为"任意可用渠道" | `complete()` 中，调用方指定了渠道却匹配不到模型时不再回退到无关渠道，而是报错说明没有渠道提供该模型 |
-| §2.18 | 连接器两套实现 | **未处理**（`@velocelab/connector` 未启用，属配置与去重决策） |
+| §2.18 | 连接器两套实现 | **已处理**，见 §7.1（`connector` 拥有该端点面，`advanced-chat` 的 6 条重复注册已删除） |
 | 轻微项 | `packages/ratelimit` 无人引用 | 重写 `ratelimit/src/index.ts` 为**外置可选插件**：`depend` 为空、用 `ctx.use` 装全局中间件（按身份/来源 IP 单桶计数，429 + `Retry-After`/`X-RateLimit-*`，静态资源不计费，登录注册另有 10 次/分的独立预算），并通过可选的 `ratelimit` 组件暴露 `allow`/`enforce`/`allowUserChannel` 供其他插件按需调用；未启用时完全不生效 |
 
 验证（可复现，均在本次会话执行；两个 `.mjs` 脚本读取 `packages/*/dist`，先按包 `tsc -p tsconfig.json` 构建即可运行）：
@@ -313,4 +313,61 @@ console.log(r.lastInsertRowid, r.lastInsertRowid===undefined);"
 | `node .dsh-tmp/sse-contract.mjs` | SSE 字节流用前端同一套分帧/解析逻辑还原为 `status,text,tool_call,done` 四帧，响应头与 `responseHandled` 断言全部通过 |
 | `node .dsh-tmp/persistence-contract.mjs` | 显式 `id` 不再被 rowid 覆盖、`update`/`remove` 拒绝空条件与 `undefined` 过滤值、读操作仍忽略可选过滤、`$gt`/`$lte` 与 `upsert` 语义符合吊销表需要 |
 
-已知未处理（不在本次指示范围）：计费/结算、`yumeri.json` 配置启用、`web/` 目录、Agent Studio 的多智能体编排本体（`agent-work` 只做了契约与数据来源修正）、§1.x 的整块缺失域与 64 处前端断链。
+已知未处理（不在本次指示范围）：计费/结算、`web/` 目录、Agent Studio 的多智能体编排本体（`agent-work` 只做了契约与数据来源修正）、§1.x 的整块缺失域与 64 处前端断链。
+
+## §7 第二轮：启用功能性插件所暴露的问题
+
+第二轮按指示启用「全部适配器 + 除认证外的功能性插件」。启用本身把两类此前的隐藏问题变成了必须处理的问题：路由表的覆盖语义，以及「没人跑过」的那份实现。
+
+### 7.1 路由表按路径覆盖，两份连接器实现只剩一份能活（§2.18）
+
+`core.js:206` 是 `this.routes[path] = route`，`context.js:174` 又对**已存在的路径直接复用** Route 对象（注释说明这是为了让 GET/POST 分开声明）。因此跨插件重名不会报错，只是**后注册者覆盖前者的同名方法处理器**——静默地。
+
+机读比对（`.dsh-tmp/` 脚本）在两轮之间给出：第一轮 49 条重名、其中 6 条是跨包真重名，全在 `advanced-chat` 与 `connector` 之间；处理后跨包重名为 **0**：
+
+| 端点 | 处理 |
+| --- | --- |
+| `GET /api/user/advanced-chat/devices` | 保留 `connector`（等价实现，且 `token_hash` 同样被剥离） |
+| `POST /api/user/advanced-chat/devices/token` | 保留 `connector`（等价，另外返回 201） |
+| `POST /api/advanced-chat/connectors/register` | 保留 `connector`，补上 `name` 更新语义 |
+| `POST /api/advanced-chat/connectors/heartbeat` | 保留 `connector`（两者都会对无效 token 回 401，行为一致） |
+| `GET /api/advanced-chat/connectors/tasks/next` | 保留 `connector`，**修掉它的两个缺陷**（见下） |
+| `POST /api/advanced-chat/connectors/tasks/:id/result` | 保留 `connector`（比原实现多了 device/task 归属校验与 404），补 `running` 前置条件 |
+
+`tasks/next` 的两个缺陷是这次启用才会暴露的真 bug：
+
+- 它查询 `status: "approved"`，而**全仓库没有任何代码写入 `approved`**：任务由 `chat.createConnectorTask`（`mcp` 的工具会调用）写成 `queued`。也就是说这份实现永远不会派发任务。现改为 `queued`，并按 `created_at` 取最旧的一条（`select` 没有 ORDER BY）保证先入先出。
+- 领取任务是无条件 `update`，两个并发长轮询会拿到同一个任务；现改为带 `status: "queued"` 前置条件的条件更新，只有把 `queued` 翻成 `running` 的那一次才把任务交出去。
+- `tasks/:id/result` 原本不校验任务状态，迟到的或重复的报告能把已完成的任务再翻一次；现要求 `status: "running"`，并用 `{ ok: true, ignored }` 保持与设备端兼容。
+
+`advanced-chat` 的 service 方法（`createConnector`/`heartbeatConnector`/`nextConnectorTask`/`completeConnectorTask`）保留：它们是组件 API，`mcp` 通过 `chat.createConnectorTask` 建任务，`workspace`/`inner-tools` 通过 `component.connector` 取运行时；删掉的只是重复的 HTTP 注册。
+
+### 7.2 工具名重复：`ask_user` 会被注册两次
+
+`registerTool` 只做 `tools.push`，不去重；`toolPayload` 也不去重。`inner-tools` 原本也注册一个 `ask_user`，与 `advanced-chat` 内置的 `ask-user.ts` 同名——启用后每个请求都会带两个同名 function（多数上游会直接以 `Duplicate function name` 拒绝），且内置那份才拥有「问一句、结束本轮、等用户回复」的语义。已从 `inner-tools` 移除该条目。
+
+注意：`inner-tools` 其余 10 个工具走 `connector.execute(...)`，而**本仓库没有任何插件注册 `ConnectorHandler`**（`connector` 的 `handlers` 数组因此为空，`execute` 会抛 `No connector runtime is enabled`）。这些工具在接上运行时之前都是空转，测完后如果发现模型反复调用它们，可以先把 `@velocelab/inner-tools` 关掉。
+
+### 7.3 工作室点了会进到 `/chat/agent-groups/*/operations`
+
+`dashboard/frontend/extension.tsx:38` 用 `page.path` 原样生成导航链接，而 `page.path` 是**路由模式**：`/chat/agent-groups/*` 被当作链接目标写进地址栏，页面内层的 `<Route path=":groupID">` 就把字面量 `*` 读成一个工作室的 id，再被 `element={<Navigate to="operations" replace />}` 拼成 `/chat/agent-groups/*/operations`。
+
+改为由静态前缀生成链接（`navPath()`：从尾部剥掉 `*` 与 `:param`），落在 `index` 路由所在的 `/chat/agent-groups`；受影响的还有 `community` 的 `/chat/community/*`。`.dsh-tmp/nav-path-check.mjs` 直接抽取该函数的源码运行断言。浏览器的活跃态不受影响：`bestPathMatch` 的 `*` 分支本来就把「空剩余段」算作匹配，现在走的是前缀匹配。
+
+顺带记录一个坑：各包的 `tsconfig.json` 只 `include: ["src"]`，`frontend/` **完全不参与类型检查**，唯一把关的是 vite 构建。而块注释里只要出现 ``*/`` 这组字符（例如在注释中写 `/chat/agent-groups/*/` 后接 `operations`）就会提前闭合注释，把后面的说明文字变成代码，直到文件末尾才报 `Unterminated template literal`。改前端文件时用 `npx tsc --noEmit --jsx react-jsx <file>` 单独过一遍能立刻发现这类解析错误。
+
+### 7.4 配置启用结果与验证
+
+`yumeri.json`：启用 45 个（原 24 个 + 14 个适配器 + `connector`/`skill`/`mcp`/`delivery`/`uptime`/`tools`/`inner-tools`），仅保留 `~@velocelab/auth` 禁用。`mysql`/`pgsql` 未启用：它们与 `sqlite` 都 `provide: ["database"]`，同时启用是组件冲突而不是能力叠加。`ratelimit` 的预算从 60/分提到 600/分（burst 100）：中间件在上一轮之前从未生效，而聊天页会按秒轮询，60/分 会让试用期直接吃 429。
+
+验证：
+
+| 命令/操作 | 结果 |
+| --- | --- |
+| `NODE_ENV=production node node_modules/yumeri/bin.js start`（临时端口 3311） | **45 个启用项全部 apply 成功**，无 `Failed to load plugin`、无依赖缺失、无组件重名 |
+| `GET /api/dashboard/manifest` | 200，19 个插件前端注册（含新启用的 connector/skill/mcp/delivery/uptime/memory/scheduler/workspace；`tools`/`inner-tools` 无前端，按预期不出现） |
+| `GET /api/advanced-chat/connectors/tasks/next`（无 token） | **401**（由 `connector` 处理并校验 token），证明重复注册已消除 |
+| `.dsh-tmp/extract-new-routes.ps1` + 比对 | 跨包重名路径 0 条；同形状（`:param` 归一化后）异字面量路径 0 条 |
+| `node .dsh-tmp/nav-path-check.mjs` | 8 条断言通过，`/chat/agent-groups/*` → `/chat/agent-groups` |
+
+开发模式（`yarn dev`）在本会话的沙箱内无法验证：`@hirarijs/loader-ts` 依赖 esbuild，而沙箱禁止 esbuild 启动它的 service 子进程（`spawn EPERM`，与 `yarn workspaces` 同一处边界）。生产模式走 `dist/`，不需要 esbuild，因此以上验证是在生产模式下取得的。**正在 3000 端口上的那个进程是旧配置**（其 manifest 只注册了 10 个插件前端），需要重启才能加载新配置。
