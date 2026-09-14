@@ -818,3 +818,30 @@ const { data: agents = [], isFetched: agentsFetched } = useQuery<ChatAgent[]>({
 新增守卫 `.dsh-tmp/agent-picker-check.mjs`：扫全部前端源码，凡是 queryKey 指向 `advanced-chat-agents` / `advanced-chat-skills` 的 query，选项里出现 `enabled: false` 就报错（queryKey 常写成旁边的 `const ... as const`，所以先解析常量再比对；只找字面量会扫到声明那一行而**空过**）。
 
 这个守卫本身也验证过不是摆设：`.dsh-tmp/agent-picker-negative.mjs` 把 `enabled` 改回 `false`、导入守卫、确认它报错、再还原文件——结果是 `guard caught the broken query: true`。中间还踩到一个坑值得记下：最初用 `execFileSync` 跑子进程，而这个沙箱**禁止 Node 起子进程**（`spawn EPERM`），异常被 catch 成空输出，看起来就像"守卫没抓到"——把守卫**在同一进程内 import** 才测出真实结果。凡是用子进程做验证的地方都要防这种假阴性。
+
+## 16. 前端没人做类型检查，以及一个被自己清掉的构建产物
+
+用户报 `Uncaught ReferenceError: HardDrive is not defined`（`Chat.tsx:4352`）—— 那是我上一轮加"驱动器"图标时**忘了往 `lucide-react` 的 import 里加 `HardDrive`**。查这个错的过程中又发现两件更值得记的事。
+
+### 16.1 为什么没人拦住它
+
+每个包的 `tsconfig.json` 都是 `"include": ["src"]` —— **`frontend/` 从来不在任何类型检查范围内**。vite（esbuild）只做转译、**不检查类型**，所以一个没定义的标识符会被原样输出到 bundle 里，直到浏览器执行到那一行才炸。React 里这意味着**整个页面白屏**，而不是少个图标。`npx tsc -p packages/advanced-chat/tsconfig.json` 一路是 0 错误，因为那个文件根本没被看过。
+
+### 16.2 补上前端类型检查
+
+新增 `.dsh-tmp/frontend-configs.mjs`（为每个有 `frontend/` 的包生成 tsconfig，共 21 个）+ `.dsh-tmp/frontend-typecheck.ps1`（逐包跑 `tsc`）。要点：
+
+- 生成器把 vite 的 alias 映射到**真实源码**（`@/lib/*` → dashboard 的 `frontend/lib/*`，`@/components/chat/*` 优先本包自己的目录，`react`/`lucide-react` 等指向真正的 npm 包），否则前端一行都解析不了。
+- 只把 **`TS2304` / `TS2552`（未定义的名字）** 当致命错误：这一类**打包器不会替你发现**，正是白屏的成因；而 `TS2307`（模块不存在）**打包时就会硬失败**，不必在这里重复报警（dashboard 里 `@/pages/Login` 那种是没进构建的遗留文件）。
+- 生成的 tsconfig 放在 `.dsh-tmp/frontend-tsconfigs/`，而 tsconfig 的 `include`/`paths` 是**相对配置文件本身**解析的 —— 所以里面一律写绝对路径；另外 TypeScript 的 glob 与 `paths` 值**不接受反斜杠**，必须转成 `/`（这两条都实际踩了一次，症状分别是"找不到任何输入文件"和"模块解析不到"）。
+- 结果：21 个前端全过，另有 374 条历史遗留错误（大多在共享 client 源码里）**只报数量、不阻塞** —— 否则这条检查会因为噪音而没人看。
+
+它确实能抓住这次的错：`.dsh-tmp/frontend-typecheck-negative.ps1` 把 `HardDrive` 从 import 里删掉、跑检查、确认报出 `error TS2304: Cannot find name 'HardDrive'` 并让该包 FAIL、再还原文件，全部为真。注意最初我用 Node 的 `execFileSync` 写这个反向验证，而**沙箱禁止 Node 起子进程**（`spawn EPERM`）——异常被 catch 成空输出，看起来就像"检查没抓到"。这类验证必须用 pwsh 起子进程，或在同进程内 import。
+
+### 16.3 顺手发现：我把 `dashboard-client.js` 清掉了
+
+dashboard 的 `build` 脚本是**三步**：`tsc` → `vite build`（网页外壳）→ `vite build --config vite.client.config.ts`（共享 client，`emptyOutDir: false`）。而第一步 `vite build` 对**同一个** `dist/web` 是 `emptyOutDir: true`。前面几轮我为了更新 i18n 文案只跑了中间那一步，于是**把 `dist/web/dashboard-client.js` 删了**——那是所有插件 bundle 通过稳定 URL `/dashboard-client.js` 导入的共享 React/runtime 包。少了它，`/dashboard-client.js` 会落到 dashboard 的兜底路由上返回 index.html，整个面板在加载插件时就崩。这次已用第三步单独重建（该配置是 `emptyOutDir: false`，可以单独跑），2.35 MB，并确认它确实导出了 `HardDrive` 等图标（`client.ts` 里 `export * from "lucide-react"`）。
+
+新增守卫 `.dsh-tmp/build-artifacts-check.mjs`：读每个包的 `build` 脚本与 vite 配置，断言每一步的产物都在 —— 有 `main` 的包要有 `dist/index.js`；build 里出现第二个 `vite build --config X` 的，要能从 X 里解析出 `outDir` 与 `fileName` 且文件存在；有前端且配置带 `lib.fileName` 的包要有对应 bundle（不带的按外壳 `index.html` 检查）；另外显式检查共享 client 与网页外壳。当前 74 项全过。反向验证：把 client 改名藏起来 → 立刻报 3 条 FAIL，再改回来。
+
+**教训**：重建某个包要用它自己的 `build` 脚本（`yarn workspace @velocelab/<pkg> build`），不要只手敲其中一条命令 —— 同一个输出目录被多步构建共用时，"少跑一步"的后果是**删掉别人的产物**，而且只在你刷新页面时才炸。
