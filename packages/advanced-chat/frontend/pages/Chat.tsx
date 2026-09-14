@@ -783,7 +783,7 @@ export default function Chat() {
   })
 
   const {
-    data: serverSessionFolders = [],
+    data: serverSessionFolders,
     refetch: refetchSessionFolders,
   } = useQuery<SessionFolder[]>({
     queryKey: advancedSessionFoldersQueryKey,
@@ -1239,7 +1239,10 @@ export default function Chat() {
   }, [activeRunMode, configTab])
 
   useEffect(() => {
-    if (isAdvanced) {
+    // Adopt the server list only once it exists. Defaulting the query data to a
+    // fresh `[]` would give this dependency a new identity on every render and
+    // set state forever ("Maximum update depth exceeded").
+    if (isAdvanced && serverSessionFolders) {
       setSessionFolders(serverSessionFolders)
     }
   }, [isAdvanced, serverSessionFolders])

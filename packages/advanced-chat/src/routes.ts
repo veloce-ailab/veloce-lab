@@ -418,6 +418,32 @@ export function registerAdvancedChatRoutes(
       session.status = 201;
       session.respond(value, "json");
     });
+  // Declared before /sessions/:id on purpose: the router answers with the first
+  // matching pattern in declaration order, so a parameterised route declared
+  // earlier would swallow the literal "folders" segment.
+  ctx
+    .route("/api/user/advanced-chat/sessions/folders")
+    .methods("GET")
+    .action(async (session) => {
+      const current = await user(session);
+      if (current?.id !== undefined)
+        session.respond(await service.listSessionFolders(current.id), "json");
+    });
+  ctx
+    .route("/api/user/advanced-chat/sessions/folders")
+    .methods("POST")
+    .action(async (session) => {
+      const current = await user(session);
+      if (current?.id === undefined) return;
+      session.status = 201;
+      session.respond(
+        await service.createSessionFolder(
+          current.id,
+          String((await body(session)).name ?? ""),
+        ),
+        "json",
+      );
+    });
   ctx
     .route("/api/user/advanced-chat/sessions/:id")
     .methods("GET")
@@ -610,29 +636,6 @@ export function registerAdvancedChatRoutes(
         });
         session.respond({ success: true }, "json");
       }
-    });
-  ctx
-    .route("/api/user/advanced-chat/sessions/folders")
-    .methods("GET")
-    .action(async (session) => {
-      const current = await user(session);
-      if (current?.id !== undefined)
-        session.respond(await service.listSessionFolders(current.id), "json");
-    });
-  ctx
-    .route("/api/user/advanced-chat/sessions/folders")
-    .methods("POST")
-    .action(async (session) => {
-      const current = await user(session);
-      if (current?.id === undefined) return;
-      session.status = 201;
-      session.respond(
-        await service.createSessionFolder(
-          current.id,
-          String((await body(session)).name ?? ""),
-        ),
-        "json",
-      );
     });
   ctx
     .route("/api/user/advanced-chat/settings")

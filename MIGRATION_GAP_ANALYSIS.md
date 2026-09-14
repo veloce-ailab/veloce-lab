@@ -464,3 +464,65 @@ console.log(r.lastInsertRowid, r.lastInsertRowid===undefined);"
 单元测试在实现过程中抓到一个真问题：`{data:{model_ratio:{"qwen-max":2}}}` 曾经把映射本身的键名 `model_ratio` 当成模型名收进来（"键为模型名的映射"判定没有排除元数据键），现在会先排除元数据键再采信键名。
 
 **注意**：3000 端口上正在跑的进程仍是改动前起的，重启后新的 `dist/` 与这三个端点才生效。
+
+## 10. 会话文件夹 404 与聊天页无限重渲染
+
+浏览器控制台报的两个错其实是一件事的两半：`GET /api/user/advanced-chat/sessions/folders` 一直 404（计数 2 → 6 → 13 地刷），并伴随 React 的 "Maximum update depth exceeded"。
+
+### 10.1 404：字面量路由被参数化路由抢走
+
+`Core.route()` 以路径为键（重复路径复用同一个 Route 并累加方法），而 `getRoute()` 是**按声明顺序返回第一个匹配的模式**，不优先字面量：
+
+```js
+getRoute(path) {
+  for (const routePath in this.routes) {
+    const route = this.routes[routePath];
+    if (route.match(path)) return route;   // 先到先得
+  }
+}
+```
+
+`advanced-chat` 里 `/sessions/:id`（原 422 行起，GET/DELETE/PATCH）声明在 `/sessions/folders`（原 615/623 行）**之前**，于是 `GET /sessions/folders` 落进了参数化处理器，`id = "folders"`，查不到会话 → `404 {error:"Session not found"}`。前端"从服务端拉文件夹列表"永远失败，本地缓存那份反而成了唯一来源。`POST` 侥幸没事——`/sessions/:id` 上没有 POST 方法，所以建文件夹一直是好的，只是建完列表刷不出来。
+
+修法是把两条 folders 路由移到第一条 `/sessions/:id` 之前，并留注释说明理由（后加路由的人很容易再把它挪回去）。参数化路由本身仍然正常：新建会话、按 id 读取、设置会话归属文件夹、不存在 id 返回 404 都逐条验证过。
+
+### 10.2 无限重渲染：查询默认值是个新数组
+
+```tsx
+const { data: serverSessionFolders = [] } = useQuery(...)   // 每渲染一个新 []
+useEffect(() => {
+  if (isAdvanced) setSessionFolders(serverSessionFolders)   // 无条件 setState
+}, [isAdvanced, serverSessionFolders])
+```
+
+查询没有数据（加载中或**失败**）时 `data` 是 `undefined`，解构默认值每次渲染都造一个新数组 → 依赖恒变 → effect 每渲染都跑 → 用一个新数组 setState（对象身份不同，React 无法 bail out）→ 再渲染。404 恰好保证查询永远拿不到数据，两个 bug 咬合在一起。
+
+改成不给默认值、拿到数据才同步：
+
+```tsx
+const { data: serverSessionFolders } = useQuery(...)
+useEffect(() => {
+  if (isAdvanced && serverSessionFolders) setSessionFolders(serverSessionFolders)
+}, [isAdvanced, serverSessionFolders])
+```
+
+这样即使查询失败也只是不更新，不会再空转。
+
+### 10.3 两个新工具
+
+这类"路由永远到不了"的问题在 §7、§8 都是靠人工翻代码发现的，现在做成了检查器：
+
+- `.dsh-tmp/route-shadow-check.mjs`：按**真实插件加载顺序**（`.dsh-tmp/plugin-order.txt`，取自一次真实启动的 `core apply plugin` 日志）× 文件内行号排出路由声明顺序，用 `@yumerijs/core` 真实的 `Route` 匹配器判断每条**字面量**路径是否会被更早的模式抢走。当前 169 条路由、0 条不可达。它同时也是这次修复的回归门禁：把 folders 路由挪回 `:id` 之后会立刻报出来。
+- `.dsh-tmp/unstable-default-check.mjs`：扫 `data: x = []`/`= {}` 这类默认值，找出"依赖它 + 无条件 setState"的 effect。本仓库 125 个前端文件里命中 7 处，除本次修掉的那处外，其余 5 处逐个人工复核为安全（有的被 `isFetched` 门住，有的 set 的是字符串所以同值会 bail out），复核理由写在脚本内的 `reviewed` 表里，避免下次又当新问题重报。
+
+### 10.4 验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `.dsh-tmp/chat-folders-e2e.mjs`（真服务器 + 真库） | **14 项全过**：列表 200 且等于表内行数、建文件夹 201 且 `id` 为字符串（`SessionFolder.id: string`）、新文件夹出现在列表、建会话、设置会话归属、按 id 读回、未知 id 仍 404 "Session not found"；跑完 folders 0 → 0、无残留会话 |
+| `route-shadow-check` | 修复前报 1 条（`GET /sessions/folders` 被 `/sessions/:id` 抢走），修复后 0 条 |
+| `unstable-default-check` | 0 条未复核风险、5 处已复核安全 |
+| 全包 `tsc` + `advanced-chat` 前端 `vite build` | 通过（前端 TSX 只有 vite 这一道门禁：包的 `tsconfig.json` 只 `include: ["src"]`） |
+| 三份契约 + 路由表 | 全部通过；169 条路由无同路径同方法重复 |
+
+**要生效需要重启 3000 端口的服务**：后端路由顺序在 `dist/routes.js`，前端已在 `packages/advanced-chat/dist/frontend/advanced-chat.js` 重新构建（用旧包的浏览器建议硬刷新一次）。
