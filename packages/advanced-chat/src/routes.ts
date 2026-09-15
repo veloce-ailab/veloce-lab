@@ -1,6 +1,7 @@
 import { Context, Session } from "yumeri";
 import { randomUUID } from "node:crypto";
 import type { AdvancedChatService } from "./index.js";
+import { ChatInputError } from "./index.js";
 import { openChatStream } from "./stream.js";
 
 export function registerAdvancedChatRoutes(
@@ -781,11 +782,16 @@ export function registerAdvancedChatRoutes(
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
-          session.status = /not found/i.test(message)
-            ? 404
-            : /required|not specified|invalid/i.test(message)
+          // Only a request we rejected ourselves is the caller's fault; an error
+          // from the upstream is a gateway failure. Matching the text instead
+          // filed "Invalid URL (POST /v1/v1/chat/completions)" as a 400, which
+          // sent the search for the cause to the request body.
+          session.status =
+            error instanceof ChatInputError
               ? 400
-              : 503;
+              : /not found/i.test(message)
+                ? 404
+                : 502;
           session.respond({ error: message }, "json");
         }
         return;

@@ -271,6 +271,36 @@ export interface ChatCompletionHooks {
   onEvent?: (event: ChatStreamEvent) => void;
 }
 
+/**
+ * A request the caller got wrong, as opposed to an upstream that failed.
+ *
+ * The route used to guess the status from the message text, which misfiled a
+ * real upstream failure: `Invalid URL (POST /v1/v1/chat/completions)` matched
+ * `/invalid/` and the browser was told "400 Bad Request" for what was actually a
+ * channel misconfiguration.
+ */
+export class ChatInputError extends Error {}
+
+/**
+ * Joins a channel's base URL with an upstream path.
+ *
+ * Channels are configured either as a bare host (`https://api.deepseek.com`) or
+ * with the API version already in the base (`https://api.deepseek.com/v1`), and
+ * appending blindly turned the second shape into `/v1/v1/chat/completions`,
+ * which the upstream answered with `Invalid URL (POST /v1/v1/chat/completions)`.
+ * A version the base already carries is not repeated.
+ */
+export function upstreamURL(baseURL: unknown, urlPath: unknown): string {
+  const base = String(baseURL ?? "")
+    .trim()
+    .replace(/\/+$/, "");
+  const suffix = String(urlPath ?? "").trim();
+  const version = suffix.match(/^\/(v\d+)\//)?.[1];
+  if (version && new RegExp(`/${version}$`).test(base))
+    return `${base}${suffix.slice(version.length + 1)}`;
+  return `${base}${suffix}`;
+}
+
 export interface AgentInput {
   name: string;
   prompt: string;
@@ -1152,8 +1182,10 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
     },
     async complete(userId, input, hooks) {
       const requestedModel = String(input.model ?? "").trim();
-      if (!input.messages.length)
-        throw Error("model and messages are required");
+      // The legacy answered these two with their own messages
+      // (`advanced_chat_completion.go`: "Messages are required" / "Model is
+      // required"), which is also what makes a rejection diagnosable.
+      if (!input.messages.length) throw new ChatInputError("Messages are required");
       const emit = (type: ChatStreamEvent["type"], payload: Record<string, unknown>) =>
         hooks?.onEvent?.({ type, payload });
       // The client owns the session id and saves the session itself, so a run
@@ -1217,7 +1249,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             updated_at: new Date().toISOString(),
           });
       // Only a malformed id can get here now: an unknown one is created above.
-      if (!session) throw Error("Invalid session id");
+      if (!session) throw new ChatInputError("Invalid session id");
       const sessionId = String(session.id);
       const now = new Date().toISOString();
       // Resolve everything the run uses before touching the upstream: the
@@ -1237,9 +1269,21 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
               user_id: userId,
               id: agentKey,
             })));
-      const modelName = String(agent?.default_model ?? "").trim() || requestedModel;
-      if (!modelName) throw Error("model and messages are required");
       const mode = String(input.mode ?? session.run_mode ?? "chat").trim() || "chat";
+      const modelName = String(agent?.default_model ?? "").trim() || requestedModel;
+      // An agent group run carries no model of its own — every member resolves
+      // theirs — so the client sends an empty one and the legacy only demanded a
+      // model outside that mode (`modelName == "" && mode != agentGroup`).
+      if (!modelName && mode !== "agent_group")
+        throw new ChatInputError("Model is required");
+      if (mode === "agent_group")
+        // The Studio orchestration that fans a run out to a group's members is
+        // not ported yet, so a group run cannot be served. Saying that is better
+        // than continuing with an empty model and failing later on a channel
+        // that serves model "".
+        throw new ChatInputError(
+          "Agent group runs are not implemented yet; use assistant mode for now",
+        );
       const userChannelId =
         input.userChannelId ??
         (agent?.user_channel_id ? Number(agent.user_channel_id) : undefined) ??
@@ -1522,10 +1566,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         try {
           response = await fetchCompletionWithRetry(
             ctx,
-            // The trailing slash has to be stripped before the path is appended;
-            // a channel configured as `https://host/v1/` would otherwise produce
-            // `https://host/v1//chat/completions`.
-            `${String(channel.base_url).replace(/\/$/, "")}${request.urlPath}`,
+            upstreamURL(channel.base_url, request.urlPath),
             { method: "POST", headers, body: JSON.stringify(request.body) },
             mode,
             {
@@ -1759,7 +1800,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           try {
             followupResponse = await fetchCompletionWithRetry(
               ctx,
-              `${String(channel.base_url).replace(/\/$/, "")}${followup.urlPath}`,
+              upstreamURL(channel.base_url, followup.urlPath),
               {
                 method: "POST",
                 headers: followup.headers,

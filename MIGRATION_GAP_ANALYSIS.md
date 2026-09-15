@@ -888,3 +888,40 @@ if existing.ID != "" {
 反向验证也做了：用 `PROBE_OLD_BEHAVIOUR` 环境变量临时恢复"查不到就不创建"的旧行为，同一份探针立刻大面积 FAIL（"saving a session the client named creates it"、"the row exists" 等），确认这套检查真的能抓住这个 bug；随后还原文件（确认无残留标记）、重新编译、重跑全绿。
 
 顺带记一笔环境事实：这个部署在 `yumeri.json` 里声明了 `@velocelab/auth` 管理员，插件启动时会把管理员**落到 users 表**并打日志 `[auth] administrator "FireGuo" adopted from configuration`。users 表为空时匿名请求按 uid 0 处理，一旦这行存在就要求登录（`/auth/password/login`），所以现在探针都要先登录取 token —— 这也解释了为什么之前几轮的探针不需要认证。
+
+## 18. completions 报 400 Bad Request：真正的问题在上游 URL 上
+
+### 18.1 现象与真实原因链
+
+会话快照修好之后，浏览器控制台开始出现 `/api/user/advanced-chat/completions: 400 (Bad Request)`。400 是"请求写错了"的意思，于是排查方向自然落到请求体上 —— 但请求体没问题。
+
+真实链条是四步：
+
+1. 该用户的渠道是 `channels.base_url = https://api-staff.mcjpg.org/v1` —— **base URL 里已经带了 `/v1`**（这是渠道配置里很常见的一种写法）。
+2. 插件把上游路径直接拼在 base 后面：`${base_url}/v1/chat/completions` → `https://api-staff.mcjpg.org/v1/v1/chat/completions`。
+3. 上游 SDK 拿到这个 URL 直接抛 `Invalid URL (POST /v1/v1/chat/completions)` —— **根本没有发出网络请求**。这一条留在了库里，是定位的关键证据：`advanced_chat_runs.error_message`。
+4. completions 路由用**消息文本**猜状态码：`/required|not specified|invalid/i` —— `Invalid URL` 里的 "Invalid" 命中了 → 返回 **400**。于是浏览器把它显示成一个 400，把"渠道 URL 配错"伪装成了"请求体写错"。
+
+同一类拼接还有第二处：`knowledge` 的 embedding 调用写死 `${base_url}/v1/embeddings`，base 带版本时同样会变成 `/v1/v1/embeddings`。
+
+### 18.2 改了什么
+
+- 新增 `upstreamURL(baseURL, urlPath)`（`packages/advanced-chat/src/index.ts`，导出让别的插件复用）：base 末尾斜杠先去掉；如果路径的版本段（`/v1`、`/v2`…）base 末尾已经有了，就不再重复。四个形状都对：带 `/v1` 的 base、裸主机名、带尾斜杠、dashscope 那种 `/compatible-mode/v1`。两个调用点（首轮 completions 与工具循环的后续轮次）都改用它；`knowledge` 的 embeddings 也改用它（该插件本来就依赖 advanced-chat）。
+- 新增 `ChatInputError`（`packages/advanced-chat/src/index.ts`）：我们**自己**拒绝的请求（消息为空、模型缺失、会话 id 畸形）抛这个类型，路由靠 `instanceof` 判定 400；其余异常一律 **502**（上游/网关失败），`/not found/` 仍是 404。不再靠消息文本猜状态码 —— 这正是把上游故障误报成 400 的原因。
+- 顺手补齐一个从旧实现漏掉的契约：旧代码是 `if modelName == "" && mode != advancedChatModeAgentGroup` 才报错（`old/internal/service/advanced_chat_completion.go:166`），也就是**代理组运行时前端故意送空 model**（每个成员各自解析自己的模型）。移植时这条豁免丢了，导致代理组发送被我们自己的校验拦下。现在豁免照旧；而 Agent Studio 的多智能体编排本体本来就是已知未移植项（见 §"已知未处理"），所以代理组运行会明确回答 `Agent group runs are not implemented yet; use assistant mode for now`，而不是一个误导人的字段校验错误。两个校验错误的措辞也改回旧实现的区分写法：`Messages are required` / `Model is required`。
+
+### 18.3 验证
+
+`.dsh-tmp/upstream-url-e2e.mjs`：在本地起一个桩上游（`127.0.0.1:3901`），往库里插入一组临时渠道/模型/绑定行，然后真的发一次运行，**记录桩收到的请求路径**并断言：
+
+- base 带 `/v1`（就是该用户的形状）→ 上游收到 `/v1/chat/completions`（修前是 `/v1/v1/chat/completions`）；
+- 裸主机名 → 仍然是 `/v1/chat/completions`（没有回归）；
+- base 带尾斜杠 → 不会产生双斜杠；
+- assistant 模式（该用户实际用的模式）→ 同样的 URL，并且整轮跑通拿到回复；
+- 空 messages → 400 `Messages are required`；代理组运行 → 400 且消息说的是真实原因。
+
+探针自己清理临时渠道/模型/绑定行与探针会话，跑完核对库里只剩用户自己的数据。
+
+反向证据是意外得到的、也因此格外可信：第一遍探针跑在**没重启的旧构建**上，同一份断言直接报 5 项 FAIL，桩收到的正是 `/v1/v1/chat/completions`、错误文案也正是旧的 `model and messages are required`。
+
+定位本身也没靠猜：`advanced_chat_runs` 里那条 `Invalid URL (POST /v1/v1/chat/completions)` 与 `channels.base_url` 的 `/v1` 结尾，两条库内数据一对，链路就闭合了。

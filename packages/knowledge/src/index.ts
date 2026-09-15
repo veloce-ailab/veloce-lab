@@ -3,6 +3,7 @@ import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/file";
 import "@velocelab/advanced-chat";
+import { upstreamURL } from "@velocelab/advanced-chat";
 import "@velocelab/database-core";
 import { ensureTables } from "./tables.js";
 
@@ -75,7 +76,10 @@ async function embedTexts(
   if (!channel || (channel.user_id && Number(channel.user_id) !== userId))
     return texts.map(embedding);
   const response = await fetch(
-    `${String(channel.base_url).replace(/\/$/, "")}/v1/embeddings`,
+    // Shared with the chat plugin: a channel whose base URL already carries the
+    // API version must not get a second one, or the upstream answers
+    // "Invalid URL (POST /v1/v1/embeddings)".
+    upstreamURL(channel.base_url, "/v1/embeddings"),
     {
       method: "POST",
       headers: {
