@@ -28,6 +28,7 @@ import {
   listWindowsDrives,
   readTextFile,
   replaceText,
+  runCommand,
   writeTextFile,
 } from "./actions.js";
 import { pickFolder } from "./dialog.js";
@@ -45,10 +46,10 @@ declare module "yumeri" {
 }
 
 /**
- * Actions this host answers. `run_command` is deliberately absent: running an
- * arbitrary shell command on the host from a chat tool needs the approval flow
- * that the queued connector tasks provide for an external agent, and silently
- * enabling it here would hand the model a shell on the server.
+ * Actions this host answers. `run_command` is here, but only as a queued task:
+ * running an arbitrary shell command on the host from a chat tool is exactly
+ * what the approval flow exists for, so it is never answered inline — the
+ * session's approval mode decides whether the user is asked first.
  */
 const CAPABILITIES = [
   "list_directories",
@@ -62,7 +63,15 @@ const CAPABILITIES = [
   "file_sha256",
   "git_status",
   "git_action",
+  "run_command",
 ];
+
+/**
+ * How long a chat request waits for a queued command before giving up and
+ * telling the model to ask again. Long enough for an approved build, short
+ * enough that a run does not look hung while the user reads the prompt.
+ */
+const COMMAND_WAIT_MS = 60_000;
 
 export async function apply(ctx: Context) {
   ctx.i18n({
@@ -155,6 +164,30 @@ export async function apply(ctx: Context) {
         );
         return { success: true, result: outcome.result };
       }
+      if (String(task.action) === "run_command") {
+        // The task's own workspace path wins over anything in the payload, so a
+        // command cannot be talked into running outside the folder the session
+        // works in.
+        const outcome = await runCommand({
+          ...payload,
+          workspace_path: workspacePath,
+        });
+        return {
+          success: outcome.exit_code === 0,
+          result: [
+            `$ ${outcome.command}`,
+            `cwd: ${outcome.cwd}`,
+            `exit code: ${outcome.exit_code}`,
+            outcome.output,
+          ]
+            .filter((line) => line !== "")
+            .join("\n"),
+          error_message:
+            outcome.exit_code === 0
+              ? undefined
+              : `exit code ${outcome.exit_code}`,
+        };
+      }
       return {
         success: false,
         error_message: `This machine cannot run the task action "${task.action}"`,
@@ -164,6 +197,51 @@ export async function apply(ctx: Context) {
         success: false,
         error_message: error instanceof Error ? error.message : String(error),
       };
+    }
+  };
+
+  /**
+   * Whether a queued action has to be approved first. The session carries both
+   * switches: the newer approval mode and the older auto-approve flag, and
+   * either one can be the reason a command is allowed to run unattended.
+   */
+  const needsApproval = (input: Record<string, unknown>) =>
+    String(input.approval_mode ?? "manual") !== "full_access" &&
+    input.auto_approve !== true;
+
+  /**
+   * Waits for a queued task to settle, so a command's output reaches the model
+   * in the same turn. A task that is still waiting for approval is waited for
+   * too — the user may be looking at the prompt right now — but only for as long
+   * as a chat request can reasonably stay open; after that the model is told to
+   * ask again rather than left hanging.
+   */
+  const waitForTask = async (userId: number, taskId: string) => {
+    const deadline = Date.now() + COMMAND_WAIT_MS;
+    for (;;) {
+      const row: any = await db.selectOne("advanced_chat_connector_tasks", {
+        id: taskId,
+        user_id: userId,
+      });
+      if (!row) return { task_id: taskId, status: "unknown" };
+      const status = String(row.status ?? "");
+      if (status === "completed" || status === "failed" || status === "rejected")
+        return {
+          task_id: taskId,
+          status,
+          output: String(row.result ?? "").trim(),
+          error: String(row.error_message ?? "").trim() || undefined,
+        };
+      if (Date.now() >= deadline)
+        return {
+          task_id: taskId,
+          status,
+          message:
+            status === "pending_approval"
+              ? "The command is waiting for your approval; approve it on the device page and run the tool again to see the output."
+              : "The command is still running; run the tool again to see the output.",
+        };
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
   };
 
@@ -218,9 +296,26 @@ export async function apply(ctx: Context) {
           device_id: String(device.id),
           action: "git_action",
           workspace_path: String(input.connector_workspace_path ?? ""),
+          run_id: String(input.run_id ?? ""),
           payload: input,
           requiresApproval: approvalMode !== "full_access",
         });
+      },
+      // `run_command` is queued and then waited for, so the model sees the
+      // output of what it asked to run. A session that has not been given
+      // full access still goes through the approval prompt first; the wait
+      // covers the user answering it while the run is still open.
+      run_command: async (userId, input, device) => {
+        const requiresApproval = needsApproval(input);
+        const task = await connector.createTask(userId, {
+          device_id: String(device.id),
+          action: "run_command",
+          workspace_path: String(input.connector_workspace_path ?? ""),
+          run_id: String(input.run_id ?? ""),
+          payload: input,
+          requiresApproval,
+        });
+        return await waitForTask(userId, String(task.id));
       },
     },
     runTask,

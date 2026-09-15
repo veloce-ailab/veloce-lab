@@ -346,7 +346,7 @@ console.log(r.lastInsertRowid, r.lastInsertRowid===undefined);"
 
 `registerTool` 只做 `tools.push`，不去重；`toolPayload` 也不去重。`inner-tools` 原本也注册一个 `ask_user`，与 `advanced-chat` 内置的 `ask-user.ts` 同名——启用后每个请求都会带两个同名 function（多数上游会直接以 `Duplicate function name` 拒绝），且内置那份才拥有「问一句、结束本轮、等用户回复」的语义。已从 `inner-tools` 移除该条目。
 
-注意：`inner-tools` 其余 10 个工具走 `connector.execute(...)`，而**本仓库没有任何插件注册 `ConnectorHandler`**（`connector` 的 `handlers` 数组因此为空，`execute` 会抛 `No connector runtime is enabled`）。这些工具在接上运行时之前都是空转，测完后如果发现模型反复调用它们，可以先把 `@velocelab/inner-tools` 关掉。
+注意（§20 已修：本机类型现在服务读/写/列目录/git/`run_command`，运行也会把工作区、设备与审批模式下发给工具；仍无人服务的是 `web_search`/`web_fetch`）：`inner-tools` 其余 10 个工具走 `connector.execute(...)`，而**本仓库没有任何插件注册 `ConnectorHandler`**（`connector` 的 `handlers` 数组因此为空，`execute` 会抛 `No connector runtime is enabled`）。这些工具在接上运行时之前都是空转，测完后如果发现模型反复调用它们，可以先把 `@velocelab/inner-tools` 关掉。
 
 ### 7.3 工作室点了会进到 `/chat/agent-groups/*/operations`
 
@@ -626,7 +626,7 @@ Error [ERR_HTTP_HEADERS_SENT]: Cannot write headers after they are sent to the c
 
 原来的连接器只有一种存在形式：**另起一个进程**，拿令牌、连服务器、长轮询领任务。桌面上那个 `window.veloceDesktop.startConnector`、页面上那行 `app.exe -server ... -token ...` 都是这个模式。而**跑 Yumeri 的这台机器本身就是能干活的那台机器**，再让它去连自己、领自己的任务没有意义。于是加了一个插件让本机直接作为连接器，并且顺手把"连接器类型"变成其他插件可以注册的东西——因为"怎么弹文件夹选择窗口"这种能力本来就该由连接器自己决定。
 
-顺带补上的是一个更基础的缺口：**在此之前没有任何插件实现连接器的动作**。`connector.execute` 的处理器链是空的，所以工作区页的目录浏览（`list_directories`）、git 面板（`git_status`/`git_action`）以及 `inner-tools` 那批连接器工具**全部**只会得到 `No connector runtime is enabled`。本机的文件系统与 git 正好补上这块。
+顺带补上的是一个更基础的缺口（§20 已修：动作能到达本机类型之后，剩下的缺口是工作区信息没随运行下发，以及 `run_command` 不在能力清单里 —— 两处都已在 §20 处理）：**在此之前没有任何插件实现连接器的动作**。`connector.execute` 的处理器链是空的，所以工作区页的目录浏览（`list_directories`）、git 面板（`git_status`/`git_action`）以及 `inner-tools` 那批连接器工具**全部**只会得到 `No connector runtime is enabled`。本机的文件系统与 git 正好补上这块。
 
 ### 13.1 连接器插件：类型注册表
 
@@ -968,3 +968,45 @@ if existing.ID != "" {
 ### 19.5 已知遗留
 
 除 `adapter-openai` 与 `adapter-openai-compatible` 外，其余对话类适配器（`adapter-deepseek`、`adapter-moonshot`、`adapter-siliconflow`、`adapter-xai`、`adapter-zhipu`、`adapter-dashscope` 等）**根本不发送 `tools`** —— 也就是说走这些渠道时 assistant 模式没有工具可用，只会变成普通对话。这是与本节同源的移植缺口，留待单独处理。
+
+## 20. "命令行运行时不可用"：本机运行时没接上，工具还在服务器自己的目录里干活
+
+### 20.1 用户报的现象与它真正的来源
+
+用户在应用里让助手看一个文件夹，助手回"命令行运行时不可用"。这句话不在代码里 —— 它是模型把工具返回的英文错误翻译过来的。真实错误能在用户自己的运行记录里逐字找到（`advanced_chat_run_events`，事件名是 `tool_round`，一轮里的每次调用都在 `payload.tool_calls` 里）：
+
+```
+run acr-d39e03e8c85ccf1af46151e89046ec68  (用户的 assistant 会话，status=completed)
+seq 4  tool_round  run_command   status=error
+       error: "No connector runtime is enabled"
+       arguments: {"command":"cd /d D:\\dev\\veloce-lab && git status --short && git log --oneline -15 ..."}
+seq 5  tool_round  connector_read_file  status=ok
+       arguments: {"path":"MIGRATION_STATUS.md"}
+       result: {"path":"D:\\dev\\veloce-lab\\MIGRATION_STATUS.md", ...}
+```
+
+两件事同时暴露：
+
+1. `run_command` 落到了通用运行时，而通用运行时的处理器链是空的，于是抛 `No connector runtime is enabled`。原因不是没有运行时 —— 本机类型（`device-local`）就在那里 —— 而是**它的能力清单里没有 `run_command`**：当初移植时故意留空，注释写明"需要审批流，静默开启等于把服务器上的 shell 交给模型"。这个顾虑是对的，但结果是助手连一条 `git status` 都跑不了。
+2. 更隐蔽的一点：`connector_read_file("MIGRATION_STATUS.md")` 返回的是 **`D:\dev\veloce-lab\MIGRATION_STATUS.md`** —— 服务器自己的工作目录，而用户给这个会话选的工作区是 `D:\dev\mirelia-gamer\next-app`。原因是运行的上下文里根本没带工作区：`inner-tools` 把工具参数原样转给 `connector.execute`，于是 `device-local/actions.ts` 里那套"给了工作区就限制在工作区内、相对路径以工作区为根"的规则**一次都没生效**。没有工作区时 `resolveInsideWorkspace` 直接返回绝对路径不做限制，等于模型可以读机器上任意文件。
+
+### 20.2 改了什么
+
+1. **运行把机器和文件夹带下去**（`advanced-chat/src/index.ts`）：`ChatToolDefinition.execute(input, context)` 的 context 增加 `connectorDeviceId` / `connectorWorkspacePath` / `connectorApprovalMode` / `connectorAutoApprove`，来源是本次运行的表单值，回落到会话行（会话里已经存着用户选的设备、文件夹和审批模式）。
+2. **会话说了算，模型说了不算**（`inner-tools/src/index.ts`）：新增 `connectorInput()`，把工作区、设备、审批模式、`run_id` 拼进连接器入参，并且**在展开参数之后赋值** —— 工具参数是模型输出，如果让它传的 `workspace_path` 生效，一次调用就能把动作挪到别的文件夹甚至别的机器上。同一处也顺手堵掉了"没有工作区就随便读绝对路径"这个洞。
+3. **本机 `run_command`，但只走审批队列**（`device-local`）：能力清单加上 `run_command`，动作实现是"建任务 + 等结果"，而不是直接执行。审批模式不是 `full_access`（且没开自动通过）时任务先落到 `pending_approval`，等用户在设备页批准后才由本机那条 2 秒扫一遍的队列执行 —— 也就是原本注释里说的"这条动作需要审批流"。等待有上限（60 秒）：用户在运行还开着的时候点了批准，输出会当场回到模型；没等到就让模型再问一次，而不是把请求挂死。
+4. **动作本身**（`device-local/src/actions.ts`）：`runCommand()` 用 `cmd.exe /d /s /c`（POSIX 用 `sh -c`）在工作区里执行，捕获 stdout+stderr，**非零退出码是结果而不是异常** —— 工具的意义就是把 `npm run build` 打印的东西给模型看。超时 120 秒，输出上限 200 KB，路径越界照旧拒绝。
+5. **报错点名动作**（`connector/src/index.ts`）：处理器链走到头时不再说"没有连接器运行时"，而是 `No connector runtime serves the action "web_search"`。模型是逐字读这句话的，之前那句让它以为整条命令行都不可用，实际只缺一个动作。
+
+### 20.3 验证
+
+- 单元（`.dsh-tmp/connector-plumbing-unit.mjs`，17 项全过）：会话值压过模型值、没有会话工作区时不会退化成服务器 cwd、默认审批模式是最严的 `manual`；命令在工作区里执行（断言 `cwd`）、相对路径落在工作区、`type package.json` 读到工作区里的文件、`exit 3` 作为结果返回、坏命令带回 shell 自己的报错、`path: "..\..\.."` 被 `outside the workspace` 拒绝。
+- 端到端（`.dsh-tmp/connector-runtime-e2e.mjs`，11 项全过，真跑用户那条中继）：`full_access` 会话里模型调用 `run_command` → 任务 `completed`，工具结果带回 `$ type marker.txt` / `cwd: <工作区>` / `exit code: 0` 和文件内容，全程没有 `No connector runtime`；`manual` 会话里任务先停在 `pending_approval`，探针在运行还开着的时候通过 `POST /api/user/advanced-chat/connector-tasks/:id/decision` 批准，运行仍在等待并最终拿回了同一段输出。
+- 探针自己创建的工作区、会话、运行、事件、任务全部删除；数据库里仍是用户的 5 个会话 / 8 条运行 / 0 条任务。
+
+### 20.4 仍然缺的
+
+- `web_search` / `web_fetch` **没有任何运行时**：旧实现把它们派给桌面连接器进程去跑，本机类型不管这两个。现在它们会明确回答 `No connector runtime serves the action "web_search"`。补的话要决定部署里的搜索来源（多数实现需要外部 key）。
+- 审批等不到时（超过 60 秒）模型只拿到"请再问一次"，不会自动续上：真正需要长跑的命令，要么把会话设成 `full_access`，要么接受再问一轮。
+- 命令走 `cmd.exe /d /s /c`，所以模型写的引号要守 cmd 的规矩（`node -e "..."` 这类嵌套引号容易被打散）—— 与旧实现一致，不是新引入的问题，但值得在工具描述里再说清楚。
+- 本机动作目前按"用户只有一个自动连接设备"来兜底（`defaultAutoDevice`）：用户接了多个本机/自动设备时不会自己挑，需要会话里显式选定。
