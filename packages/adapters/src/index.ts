@@ -72,6 +72,54 @@ export interface AdapterRegistry {
   normalizeType(value: string): string;
 }
 
+/**
+ * Messages in the shape chat completions expects.
+ *
+ * Two fields are only sent when they carry something: the legacy tagged both
+ * with `omitempty` (`old/internal/service/advanced_chat_completion.go:69`), and
+ * an empty array is *not* omitted by a truthiness check — so `tool_calls: []`
+ * rode along on every user message, which upstreams reject as a bad parameter.
+ */
+export function openAIChatMessages(
+  messages: ChatMessage[] | undefined,
+): Array<Record<string, unknown>> {
+  return (Array.isArray(messages) ? messages : []).map((message) => ({
+    role: message.role,
+    content: message.content,
+    ...(Array.isArray(message.toolCalls) && message.toolCalls.length
+      ? { tool_calls: message.toolCalls }
+      : {}),
+    ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
+    ...(message.name ? { name: message.name } : {}),
+  }));
+}
+
+/**
+ * The tool shape chat completions expects on the wire.
+ *
+ * `ChatTool` is `{name, description, parameters}` internally, but upstreams want
+ * `{type: "function", function: {...}}`. Sending the internal shape bare made a
+ * relay answer `{"message":"请求参数错误","type":"bad_response_status_code"}`
+ * for every assistant run — the legacy built the wrapped form
+ * (`old/internal/service/chat_executor.go:1142`), and this is that mapping.
+ */
+export function openAIChatTools(
+  tools: ChatTool[] | undefined,
+): Array<Record<string, unknown>> | undefined {
+  if (!Array.isArray(tools) || tools.length === 0) return undefined;
+  const mapped = tools
+    .filter((tool) => tool?.name)
+    .map((tool) => ({
+      type: "function",
+      function: {
+        name: String(tool.name),
+        description: String(tool.description ?? ""),
+        parameters: tool.parameters ?? { type: "object", properties: {} },
+      },
+    }));
+  return mapped.length ? mapped : undefined;
+}
+
 declare module "yumeri" {
   interface Components {
     adapters: AdapterRegistry;
