@@ -15,7 +15,7 @@ directory you choose, installs the dependencies and starts the server.
 Linux, macOS and WSL:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh | bash
+curl -fsSL --connect-timeout 15 --max-time 120 https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh | bash
 ```
 
 Windows (PowerShell):
@@ -25,10 +25,11 @@ irm https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/insta
 ```
 
 Downloading the script and running it yourself works the same way and lets you
-read it first:
+read it first (and is the safer choice: `iex` runs the script inside your own
+session):
 
 ```bash
-curl -fsSL -o install.sh https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh
+curl -fsSL --connect-timeout 15 --max-time 120 -o install.sh https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh
 bash install.sh
 ```
 
@@ -44,9 +45,20 @@ without a build, `prod` builds first), `--no-start` (install only), `--yes`
 lists them all; on Windows the same options are `-Dir`, `-Branch`, `-Port`,
 `-Mode`, `-NoStart`, `-Yes` and `-DryRun`.
 
-> The `main` branch still carries the previous Go implementation. Until this
-> rewrite is merged, name the branch: `... | bash -s -- --branch feature-new-backend`
-> (`-Branch feature-new-backend` on Windows).
+> If `raw.githubusercontent.com` hangs or is unreachable — typical behind a
+> proxy, and in WSL with NAT networking, which cannot use a proxy set up on the
+> Windows side — fetch the script from the jsDelivr mirror instead. The clone
+> itself needs GitHub access too, so pass `--repo` when only a mirror is
+> reachable:
+>
+> ```bash
+> curl -fsSL --connect-timeout 15 --max-time 120 -o install.sh \
+>   https://cdn.jsdelivr.net/gh/veloce-ailab/veloce-lab@main/scripts/install.sh
+> bash install.sh
+> ```
+>
+> In WSL you can also download on the Windows side and run the same file:
+> `irm -OutFile $HOME\install.sh <url>` then `bash /mnt/c/Users/<you>/install.sh`.
 
 The script checks for what it needs: git, Node.js 22.5 or newer (Node 24 LTS
 recommended — the SQLite plugin uses the built-in `node:sqlite`), and Yarn 4,

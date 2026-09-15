@@ -11,20 +11,27 @@
 # Nothing here calls `exit`, so running it through `iex` does not close the
 # window you started it from.
 
+# Note for the `irm ... | iex` form: iex runs this in the caller's own session,
+# and a validation attribute is checked against the parameter's default value as
+# well - which fails for an unbound [string] with "cannot add property, because
+# the variable Mode with value  will no longer be valid". So the values are
+# validated in the body instead of by attribute, and `exit` is never called.
 [CmdletBinding()]
 param(
   [string]$Dir,
   [string]$Branch = "main",
   [string]$Repo = "https://github.com/veloce-ailab/veloce-lab",
   [int]$Port = 0,
-  [ValidateSet("dev", "prod")][string]$Mode,
+  [string]$Mode,
   [switch]$NoStart,
   [switch]$Yes,
   [switch]$DryRun,
   [switch]$Help
 )
 
-$ErrorActionPreference = "Stop"
+# $ErrorActionPreference is deliberately left alone: under `iex` setting it would
+# change the caller's session. Failures are handled explicitly instead, with
+# Get-Command checks and an exit-code check after every native command.
 $script:MinNodeMajor = 22
 $script:MinNodeMinor = 5
 $script:RecommendedNode = 24
@@ -373,6 +380,13 @@ if ([string]::IsNullOrWhiteSpace($Mode)) {
   Write-Note "2) prod - run the full build first, then start (slower, for a deployment)"
   $choice = Read-Answer "Choose 1 or 2" "1"
   $Mode = if ($choice -match '^(2|prod|production)$') { "prod" } else { "dev" }
+} elseif ($Mode -match '^(2|prod|production)$') {
+  $Mode = "prod"
+} elseif ($Mode -match '^(1|dev|development)$') {
+  $Mode = "dev"
+} else {
+  Write-Warn2 "unknown mode '$Mode'; using dev"
+  $Mode = "dev"
 }
 
 $startCommand = "dev"

@@ -14,7 +14,7 @@ Veloce 是一款面向 AI 平台与开发者生态打造的 AI API 网关与服�
 Linux / macOS / WSL：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh | bash
+curl -fsSL --connect-timeout 15 --max-time 120 https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh | bash
 ```
 
 Windows（PowerShell）：
@@ -23,10 +23,11 @@ Windows（PowerShell）：
 irm https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.ps1 | iex
 ```
 
-也可以先把脚本下载下来再运行（内容一样，方便先看一眼）：
+也可以先把脚本下载下来再运行（内容一样，方便先看一眼；而且推荐这么做 —— `iex` 是在你自己的
+会话里执行的）：
 
 ```bash
-curl -fsSL -o install.sh https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh
+curl -fsSL --connect-timeout 15 --max-time 120 -o install.sh https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh
 bash install.sh
 ```
 
@@ -40,8 +41,18 @@ pwsh -File install.ps1
 `--yes`（全部用默认值，不再提问）、`--dry-run`（只打印计划不执行）；`--help` 会列出全部。
 Windows 上对应的是 `-Dir`、`-Branch`、`-Port`、`-Mode`、`-NoStart`、`-Yes`、`-DryRun`。
 
-> `main` 上目前还是旧的 Go 实现。在这次重写合并之前，需要指定分支：
-> `... | bash -s -- --branch feature-new-backend`（Windows 用 `-Branch feature-new-backend`）。
+> 如果 `raw.githubusercontent.com` 卡住或打不开 —— 走代理时常见，WSL 的 NAT 模式更是用不了
+> Windows 那边的代理 —— 改用 jsDelivr 镜像取脚本。克隆本身也要能连 GitHub，只能连镜像时
+> 用 `--repo` 指定：
+>
+> ```bash
+> curl -fsSL --connect-timeout 15 --max-time 120 -o install.sh \
+>   https://cdn.jsdelivr.net/gh/veloce-ailab/veloce-lab@main/scripts/install.sh
+> bash install.sh
+> ```
+>
+> 在 WSL 里也可以直接在 Windows 侧下载再运行同一个文件：
+> `irm -OutFile $HOME\install.sh <url>`，然后 `bash /mnt/c/Users/<你>/install.sh`。
 
 脚本会检查它需要的东西：git、Node.js 22.5 以上（推荐 Node 24 LTS —— SQLite 插件用的是内置的
 `node:sqlite`）、以及 Yarn 4 —— Yarn 通过 corepack 获取，因此跑的必然是 `package.json` 里
