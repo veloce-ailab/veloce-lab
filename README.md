@@ -6,6 +6,53 @@ English | [简体中文](README_zh.md)
 
 Veloce is an AI API gateway and marketplace designed for building AI platforms and developer ecosystems, providing a production-ready foundation for AI API management, authentication, billing, and upstream provider management.
 
+## Quick Install
+
+The installer is interactive: it checks that git, Node.js and Yarn are usable
+(offering to install whatever is missing), clones this repository into the
+directory you choose, installs the dependencies and starts the server.
+
+Linux, macOS and WSL:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.ps1 | iex
+```
+
+Downloading the script and running it yourself works the same way and lets you
+read it first:
+
+```bash
+curl -fsSL -o install.sh https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh
+bash install.sh
+```
+
+```powershell
+irm -OutFile install.ps1 https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.ps1
+pwsh -File install.ps1
+```
+
+Options: `--dir <path>` (where to install), `--branch <name>` (branch or tag to
+clone, default `main`), `--port <number>`, `--mode dev|prod` (`dev` starts
+without a build, `prod` builds first), `--no-start` (install only), `--yes`
+(take every default without asking) and `--dry-run` (change nothing). `--help`
+lists them all; on Windows the same options are `-Dir`, `-Branch`, `-Port`,
+`-Mode`, `-NoStart`, `-Yes` and `-DryRun`.
+
+> The `main` branch still carries the previous Go implementation. Until this
+> rewrite is merged, name the branch: `... | bash -s -- --branch feature-new-backend`
+> (`-Branch feature-new-backend` on Windows).
+
+The script checks for what it needs: git, Node.js 22.5 or newer (Node 24 LTS
+recommended — the SQLite plugin uses the built-in `node:sqlite`), and Yarn 4,
+which it gets from corepack so the version pinned in `package.json` is the one
+that runs.
+
 ## Features
 
 - OpenAI-compatible API gateway

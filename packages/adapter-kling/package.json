@@ -1,0 +1,17 @@
+{
+  "name": "@velocelab/adapter-kling",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "dev": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@velocelab/adapters": "workspace:*"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  }
+}

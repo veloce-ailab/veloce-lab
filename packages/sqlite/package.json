@@ -1,0 +1,21 @@
+{
+  "name": "@velocelab/sqlite",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "dev": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@velocelab/database-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "yumeri": "^3.0.0"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@velocelab/channel-admin",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "dev": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
+  },
+  "dependencies": {
+    "@velocelab/adapters": "workspace:*",
+    "@velocelab/billing": "workspace:*"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  }
+}

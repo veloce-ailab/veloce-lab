@@ -1,0 +1,56 @@
+import { Palette, Puzzle, Settings as SettingsIcon, Shield } from "lucide-react";
+import type { DashboardContext } from "@velocelab/dashboard/frontend";
+import PluginsSettings from "./pages/PluginsSettings";
+import SettingsWorkspace from "./pages/SettingsWorkspace";
+import SystemSettings from "./pages/SystemSettings";
+import ThemeSettings from "./pages/ThemeSettings";
+
+const ProxySettings = () => <SystemSettings section="proxy" />;
+const AboutSettings = () => <SystemSettings section="about" />;
+// The pages in this package declare their own section, like every other
+// contributor does: the shell renders what it is given and keeps no registry of
+// other packages' headings.
+const SCOPE = { scope: "settings", group: { id: "system", labelKey: "settings.group.system", order: 40 } } as const;
+// Plugin management sits with the other general settings rather than the system
+// ones, alongside the pages the user, uptime and desktop plugins contribute.
+const GENERAL = { scope: "settings", group: { id: "general", labelKey: "settings.group.general", order: 10 } } as const;
+
+/**
+ * The settings plugin owns the settings shell and the platform-level settings
+ * pages. Capability plugins contribute their own pages and navigation items to
+ * the same frame instead of being rendered by this package.
+ */
+export default function apply(ctx: DashboardContext) {
+  ctx.frame({
+    id: "settings",
+    path: "/settings",
+    component: SettingsWorkspace,
+  });
+  // Plugin management is a platform concern, so its entry is registered by the
+  // shell's own plugin rather than contributed by a capability package.
+  ctx.page({
+    frame: "settings",
+    path: "/settings/plugins",
+    component: PluginsSettings,
+    layout: "full",
+    nav: { id: "settings-plugins", labelKey: "settings.plugins.title", icon: Puzzle, order: 50, ...GENERAL },
+  });
+  ctx.page({
+    frame: "settings",
+    path: "/settings/system",
+    component: ProxySettings,
+    nav: { id: "settings-system", labelKey: "settings.proxy", icon: SettingsIcon, order: 70, ...SCOPE },
+  });
+  ctx.page({
+    frame: "settings",
+    path: "/settings/theme",
+    component: ThemeSettings,
+    nav: { id: "settings-theme", labelKey: "settings.theme", icon: Palette, order: 90, ...SCOPE },
+  });
+  ctx.page({
+    frame: "settings",
+    path: "/settings/about",
+    component: AboutSettings,
+    nav: { id: "settings-about", labelKey: "settings.about", icon: Shield, order: 100, ...SCOPE },
+  });
+}

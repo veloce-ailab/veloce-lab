@@ -1,0 +1,29 @@
+{
+  "name": "@velocelab/advanced-chat",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "dev": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
+  },
+  "dependencies": {
+    "@velocelab/adapters": "workspace:*",
+    "@velocelab/file": "workspace:*",
+    "@velocelab/user": "workspace:*"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.100.14",
+    "@vitejs/plugin-react": "^6.0.1",
+    "axios": "^1.16.1",
+    "lucide-react": "^1.16.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-router-dom": "^7.15.1",
+    "vite": "^8.0.12"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  }
+}

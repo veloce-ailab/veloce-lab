@@ -6,6 +6,47 @@ Veloce
 
 Veloce 是一款面向 AI 平台与开发者生态打造的 AI API 网关与服务市场。提供完整的 AI API 管理基础能力，包括身份认证、上游渠道管理、API 网关、用户余额、计费、调用日志等功能。
 
+## 快速安装
+
+安装脚本是交互式的：先确认 git、Node.js、Yarn 可用（缺了会问你要不要装），再把仓库克隆到你指定的目录，
+安装依赖，然后启动。
+
+Linux / macOS / WSL：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh | bash
+```
+
+Windows（PowerShell）：
+
+```powershell
+irm https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.ps1 | iex
+```
+
+也可以先把脚本下载下来再运行（内容一样，方便先看一眼）：
+
+```bash
+curl -fsSL -o install.sh https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh
+bash install.sh
+```
+
+```powershell
+irm -OutFile install.ps1 https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.ps1
+pwsh -File install.ps1
+```
+
+可用参数：`--dir <路径>`（装到哪里）、`--branch <分支>`（克隆哪个分支或 tag，默认 `main`）、
+`--port <端口>`、`--mode dev|prod`（`dev` 免构建直接起，`prod` 先构建）、`--no-start`（只装不启动）、
+`--yes`（全部用默认值，不再提问）、`--dry-run`（只打印计划不执行）；`--help` 会列出全部。
+Windows 上对应的是 `-Dir`、`-Branch`、`-Port`、`-Mode`、`-NoStart`、`-Yes`、`-DryRun`。
+
+> `main` 上目前还是旧的 Go 实现。在这次重写合并之前，需要指定分支：
+> `... | bash -s -- --branch feature-new-backend`（Windows 用 `-Branch feature-new-backend`）。
+
+脚本会检查它需要的东西：git、Node.js 22.5 以上（推荐 Node 24 LTS —— SQLite 插件用的是内置的
+`node:sqlite`）、以及 Yarn 4 —— Yarn 通过 corepack 获取，因此跑的必然是 `package.json` 里
+`packageManager` 钉住的那个版本。
+
 ## 功能特性
 
 - OpenAI 兼容 API 网关

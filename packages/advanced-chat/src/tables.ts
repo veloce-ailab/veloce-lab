@@ -1,0 +1,292 @@
+// Tables owned by this plugin.
+//
+// The columns mirror the schema the Go implementation left behind, so a
+// database created by it and one created here agree. `extend` is idempotent:
+// it creates the table when it is missing and adds columns that are absent.
+import type { Database } from "yumeri";
+
+export async function ensureTables(db: Database): Promise<void> {
+  await db.extend(
+    "advanced_chat_agents",
+    {
+      id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      name: { type: "string", nullable: false },
+      prompt: { type: "string", initial: "" },
+      default_model: "string",
+      user_channel_id: "integer",
+      stream: "boolean",
+      skill_ids: { type: "string", initial: "[]" },
+      mcp_server_ids: { type: "string", initial: "[]" },
+      knowledge_base_ids: { type: "string", initial: "[]" },
+      preset_messages: { type: "string", initial: "[]" },
+      created_at: "timestamp",
+      updated_at: "timestamp",
+      stable_id: "string",
+    },
+    { unique: [["user_id", "name"]] },
+  );
+  await db.extend(
+    "advanced_chat_sessions",
+    {
+      id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      folder_id: "string",
+      title: { type: "string", initial: "" },
+      run_mode: { type: "string", initial: "assistant" },
+      agent_id: "string",
+      agent_group_id: "string",
+      skill_ids: { type: "string", initial: "[]" },
+      mcp_server_ids: { type: "string", initial: "[]" },
+      knowledge_base_ids: { type: "string", initial: "[]" },
+      connector_device_id: "string",
+      connector_workspace_path: "string",
+      connector_auto_approve: "boolean",
+      connector_approval_mode: { type: "string", initial: "manual" },
+      connector_command_prefixes: { type: "string", initial: "[]" },
+      model_name: "string",
+      user_channel_id: "integer",
+      max_tokens: { type: "integer", initial: 0 },
+      temperature: "float",
+      reasoning_effort: "string",
+      auto_compress_context: "boolean",
+      disabled_tool_groups: { type: "string", initial: "[]" },
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+  );
+  await db.extend(
+    "advanced_chat_messages",
+    {
+      id: { type: "string", nullable: false },
+      session_id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      role: { type: "string", nullable: false },
+      content: { type: "string", initial: "" },
+      content_parts: { type: "string", initial: "[]" },
+      tool_calls: { type: "string", initial: "[]" },
+      input_tokens: { type: "integer", initial: 0 },
+      output_tokens: { type: "integer", initial: 0 },
+      sort_order: { type: "integer", nullable: false },
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+  );
+  await db.extend(
+    "advanced_chat_runs",
+    {
+      id: { type: "string", nullable: false },
+      session_id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      status: { type: "string", nullable: false },
+      assistant_message_id: { type: "string", nullable: false },
+      mode: { type: "string", nullable: false },
+      status_message: "string",
+      current_round: { type: "integer", initial: 0 },
+      error_message: { type: "string", initial: "" },
+      cost: { type: "decimal", initial: 0 },
+      tool_calls: { type: "integer", initial: 0 },
+      tool_call_details: { type: "string", initial: "[]" },
+      started_at: "timestamp",
+      created_at: "timestamp",
+      finished_at: "timestamp",
+      updated_at: "timestamp",
+    },
+  );
+  await db.extend(
+    "advanced_chat_run_events",
+    {
+      id: { type: "integer", autoIncrement: true },
+      run_id: { type: "string", nullable: false },
+      session_id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      seq: { type: "integer", nullable: false },
+      event: { type: "string", nullable: false },
+      payload: { type: "string", nullable: false },
+      created_at: "timestamp",
+    },
+    { unique: [["run_id", "seq"]] },
+  );
+  await db.extend(
+    "advanced_chat_session_folders",
+    {
+      id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      name: { type: "string", nullable: false },
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+    { unique: [["user_id", "name"]] },
+  );
+  await db.extend(
+    "advanced_chat_session_tasks",
+    {
+      id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      session_id: { type: "string", nullable: false },
+      position: { type: "integer", nullable: false },
+      title: { type: "string", nullable: false },
+      description: { type: "string", initial: "" },
+      status: { type: "string", initial: "pending" },
+      note: { type: "string", initial: "" },
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+  );
+  await db.extend(
+    "advanced_chat_user_settings",
+    {
+      user_id: { type: "integer", nullable: false },
+      file_storage_enabled: "boolean",
+      assistant_mode_enabled: "boolean",
+      custom_mcp_servers: { type: "string", initial: "[]" },
+      title_model_name: "string",
+      title_user_channel_id: "integer",
+      title_generation_scope: { type: "string", initial: "recent" },
+      connector_approval_agent_id: { type: "string", initial: "" },
+      updated_at: "timestamp",
+    },
+    { unique: [["user_id"]] },
+  );
+  await db.extend(
+    "advanced_chat_files",
+    {
+      id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      name: { type: "string", nullable: false },
+      mime_type: { type: "string", nullable: false },
+      size: { type: "bigint", nullable: false },
+      data: "string",
+      storage_path: { type: "string", initial: "" },
+      text_extract: { type: "string", initial: "" },
+      hash: { type: "string", nullable: false },
+      source: { type: "string", nullable: false },
+      source_key: { type: "string", nullable: false },
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+    { unique: [["user_id", "source_key"]] },
+  );
+  await db.extend(
+    "advanced_chat_chat_groups",
+    {
+      id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      name: { type: "string", nullable: false },
+      description: { type: "string", initial: "" },
+      connector_device_id: { type: "string", initial: "" },
+      connector_workspace_path: { type: "string", initial: "" },
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+  );
+  await db.extend(
+    "advanced_chat_chat_group_members",
+    {
+      id: { type: "string", nullable: false },
+      group_id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      agent_id: { type: "string", nullable: false },
+      agent_name: { type: "string", nullable: false },
+      model_name: "string",
+      user_channel_id: "integer",
+      connector_device_id: "string",
+      session_id: "string",
+      run_id: "string",
+      status: { type: "string", initial: "idle" },
+      work_depth: { type: "integer", initial: 0 },
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+    { unique: [["group_id", "agent_id"]] },
+  );
+  await db.extend(
+    "advanced_chat_chat_group_messages",
+    {
+      id: { type: "string", nullable: false },
+      group_id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      sender_type: { type: "string", nullable: false },
+      sender_id: "string",
+      sender_name: { type: "string", nullable: false },
+      content: { type: "string", nullable: false },
+      mention_member_ids: { type: "string", initial: "[]" },
+      depth: { type: "integer", initial: 0 },
+      source_run_id: "string",
+      created_at: "timestamp",
+    },
+  );
+  await db.extend(
+    "advanced_chat_private_conversations",
+    {
+      id: { type: "string", nullable: false },
+      group_id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      member_a_id: { type: "string", nullable: false },
+      member_b_id: { type: "string", nullable: false },
+      member_a_name: { type: "string", nullable: false },
+      member_b_name: { type: "string", nullable: false },
+      last_message_at: "timestamp",
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+    { unique: [["group_id", "member_a_id", "member_b_id"]] },
+  );
+  await db.extend(
+    "advanced_chat_private_messages",
+    {
+      id: { type: "string", nullable: false },
+      conversation_id: { type: "string", nullable: false },
+      group_id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      sender_member_id: { type: "string", nullable: false },
+      sender_name: { type: "string", nullable: false },
+      recipient_member_id: { type: "string", nullable: false },
+      content: { type: "string", nullable: false },
+      source_run_id: "string",
+      delivered_at: "timestamp",
+      created_at: "timestamp",
+    },
+  );
+  await db.extend(
+    "advanced_chat_connector_devices",
+    {
+      id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      token_hash: { type: "string", nullable: false },
+      name: { type: "string", nullable: false },
+      remark: { type: "string", initial: "" },
+      hostname: "string",
+      os: "string",
+      arch: "string",
+      version: "string",
+      kind: { type: "string", initial: "cli" },
+      desktop_instance_id: { type: "string", initial: "" },
+      mode: { type: "string", initial: "platform" },
+      status: { type: "string", initial: "offline" },
+      last_seen_at: "timestamp",
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+    { unique: [["token_hash"]] },
+  );
+  await db.extend(
+    "advanced_chat_connector_tasks",
+    {
+      id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      device_id: { type: "string", nullable: false },
+      run_id: "string",
+      action: { type: "string", nullable: false },
+      workspace_path: { type: "string", initial: "" },
+      payload: { type: "string", initial: "{}" },
+      status: { type: "string", nullable: false },
+      result: { type: "string", initial: "" },
+      error_message: { type: "string", initial: "" },
+      started_at: "timestamp",
+      finished_at: "timestamp",
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+  );
+}
