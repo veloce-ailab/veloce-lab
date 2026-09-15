@@ -54,6 +54,18 @@ Windows 上对应的是 `-Dir`、`-Branch`、`-Port`、`-Mode`、`-NoStart`、`-
 > 在 WSL 里也可以直接在 Windows 侧下载再运行同一个文件：
 > `irm -OutFile $HOME\install.sh <url>`，然后 `bash /mnt/c/Users/<你>/install.sh`。
 
+安装脚本还会把配置落地。`scripts/yumeri.json` 是仓库里跟踪的模板，而服务只读 `<cwd>/yumeri.json`
+这一个位置 —— 那份**不跟踪**，因为它是这台部署自己的东西：端口、数据库路径、以及（开了登录时的）账号密码。
+所以脚本在文件不存在时把模板复制过去，已存在则原样保留。
+
+**默认没有登录。** 配置里不启用 `@velocelab/auth`，于是每个请求都按部署内置的管理员（id 0）执行，
+能访问到这个端口的人就是管理员。如果这台机器别人也能访问，就设一个账号 —— 全新安装时脚本会问一次，
+也可以自己往 `yumeri.json` 里加这一段再重启（该插件每次启动都会创建或覆盖这个管理员）：
+
+```json
+"@velocelab/auth": { "username": "admin", "password": "你的密码", "email": "" }
+```
+
 脚本会检查它需要的东西：git、Node.js 22.5 以上（推荐 Node 24 LTS —— SQLite 插件用的是内置的
 `node:sqlite`）、以及 Yarn 4 —— Yarn 通过 corepack 获取，因此跑的必然是 `package.json` 里
 `packageManager` 钉住的那个版本。

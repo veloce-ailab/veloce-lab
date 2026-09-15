@@ -60,6 +60,23 @@ lists them all; on Windows the same options are `-Dir`, `-Branch`, `-Port`,
 > In WSL you can also download on the Windows side and run the same file:
 > `irm -OutFile $HOME\install.sh <url>` then `bash /mnt/c/Users/<you>/install.sh`.
 
+The installer also lays down the configuration. `scripts/yumeri.json` is the
+tracked template, and the server reads exactly `<cwd>/yumeri.json`, which is
+**not** tracked — it holds this deployment's own port, database path and
+credentials. So the installer copies the template into place when that file is
+missing, and leaves an existing one alone.
+
+**By default there is no login.** `@velocelab/auth` is not enabled, so every
+request runs as the deployment's built-in administrator (id 0), and whoever can
+reach the port administers it. If other people can reach this machine, set an
+account — the installer asks once during a fresh install, or add the block to
+`yumeri.json` yourself and restart (that plugin creates or overwrites the
+administrator on every start):
+
+```json
+"@velocelab/auth": { "username": "admin", "password": "your-password", "email": "" }
+```
+
 The script checks for what it needs: git, Node.js 22.5 or newer (Node 24 LTS
 recommended — the SQLite plugin uses the built-in `node:sqlite`), and Yarn 4,
 which it gets from corepack so the version pinned in `package.json` is the one

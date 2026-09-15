@@ -21,3 +21,8 @@ node_modules/
 dist/
 **/dist/
 .dsh-tmp/
+# The deployment's own configuration. Untracked on purpose: it holds this
+# machine's port, database path and (if auth is on) the administrator's
+# credentials. scripts/yumeri.json is the tracked template; the installer copies
+# it into place. Leading slash so the template stays tracked.
+/yumeri.json

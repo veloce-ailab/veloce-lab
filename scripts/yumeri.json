@@ -1,0 +1,92 @@
+{
+  "core": {
+    "host": "0.0.0.0",
+    "port": 3000,
+    "enableCors": true
+  },
+  "plugins": {
+    "@velocelab/cache": {
+      "address": "127.0.0.1:6379",
+      "username": "",
+      "password": "",
+      "database": "0",
+      "tls": false
+    },
+    "@velocelab/sqlite": {
+      "path": "./data/veloce.db"
+    },
+    "@velocelab/dashboard": {},
+    "@velocelab/topbar": {},
+    "@velocelab/home-redirect": {},
+    "@velocelab/settings": {},
+    "@velocelab/guide": {},
+    "@velocelab/community": {},
+    "@velocelab/knowledge": {},
+    "@velocelab/memory": {
+      "root": "./data/memories"
+    },
+    "@velocelab/desktop": {},
+    "@velocelab/billing": {},
+    "@velocelab/scheduler": {},
+    "@velocelab/user": {},
+    "@velocelab/model-catalog": {},
+    "@velocelab/adapters": {},
+    "@velocelab/adapter-claude": {},
+    "@velocelab/adapter-dashscope": {},
+    "@velocelab/adapter-deepseek": {},
+    "@velocelab/adapter-gemini": {},
+    "@velocelab/adapter-kling": {},
+    "@velocelab/adapter-midjourney": {},
+    "@velocelab/adapter-moonshot": {},
+    "@velocelab/adapter-openai": {},
+    "@velocelab/adapter-openai-compatible": {},
+    "@velocelab/adapter-openai-video": {},
+    "@velocelab/adapter-responses": {},
+    "@velocelab/adapter-siliconflow": {},
+    "@velocelab/adapter-xai": {},
+    "@velocelab/adapter-zhipu": {},
+    "@velocelab/channel": {
+      "contextMessageCount": "12",
+      "webhookPayloadMaxBytes": "1048576"
+    },
+    "@velocelab/ratelimit": {
+      "requestsPerMinute": "600",
+      "burst": "100"
+    },
+    "@velocelab/service": {
+      "environment": "development",
+      "dataPath": "./data",
+      "jwtSecret": "",
+      "nodeName": "",
+      "oidcIssuer": "",
+      "oidcClientId": "",
+      "oidcClientSecret": "",
+      "oidcRedirectUrl": "",
+      "authAgreementMode": "notice",
+      "passwordRegistrationEnabled": false,
+      "passwordHCaptchaEnabled": false
+    },
+    "@velocelab/advanced-chat": {
+      "connectorOnlineWindowSeconds": "60",
+      "retryAttempts": 3,
+      "assistantRetryAttempts": 10,
+      "retryDelayMs": 500,
+      "retryMaxDelayMs": 30000,
+      "requestTimeoutMs": 120000
+    },
+    "@velocelab/workspace": {},
+    "@velocelab/file": {
+      "root": "./data"
+    },
+    "@velocelab/connector": {},
+    "@velocelab/device-local": {},
+    "@velocelab/skill": {},
+    "@velocelab/mcp": {},
+    "@velocelab/delivery": {},
+    "@velocelab/uptime": {},
+    "@velocelab/tools": {},
+    "@velocelab/inner-tools": {},
+    "@velocelab/audit": {},
+    "@velocelab/channel-admin": {}
+  }
+}

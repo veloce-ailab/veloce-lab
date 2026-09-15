@@ -357,6 +357,64 @@ if [ "$DRY_RUN" != "1" ]; then
 else
   say "  (dry run) cd $TARGET"
 fi
+
+# ------------------------------------------------------- configuration file --
+# yumeri.json is this deployment's own configuration, deliberately untracked, so
+# a fresh clone has none and the server - which reads exactly <cwd>/yumeri.json -
+# would refuse to start. Materialise it from the template kept in scripts/.
+#
+# Its edits go through node rather than sed, so a comma or a quote in a password
+# cannot corrupt the file.
+patch_config() {
+  # patch_config <port-or-empty> <username-or-empty> <password-or-empty>
+  if [ "$DRY_RUN" = "1" ]; then
+    say "  (dry run) patch yumeri.json (port='$1' user='$2')"
+    return 0
+  fi
+  node -e '
+    const fs = require("fs");
+    const [file, port, username, password] = process.argv.slice(1);
+    const config = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (port) config.core.port = Number(port);
+    if (username && password) config.plugins["@velocelab/auth"] = { username, password, email: "" };
+    fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
+  ' yumeri.json "$1" "$2" "$3" || warn "could not update yumeri.json; edit it by hand"
+}
+
+step "Preparing the configuration"
+CONFIG_CREATED=0
+if [ "$DRY_RUN" = "1" ]; then
+  say "  (dry run) copy scripts/yumeri.json to yumeri.json when it is missing"
+elif [ -f "$TARGET/yumeri.json" ]; then
+  say "  keeping the existing yumeri.json"
+elif [ -f "$TARGET/scripts/yumeri.json" ]; then
+  cp "$TARGET/scripts/yumeri.json" "$TARGET/yumeri.json"
+  CONFIG_CREATED=1
+  say "  wrote yumeri.json from scripts/yumeri.json"
+else
+  die "$TARGET/scripts/yumeri.json is missing; there is no configuration to start from"
+fi
+
+if [ "$CONFIG_CREATED" = "1" ]; then
+  say ""
+  say "By default the dashboard has no login: whoever can reach the port is the"
+  say "deployment's administrator. Set an account if others can reach this machine."
+  if confirm "Require a login for the dashboard?" n; then
+    ADMIN_USER="$(ask "Administrator username" "admin")"
+    ADMIN_PASSWORD=""
+    while [ -z "$ADMIN_PASSWORD" ]; do
+      printf 'Administrator password: ' >&2
+      IFS= read -rs ADMIN_PASSWORD || ADMIN_PASSWORD=""
+      printf '\n' >&2
+      [ -n "$ADMIN_PASSWORD" ] || warn "a password is required"
+    done
+    patch_config "" "$ADMIN_USER" "$ADMIN_PASSWORD"
+    say "  auth enabled for '$ADMIN_USER'; the password lives in yumeri.json, which is not committed"
+  else
+    say "  auth stays off: no account, no login"
+  fi
+fi
+
 # shellcheck disable=SC2086
 run $YARN install
 
@@ -367,11 +425,11 @@ if [ -z "$PORT" ] && [ "$DRY_RUN" != "1" ]; then
   say ""
   PORT="$(ask "Which port should the server listen on?" "$DETECTED")"
 fi
-if [ -n "$PORT" ] && [ "$DRY_RUN" != "1" ] && [ -f yumeri.json ]; then
+if [ -n "$PORT" ]; then
   CURRENT_PORT="$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' yumeri.json 2>/dev/null | head -n 1)"
   if [ "$CURRENT_PORT" != "$PORT" ]; then
     say "  setting the port in yumeri.json to $PORT"
-    sed "s/\"port\"[[:space:]]*:[[:space:]]*[0-9][0-9]*/\"port\": $PORT/" yumeri.json > yumeri.json.tmp && mv yumeri.json.tmp yumeri.json
+    patch_config "$PORT" "" ""
   fi
 fi
 [ -n "$PORT" ] || PORT=3000

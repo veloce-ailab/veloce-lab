@@ -342,11 +342,73 @@ if ($cloned) {
 
 Write-Step "Installing dependencies"
 if ($script:DryRun) { Write-Note "(dry run) cd $Dir" } else { Set-Location -LiteralPath $Dir }
+
+# yumeri.json is this deployment's own configuration, deliberately untracked, so
+# a fresh clone has none and the server - which reads exactly <cwd>\yumeri.json -
+# would refuse to start. Materialise it from the template kept in scripts\.
+#
+# Edits go through node rather than a regex, so a comma or a quote in a password
+# cannot corrupt the file.
+function Set-ConfigValue {
+  param([string]$Port = "", [string]$Username = "", [string]$Password = "")
+  if ($script:DryRun) { Write-Note "(dry run) patch yumeri.json (port='$Port' user='$Username')"; return }
+  $patchScript = @'
+const fs = require("fs");
+const [file, port, username, password] = process.argv.slice(1);
+const config = JSON.parse(fs.readFileSync(file, "utf8"));
+if (port) config.core.port = Number(port);
+if (username && password) config.plugins["@velocelab/auth"] = { username, password, email: "" };
+fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
+'@
+  & node -e $patchScript "yumeri.json" $Port $Username $Password
+  if ($LASTEXITCODE -ne 0) { Write-Warn2 "could not update yumeri.json; edit it by hand" }
+}
+
+Write-Step "Preparing the configuration"
+$configPath = Join-Path $Dir "yumeri.json"
+$createdConfig = $false
+if ($script:DryRun) {
+  Write-Note "(dry run) copy scripts\yumeri.json to yumeri.json when it is missing"
+} elseif (Test-Path -LiteralPath $configPath) {
+  Write-Note "keeping the existing yumeri.json"
+} elseif (Test-Path -LiteralPath (Join-Path $Dir "scripts\yumeri.json")) {
+  Copy-Item -LiteralPath (Join-Path $Dir "scripts\yumeri.json") -Destination $configPath
+  $createdConfig = $true
+  Write-Note "wrote yumeri.json from scripts\yumeri.json"
+} else {
+  throw "scripts\yumeri.json is missing; there is no configuration to start from"
+}
+
+if ($createdConfig) {
+  Write-Host ""
+  Write-Note "By default the dashboard has no login: whoever can reach the port is the"
+  Write-Note "deployment's administrator. Set an account if others can reach this machine."
+  if (Confirm-Answer "Require a login for the dashboard?" $false) {
+    $adminUser = Read-Answer "Administrator username" "admin"
+    $adminPassword = ""
+    while ([string]::IsNullOrEmpty($adminPassword)) {
+      try {
+        $secure = Read-Host -Prompt "Administrator password" -AsSecureString
+        $adminPassword = [System.Net.NetworkCredential]::new("", $secure).Password
+      } catch {
+        Write-Warn2 "no console to read a password on"
+        break
+      }
+      if ([string]::IsNullOrEmpty($adminPassword)) { Write-Warn2 "a password is required" }
+    }
+    if (-not [string]::IsNullOrEmpty($adminPassword)) {
+      Set-ConfigValue -Username $adminUser -Password $adminPassword
+      Write-Note "auth enabled for '$adminUser'; the password lives in yumeri.json, which is not committed"
+    }
+  } else {
+    Write-Note "auth stays off: no account, no login"
+  }
+}
+
 Invoke-Yarn install
 
 if ($Port -eq 0) {
   $detected = 3000
-  $configPath = Join-Path $Dir "yumeri.json"
   if ((Test-Path -LiteralPath $configPath) -and -not $script:DryRun) {
     $match = [regex]::Match((Get-Content -LiteralPath $configPath -Raw), '"port"\s*:\s*(\d+)')
     if ($match.Success) { $detected = [int]$match.Groups[1].Value }
@@ -356,14 +418,14 @@ if ($Port -eq 0) {
 }
 if ($Port -eq 0) { $Port = 3000 }
 
-$configPath = Join-Path $Dir "yumeri.json"
-if (-not $script:DryRun -and (Test-Path -LiteralPath $configPath)) {
-  $raw = Get-Content -LiteralPath $configPath -Raw
-  $updated = [regex]::Replace($raw, '"port"\s*:\s*\d+', "`"port`": $Port")
-  if ($updated -ne $raw) {
-    Write-Note "setting the port in yumeri.json to $Port"
-    Set-Content -LiteralPath $configPath -Value $updated -NoNewline
-  }
+$currentPort = 0
+if ((-not $script:DryRun) -and (Test-Path -LiteralPath $configPath)) {
+  $match = [regex]::Match((Get-Content -LiteralPath $configPath -Raw), '"port"\s*:\s*(\d+)')
+  if ($match.Success) { $currentPort = [int]$match.Groups[1].Value }
+}
+if ($currentPort -ne $Port) {
+  Write-Note "setting the port in yumeri.json to $Port"
+  Set-ConfigValue -Port "$Port"
 }
 
 if ($NoStart) {
