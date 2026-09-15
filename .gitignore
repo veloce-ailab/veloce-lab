@@ -20,4 +20,4 @@ node_modules/
 .tmp-koishi-webui/
 dist/
 **/dist/
-.dsh-tmp/*-build/
+.dsh-tmp/
