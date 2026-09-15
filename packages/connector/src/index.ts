@@ -222,7 +222,10 @@ export async function apply(ctx: Context) {
           throw error;
       }
     }
-    throw Error("No connector runtime is enabled");
+    // Naming the action matters: the model reads this verbatim, and a bare
+    // "no runtime" left it telling the user the whole command line was missing
+    // when what was missing was one action nobody serves.
+    throw Error(`No connector runtime serves the action "${action}"`);
   };
   const dispatchTask = async (task: ConnectorTaskRecord, device: ConnectorDeviceRecord) => {
     const type = typeByID(String(device.kind ?? ""));

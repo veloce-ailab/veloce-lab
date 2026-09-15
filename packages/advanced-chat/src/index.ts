@@ -202,6 +202,17 @@ export interface ChatToolDefinition {
       mcpServerIds?: string[];
       mode?: string;
       disabledToolGroups?: string[];
+      /**
+       * Which machine and folder the session works in, and how strictly its
+       * commands are gated. Tools that reach out to a device need all three:
+       * without the workspace a relative path lands in the server's own working
+       * directory, and without the mode nothing can tell whether an action has
+       * to be approved first.
+       */
+      connectorDeviceId?: string;
+      connectorWorkspacePath?: string;
+      connectorApprovalMode?: string;
+      connectorAutoApprove?: boolean;
     },
   ): Promise<unknown>;
 }
@@ -1724,6 +1735,25 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
                 mcpServerIds,
                 mode,
                 disabledToolGroups,
+                // The device, the folder and the approval mode travel with the
+                // run: a connector tool executed without them either lands in
+                // the server's own directory or cannot tell whether the user
+                // has already allowed the action.
+                connectorDeviceId,
+                connectorWorkspacePath: String(
+                  input.connectorWorkspacePath ??
+                    session.connector_workspace_path ??
+                    "",
+                ),
+                connectorApprovalMode: String(
+                  input.connectorApprovalMode ??
+                    session.connector_approval_mode ??
+                    "manual",
+                ),
+                connectorAutoApprove:
+                  input.connectorAutoApprove === true ||
+                  session.connector_auto_approve === true ||
+                  Number(session.connector_auto_approve ?? 0) === 1,
               });
               const serialized = JSON.stringify(value ?? null);
               results.push({ id, name, status: "ok", arguments: args, result: serialized });

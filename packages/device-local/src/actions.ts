@@ -18,6 +18,8 @@ const run = promisify(execFile);
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 const MAX_DIRECTORY_ENTRIES = 1_000;
 const GIT_TIMEOUT_MS = 60_000;
+const COMMAND_TIMEOUT_MS = 120_000;
+const MAX_COMMAND_OUTPUT = 200_000;
 
 const text = (value: unknown) => String(value ?? "").trim();
 
@@ -228,6 +230,78 @@ export async function replaceText(
     throw Error("Content is larger than 2 MiB");
   await writeFile(target, next, "utf8");
   return { path: target, replacements: pieces.length - 1 };
+}
+
+export interface CommandResult {
+  command: string;
+  cwd: string;
+  exit_code: number;
+  output: string;
+}
+
+/**
+ * Runs a shell command inside the workspace.
+ *
+ * This is the one action that can do anything on this machine, so a caller only
+ * reaches it through an approved task: by the time it runs, the decision has
+ * already been made. A non-zero exit is a result rather than a failure — the
+ * whole point of the tool is showing the model what the command printed.
+ */
+export async function runCommand(
+  input: Record<string, unknown>,
+): Promise<CommandResult> {
+  const command = text(input.command);
+  if (!command) throw Error("command is required");
+  const { target: cwd } = workingPath(input);
+  if (!(await isDirectory(cwd))) throw Error(`Folder not found: ${cwd}`);
+  const windows = platform() === "win32";
+  const file = windows
+    ? process.env.ComSpec || "cmd.exe"
+    : process.env.SHELL || "/bin/sh";
+  const args = windows ? ["/d", "/s", "/c", command] : ["-c", command];
+  try {
+    const { stdout, stderr } = await run(file, args, {
+      cwd,
+      timeout: COMMAND_TIMEOUT_MS,
+      windowsHide: true,
+      maxBuffer: MAX_COMMAND_OUTPUT * 4,
+    });
+    return {
+      command,
+      cwd,
+      exit_code: 0,
+      output: `${stdout}${stderr}`.trim().slice(0, MAX_COMMAND_OUTPUT),
+    };
+  } catch (error) {
+    const failure = error as {
+      stdout?: string;
+      stderr?: string;
+      code?: number | string;
+      killed?: boolean;
+    };
+    const output = `${failure.stdout ?? ""}${failure.stderr ?? ""}`
+      .trim()
+      .slice(0, MAX_COMMAND_OUTPUT);
+    if (failure.killed)
+      return {
+        command,
+        cwd,
+        exit_code: 124,
+        output:
+          output ||
+          `Command timed out after ${COMMAND_TIMEOUT_MS / 1000} seconds`,
+      };
+    if (failure.code === "ENOENT")
+      throw Error("A shell is not available on this machine");
+    return {
+      command,
+      cwd,
+      exit_code: typeof failure.code === "number" ? failure.code : 1,
+      output:
+        output ||
+        `Command failed with exit code ${String(failure.code ?? "unknown")}`,
+    };
+  }
 }
 
 /** Information the device card shows, so the local device describes the host. */
