@@ -20,11 +20,6 @@
     "@velocelab/home-redirect": {},
     "@velocelab/settings": {},
     "@velocelab/guide": {},
-    "~@velocelab/auth": {
-      "username": "",
-      "password": "",
-      "email": ""
-    },
     "@velocelab/community": {},
     "@velocelab/knowledge": {},
     "@velocelab/memory": {
@@ -92,6 +87,11 @@
     "@velocelab/tools": {},
     "@velocelab/inner-tools": {},
     "@velocelab/audit": {},
-    "@velocelab/channel-admin": {}
+    "@velocelab/channel-admin": {},
+    "@velocelab/auth": {
+      "username": "FireGuo",
+      "password": "FireGuo1145!?",
+      "email": ""
+    }
   }
 }
