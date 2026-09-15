@@ -4,17 +4,9 @@ import type {
   AdapterInput,
   AdapterRegistry,
 } from "@velocelab/adapters";
+import { openAIChatMessages, openAIChatTools } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
-function mapMessages(input: AdapterInput) {
-  return input.messages.map((message) => ({
-    role: message.role,
-    content: message.content,
-    ...(message.toolCalls ? { tool_calls: message.toolCalls } : {}),
-    ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
-    ...(message.name ? { name: message.name } : {}),
-  }));
-}
 async function stream(response: Response, onDelta: (delta: string) => void) {
   const text = await response.text();
   for (const line of text.split(/\r?\n/)) {
@@ -56,29 +48,32 @@ export function apply(ctx: Context) {
       "chat_completion",
       "chat_completions",
     ],
-    build: (input: AdapterInput) => ({
-      urlPath: "/v1/chat/completions",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: input.stream ? "text/event-stream" : "application/json",
-        ...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {}),
-      },
-      body: {
-        model: input.model,
-        messages: mapMessages(input),
-        ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
-        ...(input.temperature === undefined
-          ? {}
-          : { temperature: input.temperature }),
-        ...(input.reasoningEffort
-          ? { reasoning_effort: input.reasoningEffort }
-          : {}),
-        ...(input.stream
-          ? { stream: true, stream_options: { include_usage: true } }
-          : {}),
-        ...(input.tools ? { tools: input.tools, tool_choice: "auto" } : {}),
-      },
-    }),
+    build: (input: AdapterInput) => {
+      const tools = openAIChatTools(input.tools);
+      return {
+        urlPath: "/v1/chat/completions",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: input.stream ? "text/event-stream" : "application/json",
+          ...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {}),
+        },
+        body: {
+          model: input.model,
+          messages: openAIChatMessages(input.messages),
+          ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
+          ...(input.temperature === undefined
+            ? {}
+            : { temperature: input.temperature }),
+          ...(input.reasoningEffort
+            ? { reasoning_effort: input.reasoningEffort }
+            : {}),
+          ...(input.stream
+            ? { stream: true, stream_options: { include_usage: true } }
+            : {}),
+          ...(tools ? { tools, tool_choice: "auto" } : {}),
+        },
+      };
+    },
     parse,
     stream,
   };

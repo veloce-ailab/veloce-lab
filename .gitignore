@@ -23,3 +23,4 @@ dist/
 .dsh-tmp/*-build/
 .dsh-tmp/frontend-tsconfigs/
 .dsh-tmp/*.log
+.dsh-tmp/*.err

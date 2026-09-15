@@ -925,3 +925,46 @@ if existing.ID != "" {
 反向证据是意外得到的、也因此格外可信：第一遍探针跑在**没重启的旧构建**上，同一份断言直接报 5 项 FAIL，桩收到的正是 `/v1/v1/chat/completions`、错误文案也正是旧的 `model and messages are required`。
 
 定位本身也没靠猜：`advanced_chat_runs` 里那条 `Invalid URL (POST /v1/v1/chat/completions)` 与 `channels.base_url` 的 `/v1` 结尾，两条库内数据一对，链路就闭合了。
+
+## 19. "请求参数错误 / bad_response_status_code"：请求体不合规，不是上游坏
+
+### 19.1 先把"是谁的问题"数据化
+
+用户贴出的 `{"error":"{\"error\":{\"message\":\"请求参数错误\",\"type\":\"bad_response_status_code\"}}"}` 里，**外层是我们路由的包装**（上游失败现在是 502），**内层字符串是中继原样返回的错误**。所以问题只能出在两处：中继/上游，或者我们的请求。
+
+中继本身是好的，证据是三件事：
+
+1. `GET https://api-staff.mcjpg.org/v1/models` → 200，列出 `deepseek-v4.1-flash`，且带 `supported_endpoint_types: ["openai","anthropic"]`。
+2. 最小请求 `POST /v1/chat/completions {model, messages:[{role:"user",content:"hi"}]}` → **200**，正常返回内容。
+3. `POST /v1/responses`（Responses API 形状）→ **503 model_not_found**（"No available channel for model …"）—— 这条端点上中继根本没有通道。
+
+然后看用户库里自己的运行记录，两种错误各出现了一次，正好对应两种渠道类型：
+
+| 时间 | 渠道类型 | 我们打到的路径 | 结果 |
+| --- | --- | --- | --- |
+| 01:17 | `completion`（用户自己试过） | `/v1/chat/completions` | 中继转发到真上游，真上游判请求非法 → `请求参数错误` |
+| 01:18 | `responses`（当前配置） | `/v1/responses` | `model_not_found`：该端点没有可用通道 |
+
+用户说"completion 也是一样的"是对的，而且这恰好说明**类型不是关键区别**：`completion` 与 `openai` 在我们的适配器注册表里是**同一个适配器**（都注册在 `adapter-openai`，都打 `/v1/chat/completions`），所以换名字不会有任何变化。真正的差别在请求体上。
+
+### 19.2 抓出我们真正发出去的东西
+
+把中继前面放一个记录用的代理（临时渠道指向代理，代理再转发给中继），抓到 assistant 运行的真实请求体，发现两处与线上格式不符：
+
+1. **工具没有包 `function` 外壳**：我们发的是 `{"name":…,"description":…,"parameters":…}`，而 chat completions 要的是 `{"type":"function","function":{…}}`。旧实现是包好的（`old/internal/service/chat_executor.go:1142-1143`：`"type": "function", "function": map[string]interface{}{…}`），移植时这一层丢了 —— 27 个工具全是裸的。
+2. **空 `tool_calls` 没有被省略**：每条 user 消息都带着 `tool_calls: []`。旧实现的字段是 `json:"tool_calls,omitempty"`（`old/internal/service/advanced_chat_completion.go:69`），而 JS 里空数组是**真值**，`message.toolCalls ? {…} : {}` 判断不出来，于是空数组一路发到了上游。
+
+两者是**两个独立的缺陷**，先后验证：只修工具外壳后同一条运行**仍然失败**；再按 omitempty 省略空 `tool_calls` 后，同一条运行返回 **200**（`status: completed`，input 1755 / output 42 tokens，assistant 内容正常）。也就是说空 `tool_calls` 是压垮上游的那一下，工具外壳是同一段代码里另一个必须修的错。
+
+### 19.3 改了什么
+
+- `@velocelab/adapters` 新增两个共享映射：`openAIChatTools()`（内部 `{name, description, parameters}` → `{type:"function", function:{…}}`，并丢弃没有名字的工具）与 `openAIChatMessages()`（空 `tool_calls` 按 omitempty 省略）。放在共享包而不是某个适配器里，是因为线上格式是协议事实，不该由每个适配器各抄一遍。
+- `adapter-openai` 与 `adapter-openai-compatible`（原先各自有一份逐字相同的 `mapMessages`）改用这两个映射；后者顺带补上了 `tools` + `tool_choice`（它此前完全不发工具）。
+
+### 19.4 仍需用户做的一步
+
+渠道类型不能是 `responses`：我们的 `responses` 适配器打 `/v1/responses`，而这个中继在该端点没有通道（503 model_not_found），与请求体修得对不对无关。要用 `completion` 或 `openai`（二者等价），它们打 `/v1/chat/completions`，正是上文验证通过的那条路。渠道类型是每次请求现读的，改完不用重启；但 19.3 的代码修复要重启服务加载新编译的 dist。
+
+### 19.5 已知遗留
+
+除 `adapter-openai` 与 `adapter-openai-compatible` 外，其余对话类适配器（`adapter-deepseek`、`adapter-moonshot`、`adapter-siliconflow`、`adapter-xai`、`adapter-zhipu`、`adapter-dashscope` 等）**根本不发送 `tools`** —— 也就是说走这些渠道时 assistant 模式没有工具可用，只会变成普通对话。这是与本节同源的移植缺口，留待单独处理。

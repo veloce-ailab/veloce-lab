@@ -1,16 +1,8 @@
 import { Context } from "yumeri";
 import { AdapterInput, AdapterRegistry } from "@velocelab/adapters";
+import { openAIChatMessages, openAIChatTools } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
-function mapMessages(input: AdapterInput) {
-  return input.messages.map((message) => ({
-    role: message.role,
-    content: message.content,
-    ...(message.toolCalls ? { tool_calls: message.toolCalls } : {}),
-    ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
-    ...(message.name ? { name: message.name } : {}),
-  }));
-}
 const types = [
   "openrouter",
   "open_router",
@@ -47,12 +39,16 @@ export function apply(ctx: Context) {
       },
       body: {
         model: input.model,
-        messages: mapMessages(input),
+        messages: openAIChatMessages(input.messages),
         ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
         ...(input.temperature === undefined
           ? {}
           : { temperature: input.temperature }),
         ...(input.stream ? { stream: true } : {}),
+        ...(() => {
+          const tools = openAIChatTools(input.tools);
+          return tools ? { tools, tool_choice: "auto" } : {};
+        })(),
       },
     }),
     parse: (body) => {
