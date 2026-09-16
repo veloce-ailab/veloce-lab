@@ -40,6 +40,11 @@ interface ManagedPlugin {
   config: Record<string, unknown>
 }
 
+interface AuthCapabilities {
+  providers: Array<{ id: string; displayName: string; available: boolean }>
+  loginMethods: Array<{ id: string; displayName: string; available: boolean }>
+}
+
 type PluginAction = "enable" | "disable" | "reload" | "save"
 
 interface ActionResult {
@@ -79,6 +84,15 @@ export default function PluginsSettings() {
     [all, needle],
   )
   const selected = all.find((plugin) => plugin.name === selectedName) ?? visible[0] ?? all[0]
+  const authCapabilities = useQuery<AuthCapabilities>({
+    queryKey: ["auth", "capabilities"],
+    queryFn: async () => (await api.get("/auth/admin/capabilities")).data,
+    enabled: selected?.name === "@velocelab/auth" && selected.enabled,
+  })
+  const authDynamicEnums = selected?.name === "@velocelab/auth" ? {
+    allowedLoginMethods: (authCapabilities.data?.loginMethods ?? []).filter((method) => method.available).map((method) => method.id),
+    allowedRegistrationProviders: (authCapabilities.data?.providers ?? []).filter((provider) => provider.available).map((provider) => provider.id),
+  } : undefined
 
   // The draft follows the selection and every completed action, never a
   // background refetch: an edit in progress must survive one.
@@ -245,7 +259,7 @@ export default function PluginsSettings() {
                     <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-muted-foreground">{t("settings.plugins.pendingHint")}</p>
                   )}
                   {!plugins.isLoading && draft !== null && (selected.schema ? (
-                    <PluginConfigForm schema={selected.schema} value={draft} onChange={setDraft} onValidity={onValidity} />
+                    <PluginConfigForm schema={selected.schema} value={draft} dynamicEnums={authDynamicEnums} onChange={setDraft} onValidity={onValidity} />
                   ) : (
                     <p className="text-sm text-muted-foreground">{t("settings.plugins.noSchema")}</p>
                   ))}

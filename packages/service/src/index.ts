@@ -36,6 +36,7 @@ export interface ServiceRegistry {
     identifier: string,
     password: string,
   ): Promise<{ user: User; token: string }>;
+  issueToken(user: User): string;
   verifyToken(token: string): Promise<User | undefined>;
   publicConfiguration(): Pick<ServiceConfig, "authAgreementMode" | "passwordRegistrationEnabled" | "passwordHCaptchaEnabled">;
 }
@@ -158,6 +159,7 @@ export async function apply(ctx: Context, cfg: ServiceConfig) {
         throw Error("invalid username/email or password");
       return { user, token: issueToken(user, jwtSecret) };
     },
+    issueToken: (user) => issueToken(user, jwtSecret),
     async verifyToken(authToken) {
       const userId = verifyJwt(authToken, jwtSecret);
       return userId ? users.findById(userId) : undefined;

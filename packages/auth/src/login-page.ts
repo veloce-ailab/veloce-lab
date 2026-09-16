@@ -127,6 +127,7 @@ label.check[hidden]{display:none}
 .notice[hidden]{display:none}
 button.primary{height:40px;border:0;border-radius:9px;background:var(--primary);color:var(--primary-fg);font:inherit;font-weight:600;cursor:pointer}
 button.primary:disabled{opacity:.6;cursor:progress}
+.providers{display:flex;flex-direction:column;gap:8px;margin-top:14px}.provider{display:flex;align-items:center;justify-content:center;min-height:38px;border:1px solid var(--border);border-radius:9px;color:var(--fg);text-decoration:none;font-weight:500}.provider:hover{background:var(--field)}
 .alert{margin:0;font-size:13px;color:var(--danger)}
 .alert[hidden]{display:none}
 .hint{margin:16px 0 0;font-size:13px;color:var(--muted)}
@@ -152,6 +153,7 @@ button.primary:disabled{opacity:.6;cursor:progress}
     <p class="alert" id="alert" hidden></p>
     <button class="primary" id="submit" type="submit">${escapeHTML(fallback.submitLogin)}</button>
   </form>
+   <div class="providers" id="providers" hidden></div>
 </main>
 <script type="module">
 const NEXT = ${embed(next)}
@@ -256,7 +258,20 @@ async function boot() {
     const configuration = await fetch("/api/auth/configuration").then((response) => (response.ok ? response.json() : {}))
     agreementMode = String(configuration.auth_agreement_mode || "notice").toLowerCase()
     registrationEnabled = configuration.password_registration_enabled === true
-    $("tabs").hidden = !registrationEnabled
+    const passwordLoginEnabled = configuration.password_login_enabled !== false
+    $("form").hidden = !passwordLoginEnabled
+    $("tabs").hidden = !passwordLoginEnabled || !registrationEnabled
+    const providers = Array.isArray(configuration.providers) ? configuration.providers : []
+    const providerContainer = $("providers")
+    for (const provider of providers) {
+      if (!provider || !provider.id || !provider.displayName) continue
+      const link = document.createElement("a")
+      link.className = "provider"
+      link.textContent = String(provider.displayName)
+      link.href = "/api/auth/provider/" + encodeURIComponent(String(provider.id)) + "?next=" + encodeURIComponent(NEXT || "/")
+      providerContainer.appendChild(link)
+    }
+    providerContainer.hidden = !providerContainer.childElementCount
     if (agreementMode === "checkbox") $("agreement").hidden = false
     else {
       $("notice").textContent = text.agreementNotice

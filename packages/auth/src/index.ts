@@ -1,11 +1,12 @@
 import { Context, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { ServiceRegistry } from "@velocelab/service";
 import type { User } from "@velocelab/user";
 import "@velocelab/database-core";
 import "@velocelab/dashboard";
-import type { EmailVerificationCode, PhoneVerificationCode, OIDCBindRequest, WebAuthnChallenge, PasskeyCredential } from "./types.js";
+import type { EmailVerificationCode, PhoneVerificationCode, OIDCBindRequest, WebAuthnChallenge, PasskeyCredential, AuthIdentity, AuthProvider, AuthCompletion, ExternalIdentity, PublicAuthProvider } from "./types.js";
+export type { AuthIdentity, AuthProvider, AuthTransaction, AuthCompletion, ExternalIdentity, PublicAuthProvider } from "./types.js";
 import { ensureTables } from "./tables.js";
 import { renderLoginPage } from "./login-page.js";
 
@@ -34,15 +35,35 @@ export interface AuthConfig {
   username: string;
   password: string;
   email: string;
+  /** Whether existing local accounts may sign in with username/email and password. */
+  passwordLoginEnabled: boolean;
+  /** Whether a visitor may create a local password account. */
+  passwordRegistrationEnabled: boolean;
+  /** Which self-service registration paths may create a new local user. */
+  registrationMode: "disabled" | "password" | "external" | "any";
+  /** Login methods the administrator permits: `password` plus registered provider ids. */
+  allowedLoginMethods: string[];
+  /** Provider ids allowed to create an account on their first successful login. */
+  allowedRegistrationProviders: string[];
 }
 export const config: Schema<AuthConfig> = Schema.object({
   username: Schema.string("管理员账号,启动时创建或覆盖").required(),
   password: Schema.string("管理员密码,每次启动都覆盖为该值").required(),
   email: Schema.string("管理员邮箱,留空则使用 <用户名>@localhost"),
+  passwordLoginEnabled: Schema.boolean("允许账号密码登录").default(true),
+  passwordRegistrationEnabled: Schema.boolean("允许账号密码自助注册").default(false),
+  registrationMode: Schema.enum(["disabled", "password", "external", "any"], "允许自助注册的方式").default("disabled"),
+  allowedLoginMethods: Schema.array(Schema.string(), "允许登录方式（password 或已注册的 Provider ID）").default(["password"]),
+  allowedRegistrationProviders: Schema.array(Schema.string(), "允许首次登录时创建账号的 Provider ID").default([]),
 });
 
 export interface AuthService {
   enabled(): boolean;
+  registerProvider(provider: AuthProvider): () => void;
+  listProviders(): PublicAuthProvider[];
+  completeExternalLogin(session: Session, identity: ExternalIdentity, options?: { returnTo?: string; responseMode?: "redirect" | "json" }): Promise<AuthCompletion>;
+  bindExternalIdentity(userId: number, identity: ExternalIdentity): Promise<AuthIdentity>;
+  establishSession(session: Session, user: User, options?: { returnTo?: string; responseMode?: "redirect" | "json" }): Promise<AuthCompletion>;
 }
 declare module "yumeri" {
   interface Components {
@@ -72,7 +93,11 @@ const publicAPIPaths = new Set([
   "/auth/logout",
   "/api/auth/logout",
 ]);
-const publicAPIPrefixes = ["/api/advanced-chat/connectors/"];
+const publicAPIPrefixes = [
+  "/api/auth/provider/",
+  "/api/auth/callback/",
+  "/api/advanced-chat/connectors/",
+];
 const assetPattern = /\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx|css|map|json|txt|svg|png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|wasm)$/i;
 
 /** Static files the pre-authentication pages are built from. */
@@ -132,6 +157,11 @@ export async function apply(ctx: Context, config: AuthConfig) {
   const username = String(config?.username ?? "").trim();
   const password = String(config?.password ?? "");
   const email = String(config?.email ?? "").trim().toLowerCase() || `${username || "admin"}@localhost`;
+  const passwordLoginEnabled = config?.passwordLoginEnabled !== false;
+  const passwordRegistrationEnabled = config?.passwordRegistrationEnabled === true;
+  const registrationMode = config?.registrationMode ?? "disabled";
+  const allowedLoginMethods = new Set((config?.allowedLoginMethods?.length ? config.allowedLoginMethods : ["password"]).map((value) => String(value).trim()).filter(Boolean));
+  const allowedRegistrationProviders = new Set((config?.allowedRegistrationProviders ?? []).map((value) => String(value).trim()).filter(Boolean));
   if (!username || !password) {
     // Left pending by the loader rather than gating the application with no
     // account behind it: a missing credential is a configuration mistake, not a
@@ -205,7 +235,22 @@ export async function apply(ctx: Context, config: AuthConfig) {
 
   const service = ctx.component.service as ServiceRegistry;
   const userService = ctx.component.user;
-  const auth: AuthService = { enabled: () => true };
+  const providers = new Map<string, AuthProvider>();
+  const auth: AuthService = {
+    enabled: () => true,
+    registerProvider(provider) {
+      const id = String(provider?.id ?? "").trim();
+      if (!/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(id)) throw Error("provider id must contain only letters, numbers, underscores, or hyphens");
+      if (!String(provider?.displayName ?? "").trim()) throw Error("provider displayName is required");
+      if (providers.has(id)) throw Error(`authentication provider "${id}" is already registered`);
+      providers.set(id, { ...provider, id });
+      return () => { if (providers.get(id) === provider || providers.get(id)?.id === id) providers.delete(id); };
+    },
+    listProviders: () => listProviders(),
+    completeExternalLogin: (session, identity, options) => completeExternalLogin(session, identity, options),
+    bindExternalIdentity: (userId, identity) => bindExternalIdentity(userId, identity),
+    establishSession: (session, user, options) => establishSession(session, user, options),
+  };
   ctx.registerComponent("auth", auth);
   await ensureTables(db);
 
@@ -322,6 +367,123 @@ export async function apply(ctx: Context, config: AuthConfig) {
     });
   };
 
+  const externalRegistrationAllowed = (provider: AuthProvider) =>
+    ["external", "any"].includes(registrationMode) &&
+    allowedRegistrationProviders.has(provider.id) &&
+    provider.registrationEnabled?.() !== false;
+  const listProviders = (): PublicAuthProvider[] =>
+    [...providers.values()].map((provider) => {
+      let available = false;
+      try { available = provider.available() === true; } catch { available = false; }
+      return {
+        id: provider.id,
+        displayName: provider.displayName,
+        ...(provider.icon ? { icon: provider.icon } : {}),
+        available,
+        loginEnabled: available && allowedLoginMethods.has(provider.id),
+        registrationEnabled: available && allowedLoginMethods.has(provider.id) && externalRegistrationAllowed(provider),
+      };
+    }).sort((left, right) => left.displayName.localeCompare(right.displayName));
+  const normalizedIdentity = (identity: ExternalIdentity) => ({
+    provider: String(identity?.provider ?? "").trim(),
+    subject: String(identity?.subject ?? "").trim(),
+    email: String(identity?.email ?? "").trim().toLowerCase(),
+    emailVerified: identity?.emailVerified === true,
+    usernameHint: String(identity?.usernameHint ?? "").trim(),
+    avatarUrl: String(identity?.avatarUrl ?? "").trim(),
+  });
+  const identityError = (identity: ExternalIdentity) => {
+    const value = normalizedIdentity(identity);
+    if (!value.provider || !value.subject || value.provider.length > 64 || value.subject.length > 512)
+      throw Error("external identity requires a valid provider and subject");
+    return value;
+  };
+  const uniqueExternalUsername = async (provider: string, subject: string, hint: string) => {
+    const base = (hint || `${provider}-user`).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || `${provider}-user`;
+    const stem = base.length >= 3 ? base : `${provider}-${base}`.slice(0, 48);
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const suffix = attempt ? `-${randomBytes(3).toString("hex")}` : "";
+      const candidate = `${stem.slice(0, 80 - suffix.length)}${suffix}`;
+      if (!(await userService.findByIdentifier(candidate))) return candidate;
+    }
+    throw Error("could not allocate an external username");
+  };
+  async function bindExternalIdentity(userId: number, source: ExternalIdentity): Promise<AuthIdentity> {
+    const identity = identityError(source);
+    const provider = providers.get(identity.provider);
+    if (!provider) throw Error("authentication provider is not registered");
+    const existing = await db.selectOne("auth_identities", { provider: identity.provider, subject: identity.subject }) as AuthIdentity | undefined;
+    if (existing) {
+      if (existing.user_id !== userId) throw Error("this external identity is already bound to another account");
+      return existing;
+    }
+    const now = new Date().toISOString();
+    return db.create("auth_identities", {
+      user_id: userId,
+      provider: identity.provider,
+      subject: identity.subject,
+      email_at_link_time: identity.email || null,
+      profile_json: source.profile ? JSON.stringify(source.profile) : null,
+      created_at: now,
+      updated_at: now,
+    }) as Promise<AuthIdentity>;
+  }
+  async function establishSession(session: Session, user: User, options: { returnTo?: string; responseMode?: "redirect" | "json" } = {}): Promise<AuthCompletion> {
+    if (user.id === undefined) throw Error("user is required to establish a session");
+    const token = service.issueToken(user);
+    setSessionCookie(session, token, new Date(Date.now() + sessionLifetimeSeconds * 1000));
+    const returnTo = sanitizeNext(options.returnTo) || "/";
+    const completion = { userId: user.id, token, created: false, returnTo };
+    if (options.responseMode === "redirect") {
+      session.status = 302;
+      session.head.Location = returnTo;
+      session.respond("", "plain");
+    } else {
+      session.respond({ user: publicUser(user), token }, "json");
+    }
+    return completion;
+  }
+  async function completeExternalLogin(session: Session, source: ExternalIdentity, options: { returnTo?: string; responseMode?: "redirect" | "json" } = {}): Promise<AuthCompletion> {
+    const identity = identityError(source);
+    const provider = providers.get(identity.provider);
+    if (!provider) throw Error("authentication provider is not registered");
+    let available = false;
+    try { available = provider.available() === true; } catch { available = false; }
+    if (!available || !allowedLoginMethods.has(identity.provider)) throw Error("external login is disabled for this provider");
+    const bound = await db.selectOne("auth_identities", { provider: identity.provider, subject: identity.subject }) as AuthIdentity | undefined;
+    let user: User | undefined;
+    let created = false;
+    if (bound) {
+      user = await userService.findById(bound.user_id);
+      if (!user) throw Error("external identity is bound to a missing account; contact an administrator");
+    }
+    if (!user) {
+      if (!externalRegistrationAllowed(provider)) throw Error("external registration is disabled for this provider");
+      const username = await uniqueExternalUsername(identity.provider, identity.subject, identity.usernameHint);
+      const emailAddress = identity.email && identity.emailVerified ? identity.email : `${identity.provider}-${createHash("sha256").update(identity.subject).digest("hex").slice(0, 24)}@external.invalid`;
+      if (await userService.findByIdentifier(emailAddress)) throw Error("an account with this email already exists; sign in and bind this provider explicitly");
+      const group = await userService.ensureDefaultGroup();
+      user = await userService.create({
+        username,
+        email: emailAddress,
+        phone: null,
+        oidc_sub: null,
+        password_hash: bcrypt.hashSync(randomBytes(32).toString("base64url"), bcrypt.genSaltSync(10)),
+        is_admin: false,
+        email_verified: Boolean(identity.email && identity.emailVerified),
+        avatar_url: identity.avatarUrl,
+        balance: "0",
+        group_id: group.id ?? 0,
+        referral_code: null,
+        referrer_id: null,
+      });
+      await bindExternalIdentity(user.id!, source);
+      created = true;
+    }
+    const completion = await establishSession(session, user, options);
+    return { ...completion, created };
+  };
+
   /**
    * The session of a request, taken from the authorization header the
    * application sends or from the cookie a browser navigation carries.
@@ -362,15 +524,19 @@ export async function apply(ctx: Context, config: AuthConfig) {
 
   /** What the authentication page needs before anyone has signed in. */
   ctx.route("/api/auth/configuration").methods("GET").action((session: Session) => {
-    const configuration = service.publicConfiguration();
     session.respond(
       {
-        auth_agreement_mode: configuration.authAgreementMode,
-        password_registration_enabled: configuration.passwordRegistrationEnabled,
-        password_hcaptcha_enabled: configuration.passwordHCaptchaEnabled,
+        auth_agreement_mode: "notice",
+        password_login_enabled: passwordLoginEnabled && allowedLoginMethods.has("password"),
+        password_registration_enabled: passwordRegistrationEnabled && ["password", "any"].includes(registrationMode),
+        password_hcaptcha_enabled: false,
+        providers: listProviders().filter((provider) => provider.loginEnabled),
       },
       "json",
     );
+  });
+  ctx.route("/api/auth/providers").methods("GET").action((session: Session) => {
+    session.respond({ providers: listProviders().filter((provider) => provider.loginEnabled) }, "json");
   });
 
   ctx
@@ -378,13 +544,14 @@ export async function apply(ctx: Context, config: AuthConfig) {
     .methods("POST")
     .action(async (session) => {
       try {
+        if (!passwordLoginEnabled || !allowedLoginMethods.has("password"))
+          throw Error("password login is disabled");
         const body = (await session.parseRequestBody()) as any;
         const result = await service.loginWithPassword(
           String(body.identifier ?? ""),
           String(body.password ?? ""),
         );
-        setSessionCookie(session, result.token, new Date(Date.now() + sessionLifetimeSeconds * 1000));
-        session.respond({ user: publicUser(result.user), token: result.token }, "json");
+        await establishSession(session, result.user, { responseMode: "json" });
       } catch (error) {
         session.status = 401;
         session.respond(
@@ -398,7 +565,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
     .methods("POST")
     .action(async (session) => {
       try {
-        if (!service.publicConfiguration().passwordRegistrationEnabled)
+        if (!passwordRegistrationEnabled || !["password", "any"].includes(registrationMode))
           throw Error("password registration is disabled");
         const body = (await session.parseRequestBody()) as any;
         const name = String(body.username ?? "").trim();
@@ -471,6 +638,17 @@ export async function apply(ctx: Context, config: AuthConfig) {
     }
     return caller;
   };
+
+  ctx
+    .route("/api/auth/admin/capabilities")
+    .methods("GET")
+    .action((session: Session) => {
+      if (!requireAdmin(session)) return;
+      session.respond({
+        providers: listProviders(),
+        loginMethods: [{ id: "password", displayName: "账号密码", available: true }, ...listProviders().filter((provider) => provider.available)],
+      }, "json");
+    });
 
   ctx
     .route("/api/auth/users")
