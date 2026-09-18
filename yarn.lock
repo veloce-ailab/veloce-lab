@@ -2970,7 +2970,6 @@ __metadata:
   dependencies:
     "@velocelab/dashboard": "workspace:*"
     "@velocelab/database-core": "workspace:*"
-    "@velocelab/service": "workspace:*"
     "@velocelab/user": "workspace:*"
     "@vitejs/plugin-react": "npm:^6.0.1"
     bcryptjs: "npm:^3.0.2"
@@ -3254,17 +3253,6 @@ __metadata:
   resolution: "@velocelab/scheduler@workspace:packages/scheduler"
   dependencies:
     "@velocelab/advanced-chat": "workspace:*"
-  peerDependencies:
-    yumeri: ^3.0.0
-  languageName: unknown
-  linkType: soft
-
-"@velocelab/service@workspace:*, @velocelab/service@workspace:packages/service":
-  version: 0.0.0-use.local
-  resolution: "@velocelab/service@workspace:packages/service"
-  dependencies:
-    "@velocelab/user": "workspace:*"
-    bcryptjs: "npm:^3.0.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown

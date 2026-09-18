@@ -1,33 +1,18 @@
-// Tables owned by this plugin.
+// Tables owned by the authentication plugin.
 //
-// `extend` is idempotent: it creates the table when it is missing and adds the
-// columns that are absent, so an existing database is migrated in place.
+// Login session persistence belongs to @velocelab/user so it works both with
+// auth enabled and with the built-in default user mode.
 import type { Database } from "yumeri";
 import type { AuthIdentity, AuthTransaction } from "./types.js";
 
-/** A revoked session token, stored as its hash rather than the credential itself. */
-export interface RevokedToken {
-  id: string;
-  user_id: number;
-  expires_at: string;
-  created_at: string;
-}
-
 declare module "@yumerijs/types" {
   interface Tables {
-    auth_revoked_tokens: RevokedToken;
     auth_identities: AuthIdentity;
     auth_transactions: AuthTransaction;
   }
 }
 
 export async function ensureTables(db: Database): Promise<void> {
-  await db.extend("auth_revoked_tokens", {
-    id: { type: "string", nullable: false },
-    user_id: { type: "integer", initial: 0 },
-    expires_at: { type: "string", nullable: false },
-    created_at: "timestamp",
-  });
   // A separate table is required because one local user may bind several
   // providers, and a provider subject must never be shared by two accounts.
   await db.extend("auth_identities", {
@@ -40,9 +25,6 @@ export async function ensureTables(db: Database): Promise<void> {
     created_at: "timestamp",
     updated_at: "timestamp",
   }, { unique: [["provider", "subject"]] });
-  // Transactions are intentionally provider-neutral. They give provider
-  // plugins a durable place for state/nonce/PKCE metadata without exposing it
-  // in a browser cookie or letting callback routes trust arbitrary return URLs.
   await db.extend("auth_transactions", {
     id: { type: "string", nullable: false },
     type: { type: "string", nullable: false },

@@ -1,7 +1,6 @@
 import { Context, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "node:crypto";
-import { ServiceRegistry } from "@velocelab/service";
 import type { User } from "@velocelab/user";
 import "@velocelab/database-core";
 import "@velocelab/dashboard";
@@ -19,7 +18,7 @@ declare module "@yumerijs/types" {
     passkey_credentials: PasskeyCredential;
   }
 }
-export const depend = ["service", "user", "database", "dashboard"];
+export const depend = ["user", "database", "dashboard"];
 export const provide = ["auth"];
 
 /**
@@ -70,10 +69,6 @@ declare module "yumeri" {
     auth: AuthService;
   }
 }
-
-/** Cookie that carries the session for page requests. */
-export const sessionCookieName = "veloce_session";
-const sessionLifetimeSeconds = 7 * 24 * 60 * 60;
 
 /**
  * Paths a request may reach without a session.
@@ -233,7 +228,6 @@ export async function apply(ctx: Context, config: AuthConfig) {
     plugin: "auth",
   });
 
-  const service = ctx.component.service as ServiceRegistry;
   const userService = ctx.component.user;
   const providers = new Map<string, AuthProvider>();
   const auth: AuthService = {
@@ -253,67 +247,6 @@ export async function apply(ctx: Context, config: AuthConfig) {
   };
   ctx.registerComponent("auth", auth);
   await ensureTables(db);
-
-  /**
-   * Revoked sessions.
-   *
-   * A set in memory would forget every logout on restart and grow without bound
-   * while the process lives, so the list is kept in the database keyed by the
-   * token's hash. The set here is only a cache of hits, and it is dropped when
-   * it gets large, because the database — not the set — is what decides.
-   */
-  const revokedCache = new Set<string>();
-  const hashToken = (token: string) =>
-    createHash("sha256").update(token).digest("hex");
-  const tokenExpiry = (token: string) => {
-    const payload = token.split(".")[1] ?? "";
-    try {
-      const claims = JSON.parse(
-        Buffer.from(payload, "base64url").toString("utf8"),
-      );
-      if (Number.isFinite(claims?.exp) && claims.exp > 0)
-        return new Date(Number(claims.exp) * 1000);
-    } catch {
-      // A token that is not a JWT still has to be revocable, so it falls back
-      // to the lifetime this plugin hands out.
-    }
-    return new Date(Date.now() + sessionLifetimeSeconds * 1000);
-  };
-  const revokeToken = async (token: string, userId: number) => {
-    if (!token) return;
-    const id = hashToken(token);
-    if (revokedCache.size > 10000) revokedCache.clear();
-    revokedCache.add(id);
-    await db.upsert(
-      "auth_revoked_tokens",
-      [
-        {
-          id,
-          user_id: userId,
-          expires_at: tokenExpiry(token).toISOString(),
-          created_at: new Date().toISOString(),
-        },
-      ],
-      "id",
-    );
-  };
-  const isRevoked = async (token: string) => {
-    const id = hashToken(token);
-    if (revokedCache.has(id)) return true;
-    const row = await db.selectOne("auth_revoked_tokens", {
-      id,
-      expires_at: { $gt: new Date().toISOString() },
-    });
-    if (row) revokedCache.add(id);
-    return Boolean(row);
-  };
-  ctx.setInterval(() => {
-    void db
-      .remove("auth_revoked_tokens", {
-        expires_at: { $lte: new Date().toISOString() },
-      })
-      .catch(() => undefined);
-  }, 3600_000);
 
   /**
    * The configured account becomes the instance's administrator. Every start
@@ -356,16 +289,6 @@ export async function apply(ctx: Context, config: AuthConfig) {
     return created;
   };
   const administrator = await bootstrap();
-
-  const setSessionCookie = (session: Session, token: string, expires: Date) => {
-    session.setCookie(sessionCookieName, token, {
-      httpOnly: true,
-      sameSite: "Lax",
-      path: "/",
-      secure: session.protocol === "https",
-      expires,
-    });
-  };
 
   const externalRegistrationAllowed = (provider: AuthProvider) =>
     ["external", "any"].includes(registrationMode) &&
@@ -430,8 +353,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
   }
   async function establishSession(session: Session, user: User, options: { returnTo?: string; responseMode?: "redirect" | "json" } = {}): Promise<AuthCompletion> {
     if (user.id === undefined) throw Error("user is required to establish a session");
-    const token = service.issueToken(user);
-    setSessionCookie(session, token, new Date(Date.now() + sessionLifetimeSeconds * 1000));
+    const { token } = await userService.establishSession(session, user);
     const returnTo = sanitizeNext(options.returnTo) || "/";
     const completion = { userId: user.id, token, created: false, returnTo };
     if (options.responseMode === "redirect") {
@@ -484,22 +406,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
     return { ...completion, created };
   };
 
-  /**
-   * The session of a request, taken from the authorization header the
-   * application sends or from the cookie a browser navigation carries.
-   */
-  const resolveSession = async (session: Session) => {
-    const parts = String(session.client.req?.headers.authorization ?? "").trim().split(/\s+/);
-    const bearer = parts.length === 2 && parts[0].toLowerCase() === "bearer" ? parts[1] : "";
-    const cookie = String(session.cookie?.[sessionCookieName] ?? "");
-    for (const [token, source] of [[bearer, "bearer"], [cookie, "cookie"]] as const) {
-      if (!token || (await isRevoked(token))) continue;
-      const user = await service.verifyToken(token);
-      if (user) return { user, token, source };
-    }
-    return undefined;
-  };
-  const resolveUser = async (session: Session) => (await resolveSession(session))?.user;
+  const resolveUser = async (session: Session) => userService.current(session);
 
   /**
    * The authentication page. It is a document served by this plugin rather than
@@ -547,11 +454,12 @@ export async function apply(ctx: Context, config: AuthConfig) {
         if (!passwordLoginEnabled || !allowedLoginMethods.has("password"))
           throw Error("password login is disabled");
         const body = (await session.parseRequestBody()) as any;
-        const result = await service.loginWithPassword(
-          String(body.identifier ?? ""),
-          String(body.password ?? ""),
-        );
-        await establishSession(session, result.user, { responseMode: "json" });
+        const identifier = String(body.identifier ?? "").trim();
+        const suppliedPassword = String(body.password ?? "");
+        const user = await userService.findByIdentifier(identifier);
+        if (!user || !bcrypt.compareSync(suppliedPassword, user.password_hash))
+          throw Error("invalid username/email or password");
+        await establishSession(session, user, { responseMode: "json" });
       } catch (error) {
         session.status = 401;
         session.respond(
@@ -606,16 +514,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
       }
     });
   const logout = async (session: Session) => {
-    const header = session.client.req?.headers.authorization ?? "";
-    const token = String(header)
-      .replace(/^bearer\s+/i, "")
-      .trim();
-    const cookie = String(session.cookie?.[sessionCookieName] ?? "");
-    const caller = session.properties.user as User | undefined;
-    for (const value of [token, cookie]) {
-      if (value) await revokeToken(value, Number(caller?.id ?? 0));
-    }
-    setSessionCookie(session, "", new Date(0));
+    await userService.revokeSession(session);
     session.respond({ success: true }, "json");
   };
   // The application calls this through its `/api` client, which is what the
@@ -826,13 +725,9 @@ export async function apply(ctx: Context, config: AuthConfig) {
     "authentication",
     async (session: Session, next: () => Promise<void>) => {
       const pathname = session.pathname || "/";
-      const resolved = await resolveSession(session);
-      if (resolved) {
-        session.properties.user = resolved.user;
-        // A session proven by the authorization header also becomes a cookie,
-        // so a browser that holds a token can reload the page it is on.
-        if (resolved.source === "bearer" && String(session.cookie?.[sessionCookieName] ?? "") !== resolved.token)
-          setSessionCookie(session, resolved.token, new Date(Date.now() + sessionLifetimeSeconds * 1000));
+      const user = await resolveUser(session);
+      if (user) {
+        session.properties.user = user;
         await next();
         return;
       }

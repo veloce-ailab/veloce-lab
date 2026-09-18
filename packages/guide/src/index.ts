@@ -28,9 +28,6 @@ interface PluginLoader {
   config: { plugins?: Record<string, Record<string, unknown>> };
 }
 
-/** The plugin whose signing secret decides whether sessions survive a restart. */
-const SERVICE_PLUGIN = "@velocelab/service";
-
 /**
  * One thing worth settling before the instance is really in use. The server
  * reports only what it measured, and the wording lives in the frontend keyed by
@@ -61,14 +58,6 @@ export function apply(ctx: Context) {
       done: { zh: "已完成", en: "Done", ja: "完了" },
       todo: { zh: "待完成", en: "To do", ja: "未完了" },
       step: {
-        secret: {
-          title: { zh: "配置会话密钥", en: "Set the session secret", ja: "セッション秘密鍵を設定" },
-          description: {
-            zh: "没有密钥时每次启动都会重新生成,登录状态会跟着失效。",
-            en: "Without one it is generated again on every start, which signs everyone out.",
-            ja: "未設定の場合、起動のたびに再生成され、ログイン状態が失われます。",
-          },
-        },
         admin: {
           title: { zh: "确认管理员账号", en: "Confirm an administrator account", ja: "管理者アカウントを確認" },
           description: {
@@ -118,15 +107,6 @@ export function apply(ctx: Context) {
   const steps = async (): Promise<GuideStep[]> => {
     const found: GuideStep[] = [];
     const plugins = loader()?.config.plugins ?? {};
-
-    if (SERVICE_PLUGIN in plugins) {
-      const secret = plugins[SERVICE_PLUGIN]?.jwtSecret;
-      found.push({
-        id: "secret",
-        done: typeof secret === "string" && secret.trim().length > 0,
-        path: "/settings/plugins",
-      });
-    }
 
     const users = component<UserService>("user");
     if (users) {

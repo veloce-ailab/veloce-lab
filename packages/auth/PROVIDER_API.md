@@ -1,6 +1,6 @@
 # Auth Provider Extension API
 
-`@velocelab/auth` owns Veloce sessions, cookies, local identity bindings and registration policy. A third-party provider plugin owns only its upstream protocol (OAuth 2/OIDC/etc.).
+`@velocelab/auth` owns authentication methods, local identity bindings and registration policy. `@velocelab/user` owns persistent Veloce login sessions and cookies. A third-party provider plugin owns only its upstream protocol (OAuth 2/OIDC/etc.).
 
 ## Dependencies
 
@@ -57,7 +57,7 @@ await ctx.component.auth.completeExternalLogin(session, identity, {
 })
 ```
 
-`completeExternalLogin()` validates provider availability and instance policy, finds or creates the local account, persists `(provider, subject)` in `auth_identities`, issues the Veloce JWT, sets the HttpOnly session cookie and performs the safe local redirect. It refuses automatic email-based merges; users must bind an external identity explicitly while signed in.
+`completeExternalLogin()` validates provider availability and instance policy, finds or creates the local account, and persists `(provider, subject)` in `auth_identities`. It then delegates persistent login-state creation and the HttpOnly cookie to `@velocelab/user` before performing the safe local redirect. It refuses automatic email-based merges; users must bind an external identity explicitly while signed in.
 
 ## Binding an identity to an existing account
 

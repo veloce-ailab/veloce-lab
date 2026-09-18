@@ -53,19 +53,6 @@
       "requestsPerMinute": "600",
       "burst": "100"
     },
-    "@velocelab/service": {
-      "environment": "development",
-      "dataPath": "./data",
-      "jwtSecret": "",
-      "nodeName": "",
-      "oidcIssuer": "",
-      "oidcClientId": "",
-      "oidcClientSecret": "",
-      "oidcRedirectUrl": "",
-      "authAgreementMode": "notice",
-      "passwordRegistrationEnabled": false,
-      "passwordHCaptchaEnabled": false
-    },
     "@velocelab/advanced-chat": {
       "connectorOnlineWindowSeconds": "60",
       "retryAttempts": 3,

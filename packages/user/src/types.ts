@@ -1,4 +1,5 @@
 export interface User { id?: number; username: string; email: string; phone?: string | null; oidc_sub?: string | null; password_hash: string; email_verified: boolean; avatar_url: string; balance: string; group_id: number; referral_code?: string | null; referrer_id?: number | null; is_admin: boolean; created_at: string; updated_at: string; }
+export interface UserSession { id?: number; user_id: number; token_hash: string; expires_at: string; last_seen_at: string; revoked_at?: string | null; created_at: string; }
 export interface UserAvatar { user_id: number; mime_type: string; data: Uint8Array; updated_at: string; }
 export interface Group { id?: number; name: string; multiplier: string; created_at: string; updated_at: string; }
 export interface UserGroupMembership { id?: number; user_id: number; group_id: number; expires_at?: string | null; created_at: string; updated_at: string; }

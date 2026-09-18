@@ -1,13 +1,15 @@
 import { Context, Session } from "yumeri";
-import type { User, UserAvatar, Group, UserGroupMembership, UserChannel, UserChannelGroupAccess, UserChannelUserAccess, CheckInRecord } from "./types.js";
+import { createHash, randomBytes } from "node:crypto";
+import type { User, UserSession, UserAvatar, Group, UserGroupMembership, UserChannel, UserChannelGroupAccess, UserChannelUserAccess, CheckInRecord } from "./types.js";
 import "@velocelab/database-core";
 import "@velocelab/dashboard";
 
-export type { User, UserAvatar, Group, UserGroupMembership, UserChannel, UserChannelGroupAccess, UserChannelUserAccess, CheckInRecord } from "./types.js";
+export type { User, UserSession, UserAvatar, Group, UserGroupMembership, UserChannel, UserChannelGroupAccess, UserChannelUserAccess, CheckInRecord } from "./types.js";
 
 declare module "@yumerijs/types" {
   interface Tables {
     users: User;
+    user_sessions: UserSession;
     user_avatars: UserAvatar;
     groups: Group;
     user_group_memberships: UserGroupMembership;
@@ -20,8 +22,13 @@ declare module "@yumerijs/types" {
 
 export const depend = ["database", "dashboard"];
 export const provide = ["user"];
+export const sessionCookieName = "veloce_session";
+const sessionLifetimeSeconds = 7 * 24 * 60 * 60;
+
 export interface UserService {
   current(session: Session): Promise<User | undefined>;
+  establishSession(session: Session, user: User): Promise<{ token: string; expiresAt: Date }>;
+  revokeSession(session: Session): Promise<void>;
   findById(id: number): Promise<User | undefined>;
   findByIdentifier(identifier: string): Promise<User | undefined>;
   findAdmin(): Promise<User | undefined>;
@@ -70,6 +77,15 @@ export async function apply(ctx: Context) {
     created_at: "timestamp",
     updated_at: "timestamp",
   }, { unique: ["username", "email", "phone", "oidc_sub", "referral_code"] });
+  await db.extend("user_sessions", {
+    id: { type: "integer", autoIncrement: true },
+    user_id: { type: "integer", nullable: false },
+    token_hash: { type: "string", nullable: false },
+    expires_at: { type: "string", nullable: false },
+    last_seen_at: "timestamp",
+    revoked_at: "timestamp",
+    created_at: "timestamp",
+  }, { unique: ["token_hash"] });
   await db.extend("user_avatars", {
     user_id: { type: "integer", nullable: false },
     mime_type: { type: "string", nullable: false },
@@ -107,6 +123,21 @@ export async function apply(ctx: Context) {
       return db.selectOne("users", { id });
     },
   };
+  const sessionTokens = (session: Session) => {
+    const parts = String(session.client.req?.headers.authorization ?? "").trim().split(/\s+/);
+    const bearer = parts.length === 2 && parts[0].toLowerCase() === "bearer" ? parts[1] : "";
+    const cookie = String(session.cookie?.[sessionCookieName] ?? "");
+    return [...new Set([bearer, cookie].filter(Boolean))];
+  };
+  const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
+  const setSessionCookie = (session: Session, token: string, expires: Date) => session.setCookie(sessionCookieName, token, {
+    httpOnly: true,
+    sameSite: "Lax",
+    path: "/",
+    secure: session.protocol === "https",
+    expires,
+  });
+  const authEnabled = () => Boolean((ctx.getCore() as unknown as { getComponent(name: string): unknown }).getComponent("auth"));
   const service: UserService = {
     findById: users.findById,
     findByIdentifier: (identifier) => db.selectOne("users", { $or: [{ username: identifier }, { email: identifier.toLowerCase() }] }),
@@ -122,16 +153,47 @@ export async function apply(ctx: Context) {
       return user;
     },
     update: users.update,
+    async establishSession(session, user) {
+      if (user.id === undefined) throw Error("user is required to establish a session");
+      const token = randomBytes(32).toString("base64url");
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + sessionLifetimeSeconds * 1000);
+      await db.create("user_sessions", {
+        user_id: user.id,
+        token_hash: tokenHash(token),
+        expires_at: expiresAt.toISOString(),
+        last_seen_at: now.toISOString(),
+        revoked_at: null,
+        created_at: now.toISOString(),
+      });
+      setSessionCookie(session, token, expiresAt);
+      return { token, expiresAt };
+    },
+    async revokeSession(session) {
+      for (const token of sessionTokens(session))
+        await db.update("user_sessions", { token_hash: tokenHash(token), revoked_at: null }, { revoked_at: new Date().toISOString() });
+      setSessionCookie(session, "", new Date(0));
+    },
     async current(session) {
-      const raw = session.client.req?.headers.cookie ?? "";
-      const match = String(raw).match(/(?:^|;\s*)userid=(\d+)/);
-      const id = match ? Number(match[1]) : 0;
-      if (!id) return ctx.component.auth ? undefined : defaultUser;
-      const user = await users.findById(id);
-      return user ?? (ctx.component.auth ? undefined : defaultUser);
+      for (const token of sessionTokens(session)) {
+        const row = await db.selectOne("user_sessions", { token_hash: tokenHash(token), revoked_at: null }) as UserSession | undefined;
+        if (row && new Date(row.expires_at).getTime() > Date.now()) {
+          const user = await users.findById(row.user_id);
+          if (user) {
+            if (Date.now() - new Date(row.last_seen_at).getTime() > 5 * 60_000)
+              void db.update("user_sessions", { id: row.id }, { last_seen_at: new Date().toISOString() });
+            return user;
+          }
+        }
+      }
+      return authEnabled() ? undefined : defaultUser;
     },
   };
   ctx.registerComponent("user", service);
+  ctx.setInterval(() => {
+    const now = new Date().toISOString();
+    void db.remove("user_sessions", { expires_at: { $lte: now } }).catch(() => undefined);
+  }, 3600_000);
   ctx.use(
     "user-context",
     async (session: Session, next: () => Promise<void>) => {
