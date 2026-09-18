@@ -2964,7 +2964,29 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/auth@workspace:packages/auth":
+"@velocelab/auth-google@workspace:packages/auth-google":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/auth-google@workspace:packages/auth-google"
+  dependencies:
+    "@velocelab/auth": "workspace:*"
+    "@velocelab/database-core": "workspace:*"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/auth-oidc@workspace:packages/auth-oidc":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/auth-oidc@workspace:packages/auth-oidc"
+  dependencies:
+    "@velocelab/auth": "workspace:*"
+    "@velocelab/database-core": "workspace:*"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/auth@workspace:*, @velocelab/auth@workspace:packages/auth":
   version: 0.0.0-use.local
   resolution: "@velocelab/auth@workspace:packages/auth"
   dependencies:

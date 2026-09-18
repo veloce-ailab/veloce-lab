@@ -53,6 +53,16 @@
       "requestsPerMinute": "600",
       "burst": "100"
     },
+    "~@velocelab/auth-google": {
+      "clientId": "",
+      "clientSecret": "",
+      "redirectUri": "",
+      "allowRegistration": true,
+      "hostedDomain": ""
+    },
+    "~@velocelab/auth-oidc": {
+      "providers": []
+    },
     "@velocelab/advanced-chat": {
       "connectorOnlineWindowSeconds": "60",
       "retryAttempts": 3,

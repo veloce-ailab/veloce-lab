@@ -127,7 +127,7 @@ label.check[hidden]{display:none}
 .notice[hidden]{display:none}
 button.primary{height:40px;border:0;border-radius:9px;background:var(--primary);color:var(--primary-fg);font:inherit;font-weight:600;cursor:pointer}
 button.primary:disabled{opacity:.6;cursor:progress}
-.providers{display:flex;flex-direction:column;gap:8px;margin-top:14px}.provider{display:flex;align-items:center;justify-content:center;min-height:38px;border:1px solid var(--border);border-radius:9px;color:var(--fg);text-decoration:none;font-weight:500}.provider:hover{background:var(--field)}
+.providers{display:flex;flex-direction:column;gap:8px;margin-top:14px}.provider{display:flex;align-items:center;justify-content:center;gap:8px;min-height:38px;border:1px solid var(--border);border-radius:9px;color:var(--fg);text-decoration:none;font-weight:500}.provider:hover{background:var(--field)}.provider-icon{width:18px;height:18px;object-fit:contain}
 .alert{margin:0;font-size:13px;color:var(--danger)}
 .alert[hidden]{display:none}
 .hint{margin:16px 0 0;font-size:13px;color:var(--muted)}
@@ -267,7 +267,16 @@ async function boot() {
       if (!provider || !provider.id || !provider.displayName) continue
       const link = document.createElement("a")
       link.className = "provider"
-      link.textContent = String(provider.displayName)
+       if (typeof provider.icon === "string" && provider.icon) {
+         const icon = document.createElement("img")
+         icon.className = "provider-icon"
+         icon.src = provider.icon
+         icon.alt = ""
+         link.appendChild(icon)
+       }
+       const label = document.createElement("span")
+       label.textContent = String(provider.displayName)
+       link.appendChild(label)
       link.href = "/api/auth/provider/" + encodeURIComponent(String(provider.id)) + "?next=" + encodeURIComponent(NEXT || "/")
       providerContainer.appendChild(link)
     }
