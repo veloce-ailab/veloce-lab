@@ -280,7 +280,7 @@ export async function apply(ctx: Context) {
           (
             await db.select("advanced_chat_connector_devices", { user_id: id })
           )
-            .map(({ token_hash: _hash, ...row }) => row)
+            .map(({ token_hash: _hash, ...row }) => ({ ...row, online: String(row.status ?? "") === "online" }))
             // The connector the host provides for itself is the default one, so
             // it leads the list instead of following whatever was added first.
             .sort((left: any, right: any) => {

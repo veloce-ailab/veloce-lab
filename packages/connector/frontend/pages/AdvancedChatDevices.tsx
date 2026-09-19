@@ -853,7 +853,7 @@ function normalizeDevice(value: unknown): ConnectorDevice | null {
     kind: stringFromUnknown(value.kind) || "cli",
     desktop_instance_id: stringFromUnknown(value.desktop_instance_id) || undefined,
     status: stringFromUnknown(value.status) || "offline",
-    online: value.online === true,
+    online: value.online === true || stringFromUnknown(value.status) === "online",
     last_seen_at: stringFromUnknown(value.last_seen_at) || undefined,
     created_at: stringFromUnknown(value.created_at) || undefined,
   }
