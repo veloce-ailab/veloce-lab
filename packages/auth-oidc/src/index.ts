@@ -57,9 +57,10 @@ declare module "@yumerijs/types" {
   interface Tables { auth_oidc_login_requests: OIDCLoginRequest; }
 }
 
+function text(value: unknown) { return typeof value === "string" ? value : ""; }
 function validId(value: string) { return /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(value); }
 function usable(provider: OIDCProviderConfig) {
-  return Boolean(validId(provider.id) && provider.name.trim() && provider.issuer.trim() && provider.clientId.trim() && provider.clientSecret.trim() && provider.redirectUri.trim());
+  return Boolean(validId(text(provider.id)) && text(provider.name).trim() && text(provider.issuer).trim() && text(provider.clientId).trim() && text(provider.clientSecret).trim() && text(provider.redirectUri).trim());
 }
 function issuerUrl(value: string) { return value.trim().replace(/\/+$/, ""); }
 function pkceChallenge(verifier: string) { return createHash("sha256").update(verifier).digest("base64url"); }
@@ -77,8 +78,18 @@ export async function apply(ctx: Context, cfg: OIDCConfig) {
   const db = ctx.component.database;
   const auth = ctx.component.auth;
   const providers = new Map<string, OIDCProviderConfig>();
-  for (const entry of cfg.providers ?? []) {
-    const provider = { ...entry, id: String(entry?.id ?? "").trim() };
+  for (const entry of cfg?.providers ?? []) {
+    const provider: OIDCProviderConfig = {
+      id: text(entry?.id).trim(),
+      name: text(entry?.name),
+      icon: text(entry?.icon),
+      issuer: text(entry?.issuer),
+      clientId: text(entry?.clientId),
+      clientSecret: text(entry?.clientSecret),
+      redirectUri: text(entry?.redirectUri),
+      allowRegistration: entry?.allowRegistration !== false,
+      scopes: Array.isArray(entry?.scopes) ? entry.scopes.map(text).filter(Boolean) : ["openid", "email", "profile"],
+    };
     if (!validId(provider.id)) throw Error("each OIDC provider id must use letters, numbers, underscores, or hyphens");
     if (providers.has(provider.id)) throw Error(`duplicate OIDC provider id: ${provider.id}`);
     providers.set(provider.id, provider);
