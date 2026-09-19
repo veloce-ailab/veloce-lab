@@ -1,3 +1,17 @@
+export interface ModelPrice {
+  id?: number;
+  model_name: string;
+  input_price: string;
+  output_price: string;
+  cached_input_price: string;
+  image_input_price: string;
+  image_output_price: string;
+  audio_input_price: string;
+  audio_output_price: string;
+  currency: string;
+  updated_at: string;
+  created_at: string;
+}
 export interface PaymentOrder { id?: number; order_no: string; user_id: number; amount: string; rmb_amount: string; exchange_rate: string; payment_currency: string; gateway_amount: string; method: string; status: string; gateway_provider: string; gateway_channel: string; gateway_trade_no: string; notify_payload: string; paid_at?: string | null; created_at: string; updated_at: string; }
 export interface WalletTransaction { id?: number; user_id: number; source: string; idempotency_key: string; plugin_id: string; debit_amount: string; credit_amount: string; balance_before: string; balance_after: string; reference_type: string; reference_id: string; description: string; request_hash: string; metadata_json: string; created_at: string; }
 export interface WalletLimitUsage { id?: number; wallet_transaction_id: number; user_id: number; source: string; limit_key: string; created_at: string; }
