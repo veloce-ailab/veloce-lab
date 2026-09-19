@@ -36,6 +36,8 @@ export const config: Schema<GoogleAuthConfig> = Schema.object({
 interface GoogleLoginRequest {
   state: string;
   code_verifier: string;
+  purpose: "login" | "bind";
+  user_id?: number | null;
   return_to?: string | null;
   expires_at: string;
   created_at: string;
@@ -90,6 +92,8 @@ export async function apply(ctx: Context, cfg: GoogleAuthConfig) {
   await db.extend("auth_google_login_requests", {
     state: { type: "string", nullable: false },
     code_verifier: { type: "string", nullable: false },
+    purpose: { type: "string", nullable: false },
+    user_id: "integer",
     return_to: "string",
     expires_at: { type: "string", nullable: false },
     created_at: "timestamp",
@@ -111,10 +115,17 @@ export async function apply(ctx: Context, cfg: GoogleAuthConfig) {
     const state = randomBytes(32).toString("base64url");
     const codeVerifier = randomBytes(32).toString("base64url");
     const now = new Date();
+    const bindingUser = query.get("bind") === "1" ? session.properties.user as { id?: number } | undefined : undefined;
+    if (query.get("bind") === "1" && !bindingUser?.id) {
+      failure(session, 401, "sign in before binding Google");
+      return;
+    }
     const returnTo = sanitizeNext(query.get("next")) || "/";
     await db.create("auth_google_login_requests", {
       state,
       code_verifier: codeVerifier,
+      purpose: bindingUser?.id ? "bind" : "login",
+      user_id: bindingUser?.id ?? null,
       return_to: returnTo,
       expires_at: new Date(now.getTime() + stateLifetimeMilliseconds).toISOString(),
       created_at: now.toISOString(),
@@ -177,6 +188,13 @@ export async function apply(ctx: Context, cfg: GoogleAuthConfig) {
         avatarUrl: profile.picture,
         profile: { name: profile.name, hd: profile.hd },
       };
+      if (request.purpose === "bind" && request.user_id) {
+        await auth.bindExternalIdentity(request.user_id, identity);
+        session.status = 302;
+        session.head.Location = request.return_to ?? "/settings/security";
+        session.respond("", "plain");
+        return;
+      }
       await auth.completeExternalLogin(session, identity, {
         returnTo: request.return_to ?? "/",
         responseMode: "redirect",

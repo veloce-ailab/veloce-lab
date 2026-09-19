@@ -62,6 +62,8 @@ export interface AuthService {
   listProviders(): PublicAuthProvider[];
   completeExternalLogin(session: Session, identity: ExternalIdentity, options?: { returnTo?: string; responseMode?: "redirect" | "json" }): Promise<AuthCompletion>;
   bindExternalIdentity(userId: number, identity: ExternalIdentity): Promise<AuthIdentity>;
+  listExternalIdentities(userId: number): Promise<AuthIdentity[]>;
+  unbindExternalIdentity(userId: number, identityId: number): Promise<void>;
   establishSession(session: Session, user: User, options?: { returnTo?: string; responseMode?: "redirect" | "json" }): Promise<AuthCompletion>;
 }
 declare module "yumeri" {
@@ -198,6 +200,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
         columnUser: { zh: "账号", en: "Account", ja: "アカウント" },
         columnRole: { zh: "角色", en: "Role", ja: "権限" },
         columnCreated: { zh: "创建时间", en: "Created", ja: "作成日時" },
+        columnProviders: { zh: "登录方式", en: "Linked providers", ja: "ログイン方法" },
         columnActions: { zh: "操作", en: "Actions", ja: "操作" },
         username: { zh: "用户名", en: "Username", ja: "ユーザー名" },
         email: { zh: "邮箱", en: "Email", ja: "メールアドレス" },
@@ -243,6 +246,8 @@ export async function apply(ctx: Context, config: AuthConfig) {
     listProviders: () => listProviders(),
     completeExternalLogin: (session, identity, options) => completeExternalLogin(session, identity, options),
     bindExternalIdentity: (userId, identity) => bindExternalIdentity(userId, identity),
+    listExternalIdentities: (userId) => listExternalIdentities(userId),
+    unbindExternalIdentity: (userId, identityId) => unbindExternalIdentity(userId, identityId),
     establishSession: (session, user, options) => establishSession(session, user, options),
   };
   ctx.registerComponent("auth", auth);
@@ -351,6 +356,15 @@ export async function apply(ctx: Context, config: AuthConfig) {
       updated_at: now,
     }) as Promise<AuthIdentity>;
   }
+  async function listExternalIdentities(userId: number): Promise<AuthIdentity[]> {
+    return (await db.select("auth_identities", { user_id: userId }) as AuthIdentity[])
+      .sort((left, right) => String(left.provider).localeCompare(String(right.provider)) || Number(left.id ?? 0) - Number(right.id ?? 0));
+  }
+  async function unbindExternalIdentity(userId: number, identityId: number): Promise<void> {
+    const identity = await db.selectOne("auth_identities", { id: identityId, user_id: userId }) as AuthIdentity | undefined;
+    if (!identity) throw Error("external identity was not found");
+    await db.remove("auth_identities", { id: identityId, user_id: userId });
+  }
   async function establishSession(session: Session, user: User, options: { returnTo?: string; responseMode?: "redirect" | "json" } = {}): Promise<AuthCompletion> {
     if (user.id === undefined) throw Error("user is required to establish a session");
     const { token } = await userService.establishSession(session, user);
@@ -427,6 +441,68 @@ export async function apply(ctx: Context, config: AuthConfig) {
       session.setMime("text/html; charset=utf-8");
       session.head["Cache-Control"] = "no-store";
       session.respond(renderLoginPage({ next }), "plain");
+    });
+
+  ctx
+    .route("/api/auth/identities")
+    .methods("GET")
+    .action(async (session: Session, query: URLSearchParams) => {
+      const caller = session.properties.user as User | undefined;
+      if (!caller?.id) {
+        session.status = 401;
+        session.respond({ error: "unauthorized" }, "json");
+        return;
+      }
+      const requested = Number(query.get("userId") ?? caller.id);
+      if (requested !== caller.id && !caller.is_admin) {
+        session.status = 403;
+        session.respond({ error: "forbidden" }, "json");
+        return;
+      }
+      session.respond({ identities: await listExternalIdentities(requested) }, "json");
+    });
+  ctx
+    .route("/api/auth/identities/providers")
+    .methods("GET")
+    .action((session: Session) => {
+      const caller = session.properties.user as User | undefined;
+      if (!caller?.id) {
+        session.status = 401;
+        session.respond({ error: "unauthorized" }, "json");
+        return;
+      }
+      session.respond({ providers: listProviders().filter((provider) => provider.available) }, "json");
+    });
+  ctx
+    .route("/api/auth/identities/unbind")
+    .methods("POST")
+    .action(async (session: Session) => {
+      const caller = session.properties.user as User | undefined;
+      const body = await readBody(session);
+      const userId = Number(body?.userId ?? caller?.id ?? 0);
+      const identityId = Number(body?.identityId ?? 0);
+      if (!caller?.id) {
+        session.status = 401;
+        session.respond({ error: "unauthorized" }, "json");
+        return;
+      }
+      if (userId !== caller.id && !caller.is_admin) {
+        session.status = 403;
+        session.respond({ error: "forbidden" }, "json");
+        return;
+      }
+      if (!identityId) {
+        session.status = 400;
+        session.respond({ error: "invalid" }, "json");
+        return;
+      }
+      try {
+        await unbindExternalIdentity(userId, identityId);
+        session.respond({ ok: true }, "json");
+      } catch (error) {
+        session.status = 404;
+        session.respond({ error: error instanceof Error ? error.message : "not_found" }, "json");
+      }
     });
 
   /** What the authentication page needs before anyone has signed in. */
@@ -554,7 +630,13 @@ export async function apply(ctx: Context, config: AuthConfig) {
     .methods("GET")
     .action(async (session: Session, query: URLSearchParams) => {
       if (!requireAdmin(session)) return;
-      const rows = ((await db.select("users", {})) as User[]).map(publicUser);
+      const identityRows = await db.select("auth_identities", {}) as AuthIdentity[];
+       const providerIdsByUser = new Map<number, string[]>();
+       for (const identity of identityRows) providerIdsByUser.set(identity.user_id, [...(providerIdsByUser.get(identity.user_id) ?? []), identity.provider]);
+       const rows = ((await db.select("users", {})) as User[]).map((user) => ({
+         ...publicUser(user),
+         providers: [...new Set(providerIdsByUser.get(user.id ?? 0) ?? [])].sort(),
+       }));
       const needle = String(query.get("query") ?? "").trim().toLowerCase();
       const matched = needle
         ? rows.filter((user) =>

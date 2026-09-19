@@ -38,6 +38,7 @@ interface Account {
   is_admin: boolean
   avatar_url?: string
   created_at?: string
+  providers?: string[]
 }
 
 interface AccountsResponse {
@@ -198,6 +199,7 @@ export default function UsersSettings() {
                   <TableRow>
                     <TableHead>{t("auth.users.columnUser")}</TableHead>
                     <TableHead className="w-40">{t("auth.users.columnRole")}</TableHead>
+                    <TableHead className="hidden w-48 md:table-cell">{t("auth.users.columnProviders")}</TableHead>
                     <TableHead className="hidden w-48 sm:table-cell">{t("auth.users.columnCreated")}</TableHead>
                     <TableHead className="w-24 text-right">{t("auth.users.columnActions")}</TableHead>
                   </TableRow>
@@ -215,9 +217,12 @@ export default function UsersSettings() {
                           {account.is_admin ? t("auth.users.admin") : t("auth.users.member")}
                         </Badge>
                       </TableCell>
-                      <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
-                        {account.created_at ? new Date(account.created_at).toLocaleString() : "—"}
-                      </TableCell>
+                       <TableCell className="hidden md:table-cell">
+                         <div className="flex flex-wrap gap-1">{account.providers?.length ? account.providers.map((provider) => <Badge key={provider} variant="outline" className="font-mono text-xs">{provider}</Badge>) : <span className="text-sm text-muted-foreground">—</span>}</div>
+                       </TableCell>
+                       <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
+                         {account.created_at ? new Date(account.created_at).toLocaleString() : "—"}
+                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           <Button

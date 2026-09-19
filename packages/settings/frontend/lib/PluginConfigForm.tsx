@@ -134,6 +134,12 @@ function ArrayField({ name, path, schema, dynamicEnum, value, onChange, onValidi
     const listed = [...new Set([...dynamicEnum.map(String), ...value.map(String)])]
     return <div className="space-y-2">{listed.map((option) => <label key={option} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm"><code className="font-mono">{option}</code><Switch checked={value.map(String).includes(option)} onCheckedChange={(checked) => onChange(checked ? [...value, option] : value.filter((item) => String(item) !== option))} aria-label={option} /></label>)}</div>
   }
+  if (schema?.type === "object" && schema.properties && Object.keys(schema.properties).length) {
+    return <div className="space-y-3">{value.map((item, index) => {
+      const objectValue = (item && typeof item === "object" && !Array.isArray(item) ? item : {}) as Record<string, unknown>
+      return <fieldset key={index} className="rounded-lg border p-4"><legend className="px-1 text-sm font-medium">{name} {index + 1}</legend><div className="space-y-4">{Object.entries(schema.properties!).map(([key, fieldSchema]) => <SchemaField key={key} name={key} path={`${path}.${index}.${key}`} schema={fieldSchema} value={objectValue[key]} onChange={(next) => replace(index, { ...objectValue, [key]: next })} onValidity={onValidity} />)}</div><Button type="button" variant="ghost" size="sm" className="mt-3 gap-2" onClick={() => onChange(value.filter((_, current) => current !== index))}><Trash2 size={15} />{t("settings.plugins.removeItem")}</Button></fieldset>
+    })}<Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => onChange([...value, {}])}><Plus size={15} />{t("settings.plugins.addItem")}</Button></div>
+  }
   return (
     <div className="space-y-2">
       {value.map((item, index) => <div key={index} className="flex items-start gap-2">{scalar ? <Input type={schema?.type === "number" ? "number" : "text"} value={item === undefined || item === null ? "" : String(item)} onChange={(event) => replace(index, schema?.type === "number" ? Number(event.target.value) : event.target.value)} /> : <JsonField path={`${path}.${index}`} value={item} onChange={(next) => replace(index, next)} onValidity={onValidity} inline />}<Button type="button" variant="ghost" size="icon" aria-label={t("settings.plugins.removeItem")} onClick={() => onChange(value.filter((_, current) => current !== index))}><Trash2 size={15} /></Button></div>)}

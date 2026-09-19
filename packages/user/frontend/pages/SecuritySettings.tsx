@@ -18,9 +18,25 @@ import {
 } from "@velocelab/dashboard/frontend"
 
 interface CurrentUser {
+  id: number
   phone?: string | null
   oidc_sub?: string | null
   is_admin: boolean
+}
+
+interface ExternalIdentity {
+  id: number
+  provider: string
+  subject: string
+  email_at_link_time?: string | null
+  created_at: string
+}
+
+interface ExternalProvider {
+  id: string
+  displayName: string
+  icon?: string
+  available: boolean
 }
 
 interface PasswordMethod {
@@ -79,6 +95,23 @@ export default function SecuritySettings() {
     },
     enabled: publicSettings.passkey_enabled,
   })
+
+  const { data: externalIdentities = [] } = useQuery<ExternalIdentity[]>({
+    queryKey: ["auth", "identities"],
+    queryFn: async () => (await api.get("/auth/identities")).data.identities ?? [],
+  })
+  const { data: externalProviders = [] } = useQuery<ExternalProvider[]>({
+    queryKey: ["auth", "identity-providers"],
+    queryFn: async () => (await api.get("/auth/identities/providers")).data.providers ?? [],
+  })
+  const unbindExternal = useMutation({
+    mutationFn: async (identityId: number) => api.post("/auth/identities/unbind", { identityId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["auth", "identities"] }),
+    onError: (error) => setBindStatus(apiErrorMessage(error, copy.unbindFailed)),
+  })
+  const bindExternal = (providerId: string) => {
+    window.location.href = `/api/auth/provider/${encodeURIComponent(providerId)}?bind=1&next=${encodeURIComponent("/settings/security")}`
+  }
 
   const bindOIDC = useMutation({
     mutationFn: async () => {
@@ -198,6 +231,18 @@ export default function SecuritySettings() {
             </CardContent>
           </Card>
         )}
+
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound size={18} />{copy.externalAccounts}</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="text-sm text-muted-foreground">{copy.externalAccountsDescription}</div>
+            <div className="space-y-1">
+              {externalIdentities.length === 0 ? <div className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">{copy.noExternalAccounts}</div> : externalIdentities.map((identity) => <div key={identity.id} className="flex min-h-16 items-center gap-3 border-b py-3 last:border-b-0"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">{identity.provider.slice(0, 1).toUpperCase()}</div><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{identity.provider}</div><div className="mt-0.5 truncate text-xs text-muted-foreground">{identity.email_at_link_time || identity.subject}</div></div><Button variant="outline" size="sm" disabled={unbindExternal.isPending} onClick={() => unbindExternal.mutate(identity.id)}>{copy.unbind}</Button></div>)}
+            </div>
+            {externalProviders.length > 0 && <div className="flex flex-wrap gap-2">{externalProviders.map((provider) => <Button key={provider.id} variant="outline" size="sm" className="gap-2" onClick={() => bindExternal(provider.id)}>{provider.icon ? <img src={provider.icon} alt="" className="h-4 w-4 object-contain" /> : <KeyRound size={15} />}{copy.bindProvider.replace("{provider}", provider.displayName)}</Button>)}</div>}
+            {bindStatus && <div className="text-sm text-muted-foreground">{bindStatus}</div>}
+          </CardContent>
+        </Card>
 
         {publicSettings.oidc_enabled && (
           <Card>
@@ -331,6 +376,12 @@ const zhSecurityCopy = {
   noPasswordSet: "当前账号没有可校验的旧密码，需要管理员先配置 SMTP 后再通过邮箱验证码修改。",
   securitySettings: "安全设置",
   securityDescription: "管理登录密码、通行密钥与第三方账号绑定。",
+  externalAccounts: "第三方账号",
+  externalAccountsDescription: "已绑定的身份可用于登录当前账号。",
+  noExternalAccounts: "尚未绑定第三方账号",
+  bindProvider: "绑定 {provider}",
+  unbind: "解绑",
+  unbindFailed: "解绑第三方账号失败",
 }
 
 const enSecurityCopy: typeof zhSecurityCopy = {
@@ -381,4 +432,10 @@ const enSecurityCopy: typeof zhSecurityCopy = {
   noPasswordSet: "This account has no current password to verify. Ask an administrator to configure SMTP, then change it with an email code.",
   securitySettings: "Security settings",
   securityDescription: "Manage your login password, passkeys and linked accounts.",
+  externalAccounts: "Linked accounts",
+  externalAccountsDescription: "Linked identities can be used to sign in to this account.",
+  noExternalAccounts: "No third-party accounts are linked.",
+  bindProvider: "Link {provider}",
+  unbind: "Unlink",
+  unbindFailed: "Failed to unlink third-party account",
 }
