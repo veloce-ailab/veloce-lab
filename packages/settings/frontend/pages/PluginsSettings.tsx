@@ -59,7 +59,7 @@ interface ActionResult {
  * enabled or disabled by its key there, and every action saves before it acts.
  */
 export default function PluginsSettings() {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const { success, error: toastError } = useToast()
   // `useConfirmDialog` hands back the element to render as well as the asker:
   // without rendering it the confirmation never opens and the call never
@@ -73,7 +73,7 @@ export default function PluginsSettings() {
   const [syncToken, setSyncToken] = useState(0)
 
   const plugins = useQuery<{ plugins: ManagedPlugin[] }>({
-    queryKey: ["settings", "plugins"],
+    queryKey: ["settings", "plugins", language],
     queryFn: async () => (await api.get("/settings/plugins")).data,
   })
 

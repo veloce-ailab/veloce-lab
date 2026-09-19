@@ -40,12 +40,12 @@ export interface ChannelService {
 }
 
 export const config: Schema<ChannelConfig> = Schema.object({
-  contextMessageCount: Schema.string("Default context message count").default(
+  contextMessageCount: Schema.string("Default context message count").key("channel.config.contextMessageCount").default(
     "12",
   ),
   webhookPayloadMaxBytes: Schema.string(
     "Maximum webhook payload bytes",
-  ).default("1048576"),
+  ).key("channel.config.webhookPayloadMaxBytes").default("1048576"),
 });
 
 declare module "yumeri" {

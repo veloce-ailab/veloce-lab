@@ -12,11 +12,11 @@ export interface PgsqlConfig {
 export const depend: string[] = [];
 export const provide = ["database"];
 export const config: Schema<PgsqlConfig> = Schema.object({
-  host: Schema.string("PostgreSQL host").default("127.0.0.1"),
-  port: Schema.number("PostgreSQL port").default(5432),
-  user: Schema.string("PostgreSQL user").default("postgres"),
-  password: Schema.string("PostgreSQL password").default(""),
-  database: Schema.string("PostgreSQL database").default("veloce"),
+  host: Schema.string("PostgreSQL host").key("pgsql.config.host").default("127.0.0.1"),
+  port: Schema.number("PostgreSQL port").key("pgsql.config.port").default(5432),
+  user: Schema.string("PostgreSQL user").key("pgsql.config.user").default("postgres"),
+  password: Schema.string("PostgreSQL password").key("pgsql.config.password").default(""),
+  database: Schema.string("PostgreSQL database").key("pgsql.config.database").default("veloce"),
 });
 
 function placeholders(sql: string) {

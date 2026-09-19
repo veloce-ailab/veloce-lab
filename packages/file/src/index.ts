@@ -16,7 +16,7 @@ export interface FileService {
 export const depend: string[] = [];
 export const provide = ["file"];
 export const config: Schema<FileOptions> = Schema.object({
-  root: Schema.string("File storage root").default("./data"),
+  root: Schema.string("File storage root").key("file.config.root").default("./data"),
 });
 
 declare module "yumeri" {

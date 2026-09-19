@@ -21,11 +21,11 @@ export interface CacheService {
 }
 
 export const config: Schema<CacheConfig> = Schema.object({
-  address: Schema.string("Redis address").default("127.0.0.1:6379"),
-  username: Schema.string("Redis username").default(""),
-  password: Schema.string("Redis password").default(""),
-  database: Schema.string("Redis database").default("0"),
-  tls: Schema.boolean("Enable Redis TLS").default(false),
+  address: Schema.string("Redis address").key("cache.config.address").default("127.0.0.1:6379"),
+  username: Schema.string("Redis username").key("cache.config.username").default(""),
+  password: Schema.string("Redis password").key("cache.config.password").default(""),
+  database: Schema.string("Redis database").key("cache.config.database").default("0"),
+  tls: Schema.boolean("Enable Redis TLS").key("cache.config.tls").default(false),
 });
 
 declare module "yumeri" {

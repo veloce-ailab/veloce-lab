@@ -45,8 +45,8 @@ export interface RateLimitService {
 }
 
 export const config: Schema<RateLimitConfig> = Schema.object({
-  requestsPerMinute: Schema.string("Requests per minute").default("60"),
-  burst: Schema.string("Burst size").default("10"),
+  requestsPerMinute: Schema.string("Requests per minute").key("ratelimit.config.requestsPerMinute").default("60"),
+  burst: Schema.string("Burst size").key("ratelimit.config.burst").default("10"),
 });
 
 declare module "yumeri" {

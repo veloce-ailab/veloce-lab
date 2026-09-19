@@ -12,11 +12,11 @@ export interface MysqlConfig {
 export const depend: string[] = [];
 export const provide = ["database"];
 export const config: Schema<MysqlConfig> = Schema.object({
-  host: Schema.string("MySQL host").default("127.0.0.1"),
-  port: Schema.number("MySQL port").default(3306),
-  user: Schema.string("MySQL user").default("root"),
-  password: Schema.string("MySQL password").default(""),
-  database: Schema.string("MySQL database").default("veloce"),
+  host: Schema.string("MySQL host").key("mysql.config.host").default("127.0.0.1"),
+  port: Schema.number("MySQL port").key("mysql.config.port").default(3306),
+  user: Schema.string("MySQL user").key("mysql.config.user").default("root"),
+  password: Schema.string("MySQL password").key("mysql.config.password").default(""),
+  database: Schema.string("MySQL database").key("mysql.config.database").default("veloce"),
 });
 
 async function withConnection<T>(

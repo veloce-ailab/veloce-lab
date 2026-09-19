@@ -12,7 +12,7 @@ export const depend: string[] = [];
 export const provide = ["database"];
 
 export const config: Schema<SqliteConfig> = Schema.object({
-  path: Schema.string("SQLite database path").default("./data/veloce.db"),
+  path: Schema.string("SQLite database path").key("sqlite.config.path").default("./data/veloce.db"),
 });
 
 function sqliteParams(params: unknown[]): any[] {

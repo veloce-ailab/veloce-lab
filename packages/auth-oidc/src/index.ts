@@ -33,7 +33,7 @@ const providerSchema: Schema<OIDCProviderConfig> = Schema.object({
   clientSecret: Schema.string().key("auth.oidc.config.provider.clientSecret").required(),
   redirectUri: Schema.string().key("auth.oidc.config.provider.redirectUri").required(),
   allowRegistration: Schema.boolean().key("auth.oidc.config.provider.allowRegistration").default(true),
-  scopes: Schema.array(Schema.string().key("auth.oidc.config.provider.scope"), "").key("auth.oidc.config.provider.scopes").default(["openid", "email", "profile"]),
+  scopes: Schema.array(Schema.string().key("auth.oidc.config.provider.scope")).key("auth.oidc.config.provider.scopes").default(["openid", "email", "profile"]),
 }).key("auth.oidc.config.provider");
 export const config: Schema<OIDCConfig> = Schema.object({
   providers: Schema.array(providerSchema).key("auth.oidc.config.providers").default([]),

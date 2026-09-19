@@ -20,7 +20,7 @@ export interface DashboardConfig {
 /** Stable URL every built plugin bundle imports the shared runtime from. */
 const runtimePath = "/dashboard-client.js";
 export const config: Schema<DashboardConfig> = Schema.object<DashboardConfig>({
-  dev: Schema.boolean("Serve the frontend from source instead of the build"),
+  dev: Schema.boolean("Serve the frontend from source instead of the build").key("dashboard.config.dev"),
 });
 
 export interface DashboardAsset { id: string; file: string; mime?: string; plugin?: string; data?: Record<string, unknown>; dev?: boolean; }

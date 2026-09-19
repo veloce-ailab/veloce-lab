@@ -46,14 +46,14 @@ export interface AuthConfig {
   allowedRegistrationProviders: string[];
 }
 export const config: Schema<AuthConfig> = Schema.object({
-  username: Schema.string("管理员账号,启动时创建或覆盖").required(),
-  password: Schema.string("管理员密码,每次启动都覆盖为该值").required(),
-  email: Schema.string("管理员邮箱,留空则使用 <用户名>@localhost"),
-  passwordLoginEnabled: Schema.boolean("允许账号密码登录").default(true),
-  passwordRegistrationEnabled: Schema.boolean("允许账号密码自助注册").default(false),
-  registrationMode: Schema.enum(["disabled", "password", "external", "any"], "允许自助注册的方式").default("disabled"),
-  allowedLoginMethods: Schema.array(Schema.string(), "允许登录方式（password 或已注册的 Provider ID）").default(["password"]),
-  allowedRegistrationProviders: Schema.array(Schema.string(), "允许首次登录时创建账号的 Provider ID").default([]),
+  username: Schema.string("管理员账号,启动时创建或覆盖").key("auth.config.username").required(),
+  password: Schema.string("管理员密码,每次启动都覆盖为该值").key("auth.config.password").required(),
+  email: Schema.string("管理员邮箱,留空则使用 <用户名>@localhost").key("auth.config.email"),
+  passwordLoginEnabled: Schema.boolean("允许账号密码登录").key("auth.config.passwordLoginEnabled").default(true),
+  passwordRegistrationEnabled: Schema.boolean("允许账号密码自助注册").key("auth.config.passwordRegistrationEnabled").default(false),
+  registrationMode: Schema.enum(["disabled", "password", "external", "any"], "允许自助注册的方式").key("auth.config.registrationMode").default("disabled"),
+  allowedLoginMethods: Schema.array(Schema.string(), "允许登录方式（password 或已注册的 Provider ID）").key("auth.config.allowedLoginMethods").default(["password"]),
+  allowedRegistrationProviders: Schema.array(Schema.string(), "允许首次登录时创建账号的 Provider ID").key("auth.config.allowedRegistrationProviders").default([]),
 });
 
 export interface AuthService {

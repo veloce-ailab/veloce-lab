@@ -12,7 +12,7 @@ export interface MemoryConfig {
   root: string;
 }
 export const config: Schema<MemoryConfig> = Schema.object({
-  root: Schema.string("Memory storage root").default("./data/memories"),
+  root: Schema.string("Memory storage root").key("memory.config.root").default("./data/memories"),
 });
 const kinds = new Set([
   "profile",

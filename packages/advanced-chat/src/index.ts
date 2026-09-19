@@ -382,14 +382,14 @@ export interface ConnectorRegistration {
 export const config: Schema<AdvancedChatConfig> = Schema.object({
   connectorOnlineWindowSeconds: Schema.string(
     "Connector online window seconds",
-  ).default("60"),
-  retryAttempts: Schema.number("Chat retry attempts").default(3),
-  assistantRetryAttempts: Schema.number("Assistant retry attempts").default(10),
-  retryDelayMs: Schema.number("Chat retry delay milliseconds").default(500),
+  ).key("advanced-chat.config.connectorOnlineWindowSeconds").default("60"),
+  retryAttempts: Schema.number("Chat retry attempts").key("advanced-chat.config.retryAttempts").default(3),
+  assistantRetryAttempts: Schema.number("Assistant retry attempts").key("advanced-chat.config.assistantRetryAttempts").default(10),
+  retryDelayMs: Schema.number("Chat retry delay milliseconds").key("advanced-chat.config.retryDelayMs").default(500),
   retryMaxDelayMs: Schema.number(
     "Chat retry maximum delay milliseconds",
-  ).default(30000),
-  requestTimeoutMs: Schema.number("Chat request timeout milliseconds").default(
+  ).key("advanced-chat.config.retryMaxDelayMs").default(30000),
+  requestTimeoutMs: Schema.number("Chat request timeout milliseconds").key("advanced-chat.config.requestTimeoutMs").default(
     120000,
   ),
 });

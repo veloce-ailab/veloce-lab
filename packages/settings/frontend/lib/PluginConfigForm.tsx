@@ -19,6 +19,7 @@ import {
 export interface PluginSchema {
   type: string
   description?: string
+  i18nKey?: string
   isRequired?: boolean
   defaultValue?: unknown
   properties?: Record<string, PluginSchema>
@@ -137,7 +138,7 @@ function ArrayField({ name, path, schema, dynamicEnum, value, onChange, onValidi
   if (schema?.type === "object" && schema.properties && Object.keys(schema.properties).length) {
     return <div className="space-y-3">{value.map((item, index) => {
       const objectValue = (item && typeof item === "object" && !Array.isArray(item) ? item : {}) as Record<string, unknown>
-      return <fieldset key={index} className="rounded-lg border p-4"><legend className="px-1 text-sm font-medium">{name} {index + 1}</legend><div className="space-y-4">{Object.entries(schema.properties!).map(([key, fieldSchema]) => <SchemaField key={key} name={key} path={`${path}.${index}.${key}`} schema={fieldSchema} value={objectValue[key]} onChange={(next) => replace(index, { ...objectValue, [key]: next })} onValidity={onValidity} />)}</div><Button type="button" variant="ghost" size="sm" className="mt-3 gap-2" onClick={() => onChange(value.filter((_, current) => current !== index))}><Trash2 size={15} />{t("settings.plugins.removeItem")}</Button></fieldset>
+      return <fieldset key={index} className="rounded-lg border p-4"><legend className="px-1 text-sm font-medium">{schema?.description || name} {index + 1}</legend><div className="space-y-4">{Object.entries(schema.properties!).map(([key, fieldSchema]) => <SchemaField key={key} name={key} path={`${path}.${index}.${key}`} schema={fieldSchema} value={objectValue[key]} onChange={(next) => replace(index, { ...objectValue, [key]: next })} onValidity={onValidity} />)}</div><Button type="button" variant="ghost" size="sm" className="mt-3 gap-2" onClick={() => onChange(value.filter((_, current) => current !== index))}><Trash2 size={15} />{t("settings.plugins.removeItem")}</Button></fieldset>
     })}<Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => onChange([...value, {}])}><Plus size={15} />{t("settings.plugins.addItem")}</Button></div>
   }
   return (
