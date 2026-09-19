@@ -1936,7 +1936,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           modelName,
           inputTokens,
           outputTokens,
-          metadata: { sessionId, runId },
+          metadata: { sessionId, runId, channelId: Number(selected.channel.id), modelConfigId: Number(selected.config.id) },
         }).catch(() => undefined);
         emit("done", {
           message: { content, content_parts: contentParts },

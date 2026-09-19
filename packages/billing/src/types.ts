@@ -1,14 +1,30 @@
 export interface ModelPrice {
   id?: number;
+  channel_id: number;
+  model_config_id: number;
   model_name: string;
+  channel_name?: string;
+  quota_type: number;
   input_price: string;
   output_price: string;
   cached_input_price: string;
+  cache_write_input_price: string;
+  cache_write_1h_input_price: string;
   image_input_price: string;
   image_output_price: string;
   audio_input_price: string;
   audio_output_price: string;
-  currency: string;
+  input_price_tiers: string;
+  output_price_tiers: string;
+  cached_input_price_tiers: string;
+  cache_write_input_price_tiers: string;
+  cache_write_1h_input_price_tiers: string;
+  image_input_price_tiers: string;
+  image_output_price_tiers: string;
+  audio_input_price_tiers: string;
+  audio_output_price_tiers: string;
+  time_pricing: string;
+  video_billing_config: string;
   updated_at: string;
   created_at: string;
 }

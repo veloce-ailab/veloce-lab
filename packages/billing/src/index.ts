@@ -30,12 +30,14 @@ export interface BillingService {
   calculateCost(inputTokens: number, outputTokens: number, inputPrice: number, outputPrice: number, groupMultiplier?: number, channelMultiplier?: number): number;
   recordUsage(usage: TokenUsageRecord): Promise<TokenLog>;
   listModelPrices(): Promise<ModelPrice[]>;
-  setModelPrice(modelName: string, prices: Partial<Omit<ModelPrice, "id" | "model_name" | "created_at" | "updated_at">>): Promise<ModelPrice>;
+  setModelPrice(channelId: number, modelConfigId: number, prices: Partial<Omit<ModelPrice, "id" | "channel_id" | "model_config_id" | "model_name" | "channel_name" | "created_at" | "updated_at">>): Promise<ModelPrice>;
   charge(userId: number, amount: number, metadata?: Record<string, unknown>): Promise<boolean>;
   balance(userId: number): Promise<number>;
 }
-export interface BillingConfig { }
-export const config: Schema<BillingConfig> = Schema.object({});
+export interface BillingConfig { currency: string }
+export const config: Schema<BillingConfig> = Schema.object({
+  currency: Schema.string("Currency used for recorded costs").key("billing.config.currency").default("USD"),
+});
 declare module "yumeri" { interface Components { billing: BillingService; } }
 
 function estimate(text: string) { return text ? Math.max(1, Math.ceil(Array.from(text).length / 4)) : 0; }
@@ -64,7 +66,7 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
     user_channel_id: "integer",
     channel_id: { type: "integer", nullable: false },
     model_config_id: { type: "integer", nullable: false },
-    model_name: { type: "string", nullable: false },
+    model_name: { type: "string", nullable: false }, quota_type: { type: "integer", initial: 0 },
     billing_model_name: "string",
     upstream_task_id: "string",
     status: { type: "string", nullable: false },
@@ -76,82 +78,47 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
     updated_at: "timestamp",
   }, { unique: ["id"] });
   await db.extend("model_prices", {
-    id: { type: "integer", autoIncrement: true },
-    model_name: { type: "string", nullable: false },
-    input_price: { type: "decimal", initial: 0 },
-    output_price: { type: "decimal", initial: 0 },
-    cached_input_price: { type: "decimal", initial: 0 },
-    image_input_price: { type: "decimal", initial: 0 },
-    image_output_price: { type: "decimal", initial: 0 },
-    audio_input_price: { type: "decimal", initial: 0 },
-    audio_output_price: { type: "decimal", initial: 0 },
-    currency: { type: "string", initial: "USD" },
-    created_at: "timestamp",
-    updated_at: "timestamp",
-  }, { unique: ["model_name"] });
+    id: { type: "integer", autoIncrement: true }, channel_id: { type: "integer", nullable: false }, model_config_id: { type: "integer", nullable: false }, model_name: { type: "string", nullable: false },
+    input_price: { type: "decimal", initial: 0 }, output_price: { type: "decimal", initial: 0 }, cached_input_price: { type: "decimal", initial: 0 }, cache_write_input_price: { type: "decimal", initial: 0 }, cache_write_1h_input_price: { type: "decimal", initial: 0 }, image_input_price: { type: "decimal", initial: 0 }, image_output_price: { type: "decimal", initial: 0 }, audio_input_price: { type: "decimal", initial: 0 }, audio_output_price: { type: "decimal", initial: 0 },
+    input_price_tiers: "text", output_price_tiers: "text", cached_input_price_tiers: "text", cache_write_input_price_tiers: "text", cache_write_1h_input_price_tiers: "text", image_input_price_tiers: "text", image_output_price_tiers: "text", audio_input_price_tiers: "text", audio_output_price_tiers: "text", time_pricing: "text", video_billing_config: "text", created_at: "timestamp", updated_at: "timestamp",
+  }, { unique: [["channel_id", "model_config_id"]] });
   const now = () => new Date().toISOString();
   const user = (session: any) => session.properties.user as { id?: number; is_admin?: boolean } | undefined;
   const body = async (session: any) => await session.parseRequestBody() as Record<string, unknown>;
+  const priceFields = ["input_price", "output_price", "cached_input_price", "cache_write_input_price", "cache_write_1h_input_price", "image_input_price", "image_output_price", "audio_input_price", "audio_output_price", "input_price_tiers", "output_price_tiers", "cached_input_price_tiers", "cache_write_input_price_tiers", "cache_write_1h_input_price_tiers", "image_input_price_tiers", "image_output_price_tiers", "audio_input_price_tiers", "audio_output_price_tiers", "time_pricing", "video_billing_config"] as const;
+  const defaultPrice = (channelId: number, modelConfigId: number, modelName: string, quotaType = 0) => ({ channel_id: channelId, model_config_id: modelConfigId, model_name: modelName, quota_type: quotaType, ...Object.fromEntries(priceFields.map((field) => [field, field.endsWith("_price") ? "0" : "[]"])) }) as ModelPrice;
   const prices = async () => await db.select("model_prices", {}) as ModelPrice[];
-  const findPrice = async (modelName: string) => (await db.selectOne("model_prices", { model_name: modelName }) as ModelPrice | undefined) ?? {
-    model_name: modelName, input_price: "0", output_price: "0", cached_input_price: "0", image_input_price: "0", image_output_price: "0", audio_input_price: "0", audio_output_price: "0", currency: "USD",
-  } as ModelPrice;
-  const recordUsage = async (usage: TokenUsageRecord): Promise<TokenLog> => {
-    const modelName = String(usage.modelName ?? "").trim();
-    const price = await findPrice(modelName);
-    const inputTokens = Math.max(0, Number(usage.inputTokens) || 0);
-    const outputTokens = Math.max(0, Number(usage.outputTokens) || 0);
-    const cachedInputTokens = Math.max(0, Math.min(inputTokens, Number(usage.cachedInputTokens) || 0));
-    const cost = usage.cost ?? (((inputTokens - cachedInputTokens) * Number(price.input_price || 0) + cachedInputTokens * Number(price.cached_input_price || price.input_price || 0) + outputTokens * Number(price.output_price || 0)) / 1_000_000);
-    const metadata = usage.metadata ?? {};
-    return await db.create("token_logs", {
-      user_id: usage.userId ?? null,
-      model_name: modelName,
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
-      cached_input_tokens: cachedInputTokens,
-      input_price: price.input_price,
-      output_price: price.output_price,
-      cached_input_price: price.cached_input_price,
-      cost: String(cost),
-      base_cost: String(cost),
-      status: 0,
-      pricing_formula: JSON.stringify({ unit: "per_million_tokens", currency: price.currency }),
-      channel_id: metadata.channelId ?? null,
-      model_config_id: metadata.modelConfigId ?? null,
-      created_at: now(),
-    } as any) as TokenLog;
-  };
+  const availablePrices = async () => { try { const data = db as any; const [configs, channels, models, configured] = await Promise.all([data.select("model_configs", {}), data.select("channels", {}), data.select("models", {}), prices()]); const channelById = new Map<number, any>(channels.map((item: any) => [Number(item.id), item])); const modelById = new Map<number, any>(models.map((item: any) => [Number(item.id), item])); const configuredByBinding = new Map(configured.map((item) => [`${item.channel_id}:${item.model_config_id}`, item])); return configs.map((item: any) => { const channel = channelById.get(Number(item.channel_id)); const model = modelById.get(Number(item.model_id)); const modelName = String(model?.model_name ?? item.upstream_model_name ?? ""); return { ...(configuredByBinding.get(`${item.channel_id}:${item.id}`) ?? defaultPrice(Number(item.channel_id), Number(item.id), modelName, Number(model?.quota_type ?? 0))), channel_name: String(channel?.name ?? "") }; }); } catch { return []; } };
+  const findPrice = async (modelName: string, metadata: Record<string, unknown>) => { const channelId = Number(metadata.channelId ?? 0); const modelConfigId = Number(metadata.modelConfigId ?? 0); return channelId && modelConfigId ? ((await db.selectOne("model_prices", { channel_id: channelId, model_config_id: modelConfigId }) as ModelPrice | undefined) ?? defaultPrice(channelId, modelConfigId, modelName)) : defaultPrice(0, 0, modelName); };
+  const recordUsage = async (usage: TokenUsageRecord): Promise<TokenLog> => { const modelName = String(usage.modelName ?? "").trim(); const metadata = usage.metadata ?? {}; const price = await findPrice(modelName, metadata); const inputTokens = Math.max(0, Number(usage.inputTokens) || 0); const outputTokens = Math.max(0, Number(usage.outputTokens) || 0); const cachedInputTokens = Math.max(0, Math.min(inputTokens, Number(usage.cachedInputTokens) || 0)); const cost = usage.cost ?? (((inputTokens - cachedInputTokens) * Number(price.input_price || 0) + cachedInputTokens * Number(price.cached_input_price || price.input_price || 0) + outputTokens * Number(price.output_price || 0)) / 1_000_000); return await db.create("token_logs", { user_id: usage.userId ?? null, model_name: modelName, input_tokens: inputTokens, output_tokens: outputTokens, cached_input_tokens: cachedInputTokens, input_price: price.input_price, output_price: price.output_price, cached_input_price: price.cached_input_price, cache_write_input_price: price.cache_write_input_price, cache_write_1h_input_price: price.cache_write_1h_input_price, cost: String(cost), base_cost: String(cost), status: 0, pricing_formula: JSON.stringify({ unit: "per_million_tokens", currency: cfg.currency, channel_id: price.channel_id, model_config_id: price.model_config_id }), channel_id: Number(metadata.channelId ?? 0) || null, model_config_id: Number(metadata.modelConfigId ?? 0) || null, created_at: now() } as any) as TokenLog; };
+  const balances = new Map<number, number>();
   const service: BillingService = {
     countTokens: (_model, text) => estimate(text),
     calculateCost: (input, output, inputPrice, outputPrice, group = 1, channel = 1) => ((input * inputPrice + output * outputPrice) / 1_000_000) * group * channel,
     recordUsage,
     listModelPrices: prices,
-    setModelPrice: async (modelName, updates) => {
-      const name = String(modelName ?? "").trim();
-      if (!name) throw Error("model name is required");
-      const existing = await db.selectOne("model_prices", { model_name: name }) as ModelPrice | undefined;
-      const data = { model_name: name, input_price: String(updates.input_price ?? existing?.input_price ?? "0"), output_price: String(updates.output_price ?? existing?.output_price ?? "0"), cached_input_price: String(updates.cached_input_price ?? existing?.cached_input_price ?? "0"), image_input_price: String(updates.image_input_price ?? existing?.image_input_price ?? "0"), image_output_price: String(updates.image_output_price ?? existing?.image_output_price ?? "0"), audio_input_price: String(updates.audio_input_price ?? existing?.audio_input_price ?? "0"), audio_output_price: String(updates.audio_output_price ?? existing?.audio_output_price ?? "0"), currency: String(updates.currency ?? existing?.currency ?? "USD"), updated_at: now() };
-      if (existing?.id) await db.update("model_prices", { id: existing.id }, data as any);
-      else await db.create("model_prices", { ...data, created_at: now() } as any);
-      return await db.selectOne("model_prices", { model_name: name }) as ModelPrice;
+    setModelPrice: async (channelId, modelConfigId, updates) => {
+      const data = db as any; const binding = await data.selectOne("model_configs", { id: modelConfigId, channel_id: channelId }); if (!binding) throw Error("channel model binding not found");
+      const model = await data.selectOne("models", { id: Number(binding.model_id) }); const modelName = String(model?.model_name ?? binding.upstream_model_name ?? ""); const existing = await db.selectOne("model_prices", { channel_id: channelId, model_config_id: modelConfigId }) as ModelPrice | undefined; const base = existing ?? defaultPrice(channelId, modelConfigId, modelName, Number(model?.quota_type ?? 0));
+      const values = Object.fromEntries(priceFields.map((field) => [field, String(updates[field] ?? base[field] ?? "")])) as Record<string, string>; const record = { ...values, quota_type: Number(updates.quota_type ?? base.quota_type ?? 0), channel_id: channelId, model_config_id: modelConfigId, model_name: modelName, updated_at: now() };
+      if (existing?.id) await db.update("model_prices", { id: existing.id }, record as any); else await db.create("model_prices", { ...record, created_at: now() } as any); return await db.selectOne("model_prices", { channel_id: channelId, model_config_id: modelConfigId }) as ModelPrice;
     },
     balance: async (userId) => balances.get(userId) ?? 0,
     charge: async (userId, amount) => { if (amount <= 0) return true; const current = balances.get(userId) ?? 0; if (current < amount) return false; balances.set(userId, current - amount); return true; },
   };
-  const balances = new Map<number, number>();
   ctx.on("advanced-chat.usage", async (usage: TokenUsageRecord) => {
     await recordUsage(usage).catch(() => undefined);
   });
+  ctx.i18n("billing.config.currency", { zh: "计费货币", en: "Billing currency", ja: "請求通貨" });
   ctx.i18n("billing.modelPrices", { zh: "模型价格", en: "Model prices", ja: "モデル価格" });
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/billing.js", import.meta.url).pathname, plugin: "billing" });
   ctx.route("/api/billing/model-prices").methods("GET").action(async (session) => {
     if (!user(session)?.is_admin) { session.status = 403; session.respond({ error: "forbidden" }, "json"); return; }
-    session.respond({ prices: await prices() }, "json");
+    session.respond({ prices: await availablePrices(), currency: cfg.currency }, "json");
   });
   ctx.route("/api/billing/model-prices").methods("POST").action(async (session) => {
     if (!user(session)?.is_admin) { session.status = 403; session.respond({ error: "forbidden" }, "json"); return; }
-    try { const input = await body(session); session.respond(await service.setModelPrice(String(input.model_name ?? ""), input as any), "json"); }
+    try { const input = await body(session); session.respond(await service.setModelPrice(Number(input.channel_id), Number(input.model_config_id), input as any), "json"); }
     catch (error) { session.status = 400; session.respond({ error: error instanceof Error ? error.message : "invalid" }, "json"); }
   });
   ctx.route("/api/user/usage/statistics").methods("GET").action(async (session, query) => {
