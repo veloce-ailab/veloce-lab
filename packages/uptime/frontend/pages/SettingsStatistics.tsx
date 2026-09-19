@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DatePicker } from "@/components/ui/date-picker"
 
 type UsagePoint = { date: string; request_count: number; total_tokens: number; total_cost: string | number }
-type UsageResponse = { from: string; to: string; summary: { request_count: number; input_tokens: number; output_tokens: number; total_tokens: number; total_cost: string | number }; series: UsagePoint[] }
+type UsageResponse = { from: string; to: string; components?: string[]; summary: { request_count: number; input_tokens: number; output_tokens: number; total_tokens: number; total_cost?: string | number }; series: UsagePoint[] }
 
 function isoDate(date: Date) { return date.toISOString().slice(0, 10) }
 
@@ -28,6 +28,7 @@ export default function SettingsStatistics() {
    },
   })
   const summary = usage.data?.summary
+  const showBilling = usage.data?.components?.includes("billing") === true
   const series = useMemo(() => usage.data?.series || [], [usage.data])
   const apply = () => { if (from && to && from <= to) setRange({ from, to }) }
   const formatNumber = (value: number | undefined) => (value || 0).toLocaleString()
@@ -40,7 +41,7 @@ export default function SettingsStatistics() {
     </div>
     {usage.isError && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">统计信息加载失败。</div>}
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-      {[["请求数", formatNumber(summary?.request_count)], ["总 Token", formatNumber(summary?.total_tokens)], ["输入 Token", formatNumber(summary?.input_tokens)], ["输出 Token", formatNumber(summary?.output_tokens)], ["费用", formatCost(summary?.total_cost)]].map(([label, value]) => <Card key={label} size="sm"><CardContent><div className="text-xs text-muted-foreground">{label}</div><div className="mt-2 text-xl font-semibold tabular-nums">{usage.isLoading ? "..." : value}</div></CardContent></Card>)}
+      {[["请求数", formatNumber(summary?.request_count)], ["总 Token", formatNumber(summary?.total_tokens)], ["输入 Token", formatNumber(summary?.input_tokens)], ["输出 Token", formatNumber(summary?.output_tokens)], ...(showBilling ? [["费用", formatCost(summary?.total_cost)]] : [])].map(([label, value]) => <Card key={label} size="sm"><CardContent><div className="text-xs text-muted-foreground">{label}</div><div className="mt-2 text-xl font-semibold tabular-nums">{usage.isLoading ? "..." : value}</div></CardContent></Card>)}
     </div>
     <Card>
       <CardHeader><CardTitle>每日用量</CardTitle><CardDescription>按天统计请求数和 Token。</CardDescription></CardHeader>

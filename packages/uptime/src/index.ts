@@ -8,8 +8,22 @@ interface StatusMonitor { id?: number; name: string; target_url: string; check_t
 interface StatusCheck { monitor_id: number; status: string; latency_ms: number; status_code: number; message: string; checked_at: string; created_at: string }
 declare module "@yumerijs/types" { interface Tables { status_monitors: StatusMonitor; status_checks: StatusCheck } }
 
+export interface StatisticsContribution {
+  summary?: Record<string, number | string>;
+  series?: Array<Record<string, number | string>>;
+}
+export interface StatisticsProvider {
+  id: string;
+  get(userId: number, from: string, to: string): Promise<StatisticsContribution>;
+}
+export interface StatisticsService {
+  register(provider: StatisticsProvider): () => void;
+  collect(userId: number, from: string, to: string): Promise<{ from: string; to: string; summary: Record<string, number | string>; series: Array<Record<string, number | string>>; components: string[] }>;
+}
+
 export interface UptimeService {
   list(): Promise<Record<string, unknown>[]>;
+  statistics: StatisticsService;
 }
 
 declare module "yumeri" {
@@ -47,10 +61,42 @@ export async function apply(ctx: Context) {
     created_at: "timestamp",
   });
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/uptime.js", import.meta.url).pathname, plugin: "uptime" });
-  const service: UptimeService = {
-    async list() {
-      return db.select("status_monitors", {} as any);
+  const statisticsProviders = new Map<string, StatisticsProvider>();
+  const statistics: StatisticsService = {
+    register(provider) {
+      statisticsProviders.set(provider.id, provider);
+      return () => statisticsProviders.delete(provider.id);
     },
+    async collect(userId, from, to) {
+      const contributions = await Promise.all([...statisticsProviders.values()].map(async (provider) => ({ id: provider.id, value: await provider.get(userId, from, to) })));
+      const summary: Record<string, number | string> = { request_count: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+      const series = new Map<string, Record<string, number | string>>();
+      for (const contribution of contributions) {
+        for (const [key, value] of Object.entries(contribution.value.summary ?? {})) summary[key] = (Number(summary[key] ?? 0) + Number(value ?? 0));
+        for (const point of contribution.value.series ?? []) {
+          const date = String(point.date ?? "");
+          const current = series.get(date) ?? { date };
+          for (const [key, value] of Object.entries(point)) if (key !== "date") current[key] = Number(current[key] ?? 0) + Number(value ?? 0);
+          series.set(date, current);
+        }
+      }
+      return { from, to, summary, series: [...series.values()].sort((a, b) => String(a.date).localeCompare(String(b.date))), components: contributions.map((item) => item.id) };
+    },
+  };
+  ctx.registerComponent("statistics", statistics);
+  ctx.on("statistics.register", async (provider: StatisticsProvider) => { statistics.register(provider); });
+  const statisticsUser = (session: Session) => session.properties.user as { id?: number } | undefined;
+  ctx.route("/api/user/usage/statistics").methods("GET").action(async (session, query) => {
+    const current = statisticsUser(session);
+    if (!current?.id) { session.status = 401; session.respond({ error: "unauthorized" }, "json"); return; }
+    const from = String(query.get("from") ?? "").slice(0, 10);
+    const to = String(query.get("to") ?? "").slice(0, 10);
+    session.respond(await statistics.collect(current.id, from, to), "json");
+  });
+
+  const service: UptimeService = {
+    list: () => db.select("status_monitors", {} as any),
+    statistics,
   };
   ctx.registerComponent("uptime", service);
 

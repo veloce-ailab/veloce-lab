@@ -121,17 +121,19 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
     try { const input = await body(session); session.respond(await service.setModelPrice(Number(input.channel_id), Number(input.model_config_id), input as any), "json"); }
     catch (error) { session.status = 400; session.respond({ error: error instanceof Error ? error.message : "invalid" }, "json"); }
   });
-  ctx.route("/api/user/usage/statistics").methods("GET").action(async (session, query) => {
-    const current = user(session);
-    if (!current?.id) { session.status = 401; session.respond({ error: "unauthorized" }, "json"); return; }
-    const from = String(query.get("from") ?? "").slice(0, 10);
-    const to = String(query.get("to") ?? "").slice(0, 10);
-    const rows = (await db.select("token_logs", {}) as TokenLog[]).filter((row) => row.user_id === current.id && (!from || String(row.created_at).slice(0, 10) >= from) && (!to || String(row.created_at).slice(0, 10) <= to));
-    const seriesMap = new Map<string, { date: string; request_count: number; total_tokens: number; total_cost: number }>();
-    for (const row of rows) { const date = String(row.created_at).slice(0, 10); const point = seriesMap.get(date) ?? { date, request_count: 0, total_tokens: 0, total_cost: 0 }; point.request_count += 1; point.total_tokens += Number(row.input_tokens || 0) + Number(row.output_tokens || 0); point.total_cost += Number(row.cost || 0); seriesMap.set(date, point); }
-    const input = rows.reduce((sum, row) => sum + Number(row.input_tokens || 0), 0);
-    const output = rows.reduce((sum, row) => sum + Number(row.output_tokens || 0), 0);
-    session.respond({ from, to, summary: { request_count: rows.length, input_tokens: input, output_tokens: output, total_tokens: input + output, total_cost: rows.reduce((sum, row) => sum + Number(row.cost || 0), 0) }, series: [...seriesMap.values()].sort((a, b) => a.date.localeCompare(b.date)) }, "json");
-  });
+  const statisticsProvider = {
+    id: "billing",
+    async get(userId: number, from: string, to: string) {
+      const rows = (await db.select("token_logs", {}) as TokenLog[]).filter((row) => row.user_id === userId && (!from || String(row.created_at).slice(0, 10) >= from) && (!to || String(row.created_at).slice(0, 10) <= to));
+      const input = rows.reduce((sum, row) => sum + Number(row.input_tokens || 0), 0);
+      const output = rows.reduce((sum, row) => sum + Number(row.output_tokens || 0), 0);
+      const daily = new Map<string, { date: string; request_count: number; input_tokens: number; output_tokens: number; total_tokens: number; total_cost: number }>();
+      for (const row of rows) { const date = String(row.created_at).slice(0, 10); const point = daily.get(date) ?? { date, request_count: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, total_cost: 0 }; point.request_count += 1; point.input_tokens += Number(row.input_tokens || 0); point.output_tokens += Number(row.output_tokens || 0); point.total_tokens += Number(row.input_tokens || 0) + Number(row.output_tokens || 0); point.total_cost += Number(row.cost || 0); daily.set(date, point); }
+      return { summary: { request_count: rows.length, input_tokens: input, output_tokens: output, total_tokens: input + output, total_cost: rows.reduce((sum, row) => sum + Number(row.cost || 0), 0) }, series: [...daily.values()] };
+    },
+  };
+  const statistics = (ctx.component as any).statistics;
+  if (statistics?.register) statistics.register(statisticsProvider);
+  else await ctx.emit("statistics.register", statisticsProvider);
   ctx.registerComponent("billing", service);
 }
