@@ -82,14 +82,7 @@ function dependentsOf(target: string, entries: Array<{ name: string; enabled: bo
 }
 
 function requestLanguages(session: Session): string[] {
-  const headers = session.client.req?.headers as Record<string, string | string[] | undefined> | undefined;
-  const raw = Array.isArray(headers?.["accept-language"]) ? headers["accept-language"].join(",") : String(headers?.["accept-language"] ?? "");
-  return raw.split(",").flatMap((entry) => {
-    const language = entry.trim().split(";", 1)[0];
-    if (!language) return [];
-    const base = language.split("-", 1)[0];
-    return base === language ? [language] : [language, base];
-  });
+  return session.languages;
 }
 
 function localizedSchema(schema: PluginConfigSchema, core: ReturnType<Context["getCore"]>, langs: string[]): PluginConfigSchema {

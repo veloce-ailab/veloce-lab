@@ -115,6 +115,10 @@ export const getOAuthLoginURL = (
 };
 api.interceptors.request.use((config) => {
   config.baseURL = apiURL("/api");
+  const language = typeof window !== "undefined" ? localStorage.getItem("language") : "";
+  if (language === "zh" || language === "en" || language === "ja") {
+    config.headers["Accept-Language"] = language;
+  }
   const token = getAuthToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;

@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react"
+import { createContext, useContext, useEffect, useMemo, useState } from "react"
 import type { Context, ReactNode } from "react"
 
 export type Language = "zh" | "en" | "ja"
@@ -1586,10 +1586,14 @@ export function I18nProvider({ children, translations: injectedTranslations = {}
     const stored = localStorage.getItem(languageStorageKey)
     return stored === "en" || stored === "zh" || stored === "ja" ? stored : "zh"
   })
+  useEffect(() => {
+    document.documentElement.lang = language
+  }, [language])
 
   const value = useMemo<I18nContextValue>(() => {
     const setLanguage = (nextLanguage: Language) => {
       localStorage.setItem(languageStorageKey, nextLanguage)
+      if (typeof document !== "undefined") document.documentElement.lang = nextLanguage
       setLanguageState(nextLanguage)
     }
 
