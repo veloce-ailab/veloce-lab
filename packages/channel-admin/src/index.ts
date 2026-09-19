@@ -1,18 +1,17 @@
 import { Context, Database, Session } from "yumeri";
 import type { Channel, Model, ModelConfig } from "./types.js";
-import type { TokenLog } from "@velocelab/billing";
+interface TokenLog { channel_id?: number; input_tokens?: number; output_tokens?: number; cost?: string | number; }
 import "@velocelab/dashboard";
-import "@velocelab/billing";
 import "@velocelab/database-core";
 import type { AdapterRegistry } from "@velocelab/adapters";
 import { ensureTables } from "./tables.js";
 import { applyChannelModels, buildPreview, fetchUpstreamModelNames, parseModelNames, resolveSyncTargets, toSyncChannel } from "./sync.js";
 
 declare module "@yumerijs/types" {
-  interface Tables { channels: Channel; models: Model; model_configs: ModelConfig; }
+  interface Tables { channels: Channel; models: Model; model_configs: ModelConfig; token_logs: TokenLog; }
 }
 
-export const depend = ["database", "dashboard", "billing", "adapters"];
+export const depend = ["database", "dashboard", "adapters"];
 export const provide = ["channel-admin"];
 
 export async function apply(ctx: Context) {
@@ -46,7 +45,8 @@ export async function apply(ctx: Context) {
   ctx.route("/api/channel-usage").methods("GET").action(async (session) => {
     if (!admin(session)) return;
     const channelRows = await channels.list();
-    const logs = await db.select("token_logs", {});
+     let logs: TokenLog[] = [];
+     try { logs = await db.select("token_logs", {}) as TokenLog[]; } catch { /* billing is optional */ }
     session.respond({ upstream_channels: channelRows.map((channel) => {
       const rows = logs.filter((row: TokenLog) => row.channel_id === channel.id);
       const input = rows.reduce((sum: number, row: TokenLog) => sum + Number(row.input_tokens || 0), 0);

@@ -20,13 +20,12 @@ import { registerSessionTaskTools } from "./session-tasks.js";
 import { registerRunTools } from "./run-tools.js";
 import "@velocelab/dashboard";
 import "@velocelab/file";
-import "@velocelab/billing";
 import "@velocelab/database-core";
 import { ensureTables } from "./tables.js";
 
 export * from "./types.js";
 
-export const depend = ["database", "dashboard", "file", "adapters", "billing"];
+export const depend = ["database", "dashboard", "file", "adapters"];
 export const provide = ["advanced-chat"];
 
 declare module "@yumerijs/types" {
@@ -473,7 +472,6 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const contextProviders: ChatContextProvider[] = [];
   const db = ctx.component.database;
   await ensureTables(db);
-  const billing = ctx.component.billing;
   registerChatFileRoutes(
     ctx,
     db,
@@ -1933,7 +1931,13 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           { id: sessionId, user_id: userId },
           { updated_at: finishedAt, model_name: modelName },
         );
-        await billing.recordUsage({ userId, modelName, inputTokens, outputTokens, metadata: { sessionId, runId } }).catch(() => undefined);
+        await ctx.emit("advanced-chat.usage", {
+          userId,
+          modelName,
+          inputTokens,
+          outputTokens,
+          metadata: { sessionId, runId },
+        }).catch(() => undefined);
         emit("done", {
           message: { content, content_parts: contentParts },
           tool_call_details: toolCallDetails,

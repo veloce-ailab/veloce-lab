@@ -140,6 +140,9 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
     charge: async (userId, amount) => { if (amount <= 0) return true; const current = balances.get(userId) ?? 0; if (current < amount) return false; balances.set(userId, current - amount); return true; },
   };
   const balances = new Map<number, number>();
+  ctx.on("advanced-chat.usage", async (usage: TokenUsageRecord) => {
+    await recordUsage(usage).catch(() => undefined);
+  });
   ctx.i18n("billing.modelPrices", { zh: "模型价格", en: "Model prices", ja: "モデル価格" });
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/billing.js", import.meta.url).pathname, plugin: "billing" });
   ctx.route("/api/billing/model-prices").methods("GET").action(async (session) => {

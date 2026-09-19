@@ -19,7 +19,13 @@ export default function SettingsStatistics() {
   const [range, setRange] = useState({ from: initialFrom, to: initialTo })
   const usage = useQuery<UsageResponse>({
     queryKey: ["user-usage-statistics", range],
-    queryFn: async () => (await api.get("/user/usage/statistics", { params: range })).data,
+    queryFn: async () => {
+     try { return (await api.get("/user/usage/statistics", { params: range })).data }
+     catch (error) {
+       if ((error as { response?: { status?: number } })?.response?.status === 404) return { from: range.from, to: range.to, summary: { request_count: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, total_cost: 0 }, series: [] }
+       throw error
+     }
+   },
   })
   const summary = usage.data?.summary
   const series = useMemo(() => usage.data?.series || [], [usage.data])

@@ -2942,7 +2942,6 @@ __metadata:
   dependencies:
     "@tanstack/react-query": "npm:^5.100.14"
     "@velocelab/adapters": "workspace:*"
-    "@velocelab/billing": "workspace:*"
     "@velocelab/file": "workspace:*"
     "@velocelab/user": "workspace:*"
     "@vitejs/plugin-react": "npm:^6.0.1"
@@ -3032,7 +3031,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/billing@workspace:*, @velocelab/billing@workspace:packages/billing":
+"@velocelab/billing@workspace:packages/billing":
   version: 0.0.0-use.local
   resolution: "@velocelab/billing@workspace:packages/billing"
   dependencies:
@@ -3055,7 +3054,6 @@ __metadata:
   resolution: "@velocelab/channel-admin@workspace:packages/channel-admin"
   dependencies:
     "@velocelab/adapters": "workspace:*"
-    "@velocelab/billing": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown

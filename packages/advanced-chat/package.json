@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@velocelab/adapters": "workspace:*",
-    "@velocelab/billing": "workspace:*",
     "@velocelab/file": "workspace:*",
     "@velocelab/user": "workspace:*"
   },

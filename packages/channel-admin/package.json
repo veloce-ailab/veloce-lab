@@ -9,8 +9,7 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
   },
   "dependencies": {
-    "@velocelab/adapters": "workspace:*",
-    "@velocelab/billing": "workspace:*"
+    "@velocelab/adapters": "workspace:*"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"
