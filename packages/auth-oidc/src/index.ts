@@ -25,19 +25,19 @@ export interface OIDCProviderConfig {
 export interface OIDCConfig { providers: OIDCProviderConfig[]; }
 
 const providerSchema: Schema<OIDCProviderConfig> = Schema.object({
-  id: Schema.string("唯一 Provider ID，例如 keycloak").required(),
-  name: Schema.string("登录页显示名称").required(),
-  icon: Schema.string("可选图标 URL"),
-  issuer: Schema.string("OIDC Issuer URL").required(),
-  clientId: Schema.string("OIDC Client ID").required(),
-  clientSecret: Schema.string("OIDC Client Secret").required(),
-  redirectUri: Schema.string("OIDC 已授权回调 URL").required(),
-  allowRegistration: Schema.boolean("允许首次 OIDC 登录时注册").default(true),
-  scopes: Schema.array(Schema.string(), "授权 scopes").default(["openid", "email", "profile"]),
-});
+  id: Schema.string().key("auth.oidc.config.provider.id").required(),
+  name: Schema.string().key("auth.oidc.config.provider.name").required(),
+  icon: Schema.string().key("auth.oidc.config.provider.icon"),
+  issuer: Schema.string().key("auth.oidc.config.provider.issuer").required(),
+  clientId: Schema.string().key("auth.oidc.config.provider.clientId").required(),
+  clientSecret: Schema.string().key("auth.oidc.config.provider.clientSecret").required(),
+  redirectUri: Schema.string().key("auth.oidc.config.provider.redirectUri").required(),
+  allowRegistration: Schema.boolean().key("auth.oidc.config.provider.allowRegistration").default(true),
+  scopes: Schema.array(Schema.string().key("auth.oidc.config.provider.scope"), "").key("auth.oidc.config.provider.scopes").default(["openid", "email", "profile"]),
+}).key("auth.oidc.config.provider");
 export const config: Schema<OIDCConfig> = Schema.object({
-  providers: Schema.array(providerSchema, "OIDC Providers").default([]),
-});
+  providers: Schema.array(providerSchema).key("auth.oidc.config.providers").default([]),
+}).key("auth.oidc.config");
 
 interface OIDCLoginRequest {
   state: string;
@@ -75,6 +75,27 @@ async function json<T>(response: Response): Promise<T> {
 }
 
 export async function apply(ctx: Context, cfg: OIDCConfig) {
+  ctx.i18n({
+    auth: {
+      oidc: {
+        config: {
+          providers: { zh: "OIDC 登录提供商", en: "OIDC providers", ja: "OIDC プロバイダー" },
+          provider: {
+            id: { zh: "Provider 唯一 ID，例如 keycloak", en: "Unique provider ID, e.g. keycloak", ja: "Provider 固有 ID（例: keycloak）" },
+            name: { zh: "登录页显示名称", en: "Display name", ja: "表示名" },
+            icon: { zh: "可选图标 URL", en: "Optional icon URL", ja: "任意のアイコン URL" },
+            issuer: { zh: "OIDC Issuer 地址", en: "OIDC issuer URL", ja: "OIDC Issuer URL" },
+            clientId: { zh: "OIDC 客户端 ID", en: "OIDC client ID", ja: "OIDC クライアント ID" },
+            clientSecret: { zh: "OIDC 客户端密钥", en: "OIDC client secret", ja: "OIDC クライアントシークレット" },
+            redirectUri: { zh: "OIDC 授权回调地址", en: "OIDC authorized redirect URI", ja: "OIDC 許可済みリダイレクト URI" },
+            allowRegistration: { zh: "允许首次 OIDC 登录时创建账号", en: "Allow account creation on first OIDC login", ja: "OIDC 初回ログイン時のアカウント作成を許可" },
+            scopes: { zh: "授权 scopes", en: "Authorization scopes", ja: "認可スコープ" },
+            scope: { zh: "Scope", en: "Scope", ja: "スコープ" },
+          },
+        },
+      },
+    },
+  });
   const db = ctx.component.database;
   const auth = ctx.component.auth;
   const providers = new Map<string, OIDCProviderConfig>();

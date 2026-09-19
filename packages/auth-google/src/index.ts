@@ -26,12 +26,12 @@ export interface GoogleAuthConfig {
 }
 
 export const config: Schema<GoogleAuthConfig> = Schema.object({
-  clientId: Schema.string("Google OAuth Client ID"),
-  clientSecret: Schema.string("Google OAuth Client Secret"),
-  redirectUri: Schema.string("Google OAuth authorized redirect URI, e.g. https://app.example.com/api/auth/callback/google"),
-  allowRegistration: Schema.boolean("允许通过 Google 首次登录时注册").default(true),
-  hostedDomain: Schema.string("可选：仅允许指定 Google Workspace 域名"),
-});
+  clientId: Schema.string().key("auth.google.config.clientId"),
+  clientSecret: Schema.string().key("auth.google.config.clientSecret"),
+  redirectUri: Schema.string().key("auth.google.config.redirectUri"),
+  allowRegistration: Schema.boolean().key("auth.google.config.allowRegistration").default(true),
+  hostedDomain: Schema.string().key("auth.google.config.hostedDomain"),
+}).key("auth.google.config");
 
 interface GoogleLoginRequest {
   state: string;
@@ -87,6 +87,19 @@ async function responseJson<T>(response: Response): Promise<T> {
 }
 
 export async function apply(ctx: Context, cfg: GoogleAuthConfig) {
+  ctx.i18n({
+    auth: {
+      google: {
+        config: {
+          clientId: { zh: "Google OAuth 客户端 ID", en: "Google OAuth client ID", ja: "Google OAuth クライアント ID" },
+          clientSecret: { zh: "Google OAuth 客户端密钥", en: "Google OAuth client secret", ja: "Google OAuth クライアントシークレット" },
+          redirectUri: { zh: "Google OAuth 授权回调地址，例如 https://app.example.com/api/auth/callback/google", en: "Google OAuth authorized redirect URI, e.g. https://app.example.com/api/auth/callback/google", ja: "Google OAuth 許可済みリダイレクト URI（例: https://app.example.com/api/auth/callback/google）" },
+          allowRegistration: { zh: "允许首次使用 Google 登录时创建账号", en: "Allow account creation on first Google login", ja: "Google 初回ログイン時のアカウント作成を許可" },
+          hostedDomain: { zh: "可选：仅允许指定的 Google Workspace 域名", en: "Optional: restrict login to a Google Workspace domain", ja: "任意: Google Workspace ドメインを制限" },
+        },
+      },
+    },
+  });
   const db = ctx.component.database;
   const auth = ctx.component.auth;
   await db.extend("auth_google_login_requests", {
