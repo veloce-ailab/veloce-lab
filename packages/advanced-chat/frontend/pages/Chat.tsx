@@ -1031,11 +1031,22 @@ export default function Chat() {
     agent.id === defaultAgentID && agent.name === "Default"
       ? t("chat.defaultAgent")
       : agent.name || agent.id
+  const subagentTasksQuery = useQuery<SubagentTask[]>({
+    queryKey: ["chat-subagent-tasks", currentSession?.id],
+    enabled: isAdvanced && Boolean(currentSession?.id),
+    refetchInterval: 2000,
+    queryFn: async () => {
+      const res = await api.get(`/user/advanced-chat/subagents?session_id=${encodeURIComponent(currentSession?.id || "")}`)
+      return Array.isArray(res.data) ? res.data as SubagentTask[] : []
+    },
+  })
+  const subagentTasks = subagentTasksQuery.data || []
+  const hasRunningSubagents = subagentTasks.some((task) => task.status === "queued" || task.status === "running")
   const activeRunMode: ChatRunMode = isAdvanced && assistantModeEnabled ? currentSession?.run_mode || "chat" : "chat"
   const activeRun = isAdvanced ? currentSession?.latest_run : undefined
   const isActiveRunRunning = isRunActive(activeRun)
   const activeRunID = activeRun?.id || ""
-  const isProcessingLive = Boolean(currentSession) && ((processingSessionID === currentSession?.id && (isSending || isStreamActive)) || isActiveRunRunning)
+  const isProcessingLive = Boolean(currentSession) && ((processingSessionID === currentSession?.id && (isSending || isStreamActive)) || isActiveRunRunning || hasRunningSubagents)
   // Ticking a counter re-renders once a second; the elapsed time itself is read
   // from the clock during render so the first frame is already correct.
   useEffect(() => {
@@ -1781,17 +1792,6 @@ export default function Chat() {
     if (!isAdvanced) { setChatForkEnabled(false); return }
     void api.get("/user/advanced-chat/fork").then((res) => setChatForkEnabled(res.data?.enabled === true)).catch(() => setChatForkEnabled(false))
   }, [isAdvanced])
-
-  const subagentTasksQuery = useQuery<SubagentTask[]>({
-    queryKey: ["chat-subagent-tasks", currentSession?.id],
-    enabled: isAdvanced && Boolean(currentSession?.id),
-    refetchInterval: 2000,
-    queryFn: async () => {
-      const res = await api.get(`/user/advanced-chat/subagents?session_id=${encodeURIComponent(currentSession?.id || "")}`)
-      return Array.isArray(res.data) ? res.data as SubagentTask[] : []
-    },
-  })
-  const subagentTasks = subagentTasksQuery.data || []
 
   const chooseWelcomeSuggestion = (promptText: string) => {
     setPrompt(promptText)
@@ -3125,6 +3125,9 @@ export default function Chat() {
   }
 
   const advancedComposerActionButton = (className = "") => {
+    if (hasRunningSubagents && !isStreamActive && !isActiveRunRunning && !isSending) {
+      return <Button type="button" size="icon" className={className} disabled title={language === "zh" ? "等待子代理完成" : "Waiting for sub-agents"} aria-label={language === "zh" ? "等待子代理完成" : "Waiting for sub-agents"}><Bot className="animate-pulse" size={16} /></Button>
+    }
     if (isStreamActive || isActiveRunRunning || isSending) {
       return (
         <Button
@@ -3146,7 +3149,7 @@ export default function Chat() {
         type="button"
         size="icon"
         className={className}
-        disabled={(!prompt.trim() && attachments.length === 0) || isSending || isUploadingAttachments || isActiveRunRunning}
+        disabled={(!prompt.trim() && attachments.length === 0) || isSending || isUploadingAttachments || isActiveRunRunning || hasRunningSubagents}
         onClick={sendMessage}
         title={title}
         aria-label={title}
