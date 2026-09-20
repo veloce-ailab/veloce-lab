@@ -254,6 +254,8 @@ interface CloudSandboxOption {
   status: string
 }
 
+interface SubagentTask { id: string; title: string; task: string; context: string; status: string; result?: string; error?: string; created_at: string; updated_at: string }
+
 interface ChatRun {
   id: string
   session_id: string
@@ -672,6 +674,7 @@ export default function Chat() {
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
   const [sessionPendingDeletion, setSessionPendingDeletion] = useState<ChatSession | null>(null)
   const [chatForkEnabled, setChatForkEnabled] = useState(false)
+  const [subagentDialogTask, setSubagentDialogTask] = useState<SubagentTask | null>(null)
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
   const [selectingFileID, setSelectingFileID] = useState("")
   const [messageSelectionMenu, setMessageSelectionMenu] = useState<{ text: string } | null>(null)
@@ -1778,6 +1781,17 @@ export default function Chat() {
     if (!isAdvanced) { setChatForkEnabled(false); return }
     void api.get("/user/advanced-chat/fork").then((res) => setChatForkEnabled(res.data?.enabled === true)).catch(() => setChatForkEnabled(false))
   }, [isAdvanced])
+
+  const subagentTasksQuery = useQuery<SubagentTask[]>({
+    queryKey: ["chat-subagent-tasks", currentSession?.id],
+    enabled: isAdvanced && Boolean(currentSession?.id),
+    refetchInterval: 2000,
+    queryFn: async () => {
+      const res = await api.get(`/user/advanced-chat/subagents?session_id=${encodeURIComponent(currentSession?.id || "")}`)
+      return Array.isArray(res.data) ? res.data as SubagentTask[] : []
+    },
+  })
+  const subagentTasks = subagentTasksQuery.data || []
 
   const chooseWelcomeSuggestion = (promptText: string) => {
     setPrompt(promptText)
@@ -3615,6 +3629,18 @@ export default function Chat() {
           onClose={() => setTerminalWindow(null)}
         />
       )}
+      <Dialog open={Boolean(subagentDialogTask)} onOpenChange={(open) => { if (!open) setSubagentDialogTask(null) }}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          <DialogHeader><DialogTitle>{subagentDialogTask?.title || (language === "zh" ? "子代理" : "Sub-agent")}</DialogTitle></DialogHeader>
+          <div className="space-y-4 text-sm">
+            <div><span className="text-muted-foreground">{language === "zh" ? "状态" : "Status"}：</span>{subagentDialogTask?.status}</div>
+            <div><div className="mb-1 font-medium">{language === "zh" ? "任务" : "Task"}</div><pre className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3 font-sans">{subagentDialogTask?.task}</pre></div>
+            <div><div className="mb-1 font-medium">{language === "zh" ? "预设上下文" : "Preset context"}</div><pre className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3 font-sans">{subagentDialogTask?.context || "--"}</pre></div>
+            {subagentDialogTask?.result && <div><div className="mb-1 font-medium">{language === "zh" ? "结果" : "Result"}</div><pre className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3 font-sans">{subagentDialogTask.result}</pre></div>}
+            {subagentDialogTask?.error && <div className="text-destructive">{subagentDialogTask.error}</div>}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={Boolean(renamingSession)} onOpenChange={(open) => { if (!open) setRenamingSession(null) }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{copy.customTitlePrompt}</DialogTitle></DialogHeader>
@@ -3632,6 +3658,22 @@ export default function Chat() {
       <div className="sticky top-0 z-30 -mx-4 flex min-h-10 justify-end bg-transparent px-4 py-0 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:mx-0">
         <div className="relative flex items-center gap-2">
           {isAdvanced && <ChatSetupGuide />}
+           {isAdvanced && subagentTasks.length > 0 && (
+             <DropdownMenu>
+               <DropdownMenuTrigger asChild>
+                 <Button variant="outline" size="sm" className="h-9 gap-2 border-border bg-background" title={language === "zh" ? "子代理" : "Sub-agents"}>
+                   <Bot size={16} />
+                   <span>{language === "zh" ? `子代理 ${subagentTasks.length}` : `Sub-agents ${subagentTasks.length}`}</span>
+                 </Button>
+               </DropdownMenuTrigger>
+               <DropdownMenuContent align="end" className="max-h-80 w-72 overflow-y-auto">
+                 {subagentTasks.map((task) => <DropdownMenuItem key={task.id} onSelect={() => setSubagentDialogTask(task)} className="flex flex-col items-start gap-1 py-2">
+                   <span className="w-full truncate font-medium">{task.title}</span>
+                   <span className="text-xs text-muted-foreground">{task.status}</span>
+                 </DropdownMenuItem>)}
+               </DropdownMenuContent>
+             </DropdownMenu>
+           )}
           {isAdvanced && canOpenWorkspaceInVSCode && (
             <Button
               variant="outline"
