@@ -8,16 +8,22 @@ import { openAIChatMessages, openAIChatTools } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
 async function stream(response: Response, onDelta: (delta: string) => void) {
-  const text = await response.text();
-  for (const line of text.split(/\r?\n/)) {
-    if (!line.startsWith("data:") || line.slice(5).trim() === "[DONE]")
-      continue;
-    try {
-      const value = JSON.parse(line.slice(5));
-      const delta = value.choices?.[0]?.delta?.content;
-      if (typeof delta === "string") onDelta(delta);
-    } catch {
-      // Ignore malformed SSE frames and let the caller keep the partial result.
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data:") || line.slice(5).trim() === "[DONE]") continue;
+      try {
+        const delta = JSON.parse(line.slice(5)).choices?.[0]?.delta?.content;
+        if (typeof delta === "string" && delta) onDelta(delta);
+      } catch { /* Ignore malformed SSE frames. */ }
     }
   }
 }

@@ -37,6 +37,28 @@ export interface AdapterInput {
   media?: Record<string, unknown>;
 }
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/** Normalise usage metadata from OpenAI-compatible, Anthropic, Gemini and relay responses. */
+export function extractTokenUsage(body: unknown): TokenUsage {
+  const value = body && typeof body === "object" ? body as Record<string, any> : {};
+  const usage = value.usage ?? value.usageMetadata ?? value.usage_metadata ?? value.meta?.usage ?? {};
+  const number = (...values: unknown[]) => {
+    for (const item of values) {
+      const parsed = Number(item);
+      if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+    }
+    return 0;
+  };
+  return {
+    inputTokens: number(usage.prompt_tokens, usage.input_tokens, usage.promptTokenCount, usage.inputTokenCount, usage.input),
+    outputTokens: number(usage.completion_tokens, usage.output_tokens, usage.candidatesTokenCount, usage.outputTokenCount, usage.output),
+  };
+}
+
 export interface AdapterOutput {
   urlPath: string;
   headers: Record<string, string>;

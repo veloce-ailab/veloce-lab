@@ -265,6 +265,8 @@ interface ChatRun {
   error_message?: string
   tool_calls?: number
   tool_call_details?: ChatToolCall[]
+  first_token_ms?: number
+  first_token_count?: number
   created_at?: string
   updated_at?: string
   started_at?: string
@@ -7011,6 +7013,8 @@ function normalizeRun(value: unknown): ChatRun | undefined {
     error_message: typeof value.error_message === "string" ? value.error_message : undefined,
     tool_calls: typeof value.tool_calls === "number" ? value.tool_calls : undefined,
     tool_call_details: normalizeToolCalls(value.tool_call_details),
+    first_token_ms: typeof value.first_token_ms === "number" ? value.first_token_ms : undefined,
+    first_token_count: typeof value.first_token_count === "number" ? value.first_token_count : undefined,
     created_at: typeof value.created_at === "string" ? value.created_at : undefined,
     updated_at: typeof value.updated_at === "string" ? value.updated_at : undefined,
     started_at: typeof value.started_at === "string" ? value.started_at : undefined,
@@ -7408,6 +7412,9 @@ function ChatRunSummary({ session, run, language }: { session?: ChatSession; run
       toolCalls,
       input,
       output,
+      firstTokenAverage: run && Number(run.first_token_count || 0) > 0
+        ? Number(run.first_token_ms || 0) / Number(run.first_token_count)
+        : undefined,
     }
   }, [run, session?.messages])
 
@@ -7420,9 +7427,10 @@ function ChatRunSummary({ session, run, language }: { session?: ChatSession; run
   const duration = summary.duration === undefined ? unknown : formatMetricDuration(summary.duration)
   const input = formatCompactTokenCount(summary.input)
   const output = formatCompactTokenCount(summary.output)
+  const firstToken = summary.firstTokenAverage === undefined ? unknown : formatMetricDuration(summary.firstTokenAverage)
   const parts = zh
-    ? [`${summary.rounds}轮 · ${summary.steps}步`, `LLM ${duration} · 工具调用 ${summary.toolCalls > 0 ? `${summary.toolCalls}次` : unknown}`, `首 token 平均 ${unknown} · ${unknown} tok/s`, `缓存命中 ${unknown}`, `输入 ${input} tok · 输出 ${output} tok`]
-    : [`${summary.rounds} rounds · ${summary.steps} steps`, `LLM ${duration} · Tools ${summary.toolCalls > 0 ? `${summary.toolCalls}` : unknown}`, `First token avg ${unknown} · ${unknown} tok/s`, `Cache hit ${unknown}`, `Input ${input} tok · Output ${output} tok`]
+    ? [`${summary.rounds}轮 · ${summary.steps}步`, `LLM ${duration} · 工具调用 ${summary.toolCalls > 0 ? `${summary.toolCalls}次` : unknown}`, `首 token 平均 ${firstToken}`, `缓存命中 ${unknown}`, `输入 ${input} tok · 输出 ${output} tok`]
+    : [`${summary.rounds} rounds · ${summary.steps} steps`, `LLM ${duration} · Tools ${summary.toolCalls > 0 ? `${summary.toolCalls}` : unknown}`, `First token avg ${firstToken}`, `Cache hit ${unknown}`, `Input ${input} tok · Output ${output} tok`]
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 pt-0.5 text-[11px] tabular-nums text-muted-foreground" aria-label={zh ? "运行统计" : "Run statistics"}>
       {parts.map((part, index) => (

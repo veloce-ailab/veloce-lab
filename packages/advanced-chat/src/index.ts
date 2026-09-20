@@ -18,6 +18,7 @@ import { fetchCompletionWithRetry } from "./completion-runtime.js";
 import type { ChatStreamEvent } from "./stream.js";
 import { registerSessionTaskTools } from "./session-tasks.js";
 import { registerRunTools } from "./run-tools.js";
+import { extractTokenUsage } from "@velocelab/adapters";
 import "@velocelab/dashboard";
 import "@velocelab/file";
 import "@velocelab/database-core";
@@ -1378,6 +1379,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         cost: "0",
         tool_calls: 0,
         tool_call_details: "[]",
+        first_token_ms: 0,
+        first_token_count: 0,
         started_at: now,
         created_at: now,
         finished_at: null,
@@ -1573,6 +1576,9 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           ...(input.stream ? { Accept: "text/event-stream" } : {}),
         };
         emit("status", { message: "stream_started" });
+        const firstRequestStartedAt = Date.now();
+        let firstTokenMS = 0;
+        let firstTokenCount = 0;
         let response: Response;
         try {
           response = await fetchCompletionWithRetry(
@@ -1615,6 +1621,10 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         if (streaming && response.ok) {
           emit("status", { message: "assistant_started" });
           await adapters.stream(channel.type, response.clone(), (delta) => {
+            if (!firstTokenMS && delta) {
+              firstTokenMS = Date.now() - firstRequestStartedAt;
+              firstTokenCount = 1;
+            }
             streamedContent += delta;
             emit("text", { delta, round: 1 });
           });
@@ -1658,7 +1668,9 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
                 "",
             )
             .join("");
-          data = { choices: [{ message: { content }, finish_reason: "stop" }] };
+          // Keep the final stream frame's usage metadata while normalising its
+          // accumulated text into the non-stream response shape adapters parse.
+          data = { ...(parsed.at(-1) ?? {}), choices: [{ message: { content }, finish_reason: "stop" }] };
         } else {
           try {
             data = JSON.parse(text);
@@ -1670,8 +1682,15 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         let content = parsed?.content || streamedContent;
         let toolCalls: unknown[] = parsed?.toolCalls ?? [];
         let finishReason = parsed?.finishReason || "stop";
-        const inputTokens = Number(parsed?.inputTokens || 0);
-        const outputTokens = Number(parsed?.outputTokens || 0);
+        const usage = extractTokenUsage(data);
+        let inputTokens = Number(parsed?.inputTokens || usage.inputTokens || 0);
+        let outputTokens = Number(parsed?.outputTokens || usage.outputTokens || 0);
+        // Non-streaming upstreams have no delta callback; their first completed
+        // response is the closest observable first-token boundary.
+        if (!firstTokenMS && !streaming) {
+          firstTokenMS = Date.now() - firstRequestStartedAt;
+          firstTokenCount = 1;
+        }
         const contentParts: Array<{ round: number; content: string }> =
           streamedContent.trim()
             ? [{ round: 1, content: streamedContent }]
@@ -1873,6 +1892,9 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           }
           const followupData = await followupResponse.json().catch(() => ({}));
           parsed = adapters.parse(channel.type, followupData);
+          const followupUsage = extractTokenUsage(followupData);
+          inputTokens += Number(parsed?.inputTokens || followupUsage.inputTokens || 0);
+          outputTokens += Number(parsed?.outputTokens || followupUsage.outputTokens || 0);
           const roundContent = parsed?.content ?? "";
           if (roundContent) {
             content = roundContent;
@@ -1926,6 +1948,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             status_message: "",
             assistant_message_id: String(assistant.id),
             tool_call_details: JSON.stringify(toolCallDetails),
+            first_token_ms: firstTokenMS,
+            first_token_count: firstTokenCount,
             finished_at: finishedAt,
             updated_at: finishedAt,
           },
