@@ -4,17 +4,22 @@ import type {
   AdapterInput,
   AdapterRegistry,
 } from "@velocelab/adapters";
+import { openAIChatMessages, openAIChatTools } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
 function build(input: AdapterInput) {
   const payload: Record<string, unknown> = {
     model: input.model,
-    messages: input.messages,
+    messages: openAIChatMessages(input.messages),
     ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
     ...(input.temperature === undefined
       ? {}
       : { temperature: input.temperature }),
     ...(input.stream ? { stream: true } : {}),
+    ...(() => {
+      const tools = openAIChatTools(input.tools);
+      return tools ? { tools, tool_choice: "auto" } : {};
+    })(),
   };
   const match = input.model.match(
     /^(.*?)-(high|medium|low|thinking|reasoner)$/,
