@@ -257,9 +257,9 @@ function ChatSidebar({
       <SidebarHeader className="shrink-0 px-3 py-3">
         {renderSidebarLink(homeItem)}
       </SidebarHeader>
-      <SidebarContent className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-0">
-      <nav className="relative min-h-0 flex-1">
-        <div className={cn("transition-transform duration-200 ease-out", homeItem.active && "flex min-h-full flex-col", showingSection && "-translate-x-full")}>
+      <SidebarContent className="relative min-h-0 flex-1 overflow-hidden p-0">
+      <nav className="relative flex h-full min-h-0 flex-1">
+        <div className={cn("min-h-0 transition-transform duration-200 ease-out", homeItem.active && "flex h-full min-h-0 flex-1 flex-col", showingSection && "-translate-x-full")}>
           <div className="flex flex-col gap-1 px-3 pb-3">
             <DashboardSlot name="sidebar.navigation.before" scope="/chat" />
             {flatItems.map((item) => renderSidebarLink(item))}
@@ -286,7 +286,7 @@ function ChatSidebar({
             })}
             <DashboardSlot name="sidebar.navigation.after" scope="/chat" />
           </div>
-          {homeItem.active && <div id={sessionSlotID} className="min-h-0 flex-1 border-t border-border" />}
+          {homeItem.active && <div id={sessionSlotID} className="min-h-0 flex-1 overflow-hidden border-t border-border" />}
         </div>
         <div className={cn("absolute inset-x-0 top-0 px-3 py-3 transition-transform duration-200 ease-out", showingSection ? "translate-x-0" : "translate-x-full")}>
           {activeSection && (
