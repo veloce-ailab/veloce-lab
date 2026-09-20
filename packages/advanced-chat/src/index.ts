@@ -232,6 +232,8 @@ export interface ChatContextProvider {
 
 export interface ChatInput {
   sessionId?: string;
+  /** Defaults to visible when this completion creates its session. */
+  visible?: boolean;
   title?: string;
   model: string;
   messages: Array<{
@@ -324,6 +326,8 @@ export interface AgentInput {
 }
 
 export interface SessionInput {
+  /** Hidden sessions keep internal agent work out of the user conversation list. */
+  visible?: boolean;
   agentId?: string;
   title?: string;
   modelName?: string;
@@ -336,6 +340,8 @@ export interface SessionInput {
  * optional: what it omits is meant to fall back to a default.
  */
 export interface SessionSnapshotInput {
+  /** Defaults to visible; internal callers may create an invisible session. */
+  visible?: boolean;
   title?: string;
   runMode?: string;
   agentId?: string;
@@ -718,7 +724,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         user_id: userId,
       });
       const hydrated = await Promise.all(
-        sessions.map(async (session) => service.getSession(userId, session.id)),
+        sessions.filter((session: any) => session.visible !== false).map(async (session) => service.getSession(userId, session.id)),
       );
       return hydrated.filter(Boolean) as unknown as HarnessSession[];
     },
@@ -728,7 +734,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         id: newID("acs"),
         user_id: userId,
         folder_id: "",
-        title: input.title?.trim() ?? "",
+        visible: input.visible !== false,
+         title: input.title?.trim() ?? "",
         run_mode: "assistant",
         agent_id: input.agentId ?? "",
         agent_group_id: "",
@@ -838,7 +845,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       if (agentId === DEFAULT_AGENT_ID) await service.ensureDefaultAgent(userId);
       const now = new Date().toISOString();
       const fields = {
-        title: String(input.title ?? "").trim().slice(0, 200),
+         ...(input.visible !== undefined ? { visible: input.visible !== false } : {}),
+         title: String(input.title ?? "").trim().slice(0, 200),
         run_mode: mode,
         agent_id: agentId,
         agent_group_id: mode === "agent_group" ? String(input.agentGroupId ?? "") : "",
@@ -1211,7 +1219,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           })) ??
           (await service.saveSessionSnapshot(userId, input.sessionId, {
             title: input.title,
-            runMode: input.mode,
+             visible: input.visible,
+             runMode: input.mode,
             agentId: input.agentId,
             agentGroupId: input.agentGroupId,
             skillIds: input.skillIds,
@@ -1234,7 +1243,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             id: newID("acs"),
             user_id: userId,
             folder_id: "",
-            title: String(input.title ?? "").slice(0, 200),
+             visible: input.visible !== false,
+             title: String(input.title ?? "").slice(0, 200),
             run_mode: String(input.mode ?? "assistant"),
             agent_id: String(input.agentId ?? ""),
             agent_group_id: String(input.agentGroupId ?? ""),

@@ -32,6 +32,7 @@ export async function ensureTables(db: Database): Promise<void> {
       id: { type: "string", nullable: false },
       user_id: { type: "integer", nullable: false },
       folder_id: "string",
+      visible: { type: "boolean", initial: true },
       title: { type: "string", initial: "" },
       run_mode: { type: "string", initial: "assistant" },
       agent_id: "string",
