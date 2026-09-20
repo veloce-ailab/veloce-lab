@@ -921,11 +921,16 @@ export async function apply(ctx: Context) {
         s.respond({ error: "Connector task not found" }, "json");
         return;
       }
+      if (String(task.status) !== "pending_approval") {
+        s.status = 409;
+        s.respond({ error: "This connector task has already been decided", task }, "json");
+        return;
+      }
       const input = (await s.parseRequestBody()) as any;
       const approved = input.approved === true || input.decision === "approve";
       await db.update(
         "advanced_chat_connector_tasks",
-        { id: taskId, user_id: id },
+        { id: taskId, user_id: id, status: "pending_approval" },
         {
           status: approved ? "approved" : "rejected",
           error_message: approved
@@ -934,6 +939,10 @@ export async function apply(ctx: Context) {
           updated_at: new Date().toISOString(),
         },
       );
+      // A local connector runs inside this process. Dispatch the approved task
+      // immediately so the request that is waiting for approval receives its
+      // result instead of timing out and asking the user again.
+      if (approved) await service.executeTask(id, taskId).catch(() => false);
       s.respond(
         await db.selectOne("advanced_chat_connector_tasks", {
           id: taskId,
