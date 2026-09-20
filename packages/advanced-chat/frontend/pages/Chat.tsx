@@ -4096,7 +4096,7 @@ export default function Chat() {
                                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void forkMessage(message)} title={language === "zh" ? "创建分支" : "Fork chat"}>
                                     <GitBranch size={14} />
                                   </Button>
-                                )
+                                )}
                                 {message.role === "user" && (
                                   <Button variant="ghost" size="icon" className="h-7 w-7" disabled={isSharedSession} onClick={() => beginEditMessage(message)} title={copy.editMessage}>
                                     <Pencil size={14} />
