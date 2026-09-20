@@ -1040,7 +1040,7 @@ export default function Chat() {
       return Array.isArray(res.data) ? res.data as SubagentTask[] : []
     },
   })
-  const subagentTasks = subagentTasksQuery.data || []
+  const subagentTasks = (subagentTasksQuery.data || []).filter((task: any) => task.session_id === currentSession?.id)
   const hasRunningSubagents = subagentTasks.some((task) => task.status === "queued" || task.status === "running")
   const activeRunMode: ChatRunMode = isAdvanced && assistantModeEnabled ? currentSession?.run_mode || "chat" : "chat"
   const activeRun = isAdvanced ? currentSession?.latest_run : undefined
