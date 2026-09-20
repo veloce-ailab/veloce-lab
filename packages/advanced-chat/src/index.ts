@@ -1725,6 +1725,10 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
               continue;
             }
             try {
+              // Publish the tool call before awaiting it. Connector commands may
+              // wait for an approval or a long-running local process; the client
+              // merges the later result event into this same call by id.
+              emit("tool_call", { id, name, status: "running", arguments: args, round });
               const value = await definition.execute(args, {
                 userId,
                 sessionId,
