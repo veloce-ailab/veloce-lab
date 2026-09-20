@@ -670,6 +670,7 @@ export default function Chat() {
   const [prompt, setPrompt] = useState("")
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
+  const [sessionPendingDeletion, setSessionPendingDeletion] = useState<ChatSession | null>(null)
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
   const [selectingFileID, setSelectingFileID] = useState("")
   const [messageSelectionMenu, setMessageSelectionMenu] = useState<{ text: string } | null>(null)
@@ -3371,7 +3372,7 @@ export default function Chat() {
           <div className={cn("truncate text-xs font-medium", activePersonalSession ? "text-primary" : "text-foreground")}>{session.title || copy.untitledSession}</div>
         </div>
       </button>
-      {session.id !== sharedSessionID && <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100" onClick={() => deleteSession(session.id)} title={copy.deleteSession}>
+      {session.id !== sharedSessionID && <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100" onClick={() => setSessionPendingDeletion(session)} title={copy.deleteSession}>
         <Trash2 size={13} />
       </Button>}
     </div>
@@ -4412,6 +4413,25 @@ export default function Chat() {
           </DialogContent>
         </Dialog>
       )}
+      <Dialog open={Boolean(sessionPendingDeletion)} onOpenChange={(open) => { if (!open) setSessionPendingDeletion(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{language === "zh" ? "删除会话？" : "Delete session?"}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {language === "zh"
+              ? `“${sessionPendingDeletion?.title || copy.untitledSession}”及其全部消息将被永久删除，无法恢复。`
+              : `“${sessionPendingDeletion?.title || copy.untitledSession}” and all of its messages will be permanently deleted and cannot be recovered.`}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSessionPendingDeletion(null)}>{language === "zh" ? "取消" : "Cancel"}</Button>
+            <Button variant="destructive" onClick={() => { if (sessionPendingDeletion) deleteSession(sessionPendingDeletion.id); setSessionPendingDeletion(null) }}>
+              <Trash2 size={15} />
+              {language === "zh" ? "删除" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {isAdvanced && (
         <AgentWorkDialog
           open={isAgentWorkOpen}
