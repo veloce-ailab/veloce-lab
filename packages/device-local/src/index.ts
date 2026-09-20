@@ -32,6 +32,7 @@ import {
   writeTextFile,
 } from "./actions.js";
 import { pickFolder } from "./dialog.js";
+import { LocalMCPManager } from "./mcp.js";
 
 // `advanced-chat` owns the device and task tables, so it has to have run first.
 export const depend = ["database", "advanced-chat", "connector"];
@@ -64,6 +65,8 @@ const CAPABILITIES = [
   "git_status",
   "git_action",
   "run_command",
+  "mcp_list_tools",
+  "mcp_call_tool",
   "list_mcp_processes",
   "stop_mcp_process",
 ];
@@ -83,6 +86,8 @@ export async function apply(ctx: Context) {
   });
   const db = ctx.component.database as Database;
   const connector = ctx.component.connector as ConnectorService;
+  const mcp = new LocalMCPManager();
+  ctx.affect(() => mcp.dispose());
 
   /**
    * The auto-connect hook: one device per user for this machine, kept online. A
@@ -303,8 +308,10 @@ export async function apply(ctx: Context) {
           requiresApproval: approvalMode !== "full_access",
         });
       },
-      list_mcp_processes: () => ({ processes: [] }),
-      stop_mcp_process: () => ({ stopped: false, reason: "The local connector has no managed MCP process." }),
+      mcp_list_tools: (_userId, input) => mcp.listTools(input),
+      mcp_call_tool: (_userId, input) => mcp.callTool(input),
+      list_mcp_processes: () => mcp.listProcesses(),
+      stop_mcp_process: (_userId, input) => mcp.stop(String(input.key ?? "")),
       // `run_command` is queued and then waited for, so the model sees the
       // output of what it asked to run. A session that has not been given
       // full access still goes through the approval prompt first; the wait
