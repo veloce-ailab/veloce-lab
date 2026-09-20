@@ -2471,7 +2471,7 @@ export default function Chat() {
 
   // rawText comes from interactive cards (e.g. ask_user answers); it bypasses
   // the composer draft and leaves staged attachments untouched.
-  const sendMessageWithContent = async (rawText: string | null) => {
+  const sendMessageWithContent = async (rawText: string | null, baseMessages?: ChatMessage[]) => {
     const content = (rawText ?? prompt).trim()
     const activeAttachments = rawText == null ? attachments : []
     const session = currentSession
@@ -2551,7 +2551,7 @@ export default function Chat() {
     const processingStartedAt = Date.now()
     const messageContent = messageContentWithAttachments(content, activeAttachments)
     const userMessage = createMessage("user", messageContent)
-    const nextMessages = [...session.messages, userMessage]
+    const nextMessages = [...(baseMessages ?? session.messages), userMessage]
     const nextTitle = session.title || titleFromMessage(content || activeAttachments[0]?.name || copy.attachmentMessageTitle, copy)
     updateSession(session.id, (current) => ({
       ...current,
@@ -2844,41 +2844,28 @@ export default function Chat() {
   }
 
   const beginEditMessage = (message: ChatMessage) => {
+    if (message.role !== "user") return
     setEditingMessageID(message.id)
-    if (message.role === "user") {
-      const parsed = parseMessageAttachments(message.content)
-      setEditingText(parsed.text)
-      setEditingAttachments(parsed.attachments.map(chatAttachmentFromParsed))
-      return
-    }
-    setEditingText(message.content)
-    setEditingAttachments([])
+    const parsed = parseMessageAttachments(message.content)
+    setEditingText(parsed.text)
+    setEditingAttachments(parsed.attachments.map(chatAttachmentFromParsed))
   }
 
-  const saveEditedMessage = () => {
+  const saveEditedMessage = async () => {
     const content = messageContentWithAttachments(editingText.trim(), editingAttachments)
-    if (isSharedSession || !currentSession || !editingMessageID || !content.trim()) {
-      return
-    }
-    updateSession(currentSession.id, (session) => ({
-      ...session,
-      messages: session.messages.map((message) =>
-        message.id === editingMessageID ? { ...message, content, updated_at: new Date().toISOString() } : message
-      ),
-    }), { persist: true })
-    cancelEdit()
-  }
-
-  const deleteMessage = (messageID: string) => {
-    if (isSharedSession || !currentSession) {
-      return
-    }
-    updateSession(currentSession.id, (session) => ({
-      ...session,
-      messages: session.messages.filter((message) => message.id !== messageID),
-    }), { persist: true })
-    if (editingMessageID === messageID) {
+    if (isSharedSession || !currentSession || !editingMessageID || !content.trim()) return
+    const editedIndex = currentSession.messages.findIndex((message) => message.id === editingMessageID && message.role === "user")
+    if (editedIndex < 0) return
+    const retained = currentSession.messages.slice(0, editedIndex)
+    await stopActiveTask()
+    try {
+      if (isAdvanced)
+        await api.post(`/user/advanced-chat/sessions/${encodeURIComponent(currentSession.id)}/messages/${encodeURIComponent(editingMessageID)}/restart`)
+      updateSession(currentSession.id, (session) => ({ ...session, messages: retained, latest_run: undefined }), { persist: false })
       cancelEdit()
+      await sendMessageWithContent(content, retained)
+    } catch (err) {
+      error(apiErrorMessage(err, copy.sendFailed))
     }
   }
 
@@ -4003,10 +3990,6 @@ export default function Chat() {
                             decidingTaskID={decidingConnectorTaskID}
                             onDecide={decideConnectorApproval}
                             onCopy={() => copyMessage(message)}
-                            onEdit={() => beginEditMessage(message)}
-                            onDelete={() => deleteMessage(message.id)}
-                            editLabel={copy.editMessage}
-                            deleteLabel={copy.deleteMessage}
                             controlsHidden={isActiveRunRunning && activeRun?.assistant_message_id === message.id}
                           />
                         )
@@ -4087,12 +4070,11 @@ export default function Chat() {
                                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyMessage(message)} title={copy.copyMessage}>
                                   <Copy size={14} />
                                 </Button>
-                                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={isSharedSession} onClick={() => beginEditMessage(message)} title={copy.editMessage}>
-                                  <Pencil size={14} />
-                                </Button>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/80" disabled={isSharedSession} onClick={() => deleteMessage(message.id)} title={copy.deleteMessage}>
-                                  <Trash2 size={14} />
-                                </Button>
+                                {message.role === "user" && (
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" disabled={isSharedSession} onClick={() => beginEditMessage(message)} title={copy.editMessage}>
+                                    <Pencil size={14} />
+                                  </Button>
+                                )}
                               </>
                             )}
                           </div>
@@ -5150,10 +5132,6 @@ function AssistantMessageSequence({
   decidingTaskID,
   onDecide,
   onCopy,
-  onEdit,
-  onDelete,
-  editLabel,
-  deleteLabel,
   controlsHidden,
 }: {
   message: ChatMessage
@@ -5163,10 +5141,6 @@ function AssistantMessageSequence({
   decidingTaskID: string
   onDecide: (taskID: string, approved: boolean) => void
   onCopy: () => void
-  onEdit: () => void
-  onDelete: () => void
-  editLabel: string
-  deleteLabel: string
   controlsHidden: boolean
 }) {
   const parts = messageContentParts(message, activeRun, copy)
@@ -5199,12 +5173,6 @@ function AssistantMessageSequence({
                 >
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCopy} title={copy.copyMessage}>
                     <Copy size={14} />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit} title={editLabel}>
-                    <Pencil size={14} />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/80" onClick={onDelete} title={deleteLabel}>
-                    <Trash2 size={14} />
                   </Button>
                 </div>
               </div>

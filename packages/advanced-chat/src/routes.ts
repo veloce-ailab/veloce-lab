@@ -483,6 +483,27 @@ export function registerAdvancedChatRoutes(
         );
     });
   ctx
+    .route("/api/user/advanced-chat/sessions/:id/messages/:messageId/restart")
+    .methods("POST")
+    .action(async (session, _params, id, messageId) => {
+      const current = await user(session);
+      if (current?.id === undefined) return;
+      const messages: any[] = await db.select("advanced_chat_messages", {
+        session_id: id,
+        user_id: current.id,
+      });
+      const target = messages.find((message) => String(message.id) === messageId);
+      if (!target || String(target.role) !== "user") {
+        session.status = 404;
+        session.respond({ error: "User message not found" }, "json");
+        return;
+      }
+      const targetOrder = Number(target.sort_order ?? 0);
+      for (const message of messages.filter((item) => Number(item.sort_order ?? 0) >= targetOrder))
+        await db.remove("advanced_chat_messages", { id: message.id, user_id: current.id });
+      session.respond({ success: true }, "json");
+    });
+  ctx
     .route("/api/user/advanced-chat/sessions/:id")
     .methods("PUT")
     .action(async (session, _params, id) => {
