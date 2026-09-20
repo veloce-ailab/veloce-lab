@@ -64,6 +64,8 @@ const CAPABILITIES = [
   "git_status",
   "git_action",
   "run_command",
+  "list_mcp_processes",
+  "stop_mcp_process",
 ];
 
 /**
@@ -301,6 +303,8 @@ export async function apply(ctx: Context) {
           requiresApproval: approvalMode !== "full_access",
         });
       },
+      list_mcp_processes: () => ({ processes: [] }),
+      stop_mcp_process: () => ({ stopped: false, reason: "The local connector has no managed MCP process." }),
       // `run_command` is queued and then waited for, so the model sees the
       // output of what it asked to run. A session that has not been given
       // full access still goes through the approval prompt first; the wait
