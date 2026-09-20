@@ -80,18 +80,37 @@ export interface AdapterRegistry {
  * an empty array is *not* omitted by a truthiness check — so `tool_calls: []`
  * rode along on every user message, which upstreams reject as a bad parameter.
  */
+function openAIToolCalls(value: ChatMessage["toolCalls"]): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((call) => {
+    const raw = call as unknown as Record<string, unknown>;
+    const fn = raw.function && typeof raw.function === "object"
+      ? raw.function as Record<string, unknown>
+      : {};
+    const name = String(fn.name ?? raw.name ?? "").trim();
+    const id = String(raw.id ?? "").trim();
+    if (!id || !name) return [];
+    const argumentsValue = fn.arguments ?? raw.arguments ?? "{}";
+    const argumentsText = typeof argumentsValue === "string"
+      ? argumentsValue
+      : JSON.stringify(argumentsValue);
+    return [{ id, type: "function", function: { name, arguments: argumentsText } }];
+  });
+}
+
 export function openAIChatMessages(
   messages: ChatMessage[] | undefined,
 ): Array<Record<string, unknown>> {
-  return (Array.isArray(messages) ? messages : []).map((message) => ({
-    role: message.role,
-    content: message.content,
-    ...(Array.isArray(message.toolCalls) && message.toolCalls.length
-      ? { tool_calls: message.toolCalls }
-      : {}),
-    ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
-    ...(message.name ? { name: message.name } : {}),
-  }));
+  return (Array.isArray(messages) ? messages : []).map((message) => {
+    const toolCalls = openAIToolCalls(message.toolCalls);
+    return {
+      role: message.role,
+      content: message.content,
+      ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+      ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
+      ...(message.name ? { name: message.name } : {}),
+    };
+  });
 }
 
 /**
