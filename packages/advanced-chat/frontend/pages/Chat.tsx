@@ -526,7 +526,6 @@ type ConnectorApprovalMode = "manual" | "full_access" | "assistant"
 type SessionConfigTab = "basic" | "advanced" | "agent" | "agent_group" | "skills" | "knowledge" | "mcp" | "device"
 type SessionCapabilityPicker = "skills" | "knowledge" | "mcp" | null
 type AttachmentTarget = "composer" | "editor"
-type ComposerControlMenu = "" | "mode" | "device" | "workspace" | "agent" | "agent_group" | "approval"
 type WorkspacePickerTarget = "session" | "pending"
 type SessionGroupMode = "time" | "workspace"
 
@@ -671,7 +670,6 @@ export default function Chat() {
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
   const [selectingFileID, setSelectingFileID] = useState("")
-  const [composerControlMenu, setComposerControlMenu] = useState<ComposerControlMenu>("")
   const [messageSelectionMenu, setMessageSelectionMenu] = useState<{ text: string } | null>(null)
   const [regeneratingTitleSessionID, setRegeneratingTitleSessionID] = useState("")
   const [renamingSession, setRenamingSession] = useState<ChatSession | null>(null)
@@ -2077,7 +2075,6 @@ export default function Chat() {
       connector_command_prefixes: mode === "chat" ? [] : session.connector_command_prefixes || [],
       model_name: mode === "agent_group" ? undefined : session.model_name,
     }), { persist: true })
-    setComposerControlMenu("")
   }
 
   const addSessionSkill = (skillID: string) => {
@@ -2198,7 +2195,6 @@ export default function Chat() {
     }), { persist: true })
     setPendingConnectorDeviceID(deviceID)
     setPendingConnectorWorkspace(keepWorkspace || "")
-    setComposerControlMenu("")
   }
 
 	const addSessionKnowledgeBase = (knowledgeBaseID: string) => {
@@ -2228,7 +2224,6 @@ export default function Chat() {
       ...session,
       agent_group_id: groupID || undefined,
     }), { persist: true })
-    setComposerControlMenu("")
   }
 
   const setSessionWorkspacePath = (workspacePath: string) => {
@@ -2247,7 +2242,6 @@ export default function Chat() {
       currentSession.connector_command_prefixes || commandPrefixesFromText(pendingConnectorCommandPrefixes)
     )
     setPendingConnectorWorkspace(path)
-    setComposerControlMenu("")
   }
 
   const openWorkspacePicker = async (target: WorkspacePickerTarget = "session") => {
@@ -3274,7 +3268,6 @@ export default function Chat() {
     if (activeRunMode === "chat") {
       return null
     }
-    const open = composerControlMenu === "approval"
     const approvalMode = connectorApprovalModeFor(currentSession)
     const selectApprovalMode = (nextMode: ConnectorApprovalMode) => {
       if (!currentSession) {
@@ -3289,7 +3282,6 @@ export default function Chat() {
         connector_auto_approve: nextMode === "full_access",
         connector_approval_mode: nextMode,
       }), { persist: true })
-      setComposerControlMenu("")
     }
     const labels: Record<ConnectorApprovalMode, string> = {
       manual: approvalModeCopy.manual,
@@ -3299,43 +3291,33 @@ export default function Chat() {
     const icons = { manual: Hand, full_access: ShieldCheck, assistant: Bot }
     const ApprovalIcon = icons[approvalMode]
     return (
-      <div className="relative min-w-0">
-        <Button
-          type="button"
-          variant={compact ? "ghost" : "outline"}
-          className={compact ? "h-7 w-auto justify-start gap-1.5 px-2 text-xs" : "h-8 w-full justify-between gap-2 px-2 text-xs"}
-          onClick={() => setComposerControlMenu((current) => current === "approval" ? "" : "approval")}
-        >
-          {compact && <ApprovalIcon size={14} />}
-          <span className="truncate">{labels[approvalMode]}</span>
-          {!compact && <ArrowDown className="h-3.5 w-3.5 rotate-180" />}
-        </Button>
-        {open && (
-          <div className="absolute bottom-full right-0 z-30 mb-2 w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-lg">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant={compact ? "ghost" : "outline"}
+            className={compact ? "h-7 w-auto justify-start gap-1.5 px-2 text-xs" : "h-8 w-full justify-between gap-2 px-2 text-xs"}
+          >
+            {compact && <ApprovalIcon size={14} />}
+            <span className="truncate">{labels[approvalMode]}</span>
+            {!compact && <ChevronDown className="h-3.5 w-3.5" />}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuRadioGroup value={approvalMode} onValueChange={(value) => selectApprovalMode(value as ConnectorApprovalMode)}>
             {(["manual", "full_access", "assistant"] as const).map((mode) => {
               const disabled = mode === "assistant" && !currentAdvancedSettings.connector_approval_agent_id
               const ApprovalOptionIcon = icons[mode]
               return (
-                <button
-                  key={mode}
-                  type="button"
-                  className={cn(
-                    "flex min-h-9 w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted",
-                    approvalMode === mode && "bg-primary/10 text-primary",
-                    disabled && "cursor-not-allowed opacity-40"
-                  )}
-                  disabled={disabled}
-                  onClick={() => selectApprovalMode(mode)}
-                >
+                <DropdownMenuRadioItem key={mode} value={mode} disabled={disabled} className="gap-2">
                   <ApprovalOptionIcon size={15} className="shrink-0" />
-                  <span className="min-w-0 flex-1">{labels[mode]}</span>
-                  {approvalMode === mode && <Check size={14} />}
-                </button>
+                  <span>{labels[mode]}</span>
+                </DropdownMenuRadioItem>
               )
             })}
-          </div>
-        )}
-      </div>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     )
   }
 
@@ -3369,7 +3351,6 @@ export default function Chat() {
     setEditingText("")
     setEditingAttachments([])
     setFilePickerTarget("composer")
-    setComposerControlMenu("")
   }
 
   const sessionSidebarItem = (session: ChatSession) => {
