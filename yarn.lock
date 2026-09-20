@@ -3067,6 +3067,16 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@velocelab/chat-fork@workspace:packages/chat-fork":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/chat-fork@workspace:packages/chat-fork"
+  dependencies:
+    "@velocelab/advanced-chat": "workspace:*"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/community@workspace:packages/community":
   version: 0.0.0-use.local
   resolution: "@velocelab/community@workspace:packages/community"

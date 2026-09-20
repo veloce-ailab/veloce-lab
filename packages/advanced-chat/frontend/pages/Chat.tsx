@@ -671,6 +671,7 @@ export default function Chat() {
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
   const [sessionPendingDeletion, setSessionPendingDeletion] = useState<ChatSession | null>(null)
+  const [chatForkEnabled, setChatForkEnabled] = useState(false)
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
   const [selectingFileID, setSelectingFileID] = useState("")
   const [messageSelectionMenu, setMessageSelectionMenu] = useState<{ text: string } | null>(null)
@@ -1772,6 +1773,11 @@ export default function Chat() {
     window.addEventListener("message", receiveBrowserPage)
     return () => window.removeEventListener("message", receiveBrowserPage)
   }, [agents, isAdvanced, language, location.pathname, modelName, modelOptions])
+
+  useEffect(() => {
+    if (!isAdvanced) { setChatForkEnabled(false); return }
+    void api.get("/user/advanced-chat/fork").then((res) => setChatForkEnabled(res.data?.enabled === true)).catch(() => setChatForkEnabled(false))
+  }, [isAdvanced])
 
   const chooseWelcomeSuggestion = (promptText: string) => {
     setPrompt(promptText)
@@ -2875,6 +2881,19 @@ export default function Chat() {
       success(copy.messageCopied)
     } catch {
       error(copy.copyFailed)
+    }
+  }
+
+  const forkMessage = async (message: ChatMessage) => {
+    if (!currentSession || !chatForkEnabled) return
+    try {
+      const result = await api.post(`/user/advanced-chat/sessions/${encodeURIComponent(currentSession.id)}/fork`, { message_id: message.id })
+      const sessionID = String(result.data?.id ?? "")
+      if (!sessionID) throw Error("Forked session was not returned")
+      await refetchAdvancedSessions()
+      navigate(`/chat/session/${encodeURIComponent(sessionID)}`)
+    } catch (err) {
+      error(apiErrorMessage(err, language === "zh" ? "创建分支失败" : "Could not create chat fork"))
     }
   }
 
@@ -3990,6 +4009,9 @@ export default function Chat() {
                             decidingTaskID={decidingConnectorTaskID}
                             onDecide={decideConnectorApproval}
                             onCopy={() => copyMessage(message)}
+                             onFork={() => void forkMessage(message)}
+                             forkEnabled={chatForkEnabled}
+                             forkLabel={language === "zh" ? "创建分支" : "Fork chat"}
                             controlsHidden={isActiveRunRunning && activeRun?.assistant_message_id === message.id}
                           />
                         )
@@ -4070,6 +4092,11 @@ export default function Chat() {
                                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyMessage(message)} title={copy.copyMessage}>
                                   <Copy size={14} />
                                 </Button>
+                                {chatForkEnabled && (
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void forkMessage(message)} title={language === "zh" ? "创建分支" : "Fork chat"}>
+                                    <GitBranch size={14} />
+                                  </Button>
+                                )
                                 {message.role === "user" && (
                                   <Button variant="ghost" size="icon" className="h-7 w-7" disabled={isSharedSession} onClick={() => beginEditMessage(message)} title={copy.editMessage}>
                                     <Pencil size={14} />
@@ -5132,6 +5159,9 @@ function AssistantMessageSequence({
   decidingTaskID,
   onDecide,
   onCopy,
+  onFork,
+  forkEnabled,
+  forkLabel,
   controlsHidden,
 }: {
   message: ChatMessage
@@ -5141,6 +5171,9 @@ function AssistantMessageSequence({
   decidingTaskID: string
   onDecide: (taskID: string, approved: boolean) => void
   onCopy: () => void
+  onFork: () => void
+  forkEnabled: boolean
+  forkLabel: string
   controlsHidden: boolean
 }) {
   const parts = messageContentParts(message, activeRun, copy)
@@ -5174,6 +5207,7 @@ function AssistantMessageSequence({
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCopy} title={copy.copyMessage}>
                     <Copy size={14} />
                   </Button>
+                  {forkEnabled && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onFork} title={forkLabel}><GitBranch size={14} /></Button>}
                 </div>
               </div>
             ))}
