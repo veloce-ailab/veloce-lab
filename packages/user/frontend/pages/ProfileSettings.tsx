@@ -25,7 +25,6 @@ interface CurrentUser {
   username: string
   email: string
   phone?: string | null
-  oidc_sub?: string | null
   avatar_url?: string
   is_admin: boolean
 }
@@ -147,7 +146,6 @@ export default function ProfileSettings() {
                 <Field label={t("common.username")} value={user?.username || "-"} />
                 <Field label={t("common.email")} value={user?.email || "-"} />
                 {publicSettings.sms_enabled && <Field label={copy.phone} value={user?.phone || copy.notBound} />}
-                <Field label={copy.oidcAccount} value={user?.oidc_sub ? copy.bound : copy.notBound} />
                 <Field label={t("common.role")} value={user?.is_admin ? t("common.admin") : t("common.user")} />
               </>
             )}
@@ -211,8 +209,6 @@ const zhProfileCopy = {
   avatarUpdated: "头像已更新",
   avatarInvalid: "请选择不超过 2 MB 的 JPEG、PNG、GIF 或 WebP 图片。",
   avatarUploadFailed: "头像上传失败",
-  oidcAccount: "OIDC 账号",
-  bound: "已绑定",
   notBound: "未绑定",
   phone: "手机号",
 }
@@ -226,8 +222,6 @@ const enProfileCopy: typeof zhProfileCopy = {
   avatarUpdated: "Avatar updated",
   avatarInvalid: "Choose a JPEG, PNG, GIF, or WebP image up to 2 MB.",
   avatarUploadFailed: "Failed to upload avatar",
-  oidcAccount: "OIDC account",
-  bound: "Bound",
   notBound: "Not bound",
   phone: "Phone",
 }

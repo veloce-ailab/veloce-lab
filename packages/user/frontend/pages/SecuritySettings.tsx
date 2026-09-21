@@ -20,7 +20,6 @@ import {
 interface CurrentUser {
   id: number
   phone?: string | null
-  oidc_sub?: string | null
   is_admin: boolean
 }
 
@@ -54,7 +53,7 @@ interface PasskeyCredential {
 }
 
 /**
- * Phone, OIDC, passkey and password management. Account settings, so it lives
+ * Phone, passkey and password management. Account settings, so it lives
  * with the account page: the package that authenticates requests keeps nothing
  * that has to be rendered after a session exists.
  */
@@ -112,17 +111,6 @@ export default function SecuritySettings() {
   const bindExternal = (providerId: string) => {
     window.location.href = `/api/auth/provider/${encodeURIComponent(providerId)}?bind=1&next=${encodeURIComponent("/settings/security")}`
   }
-
-  const bindOIDC = useMutation({
-    mutationFn: async () => {
-      const res = await api.post("/user/oidc/bind-url")
-      return res.data as { auth_url: string }
-    },
-    onSuccess: (result) => {
-      window.location.href = result.auth_url
-    },
-    onError: (error) => setBindStatus(error instanceof Error ? error.message : copy.oidcBindFailed),
-  })
 
   const sendPasswordCode = useMutation({
     mutationFn: async () => (await api.post("/user/password/email-code")).data,
@@ -244,16 +232,6 @@ export default function SecuritySettings() {
           </CardContent>
         </Card>
 
-        {publicSettings.oidc_enabled && (
-          <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound size={18} />{copy.oidcBinding}</CardTitle></CardHeader>
-            <CardContent className="space-y-1">
-              <div className="flex min-h-16 items-center gap-3 border-b py-3 last:border-b-0"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><KeyRound size={17} /></div><div className="min-w-0 flex-1"><div className="text-sm font-medium">{copy.oidcBinding}</div><div className="mt-0.5 text-xs text-muted-foreground">{user?.oidc_sub ? copy.oidcBoundDescription : copy.oidcBindDescription}</div></div><div className="shrink-0"><Button className="gap-2" variant="outline" disabled={Boolean(user?.oidc_sub) || bindOIDC.isPending} onClick={() => bindOIDC.mutate()}><KeyRound size={16} />{user?.oidc_sub ? copy.bound : copy.bindOIDC}</Button></div></div>
-              {bindStatus && <div className="py-2 text-sm text-muted-foreground">{bindStatus}</div>}
-            </CardContent>
-          </Card>
-        )}
-
         {publicSettings.passkey_enabled && (
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound size={18} />{copy.passkeys}</CardTitle></CardHeader>
@@ -329,13 +307,6 @@ function formatDateTime(value: string) {
 }
 
 const zhSecurityCopy = {
-  oidcBinding: "OIDC 绑定",
-  oidcBindDescription: "绑定后可以使用 OIDC 登录当前账号。",
-  oidcBoundDescription: "当前账号已经绑定 OIDC。",
-  bindOIDC: "绑定 OIDC",
-  oidcBindFailed: "OIDC 绑定失败",
-  bound: "已绑定",
-  notBound: "未绑定",
   phoneBinding: "手机号绑定",
   phoneBindDescription: "绑定手机号后可用于登录和账号验证。",
   phoneBoundDescription: "当前已绑定手机号 {phone}，重新绑定会替换原手机号。",
@@ -385,13 +356,6 @@ const zhSecurityCopy = {
 }
 
 const enSecurityCopy: typeof zhSecurityCopy = {
-  oidcBinding: "OIDC binding",
-  oidcBindDescription: "Bind OIDC to sign in to this account with OIDC.",
-  oidcBoundDescription: "This account is already bound to OIDC.",
-  bindOIDC: "Bind OIDC",
-  oidcBindFailed: "Failed to bind OIDC",
-  bound: "Bound",
-  notBound: "Not bound",
   phoneBinding: "Phone binding",
   phoneBindDescription: "Bind a phone number to use it for sign-in and account verification.",
   phoneBoundDescription: "Currently bound to {phone}. Binding again replaces it.",
