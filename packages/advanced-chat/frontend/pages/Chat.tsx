@@ -23,7 +23,7 @@ import { Switch } from "@/components/ui/switch"
 import { PageInlineSlot, PageTitleSlot } from "@/components/layout/PageTitleSlot"
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
-import { desktopNotificationEnabled } from "@/lib/desktop-notifications"
+import { notificationEnabled, sendWebNotification } from "@/lib/desktop-notifications"
 import { GitChangeList, type GitChangeFile } from "@/components/chat/GitChangeList"
 import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
 
@@ -1105,7 +1105,7 @@ export default function Chat() {
     },
   })
   useEffect(() => {
-    if (!isDesktop || !window.veloceDesktop?.notifyConnectorApproval || !desktopNotificationEnabled("connectorApproval")) {
+    if (!notificationEnabled("connectorApproval")) {
       return
     }
     for (const task of pendingConnectorApprovals) {
@@ -1116,14 +1116,7 @@ export default function Chat() {
       const action = task.action || (language === "zh" ? "操作" : "action")
       const deviceName = task.device_name || (language === "zh" ? "连接器" : "Connector")
       const workspace = task.workspace_path ? `\n${task.workspace_path}` : ""
-      void window.veloceDesktop.notifyConnectorApproval({
-        id: `connector-approval:${task.id}`,
-        taskID: task.id,
-        title: language === "zh" ? "需要审批" : "Approval required",
-        body: language === "zh" ? `${deviceName} 请求执行 ${action}${workspace}` : `${deviceName} requests ${action}${workspace}`,
-        approveLabel: language === "zh" ? "批准" : "Approve",
-        rejectLabel: language === "zh" ? "拒绝" : "Reject",
-      })
+      void sendWebNotification({ title: language === "zh" ? "需要审批" : "Approval required", body: language === "zh" ? `${deviceName} 请求执行 ${action}${workspace}` : `${deviceName} requests ${action}${workspace}`, tag: `connector-approval:${task.id}`, url: "/chat" })
     }
   }, [isDesktop, language, pendingConnectorApprovals])
   const activeModelName = isAdvanced ? currentSession?.model_name || selectedAgent?.default_model || modelName : modelName
@@ -1367,7 +1360,7 @@ export default function Chat() {
   }, [activeSessionID, isAdvanced, serverSessions, serverSessionsFetched])
 
   useEffect(() => {
-    if (!isAdvanced || !isDesktop || !window.veloceDesktop?.notifyTaskComplete || !desktopNotificationEnabled("taskCompleted")) {
+    if (!isAdvanced || !notificationEnabled("taskCompleted")) {
       return
     }
     const nextStates = new Map<string, { runID: string; status: string }>()
@@ -1383,7 +1376,7 @@ export default function Chat() {
         const title = language === "zh" ? "任务已完成" : "Task complete"
         const body = language === "zh" ? `${sessionTitle} 已完成` : `${sessionTitle} is complete`
         const notificationID = [session.id, run.id || previousState.runID, run.finished_at || run.updated_at || run.status].join(":")
-        void window.veloceDesktop.notifyTaskComplete({ id: notificationID, title, body })
+        void sendWebNotification({ title, body, tag: `task-completed:${notificationID}`, url: `/chat/session/${encodeURIComponent(session.id)}` })
       }
       nextStates.set(session.id, nextState)
     }
