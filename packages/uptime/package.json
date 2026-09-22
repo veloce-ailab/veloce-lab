@@ -1,6 +1,6 @@
 {
   "name": "@velocelab/uptime",
-  "version": "0.1.2",
+  "version": "0.1.1",
   "type": "module",
   "main": "dist/index.js",
   "dev": "src/index.ts",
@@ -9,7 +9,7 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
   },
   "dependencies": {
-    "@velocelab/database-core": "^0.1.2"
+    "@velocelab/database-core": "^0.1.1"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

@@ -1,6 +1,6 @@
 {
   "name": "@velocelab/advanced-chat",
-  "version": "0.1.2",
+  "version": "0.1.1",
   "type": "module",
   "main": "dist/index.js",
   "dev": "src/index.ts",
@@ -9,9 +9,9 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
   },
   "dependencies": {
-    "@velocelab/adapters": "^0.1.2",
-    "@velocelab/file": "^0.1.2",
-    "@velocelab/user": "^0.1.2"
+    "@velocelab/adapters": "^0.1.1",
+    "@velocelab/file": "^0.1.1",
+    "@velocelab/user": "^0.1.1"
   },
   "devDependencies": {
     "@tanstack/react-query": "^5.100.14",

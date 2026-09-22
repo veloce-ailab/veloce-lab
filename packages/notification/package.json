@@ -1,6 +1,6 @@
 {
   "name": "@velocelab/notification",
-  "version": "0.1.2",
+  "version": "0.1.1",
   "type": "module",
   "main": "dist/index.js",
   "dev": "src/index.ts",
@@ -8,8 +8,8 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
   },
   "dependencies": {
-    "@velocelab/dashboard": "^0.1.2",
-    "@velocelab/pwa": "^0.1.2"
+    "@velocelab/dashboard": "^0.1.1",
+    "@velocelab/pwa": "^0.1.1"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"
