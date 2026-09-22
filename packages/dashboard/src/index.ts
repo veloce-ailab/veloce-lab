@@ -145,6 +145,10 @@ export class Dashboard extends Service implements DashboardService {
     const assets = files.map((file, index) => this.registerAsset({
       id: `${id}-${index}`,
       file,
+      // Every dashboard entry is a JavaScript module. Mark the primary bundle
+      // explicitly so production module loading never depends on platform path
+      // extension inference; companion stylesheets still use mimeFor().
+      mime: index === 0 ? "application/javascript; charset=utf-8" : mimeFor(file),
       plugin: entry.plugin,
       data: entry.data,
       dev: servingSources,
@@ -264,7 +268,10 @@ export function apply(ctx: Context, pluginConfig?: DashboardConfig) {
       session.respond("", "plain");
       return;
     }
-    if (asset.mime) session.setMime(asset.mime);
+    // Browsers reject ES module imports served as text/plain. The entry manifest
+    // carries an explicit module MIME, with extension inference as a fallback
+    // for companion CSS and other registered static assets.
+    session.setMime(asset.mime ?? mimeFor(asset.file) ?? "application/octet-stream");
     session.sendFile(asset.file);
   });
   ctx.route("root").methods("GET").action(async (session: Session) => {
