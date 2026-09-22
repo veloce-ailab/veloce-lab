@@ -103,7 +103,7 @@ function CommunityCharacterList() {
 
 function CommunityCharacterCard({ character }: { character: CommunityCharacter }) {
   return (
-    <Link to={`/chat/community/${encodeURIComponent(character.id)}`} className="group block">
+    <Link to={`/chat/community/characters/${encodeURIComponent(character.id)}`} className="group block">
       <Card className="h-full transition-colors group-hover:border-primary/50 group-hover:bg-muted/30">
         <CardHeader className="gap-4"><CharacterCover character={character} /><div className="min-w-0 space-y-2"><div className="flex items-center gap-2"><CardTitle className="truncate text-base">{character.name}</CardTitle>{character.featured && <Badge variant="secondary" className="gap-1"><Sparkles size={12} />精选</Badge>}</div><CardDescription className="line-clamp-2 min-h-10">{character.summary || "这位创作者还没有留下简介。"}</CardDescription></div></CardHeader>
         <CardFooter className="justify-between text-xs text-muted-foreground"><span className="truncate">{character.author || "匿名创作者"}</span><span>{formatDate(character.created_at)}</span></CardFooter>
