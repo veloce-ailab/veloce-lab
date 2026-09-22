@@ -1,5 +1,7 @@
-import { Context, Schema, Session } from "yumeri";
+import { Context, Logger, Schema, Session } from "yumeri";
 import bcrypt from "bcryptjs";
+
+const logger = new Logger("auth");
 import { createHash, randomBytes } from "node:crypto";
 import type { User } from "@velocelab/user";
 import "@velocelab/database-core";
@@ -272,7 +274,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
         is_admin: true,
         email_verified: true,
       });
-      console.log(`[auth] administrator "${username}" adopted from configuration`);
+      logger.info(`administrator "${username}" adopted from configuration`);
       return updated ?? existing;
     }
     const group = await userService.ensureDefaultGroup();
@@ -290,7 +292,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
       referral_code: null,
       referrer_id: null,
     });
-    console.log(`[auth] administrator "${username}" created from configuration`);
+    logger.info(`administrator "${username}" created from configuration`);
     return created;
   };
   const administrator = await bootstrap();

@@ -267,7 +267,6 @@ export function apply(ctx: Context, pluginConfig?: DashboardConfig) {
     if (asset.mime) session.setMime(asset.mime);
     session.sendFile(asset.file);
   });
-  logger.info(`Dashboard web root: ${webRoot}${development ? " (development sources)" : ""}`);
   ctx.route("root").methods("GET").action(async (session: Session) => {
     const req = session.client.req as IncomingMessage | undefined;
     const res = session.client.res;
