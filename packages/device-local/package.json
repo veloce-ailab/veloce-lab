@@ -1,6 +1,6 @@
 {
   "name": "@velocelab/device-local",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "dist/index.js",
   "dev": "src/index.ts",
@@ -9,7 +9,7 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@velocelab/connector": "workspace:*"
+    "@velocelab/connector": "^0.1.1"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

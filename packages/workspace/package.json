@@ -1,6 +1,6 @@
 {
   "name": "@velocelab/workspace",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "dist/index.js",
   "dev": "src/index.ts",
@@ -9,9 +9,9 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
   },
   "dependencies": {
-    "@velocelab/advanced-chat": "workspace:*",
-    "@velocelab/connector": "workspace:*",
-    "@velocelab/file": "workspace:*"
+    "@velocelab/advanced-chat": "^0.1.1",
+    "@velocelab/connector": "^0.1.1",
+    "@velocelab/file": "^0.1.1"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

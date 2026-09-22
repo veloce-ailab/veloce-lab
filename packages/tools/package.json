@@ -1,11 +1,11 @@
 {
   "name": "@velocelab/tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "dist/index.js",
   "dev": "src/index.ts",
   "dependencies": {
-    "@velocelab/advanced-chat": "workspace:*"
+    "@velocelab/advanced-chat": "^0.1.1"
   },
   "types": "dist/index.d.ts",
   "scripts": {
