@@ -1,6 +1,6 @@
 {
   "name": "@velocelab/inner-tools",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "main": "dist/index.js",
   "dev": "src/index.ts",
@@ -9,8 +9,8 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@velocelab/advanced-chat": "^0.1.1",
-    "@velocelab/connector": "^0.1.1"
+    "@velocelab/advanced-chat": "^0.1.2",
+    "@velocelab/connector": "^0.1.2"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

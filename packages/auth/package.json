@@ -1,6 +1,6 @@
 {
   "name": "@velocelab/auth",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "main": "dist/index.js",
   "dev": "src/index.ts",
@@ -9,9 +9,9 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
   },
   "dependencies": {
-    "@velocelab/dashboard": "^0.1.1",
-    "@velocelab/database-core": "^0.1.1",
-    "@velocelab/user": "^0.1.1",
+    "@velocelab/dashboard": "^0.1.2",
+    "@velocelab/database-core": "^0.1.2",
+    "@velocelab/user": "^0.1.2",
     "bcryptjs": "^3.0.2"
   },
   "peerDependencies": {
