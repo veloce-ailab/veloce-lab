@@ -3269,6 +3269,17 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@velocelab/notification@workspace:packages/notification":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/notification@workspace:packages/notification"
+  dependencies:
+    "@velocelab/dashboard": "workspace:*"
+    "@velocelab/pwa": "workspace:*"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/pgsql@workspace:packages/pgsql":
   version: 0.0.0-use.local
   resolution: "@velocelab/pgsql@workspace:packages/pgsql"
@@ -3283,7 +3294,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/pwa@workspace:packages/pwa":
+"@velocelab/pwa@workspace:*, @velocelab/pwa@workspace:packages/pwa":
   version: 0.0.0-use.local
   resolution: "@velocelab/pwa@workspace:packages/pwa"
   dependencies:

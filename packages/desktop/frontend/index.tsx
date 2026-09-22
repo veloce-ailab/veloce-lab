@@ -1,3 +1,6 @@
-import type { DashboardContext } from "@velocelab/dashboard/frontend"; import DesktopNotifications from "./pages/DesktopNotifications"; import { Bell } from "lucide-react";
-export function apply(ctx: DashboardContext) { ctx.page({ frame: "settings", path: "/settings/notifications", component: DesktopNotifications, nav: { id: "desktop.settings", labelKey: "desktop.settings", icon: Bell, order: 40, scope: "settings", group: "general" } }); }
+import type { DashboardContext } from "@velocelab/dashboard/frontend";
+
+// Desktop integration does not own the notification settings page. The standalone
+// notification plugin provides the browser/PWA settings surface for all clients.
+export function apply(_ctx: DashboardContext) {}
 export default apply
