@@ -14,6 +14,8 @@ export class McpClient {
   constructor(
     private readonly endpoint: string,
     private readonly headers: Record<string, string> = {},
+    private readonly requestTimeoutMs = 30_000,
+    private readonly maxResponseBytes = 4 << 20,
   ) {}
 
   private async request(method: string, params: unknown = {}): Promise<any> {
@@ -23,7 +25,7 @@ export class McpClient {
     const id = ++this.nextRequestId;
     const response = await fetch(url, {
       method: "POST",
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
       headers: {
         accept: "application/json, text/event-stream",
         "content-type": "application/json",
@@ -57,7 +59,7 @@ export class McpClient {
       throw Error("MCP stream ended without a response");
     }
     const text = await response.text();
-    if (Buffer.byteLength(text) > MAX_RESPONSE)
+    if (Buffer.byteLength(text) > this.maxResponseBytes)
       throw Error("MCP response is too large");
     const payload = JSON.parse(text);
     if (Array.isArray(payload))

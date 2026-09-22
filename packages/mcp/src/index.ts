@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Context, Database, Session } from "yumeri";
+import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/advanced-chat";
@@ -7,6 +7,14 @@ import { McpClient } from "./client.js";
 import { ensureTables } from "./tables.js";
 export const depend = ["dashboard", "advanced-chat", "database"];
 export const provide = ["mcp"];
+export interface McpConfig { allowPrivateNetworkTargets: boolean; requestTimeoutMs: string; maxResponseBytes: string; connectorWaitMs: string; maxToolsPerServer: string; }
+export const config: Schema<McpConfig> = Schema.object({
+  allowPrivateNetworkTargets: Schema.boolean("Allow private network MCP targets").key("mcp.config.allowPrivateNetworkTargets").default(false),
+  requestTimeoutMs: Schema.string("MCP request timeout milliseconds").key("mcp.config.requestTimeoutMs").default("30000"),
+  maxResponseBytes: Schema.string("Maximum MCP response bytes").key("mcp.config.maxResponseBytes").default("4194304"),
+  connectorWaitMs: Schema.string("Connector MCP wait milliseconds").key("mcp.config.connectorWaitMs").default("30000"),
+  maxToolsPerServer: Schema.string("Maximum tools per MCP server").key("mcp.config.maxToolsPerServer").default("100"),
+});
 export interface McpServer {
   id: string;
   name: string;
@@ -23,7 +31,7 @@ declare module "yumeri" {
     mcp: McpService;
   }
 }
-export async function apply(ctx: Context) {
+export async function apply(ctx: Context, cfg: McpConfig) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/mcp.js", import.meta.url).pathname,
@@ -129,7 +137,7 @@ export async function apply(ctx: Context) {
               : {}),
           },
         );
-        const deadline = Date.now() + 30_000;
+        const deadline = Date.now() + Math.max(1000, Number(cfg.connectorWaitMs) || 30000);
         while (Date.now() < deadline) {
           const completed: any = await db.selectOne(
             "advanced_chat_connector_tasks",
@@ -163,7 +171,9 @@ export async function apply(ctx: Context) {
               ]),
             )
           : {};
-      const client = new McpClient(String(server.url), headers);
+      const endpoint = new URL(String(server.url));
+       if (!cfg.allowPrivateNetworkTargets && (endpoint.hostname === "localhost" || endpoint.hostname === "127.0.0.1" || endpoint.hostname === "0.0.0.0" || endpoint.hostname === "::1" || endpoint.hostname.startsWith("10.") || endpoint.hostname.startsWith("192.168.") || endpoint.hostname.startsWith("172.16."))) throw Error("Private network MCP targets are disabled");
+       const client = new McpClient(endpoint.toString(), headers, Math.max(1000, Number(cfg.requestTimeoutMs) || 30000), Math.max(1024, Number(cfg.maxResponseBytes) || 4194304));
       if (String(value.method) === "tools/list") return client.listTools();
       if (String(value.method) === "tools/call") {
         const result = await client.callTool(

@@ -1,10 +1,15 @@
-import { Context, Database, Session } from "yumeri";
+import { Context, Database, Schema, Session } from "yumeri";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import { ensureTables } from "./tables.js";
 export const depend = ["dashboard", "database"];
 export const provide = ["connector"];
+export interface ConnectorConfig { maxTaskResultChars: string; maxTaskErrorChars: string; }
+export const config: Schema<ConnectorConfig> = Schema.object({
+  maxTaskResultChars: Schema.string("Maximum stored connector task result characters").key("connector.config.maxTaskResultChars").default("1000000"),
+  maxTaskErrorChars: Schema.string("Maximum stored connector task error characters").key("connector.config.maxTaskErrorChars").default("100000"),
+});
 /** A row of `advanced_chat_connector_devices`, without its token hash. */
 export interface ConnectorDeviceRecord {
   id: string;
@@ -169,7 +174,7 @@ declare module "yumeri" {
     connector: ConnectorService;
   }
 }
-export async function apply(ctx: Context) {
+export async function apply(ctx: Context, cfg: ConnectorConfig) {
   ctx.i18n({ connector: { settings: { zh: "设备管理", en: "Device management", ja: "デバイス管理" } } });
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
@@ -244,8 +249,8 @@ export async function apply(ctx: Context) {
       { id: task.id },
       {
         status: outcome.success ? "completed" : "failed",
-        result: String(outcome.result ?? "").slice(0, 1_000_000),
-        error_message: String(outcome.error_message ?? "").slice(0, 100_000),
+        result: String(outcome.result ?? "").slice(0, Math.max(1, Number(cfg.maxTaskResultChars) || 1_000_000)),
+        error_message: String(outcome.error_message ?? "").slice(0, Math.max(1, Number(cfg.maxTaskErrorChars) || 100_000)),
         finished_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },

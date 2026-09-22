@@ -17,21 +17,30 @@ export interface SchedulerService {
   list(): string[];
   run(name: string): Promise<boolean>;
 }
-export interface SchedulerConfig {
-}
-export const config: Schema<SchedulerConfig> = Schema.object({});
+export interface SchedulerConfig { maxConcurrentJobs: string; }
+
+export const config: Schema<SchedulerConfig> = Schema.object({
+  maxConcurrentJobs: Schema.string("Maximum concurrently running scheduled jobs").key("scheduler.config.maxConcurrentJobs").default("4"),
+});
 declare module "yumeri" {
   interface Components {
     scheduler: SchedulerService;
   }
 }
-export async function apply(ctx: Context) {
+export async function apply(ctx: Context, cfg: SchedulerConfig) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/scheduler.js", import.meta.url).pathname,
     plugin: "scheduler",
   });
   const jobs = new Map<string, ScheduledJob>();
+  const maxConcurrentJobs = Math.max(1, Number(cfg.maxConcurrentJobs) || 4);
+  let runningJobs = 0;
+  const runWithLimit = async (job: ScheduledJob) => {
+    if (runningJobs >= maxConcurrentJobs) return;
+    runningJobs += 1;
+    try { await job.run(); } finally { runningJobs -= 1; }
+  };
   const timers = new Map<string, NodeJS.Timeout>();
   const service: SchedulerService = {
     register(job) {
@@ -40,7 +49,7 @@ export async function apply(ctx: Context) {
         // A job's timer belongs to the plugin that registered it: the context
         // clears it when the plugin is unloaded, so a reload no longer leaves a
         // second loop running beside the new one.
-        const timer = ctx.setInterval(() => void job.run(), job.intervalMs);
+        const timer = ctx.setInterval(() => void runWithLimit(job), job.intervalMs);
         if (timer) timers.set(job.name, timer);
       }
       return () => {

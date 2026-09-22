@@ -4,11 +4,9 @@ export const depend: string[] = [];
 export const provide = ["cache"];
 
 export interface CacheConfig {
-  address: string;
-  username: string;
-  password: string;
-  database: string;
-  tls: boolean;
+  defaultTtlMs: string;
+  billingBalanceTtlMs: string;
+  maxEntries: string;
 }
 
 export interface CacheService {
@@ -21,11 +19,9 @@ export interface CacheService {
 }
 
 export const config: Schema<CacheConfig> = Schema.object({
-  address: Schema.string("Redis address").key("cache.config.address").default("127.0.0.1:6379"),
-  username: Schema.string("Redis username").key("cache.config.username").default(""),
-  password: Schema.string("Redis password").key("cache.config.password").default(""),
-  database: Schema.string("Redis database").key("cache.config.database").default("0"),
-  tls: Schema.boolean("Enable Redis TLS").key("cache.config.tls").default(false),
+  defaultTtlMs: Schema.string("Default in-memory cache TTL milliseconds (0 means no expiry)").key("cache.config.defaultTtlMs").default("0"),
+  billingBalanceTtlMs: Schema.string("Billing balance cache TTL milliseconds").key("cache.config.billingBalanceTtlMs").default("600000"),
+  maxEntries: Schema.string("Maximum in-memory cache entries").key("cache.config.maxEntries").default("10000"),
 });
 
 declare module "yumeri" {
@@ -39,7 +35,10 @@ interface StoredValue {
   expiresAt?: number;
 }
 
-export function apply(ctx: Context, _pluginConfig: CacheConfig) {
+export function apply(ctx: Context, pluginConfig: CacheConfig) {
+  const defaultTtlMs = Math.max(0, Number(pluginConfig.defaultTtlMs) || 0);
+  const maxEntries = Math.max(1, Number(pluginConfig.maxEntries) || 10000);
+  const billingBalanceTtlMs = Math.max(0, Number(pluginConfig.billingBalanceTtlMs) || 600000);
   const store = new Map<string, StoredValue>();
   const billingLocks = new Map<number, Promise<void>>();
 
@@ -54,7 +53,9 @@ export function apply(ctx: Context, _pluginConfig: CacheConfig) {
       return entry.value as T;
     },
     set<T>(key, value, ttlMs) {
-      store.set(key, { value, expiresAt: ttlMs ? Date.now() + ttlMs : undefined });
+      if (!store.has(key) && store.size >= maxEntries) store.delete(store.keys().next().value as string);
+       const lifetime = ttlMs ?? defaultTtlMs;
+       store.set(key, { value, expiresAt: lifetime > 0 ? Date.now() + lifetime : undefined });
     },
     delete(key) {
       store.delete(key);
@@ -79,7 +80,7 @@ export function apply(ctx: Context, _pluginConfig: CacheConfig) {
       if (userId) {
         store.set(`veloce:billing:user:${userId}:balance`, {
           value: balance,
-          expiresAt: Date.now() + 600_000,
+          expiresAt: billingBalanceTtlMs > 0 ? Date.now() + billingBalanceTtlMs : undefined,
         });
       }
     },

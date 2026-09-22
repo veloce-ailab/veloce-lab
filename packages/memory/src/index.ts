@@ -8,11 +8,11 @@ import "@velocelab/advanced-chat";
 import { ensureTables } from "./tables.js";
 export const depend = ["database", "dashboard", "advanced-chat"];
 export const provide = ["memory"];
-export interface MemoryConfig {
-  root: string;
-}
+export interface MemoryConfig { root: string; maxInjectedChars: string; maxCharsPerDocument: string; }
 export const config: Schema<MemoryConfig> = Schema.object({
   root: Schema.string("Memory storage root").key("memory.config.root").default("./data/memories"),
+  maxInjectedChars: Schema.string("Maximum memory characters injected into a chat").key("memory.config.maxInjectedChars").default("32768"),
+  maxCharsPerDocument: Schema.string("Maximum characters injected from one memory document").key("memory.config.maxCharsPerDocument").default("8192"),
 });
 const kinds = new Set([
   "profile",
@@ -59,6 +59,8 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
   const db = ctx.component.database as Database;
   await ensureTables(db);
   const root = path.resolve(cfg.root);
+  const maxInjectedChars = Math.max(1024, Number(cfg.maxInjectedChars) || 32 * 1024);
+  const maxCharsPerDocument = Math.max(256, Number(cfg.maxCharsPerDocument) || 8 * 1024);
   void mkdir(root, { recursive: true });
   const chat = ctx.component["advanced-chat"];
   chat.registerContextProvider({
@@ -84,11 +86,11 @@ export async function apply(ctx: Context, cfg: MemoryConfig) {
             String(row.kind),
           ) &&
           row.storage_path &&
-          attached < 32 * 1024
+          attached < maxInjectedChars
         )
           content = (
             await readFile(String(row.storage_path), "utf8").catch(() => "")
-          ).slice(0, Math.min(8 * 1024, 32 * 1024 - attached));
+          ).slice(0, Math.min(maxCharsPerDocument, maxInjectedChars - attached));
         attached += Buffer.byteLength(content);
         details.push(
           `- ${row.title} (${row.kind})${content ? `\n  ${content}` : ""}`,

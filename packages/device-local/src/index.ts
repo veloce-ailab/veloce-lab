@@ -37,7 +37,13 @@ import { LocalMCPManager } from "./mcp.js";
 // `advanced-chat` owns the device and task tables, so it has to have run first.
 export const depend = ["database", "advanced-chat", "connector"];
 export const provide = ["device-local"];
-export const config: Schema<Record<string, never>> = Schema.object({});
+export interface LocalDeviceConfig { commandWaitMs: string; allowCommandExecution: boolean; allowFileWrite: boolean; allowMcpProcesses: boolean; }
+export const config: Schema<LocalDeviceConfig> = Schema.object({
+  commandWaitMs: Schema.string("Maximum time waiting for a local command").key("device-local.config.commandWaitMs").default("60000"),
+  allowCommandExecution: Schema.boolean("Allow local command execution").key("device-local.config.allowCommandExecution").default(true),
+  allowFileWrite: Schema.boolean("Allow local file writes").key("device-local.config.allowFileWrite").default(true),
+  allowMcpProcesses: Schema.boolean("Allow local MCP processes").key("device-local.config.allowMcpProcesses").default(true),
+});
 /** The connector type id, which is also the device's `kind`. */
 export const LOCAL_TYPE = "local";
 declare module "yumeri" {
@@ -78,7 +84,7 @@ const CAPABILITIES = [
  */
 const COMMAND_WAIT_MS = 60_000;
 
-export async function apply(ctx: Context) {
+export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
   ctx.i18n({
     "device-local": {
       settings: { zh: "本机连接器", en: "Local connector", ja: "ローカル接続" },
@@ -172,6 +178,7 @@ export async function apply(ctx: Context) {
         return { success: true, result: outcome.result };
       }
       if (String(task.action) === "run_command") {
+        if (!cfg.allowCommandExecution) return { success: false, error_message: "Local command execution is disabled" };
         // The task's own workspace path wins over anything in the payload, so a
         // command cannot be talked into running outside the folder the session
         // works in.
@@ -224,7 +231,7 @@ export async function apply(ctx: Context) {
    * ask again rather than left hanging.
    */
   const waitForTask = async (userId: number, taskId: string) => {
-    const deadline = Date.now() + COMMAND_WAIT_MS;
+    const deadline = Date.now() + Math.max(1000, Number(cfg.commandWaitMs) || COMMAND_WAIT_MS);
     for (;;) {
       const row: any = await db.selectOne("advanced_chat_connector_tasks", {
         id: taskId,
@@ -290,8 +297,8 @@ export async function apply(ctx: Context) {
       list_directory: (_userId, input) => listDirectory(input),
       list_files: (_userId, input) => listDirectory(input),
       read_file: (_userId, input) => readTextFile(input),
-      write_file: (_userId, input) => writeTextFile(input),
-      replace_text: (_userId, input) => replaceText(input),
+      write_file: (_userId, input) => { if (!cfg.allowFileWrite) throw Error("Local file writes are disabled"); return writeTextFile(input); },
+       replace_text: (_userId, input) => { if (!cfg.allowFileWrite) throw Error("Local file writes are disabled"); return replaceText(input); },
       file_sha256: (_userId, input) => fileSha256(input),
       git_status: (_userId, input) => gitStatus(input),
       // A git action is queued rather than answered inline: the client polls the
@@ -308,8 +315,8 @@ export async function apply(ctx: Context) {
           requiresApproval: approvalMode !== "full_access",
         });
       },
-      mcp_list_tools: (_userId, input) => mcp.listTools(input),
-      mcp_call_tool: (_userId, input) => mcp.callTool(input),
+      mcp_list_tools: (_userId, input) => { if (!cfg.allowMcpProcesses) throw Error("Local MCP processes are disabled"); return mcp.listTools(input); },
+       mcp_call_tool: (_userId, input) => { if (!cfg.allowMcpProcesses) throw Error("Local MCP processes are disabled"); return mcp.callTool(input); },
       list_mcp_processes: () => mcp.listProcesses(),
       stop_mcp_process: (_userId, input) => mcp.stop(String(input.key ?? "")),
       // `run_command` is queued and then waited for, so the model sees the

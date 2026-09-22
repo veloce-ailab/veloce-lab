@@ -10,6 +10,9 @@ export const provide = ["ratelimit"];
 export interface RateLimitConfig {
   requestsPerMinute: string;
   burst: string;
+  credentialRequestsPerMinute: string;
+  windowMs: string;
+  idleBucketMinutes: string;
 }
 
 export interface RateLimitDecision {
@@ -47,6 +50,9 @@ export interface RateLimitService {
 export const config: Schema<RateLimitConfig> = Schema.object({
   requestsPerMinute: Schema.string("Requests per minute").key("ratelimit.config.requestsPerMinute").default("60"),
   burst: Schema.string("Burst size").key("ratelimit.config.burst").default("10"),
+  credentialRequestsPerMinute: Schema.string("Credential requests per minute").key("ratelimit.config.credentialRequestsPerMinute").default("10"),
+  windowMs: Schema.string("Rate limit window milliseconds").key("ratelimit.config.windowMs").default("60000"),
+  idleBucketMinutes: Schema.string("Idle rate-limit bucket retention minutes").key("ratelimit.config.idleBucketMinutes").default("5"),
 });
 
 declare module "yumeri" {
@@ -63,7 +69,7 @@ interface Entry {
 
 const minute = 60_000;
 /** A bucket nobody has touched for this long is dead weight. */
-const idleWindow = minute * 5;
+let idleWindow = minute * 5;
 /** Sign-in is the one endpoint worth a budget of its own. */
 const credentialPaths = new Set([
   "/auth/password/login",
@@ -134,6 +140,9 @@ export function apply(ctx: Context, pluginConfig: RateLimitConfig) {
   const entries = new Map<string, Entry>();
   const userChannelEntries = new Map<string, Entry>();
 
+  const configuredWindowMs = Math.max(1000, integer(pluginConfig.windowMs, minute));
+  idleWindow = Math.max(configuredWindowMs, integer(pluginConfig.idleBucketMinutes, 5) * minute);
+  const configuredCredentialLimit = Math.max(1, integer(pluginConfig.credentialRequestsPerMinute, credentialsPerMinute));
   const configuredLimit = () =>
     integer(pluginConfig.requestsPerMinute, 0) +
     Math.max(0, integer(pluginConfig.burst, 0));
@@ -161,7 +170,7 @@ export function apply(ctx: Context, pluginConfig: RateLimitConfig) {
           retryAfter: 0,
           resetAt: 0,
         };
-      return consume(entries, key, effective, windowMs ?? minute, Date.now());
+      return consume(entries, key, effective, windowMs ?? configuredWindowMs, Date.now());
     },
     allowUserChannel(userId, channel) {
       if (
@@ -204,7 +213,7 @@ export function apply(ctx: Context, pluginConfig: RateLimitConfig) {
         entries,
         key,
         limit,
-        options?.windowMs ?? minute,
+        options?.windowMs ?? configuredWindowMs,
         Date.now(),
       );
       if (decision.allowed) {
@@ -241,7 +250,7 @@ export function apply(ctx: Context, pluginConfig: RateLimitConfig) {
     const address = String(session.ip ?? "").trim() || "unknown";
     const identity = userId ? `user:${userId}` : `ip:${address}`;
 
-    const decision = consume(entries, `all:${identity}`, limit, minute, now);
+    const decision = consume(entries, `all:${identity}`, limit, configuredWindowMs, now);
     if (!decision.allowed) {
       refuse(session, decision);
       return;
@@ -255,8 +264,8 @@ export function apply(ctx: Context, pluginConfig: RateLimitConfig) {
       const attempt = consume(
         entries,
         `credentials:${address}`,
-        credentialsPerMinute + Math.max(0, integer(pluginConfig.burst, 0)),
-        minute,
+        configuredCredentialLimit + Math.max(0, integer(pluginConfig.burst, 0)),
+         configuredWindowMs,
         now,
       );
       if (!attempt.allowed) {

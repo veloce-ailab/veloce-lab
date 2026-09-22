@@ -17,7 +17,12 @@ export interface KnowledgeService {
   create(userId: number, input: Record<string, unknown>): Promise<any>;
   documents(userId: number, baseId: string): Promise<any[]>;
 }
-export const config: Schema<Record<string, never>> = Schema.object({});
+export interface KnowledgeConfig { communityApiBaseUrl: string; communityRequestTimeoutMs: string; communityImportMaxBytes: string; }
+export const config: Schema<KnowledgeConfig> = Schema.object({
+  communityApiBaseUrl: Schema.string("Community knowledge API base URL").key("knowledge.config.communityApiBaseUrl").default(communityKnowledgeAPIBaseURL),
+  communityRequestTimeoutMs: Schema.string("Community knowledge request timeout milliseconds").key("knowledge.config.communityRequestTimeoutMs").default("20000"),
+  communityImportMaxBytes: Schema.string("Maximum community knowledge import bytes").key("knowledge.config.communityImportMaxBytes").default(String(maxCommunityKnowledgeImport)),
+});
 function embedding(text: string) {
   const vector = new Array(32).fill(0);
   for (let index = 0; index < text.length; index += 1)
@@ -48,15 +53,15 @@ function normalizeDocumentName(raw: unknown) {
   return name;
 }
 
-async function fetchCommunityJSON<T>(route: string): Promise<T> {
-  const response = await fetch(`${communityKnowledgeAPIBaseURL}${route}`, {
-    signal: AbortSignal.timeout(20_000),
+async function fetchCommunityJSON<T>(route: string, cfg: KnowledgeConfig): Promise<T> {
+  const response = await fetch(`${cfg.communityApiBaseUrl.replace(/\/$/, "")}${route}`, {
+    signal: AbortSignal.timeout(Math.max(1000, Number(cfg.communityRequestTimeoutMs) || 20_000)),
   });
   if (response.status === 404) throw communityKnowledgeNotFound;
   if (!response.ok)
     throw new Error(`community service returned HTTP ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > maxCommunityKnowledgeImport)
+  if (bytes.byteLength > Math.max(1024, Number(cfg.communityImportMaxBytes) || maxCommunityKnowledgeImport))
     throw new Error("community response is too large");
   try {
     return JSON.parse(new TextDecoder().decode(bytes)) as T;
@@ -112,7 +117,7 @@ declare module "yumeri" {
     knowledge: KnowledgeService;
   }
 }
-export async function apply(ctx: Context) {
+export async function apply(ctx: Context, cfg: KnowledgeConfig) {
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/knowledge.js", import.meta.url).pathname,
@@ -346,10 +351,10 @@ export async function apply(ctx: Context) {
       };
       try {
         const encoded = encodeURIComponent(id);
-        metadata = await fetchCommunityJSON(`/knowledge-bases/${encoded}`);
+        metadata = await fetchCommunityJSON(`/knowledge-bases/${encoded}`, cfg);
         content = await fetchCommunityJSON(
-          `/knowledge-bases/${encoded}/content`,
-        );
+          `/knowledge-bases/${encoded}/content`, cfg
+         );
       } catch (error) {
         s.status = error === communityKnowledgeNotFound ? 404 : 502;
         s.respond(
