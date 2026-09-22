@@ -259,7 +259,7 @@ function ChatSidebar({
       </SidebarHeader>
       <SidebarContent className="relative min-h-0 flex-1 overflow-hidden p-0">
       <nav className="relative flex h-full min-h-0 flex-1">
-        <div className={cn("min-h-0 transition-transform duration-200 ease-out", homeItem.active && "flex h-full min-h-0 flex-1 flex-col", showingSection && "-translate-x-full")}>
+        <div className={cn("w-full min-h-0 transition-transform duration-200 ease-out", homeItem.active && "flex h-full min-h-0 flex-1 flex-col", showingSection && "-translate-x-full")}>
           <div className="flex flex-col gap-1 px-3 pb-3">
             <DashboardSlot name="sidebar.navigation.before" scope="/chat" />
             {flatItems.map((item) => renderSidebarLink(item))}
