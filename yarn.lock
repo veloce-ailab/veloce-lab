@@ -3359,6 +3359,16 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@velocelab/update-checker@workspace:packages/update-checker":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/update-checker@workspace:packages/update-checker"
+  dependencies:
+    "@velocelab/dashboard": "workspace:*"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/uptime@workspace:packages/uptime":
   version: 0.0.0-use.local
   resolution: "@velocelab/uptime@workspace:packages/uptime"

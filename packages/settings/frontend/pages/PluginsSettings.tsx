@@ -214,7 +214,7 @@ export default function PluginsSettings() {
                   </h1>
                   <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{selected.name}</p>
                 </div>
-                <DashboardSlot name="settings.plugins.header" className="flex flex-wrap items-center gap-2" />
+                <DashboardSlot name="settings.plugins.header" className="flex flex-wrap items-center gap-2" data={{ name: selected.name, title: selected.title, enabled: selected.enabled }} />
                 <div className="flex shrink-0 flex-wrap gap-2">
                   {selected.enabled ? (
                     <>
