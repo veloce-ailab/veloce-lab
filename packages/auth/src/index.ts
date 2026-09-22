@@ -79,7 +79,7 @@ declare module "yumeri" {
  * this list is the whole of the public surface: the authentication page, the
  * endpoints it needs before anyone has signed in, and the assets both load.
  */
-const publicPaths = new Set(["/login"]);
+const publicPaths = new Set(["/login", "/pwa-manifest.webmanifest", "/pwa-service-worker.js"]);
 const publicAPIPaths = new Set([
   "/api/public/settings",
   "/api/auth/configuration",
