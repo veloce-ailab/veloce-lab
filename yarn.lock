@@ -3283,6 +3283,16 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@velocelab/pwa@workspace:packages/pwa":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/pwa@workspace:packages/pwa"
+  dependencies:
+    "@velocelab/dashboard": "workspace:*"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/ratelimit@workspace:packages/ratelimit":
   version: 0.0.0-use.local
   resolution: "@velocelab/ratelimit@workspace:packages/ratelimit"
