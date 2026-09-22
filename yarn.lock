@@ -3145,19 +3145,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/desktop@workspace:packages/desktop":
-  version: 0.0.0-use.local
-  resolution: "@velocelab/desktop@workspace:packages/desktop"
-  dependencies:
-    "@vitejs/plugin-react": "npm:^6.0.1"
-    react: "npm:^19.2.6"
-    react-dom: "npm:^19.2.6"
-    vite: "npm:^8.0.12"
-  peerDependencies:
-    yumeri: ^3.0.0
-  languageName: unknown
-  linkType: soft
-
 "@velocelab/device-local@workspace:packages/device-local":
   version: 0.0.0-use.local
   resolution: "@velocelab/device-local@workspace:packages/device-local"

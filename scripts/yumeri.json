@@ -25,7 +25,6 @@
     "@velocelab/memory": {
       "root": "./data/memories"
     },
-    "@velocelab/desktop": {},
     "@velocelab/billing": {},
     "@velocelab/scheduler": {},
     "@velocelab/user": {},
