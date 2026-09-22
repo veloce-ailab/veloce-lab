@@ -39,6 +39,19 @@ function safeID(value: unknown) {
   return encodeURIComponent(id);
 }
 
+function normalizeCoverURLs(value: unknown, origin: string): unknown {
+  if (Array.isArray(value)) return value.map((item) => normalizeCoverURLs(item, origin));
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(record)) {
+    if (key === "image_url" && typeof item === "string" && item.trim() && !/^[a-z][a-z0-9+.-]*:/i.test(item)) {
+      result[key] = new URL(item, `${origin}/`).toString();
+    } else result[key] = normalizeCoverURLs(item, origin);
+  }
+  return result;
+}
+
 async function proxy(session: Session, cfg: CommunityConfig, route: string, query: URLSearchParams, id?: unknown) {
   const suffix = route.includes(":id") ? route.replace(":id", safeID(id)) : route;
   const target = new URL(`${apiBase(cfg.apiBaseUrl)}${suffix}`);
@@ -62,7 +75,9 @@ async function proxy(session: Session, cfg: CommunityConfig, route: string, quer
     return;
   }
   try {
-    session.respond(JSON.parse(new TextDecoder().decode(body)), "json");
+    const apiURL = new URL(apiBase(cfg.apiBaseUrl));
+    const origin = apiURL.origin;
+    session.respond(normalizeCoverURLs(JSON.parse(new TextDecoder().decode(body)), origin), "json");
   } catch {
     session.status = 502;
     session.respond({ error: "Community API returned invalid JSON" }, "json");
