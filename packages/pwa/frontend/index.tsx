@@ -1,14 +1,21 @@
 import { useEffect } from "react"
 import type { DashboardContext } from "@velocelab/dashboard/frontend"
 
-function PWARegistration({ themeColor, iconUrl }: { themeColor?: string; iconUrl?: string }) {
+type WindowControlsOverlay = EventTarget & { visible: boolean }
+type NavigatorWithOverlay = Navigator & { windowControlsOverlay?: WindowControlsOverlay }
+function PWARegistration({ themeColor, iconUrl, windowControlsOverlay = true }: { themeColor?: string; iconUrl?: string; windowControlsOverlay?: boolean }) {
   useEffect(() => {
     const manifest = document.createElement("link"); manifest.rel = "manifest"; manifest.href = "/pwa-manifest.webmanifest"; document.head.append(manifest)
     const theme = document.createElement("meta"); theme.name = "theme-color"; theme.content = themeColor || "#09090b"; document.head.append(theme)
     const icon = document.createElement("link"); icon.rel = "icon"; icon.href = iconUrl || "/logo.png"; document.head.append(icon)
+    const overlayStyle = document.createElement("style"); overlayStyle.textContent = ".pwa-window-controls-overlay .pwa-titlebar{padding-right:max(env(titlebar-area-width,0px),0px);-webkit-app-region:drag}.pwa-window-controls-overlay .pwa-titlebar a,.pwa-window-controls-overlay .pwa-titlebar button,.pwa-window-controls-overlay .pwa-titlebar input,.pwa-window-controls-overlay .pwa-titlebar select{-webkit-app-region:no-drag}"; document.head.append(overlayStyle)
+    const root = document.documentElement
+    const overlay = (navigator as NavigatorWithOverlay).windowControlsOverlay
+    const updateOverlay = () => root.classList.toggle("pwa-window-controls-overlay", Boolean(windowControlsOverlay && overlay?.visible))
+    updateOverlay(); overlay?.addEventListener("geometrychange", updateOverlay)
     if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/pwa-service-worker.js", { scope: "/" }).catch(() => undefined)
-    return () => { manifest.remove(); theme.remove(); icon.remove() }
-  }, [themeColor, iconUrl])
+    return () => { manifest.remove(); theme.remove(); icon.remove(); overlayStyle.remove(); root.classList.remove("pwa-window-controls-overlay"); overlay?.removeEventListener("geometrychange", updateOverlay) }
+  }, [themeColor, iconUrl, windowControlsOverlay])
   return null
 }
 export function apply(ctx: DashboardContext) { ctx.slot("app.after", PWARegistration, "pwa.registration", 100) }

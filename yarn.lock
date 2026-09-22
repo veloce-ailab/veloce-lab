@@ -3286,6 +3286,7 @@ __metadata:
   resolution: "@velocelab/pwa@workspace:packages/pwa"
   dependencies:
     "@velocelab/dashboard": "workspace:*"
+    "@velocelab/topbar": "workspace:*"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -3354,7 +3355,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/topbar@workspace:packages/topbar":
+"@velocelab/topbar@workspace:*, @velocelab/topbar@workspace:packages/topbar":
   version: 0.0.0-use.local
   resolution: "@velocelab/topbar@workspace:packages/topbar"
   dependencies:
