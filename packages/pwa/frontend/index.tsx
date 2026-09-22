@@ -8,7 +8,7 @@ function PWARegistration({ themeColor, iconUrl, windowControlsOverlay = true }: 
     const manifest = document.createElement("link"); manifest.rel = "manifest"; manifest.href = "/pwa-manifest.webmanifest"; document.head.append(manifest)
     const theme = document.createElement("meta"); theme.name = "theme-color"; theme.content = themeColor || "#09090b"; document.head.append(theme)
     const icon = document.createElement("link"); icon.rel = "icon"; icon.href = iconUrl || "/logo.png"; document.head.append(icon)
-    const overlayStyle = document.createElement("style"); overlayStyle.textContent = ".pwa-window-controls-overlay .pwa-titlebar{padding-right:max(env(titlebar-area-width,0px),0px);-webkit-app-region:drag}.pwa-window-controls-overlay .pwa-titlebar a,.pwa-window-controls-overlay .pwa-titlebar button,.pwa-window-controls-overlay .pwa-titlebar input,.pwa-window-controls-overlay .pwa-titlebar select{-webkit-app-region:no-drag}"; document.head.append(overlayStyle)
+    const overlayStyle = document.createElement("style"); overlayStyle.textContent = ".pwa-window-controls-overlay .pwa-titlebar{width:env(titlebar-area-width,100%);margin-left:env(titlebar-area-x,0px);-webkit-app-region:drag}.pwa-window-controls-overlay .pwa-titlebar a,.pwa-window-controls-overlay .pwa-titlebar button,.pwa-window-controls-overlay .pwa-titlebar input,.pwa-window-controls-overlay .pwa-titlebar select{-webkit-app-region:no-drag}"; document.head.append(overlayStyle)
     const root = document.documentElement
     const overlay = (navigator as NavigatorWithOverlay).windowControlsOverlay
     const updateOverlay = () => root.classList.toggle("pwa-window-controls-overlay", Boolean(windowControlsOverlay && overlay?.visible))
