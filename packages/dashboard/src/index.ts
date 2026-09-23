@@ -15,12 +15,10 @@ export interface DashboardConfig {
    * Serve the frontend from source through an embedded Vite server. Defaults to
    * on unless `NODE_ENV` is `production`.
    */
-  dev?: boolean;
 }
 /** Stable URL every built plugin bundle imports the shared runtime from. */
 const runtimePath = "/dashboard-client.js";
 export const config: Schema<DashboardConfig> = Schema.object<DashboardConfig>({
-  dev: Schema.boolean("Serve the frontend from source instead of the build").key("dashboard.config.dev"),
 });
 
 export interface DashboardAsset { id: string; file: string; mime?: string; plugin?: string; data?: Record<string, unknown>; dev?: boolean; }
@@ -56,7 +54,7 @@ const devServers = new WeakMap<Core, DashboardDevServer>();
  * Whether the frontend is served from source. Entry registration happens while
  * plugins apply, which is before any request, so the mode is settled by then.
  */
-let development = process.env.NODE_ENV !== "production";
+let development = process.env.NODE_ENV === "production";
 
 function stateFor(context: Context): DashboardState {
   const core = context.getCore();
@@ -184,7 +182,6 @@ declare module "yumeri" { interface Components { dashboard: DashboardService; } 
 
 export function apply(ctx: Context, pluginConfig?: DashboardConfig) {
   ctx.registerService("dashboard", Dashboard);
-  development = pluginConfig?.dev ?? development;
   const state = stateFor(ctx);
   const core = ctx.getCore();
   // The plugin runs from `dist` after a build and from `src` in development, so
