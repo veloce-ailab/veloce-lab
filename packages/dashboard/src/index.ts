@@ -54,7 +54,7 @@ const devServers = new WeakMap<Core, DashboardDevServer>();
  * Whether the frontend is served from source. Entry registration happens while
  * plugins apply, which is before any request, so the mode is settled by then.
  */
-let development = process.env.NODE_ENV === "production";
+let development = process.env.NODE_ENV !== "production";
 
 function stateFor(context: Context): DashboardState {
   const core = context.getCore();
