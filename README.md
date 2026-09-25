@@ -1,86 +1,49 @@
-Veloce
+Veloce Lab
 
 Your better personal agent
 
 English | [简体中文](README_zh.md)
 
-Veloce is an AI API gateway and marketplace designed for building AI platforms and developer ecosystems, providing a production-ready foundation for AI API management, authentication, billing, and upstream provider management.
+Veloce Lab is a personal assistant harness built on the YumeriJS framework, providing a unified runtime for AI capabilities, plugins, tools, and workflows.
 
 ## Quick Install
 
-The installer is interactive: it checks that git, Node.js and Yarn are usable
-(offering to install whatever is missing), clones this repository into the
-directory you choose, installs the dependencies and starts the server.
-
-Linux, macOS and WSL:
+Download the configuration file into an empty project:
 
 ```bash
-curl -fsSL --connect-timeout 15 --max-time 120 https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh | bash
+curl -fsSL -o yumeri.json https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/yumeri.json
 ```
 
-Windows (PowerShell):
-
-```powershell
-irm https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.ps1 | iex
-```
-
-Downloading the script and running it yourself works the same way and lets you
-read it first (and is the safer choice: `iex` runs the script inside your own
-session):
+Then start Veloce Lab. `npx` is recommended because it does not require Yumeri to
+be installed in the project beforehand:
 
 ```bash
-curl -fsSL --connect-timeout 15 --max-time 120 -o install.sh https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh
-bash install.sh
+npx yumeri@latest -c yumeri.json --auto-install
 ```
+
+Alternatively:
+
+```bash
+# In a project that already has Yumeri installed and uses Yarn
+yarn yumeri -c yumeri.json --auto-install
+
+# In an environment where Yumeri is installed globally
+yumeri -c yumeri.json --auto-install
+```
+
+The `--auto-install` option automatically installs all dependencies declared in
+the configuration. It can be omitted when the dependencies are already
+installed.
+
+On Windows PowerShell, download the configuration with:
 
 ```powershell
-irm -OutFile install.ps1 https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.ps1
-pwsh -File install.ps1
+irm -OutFile yumeri.json https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/yumeri.json
 ```
 
-Options: `--dir <path>` (where to install), `--branch <name>` (branch or tag to
-clone, default `main`), `--port <number>`, `--mode dev|prod` (`dev` starts
-without a build, `prod` builds first), `--no-start` (install only), `--yes`
-(take every default without asking) and `--dry-run` (change nothing). `--help`
-lists them all; on Windows the same options are `-Dir`, `-Branch`, `-Port`,
-`-Mode`, `-NoStart`, `-Yes` and `-DryRun`.
-
-> If `raw.githubusercontent.com` hangs or is unreachable — typical behind a
-> proxy, and in WSL with NAT networking, which cannot use a proxy set up on the
-> Windows side — fetch the script from the jsDelivr mirror instead. The clone
-> itself needs GitHub access too, so pass `--repo` when only a mirror is
-> reachable:
->
-> ```bash
-> curl -fsSL --connect-timeout 15 --max-time 120 -o install.sh \
->   https://cdn.jsdelivr.net/gh/veloce-ailab/veloce-lab@main/scripts/install.sh
-> bash install.sh
-> ```
->
-> In WSL you can also download on the Windows side and run the same file:
-> `irm -OutFile $HOME\install.sh <url>` then `bash /mnt/c/Users/<you>/install.sh`.
-
-The installer also lays down the configuration. `scripts/yumeri.json` is the
-tracked template, and the server reads exactly `<cwd>/yumeri.json`, which is
-**not** tracked — it holds this deployment's own port, database path and
-credentials. So the installer copies the template into place when that file is
-missing, and leaves an existing one alone.
-
-**By default there is no login.** `@velocelab/auth` is not enabled, so every
-request runs as the deployment's built-in administrator (id 0), and whoever can
-reach the port administers it. If other people can reach this machine, set an
-account — the installer asks once during a fresh install, or add the block to
-`yumeri.json` yourself and restart (that plugin creates or overwrites the
-administrator on every start):
-
-```json
-"@velocelab/auth": { "username": "admin", "password": "your-password", "email": "" }
-```
-
-The script checks for what it needs: git, Node.js 22.5 or newer (Node 24 LTS
-recommended — the SQLite plugin uses the built-in `node:sqlite`), and Yarn 4,
-which it gets from corepack so the version pinned in `package.json` is the one
-that runs.
+The project requires Node.js 24 LTS or newer because the SQLite plugin uses the
+built-in `node:sqlite`. Corepack provides the Yarn 4.14.1 version pinned in
+`package.json`.
 
 ## Features
 
@@ -95,88 +58,35 @@ that runs.
 - Image generation support
 - Modern administration dashboard
 
-## Repository Structure
-
-internal/    Internal code
-cmd/         Cli module
-
-## Building
-
-Requirements
-
-- Go (version specified in "go.mod")
-- Node.js
-- Yarn
-
-1. Build the Frontend
-```
-cd web
-yarn install
-yarn build
-```
-
-> Tips: You should put your frontend code in ../web
-2. Build the Backend
-```
-cd ../veloce
-go build
-```
-Or run it directly during development:
-```
-go run .
-```
-After the frontend has been built, the backend will serve the generated frontend assets.
-
 ## Configuration
 
-Copy ".env.example" to ".env" and configure your environment.
-
-```
-APP_ENV=development
-PORT=8080
-DB_DRIVER=sqlite
-DB_PATH=veloce.db
-DB_DSN=
-DB_MAX_OPEN_CONNS=25
-DB_MAX_IDLE_CONNS=10
-DB_CONN_MAX_LIFETIME_SECONDS=3600
-JWT_SECRET=your-secure-jwt-secret-here
-BOOTSTRAP_ADMIN_EMAILS=
-```
-
-`DB_DRIVER` accepts `sqlite` (default), `postgres`, and `mysql`. SQLite uses
-`DB_PATH`. For PostgreSQL or MySQL, set `DB_DSN` (or `DATABASE_URL`) and the
-application will create or migrate its schema at startup.
-
-```dotenv
-# PostgreSQL
-DB_DRIVER=postgres
-DB_DSN=host=127.0.0.1 user=flai password=change-me dbname=flai port=5432 sslmode=disable
-
-# MySQL 8+
-DB_DRIVER=mysql
-DB_DSN=flai:change-me@tcp(127.0.0.1:3306)/flai?charset=utf8mb4&parseTime=True&loc=Local
-```
-
-### Migrate SQLite to PostgreSQL or MySQL
-
-Point `DB_PATH` at the SQLite source file. Set `DB_DRIVER` and `DB_DSN` to the
-empty PostgreSQL or MySQL target database, then run the one-way migration:
+Veloce Lab uses `yumeri.json` as its configuration file. The template is available
+at `scripts/yumeri.json`; download it into the directory where you start the
+service, or create your own configuration file there, then pass it with:
 
 ```bash
-DB_DRIVER=postgres
-DB_PATH=veloce.db
-DB_DSN=host=127.0.0.1 user=flai password=change-me dbname=flai port=5432 sslmode=disable
-go run . --migrate
+yumeri -c yumeri.json
 ```
 
-The source SQLite file is read only. The command refuses a target that already
-contains application tables, copies data in batches, and exits when complete.
-The target settings remain in place for normal startup after migration.
-Dangling model configurations whose channel or model was deleted in SQLite are
-discarded. Other nullable dangling references are cleared, while records with a
-required missing parent are discarded, so PostgreSQL and MySQL can create valid
-foreign keys.
+The file contains the core server settings and the enabled Yumeri plugins,
+including the listening port, database path, storage paths and adapters. Keep
+deployment-specific values in the local `yumeri.json` rather than changing the
+tracked template.
+
+After the service starts, settings supported by the application can also be
+configured through the Web administration console. Startup and plugin loading
+options still need to be defined in `yumeri.json`.
+
+## Repository Structure
+
+```text
+app/         Go-side tools and platform helpers
+packages/    Yumeri core packages, plugins and adapters
+desktop/     Desktop application
+mobile/      Mobile application
+scripts/     Configuration templates and helper scripts
+data/        Runtime data, files and memories
+```
 
 ## License
 

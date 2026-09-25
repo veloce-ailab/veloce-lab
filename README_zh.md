@@ -1,82 +1,50 @@
-Veloce
+Veloce Lab
 
-你的新一代个人助理与AI中转站点
+你的新一代个人助理
 
 [English](README.md) | 简体中文
 
-Veloce 是一款面向 AI 平台与开发者生态打造的 AI API 网关与服务市场。提供完整的 AI API 管理基础能力，包括身份认证、上游渠道管理、API 网关、用户余额、计费、调用日志等功能。
+Veloce Lab 是一个面向个人助理的 harness，基于 YumeriJS 框架构建，为 AI 能力、插件、工具和工作流提供统一的运行环境。
 
 ## 快速安装
 
-安装脚本是交互式的：先确认 git、Node.js、Yarn 可用（缺了会问你要不要装），再把仓库克隆到你指定的目录，
-安装依赖，然后启动。
-
-Linux / macOS / WSL：
+在一个空项目中下载配置文件：
 
 ```bash
-curl -fsSL --connect-timeout 15 --max-time 120 https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh | bash
+curl -fsSL -o yumeri.json https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/yumeri.json
 ```
 
-Windows（PowerShell）：
-
-```powershell
-irm https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.ps1 | iex
-```
-
-也可以先把脚本下载下来再运行（内容一样，方便先看一眼；而且推荐这么做 —— `iex` 是在你自己的
-会话里执行的）：
+然后启动 Veloce Lab。推荐使用 `npx`，它不要求项目预先安装 Yumeri：
 
 ```bash
-curl -fsSL --connect-timeout 15 --max-time 120 -o install.sh https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.sh
-bash install.sh
+npx yumeri@latest -c yumeri.json --auto-install
 ```
+
+也可以使用以下方式：
+
+```bash
+# 在已经安装 Yumeri、并使用 Yarn 作为包管理器的项目中
+yarn yumeri -c yumeri.json --auto-install
+
+# 在已经全局安装 Yumeri 的环境中
+yumeri -c yumeri.json --auto-install
+```
+
+其中 `--auto-install` 会自动安装配置中声明的所有依赖包。如果依赖已经安装，也可以省略该参数。
+
+Windows PowerShell 可以使用以下命令下载配置文件：
 
 ```powershell
-irm -OutFile install.ps1 https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/install.ps1
-pwsh -File install.ps1
+irm -OutFile yumeri.json https://raw.githubusercontent.com/veloce-ailab/veloce-lab/main/scripts/yumeri.json
 ```
 
-可用参数：`--dir <路径>`（装到哪里）、`--branch <分支>`（克隆哪个分支或 tag，默认 `main`）、
-`--port <端口>`、`--mode dev|prod`（`dev` 免构建直接起，`prod` 先构建）、`--no-start`（只装不启动）、
-`--yes`（全部用默认值，不再提问）、`--dry-run`（只打印计划不执行）；`--help` 会列出全部。
-Windows 上对应的是 `-Dir`、`-Branch`、`-Port`、`-Mode`、`-NoStart`、`-Yes`、`-DryRun`。
-
-> 如果 `raw.githubusercontent.com` 卡住或打不开 —— 走代理时常见，WSL 的 NAT 模式更是用不了
-> Windows 那边的代理 —— 改用 jsDelivr 镜像取脚本。克隆本身也要能连 GitHub，只能连镜像时
-> 用 `--repo` 指定：
->
-> ```bash
-> curl -fsSL --connect-timeout 15 --max-time 120 -o install.sh \
->   https://cdn.jsdelivr.net/gh/veloce-ailab/veloce-lab@main/scripts/install.sh
-> bash install.sh
-> ```
->
-> 在 WSL 里也可以直接在 Windows 侧下载再运行同一个文件：
-> `irm -OutFile $HOME\install.sh <url>`，然后 `bash /mnt/c/Users/<你>/install.sh`。
-
-安装脚本还会把配置落地。`scripts/yumeri.json` 是仓库里跟踪的模板，而服务只读 `<cwd>/yumeri.json`
-这一个位置 —— 那份**不跟踪**，因为它是这台部署自己的东西：端口、数据库路径、以及（开了登录时的）账号密码。
-所以脚本在文件不存在时把模板复制过去，已存在则原样保留。
-
-**默认没有登录。** 配置里不启用 `@velocelab/auth`，于是每个请求都按部署内置的管理员（id 0）执行，
-能访问到这个端口的人就是管理员。如果这台机器别人也能访问，就设一个账号 —— 全新安装时脚本会问一次，
-也可以自己往 `yumeri.json` 里加这一段再重启（该插件每次启动都会创建或覆盖这个管理员）：
-
-```json
-"@velocelab/auth": { "username": "admin", "password": "你的密码", "email": "" }
-```
-
-脚本会检查它需要的东西：git、Node.js 22.5 以上（推荐 Node 24 LTS —— SQLite 插件用的是内置的
-`node:sqlite`）、以及 Yarn 4 —— Yarn 通过 corepack 获取，因此跑的必然是 `package.json` 里
-`packageManager` 钉住的那个版本。
+项目需要 Node.js 24 LTS 以上版本，因为 SQLite 插件使用内置的 `node:sqlite`。
+通过 Corepack 可使用 `package.json` 中固定的 Yarn 4.14.1 版本。
 
 ## 功能特性
 
-- OpenAI 兼容 API 网关
 - 多上游渠道管理
 - OIDC 登录认证
-- Passkey（WebAuthn）认证
-- API Key 鉴权
 - 用户余额管理
 - Token 用量统计
 - 基础计费系统
@@ -85,70 +53,59 @@ Windows 上对应的是 `-Dir`、`-Branch`、`-Port`、`-Mode`、`-NoStart`、`-
 
 ## 仓库结构
 
-internal/    内部代码
-cmd/         Cli组件
+app/         Go 侧工具与平台辅助代码
+packages/    Yumeri 核心包、插件与适配器
+desktop/     桌面端应用
+mobile/      移动端应用
+scripts/     配置模板与辅助脚本
+data/        运行时数据、文件与记忆
 
 ## 构建
 
-环境要求
+环境要求：
 
-- Go（版本以 "go.mod" 为准）
-- Node.js
-- Yarn
+- Node.js 24 LTS 以上
+- Corepack
 
-1. 构建前端
-```
-cd web
+启用固定版本的 Yarn 并安装项目依赖：
+
+```bash
+corepack enable
 yarn install
+```
+
+构建所有工作区：
+
+```bash
 yarn build
 ```
-> 提示：前端需要放在相对后端的../web位置
-2. 构建后端
+
+启动生产服务器：
+
+```bash
+yarn start
 ```
-cd ../community
-go build
+
+开发时使用开发服务器：
+
+```bash
+yarn dev
 ```
-开发时可直接运行：
-```
-go run .
-```
-完成前端构建后，后端会自动提供构建好的前端静态资源。
 
 ## 配置
 
-将 ".env.example" 复制为 ".env"，并根据实际环境修改配置：
-```
-APP_ENV=development
-PORT=8080
-DB_DRIVER=sqlite
-DB_PATH=veloce.db
-DB_DSN=
-DB_MAX_OPEN_CONNS=25
-DB_MAX_IDLE_CONNS=10
-DB_CONN_MAX_LIFETIME_SECONDS=3600
-JWT_SECRET=your-secure-jwt-secret-here
-OIDC_ISSUER=https://your-oidc-provider.com
-OIDC_CLIENT_ID=your-client-id
-OIDC_CLIENT_SECRET=your-client-secret
-OIDC_REDIRECT_URL=http://localhost:8080/auth/callback
-BOOTSTRAP_ADMIN_OIDC_SUBS=
-BOOTSTRAP_ADMIN_EMAILS=
+Veloce Lab 使用 `yumeri.json` 作为配置文件。模板位于 `scripts/yumeri.json`，
+将它下载到启动服务的目录中，或在该目录创建自己的配置文件，然后通过以下命令启动：
+
+```bash
+yumeri -c yumeri.json
 ```
 
-企业功能通过管理后台“运行模式”中的“企业模式”手动开启，不使用环境变量。一套部署只对应一个企业；切换回运营模式或自用模式时企业数据会保留，但企业接口停止启用。
+该文件包含核心服务设置和启用的 Yumeri 插件，包括监听端口、数据库路径、存储路径和适配器等。
+部署专用的配置请保存在本地 `yumeri.json` 中，不要直接修改仓库里跟踪的模板。
 
-`DB_DRIVER` 支持 `sqlite`（默认）、`postgres` 与 `mysql`。SQLite 使用
-`DB_PATH`；PostgreSQL/MySQL 使用 `DB_DSN`（也支持 `DATABASE_URL`），应用启动时会自动创建或迁移表结构。
-
-```dotenv
-# PostgreSQL
-DB_DRIVER=postgres
-DB_DSN=host=127.0.0.1 user=flai password=change-me dbname=flai port=5432 sslmode=disable
-
-# MySQL 8+
-DB_DRIVER=mysql
-DB_DSN=flai:change-me@tcp(127.0.0.1:3306)/flai?charset=utf8mb4&parseTime=True&loc=Local
-```
+服务启动后，应用支持的设置也可以通过 Web 管理控制台进行配置；启动参数和插件加载配置仍需要在
+`yumeri.json` 中定义。
 ## 许可证
 
 本项目采用AGPL许可证，详情请查看仓库中 "LICENSE" 文件。
