@@ -23,6 +23,7 @@ import "@velocelab/dashboard";
 import "@velocelab/file";
 import "@velocelab/database-core";
 import { ensureTables } from "./tables.js";
+import { compactContextMessages, DEFAULT_MAX_CONTEXT_TOKENS } from "./context-budget.js";
 
 export * from "./types.js";
 
@@ -1498,7 +1499,11 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         const channel = selected.channel;
         const upstreamModel =
           String(selected.config.upstream_model_name ?? "").trim() || modelName;
-        const messages = [
+        const maxContextTokens = Math.max(
+          1,
+          Number(selected.config.max_context_tokens) || DEFAULT_MAX_CONTEXT_TOKENS,
+        );
+        let messages = [
           ...prior.map((message: any) => ({
             role: message.role,
             content: message.content,
@@ -1568,6 +1573,22 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             description: String(tool.description ?? ""),
             parameters: tool.parameters ?? {},
           }));
+        const context = compactContextMessages(
+          messages,
+          maxContextTokens,
+          systemPrompt,
+          toolPayload,
+          maxTokens,
+          input.autoCompressContext !== false,
+        );
+        messages = context.messages as typeof messages;
+        if (context.compressed) {
+          emit("status", {
+            message: "context_compressed",
+            estimatedTokens: context.estimatedTokens,
+            maxContextTokens,
+          });
+        }
         const request = adapters.build({
           channelType: channel.type,
           model: upstreamModel,

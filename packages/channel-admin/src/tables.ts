@@ -41,6 +41,7 @@ export async function ensureTables(db: Database): Promise<void> {
       channel_id: "integer",
       model_id: "integer",
       upstream_model_name: "string",
+      max_context_tokens: { type: "integer", initial: 1000000 },
       input_price: { type: "decimal", initial: 0 },
       output_price: { type: "decimal", initial: 0 },
       enabled: "boolean",

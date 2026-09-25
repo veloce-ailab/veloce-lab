@@ -80,6 +80,7 @@ interface ChannelModelConfig {
   model_id: number
   model_name: string
   upstream_model_name: string
+  max_context_tokens: number
   provider: string
   provider_icon_url: string
   enabled: boolean
@@ -789,6 +790,14 @@ function ChannelModelDialog({
               placeholder={draft.model_name || "gpt-4o"}
             />
           </FieldLabel>
+          <FieldLabel label={copy.maxContextTokens}>
+            <Input
+              type="number"
+              min={1}
+              value={draft.max_context_tokens ?? 1000000}
+              onChange={(event) => setDraft({ ...draft, max_context_tokens: Number(event.target.value) || 1000000 })}
+            />
+          </FieldLabel>
           <FieldLabel label={copy.provider}>
             <Select value={String((providerMode) || "__shadcn_empty__")} onValueChange={(value) => {
                 const providerID = (value === "__shadcn_empty__" ? "" : value)
@@ -1120,6 +1129,7 @@ function emptyChannelModel(channelID?: number): Partial<ChannelModelConfig> {
     model_id: 0,
     model_name: "",
     upstream_model_name: "",
+    max_context_tokens: 1000000,
     provider: "",
     provider_icon_url: "",
     enabled: true,
@@ -1132,6 +1142,7 @@ function channelModelPayload(model: Partial<ChannelModelConfig>) {
     model_id: Number(model.model_id || 0),
     model_name: model.model_name || "",
     upstream_model_name: model.upstream_model_name || model.model_name || "",
+    max_context_tokens: Math.max(1, Number(model.max_context_tokens) || 1000000),
     provider: model.provider || "",
     provider_icon_url: model.provider_icon_url || "",
     enabled: model.enabled ?? true,
@@ -1558,6 +1569,7 @@ const zhChannelCopy = {
   addChannelModel: "添加模型配置",
   editChannelModel: "编辑模型配置",
   upstreamModelName: "上级模型名称",
+  maxContextTokens: "最大上下文 Token 数",
   provider: "供应商",
   autoProvider: "自动识别",
   customProvider: "自定义供应商",
@@ -1630,6 +1642,7 @@ const enChannelCopy: typeof zhChannelCopy = {
   addChannelModel: "Add model config",
   editChannelModel: "Edit model config",
   upstreamModelName: "Upstream model name",
+  maxContextTokens: "Maximum context tokens",
   provider: "Provider",
   autoProvider: "Auto detect",
   customProvider: "Custom provider",

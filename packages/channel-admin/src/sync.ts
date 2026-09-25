@@ -570,6 +570,7 @@ export async function applyChannelModels(
         channel_id: channel.id,
         model_id: globalModel.id,
         upstream_model_name: modelName,
+        max_context_tokens: 1000000,
         input_price: "0",
         output_price: "0",
         enabled: true,

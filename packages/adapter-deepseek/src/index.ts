@@ -29,6 +29,9 @@ function build(input: AdapterInput) {
     payload.thinking = { type: "enabled" };
     payload.reasoning_effort =
       match[2] === "thinking" || match[2] === "reasoner" ? "medium" : match[2];
+  } else if (input.reasoningEffort?.trim()) {
+    payload.thinking = { type: "enabled" };
+    payload.reasoning_effort = input.reasoningEffort.trim();
   }
   return {
     urlPath: input.model.includes("claude")

@@ -145,6 +145,7 @@ export async function apply(ctx: Context) {
     const row = await db.create("model_configs", {
       channel_id: Number(id), model_id: Number(input.model_id ?? 0),
       upstream_model_name: String(input.upstream_model_name ?? input.model_name ?? ""),
+      max_context_tokens: Math.max(1, Number(input.max_context_tokens ?? 1000000) || 1000000),
       input_price: String(input.input_price ?? "0"), output_price: String(input.output_price ?? "0"),
       enabled: input.enabled !== false, created_at: now, updated_at: now,
     } as any);
@@ -154,7 +155,7 @@ export async function apply(ctx: Context) {
   ctx.route("/api/channel-models/:id").methods("PUT").action(async (session, _params, id) => {
     if (!admin(session)) return;
     const input = await body(session);
-    const updates = Object.fromEntries(["upstream_model_name", "input_price", "output_price", "enabled"].filter((key) => input[key] !== undefined).map((key) => [key, input[key]]));
+    const updates = Object.fromEntries(["upstream_model_name", "input_price", "output_price", "enabled", "max_context_tokens"].filter((key) => input[key] !== undefined).map((key) => [key, key === "max_context_tokens" ? Math.max(1, Number(input[key]) || 1000000) : input[key]]));
     await db.update("model_configs", { id: Number(id) }, { ...updates, updated_at: new Date().toISOString() } as any);
     session.respond(await db.selectOne("model_configs", { id: Number(id) }), "json");
   });

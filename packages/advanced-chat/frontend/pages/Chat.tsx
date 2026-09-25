@@ -681,6 +681,8 @@ export default function Chat() {
   const [regeneratingTitleSessionID, setRegeneratingTitleSessionID] = useState("")
   const [renamingSession, setRenamingSession] = useState<ChatSession | null>(null)
   const [renamedTitle, setRenamedTitle] = useState("")
+  const [isCustomReasoningDialogOpen, setIsCustomReasoningDialogOpen] = useState(false)
+  const [customReasoningDraft, setCustomReasoningDraft] = useState("")
   const [isSending, setIsSending] = useState(false)
   const [isStreamActive, setIsStreamActive] = useState(false)
   const [isStopping, setIsStopping] = useState(false)
@@ -1962,6 +1964,20 @@ export default function Chat() {
     }
   }
 
+  const openCustomReasoningDialog = () => {
+    setCustomReasoningDraft(currentSession?.reasoning_effort || "")
+    setIsCustomReasoningDialogOpen(true)
+  }
+
+  const saveCustomReasoning = () => {
+    const value = customReasoningDraft.trim()
+    if (!currentSession || !value) {
+      return
+    }
+    updateSession(currentSession.id, (session) => ({ ...session, reasoning_effort: value }), { persist: true })
+    setIsCustomReasoningDialogOpen(false)
+  }
+
   const autoLocalAssistantSessionIDsRef = useRef(new Set<string>())
 
   useEffect(() => {
@@ -3238,12 +3254,19 @@ export default function Chat() {
       { value: "low", label: copy.reasoningLow },
       { value: "medium", label: copy.reasoningMedium },
       { value: "high", label: copy.reasoningHigh },
+      { value: "max", label: copy.reasoningMax },
     ]
     const selectedReasoning = currentSession?.reasoning_effort || ""
-    const reasoningLabel = reasoningOptions.find((option) => option.value === selectedReasoning)?.label || copy.reasoningDefault
+    const isKnownReasoning = reasoningOptions.some((option) => option.value === selectedReasoning)
+    const reasoningSelection = isKnownReasoning ? (selectedReasoning || "__default__") : "__custom__"
+    const reasoningLabel = reasoningOptions.find((option) => option.value === selectedReasoning)?.label || (selectedReasoning ? `${copy.reasoningCustom}: ${selectedReasoning}` : copy.reasoningDefault)
     const modelLabel = activeModelName || copy.selectModel
     const controlLabel = `${modelLabel} ${reasoningLabel}`
     const selectReasoning = (value: string) => {
+      if (value === "__custom__") {
+        openCustomReasoningDialog()
+        return
+      }
       if (currentSession) {
         updateSession(currentSession.id, (session) => ({ ...session, reasoning_effort: value }), { persist: true })
       }
@@ -3273,8 +3296,9 @@ export default function Chat() {
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="min-h-8 text-xs">{copy.reasoningEffort}</DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-44">
-              <DropdownMenuRadioGroup value={selectedReasoning || "__default__"} onValueChange={(value) => selectReasoning(value === "__default__" ? "" : value)}>
+              <DropdownMenuRadioGroup value={reasoningSelection} onValueChange={(value) => selectReasoning(value === "__default__" ? "" : value)}>
                 {reasoningOptions.map((option) => <DropdownMenuRadioItem key={option.value || "default"} value={option.value || "__default__"} className="min-h-8 text-xs">{option.label}</DropdownMenuRadioItem>)}
+                <DropdownMenuRadioItem value="__custom__" className="min-h-8 text-xs">{copy.reasoningCustom}</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
@@ -3644,6 +3668,22 @@ export default function Chat() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenamingSession(null)}>{language === "zh" ? "取消" : "Cancel"}</Button>
             <Button onClick={saveSessionTitle} disabled={!renamedTitle.trim()}>{language === "zh" ? "保存" : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isCustomReasoningDialogOpen} onOpenChange={setIsCustomReasoningDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{copy.reasoningCustomPrompt}</DialogTitle></DialogHeader>
+          <Input
+            autoFocus
+            value={customReasoningDraft}
+            onChange={(event) => setCustomReasoningDraft(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") saveCustomReasoning() }}
+            placeholder={copy.reasoningCustomPlaceholder}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCustomReasoningDialogOpen(false)}>{language === "zh" ? "取消" : language === "ja" ? "キャンセル" : "Cancel"}</Button>
+            <Button onClick={saveCustomReasoning} disabled={!customReasoningDraft.trim()}>{language === "zh" ? "保存" : language === "ja" ? "保存" : "Save"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -4644,6 +4684,10 @@ export default function Chat() {
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">{copy.reasoningEffort}</span>
                     <Select value={String((currentSession?.reasoning_effort || "") || "__shadcn_empty__")} onValueChange={(value) => {
+                        if (value === "__custom__") {
+                          openCustomReasoningDialog()
+                          return
+                        }
                         if (currentSession) {
                           updateSession(currentSession.id, (session) => ({ ...session, reasoning_effort: (value === "__shadcn_empty__" ? "" : value) }), { persist: true })
                         }
@@ -4653,6 +4697,8 @@ export default function Chat() {
                       <SelectItem value="low">{copy.reasoningLow}</SelectItem>
                       <SelectItem value="medium">{copy.reasoningMedium}</SelectItem>
                       <SelectItem value="high">{copy.reasoningHigh}</SelectItem>
+                      <SelectItem value="max">{copy.reasoningMax}</SelectItem>
+                      <SelectItem value="__custom__">{copy.reasoningCustom}</SelectItem>
                     </SelectContent></Select>
                   </label>
                   <label className="space-y-1 text-sm">
@@ -8386,6 +8432,10 @@ const chatCopyKeys = {
   reasoningLow: "chat.reasoningLow",
   reasoningMedium: "chat.reasoningMedium",
   reasoningHigh: "chat.reasoningHigh",
+  reasoningMax: "chat.reasoningMax",
+  reasoningCustom: "chat.reasoningCustom",
+  reasoningCustomPrompt: "chat.reasoningCustomPrompt",
+  reasoningCustomPlaceholder: "chat.reasoningCustomPlaceholder",
   autoCompressContext: "chat.autoCompressContext",
   autoCompressContextHint: "chat.autoCompressContextHint",
   addedAgent: "chat.addedAgent",
