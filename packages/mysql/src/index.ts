@@ -35,6 +35,7 @@ async function withConnection<T>(
 }
 
 export async function apply(ctx: Context, pluginConfig: MysqlConfig) {
+  ctx.i18n({ mysql: { config: { host: { zh: "MySQL 主机", en: "MySQL host", ja: "MySQL ホスト" }, port: { zh: "MySQL 端口", en: "MySQL port", ja: "MySQL ポート" }, user: { zh: "MySQL 用户", en: "MySQL user", ja: "MySQL ユーザー" }, password: { zh: "MySQL 密码", en: "MySQL password", ja: "MySQL パスワード" }, database: { zh: "MySQL 数据库", en: "MySQL database", ja: "MySQL データベース" } } } });
   const pool = createPool({ ...pluginConfig, waitForConnections: true });
   ctx.registerComponent(
     "database",

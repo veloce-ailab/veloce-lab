@@ -33,6 +33,7 @@ function resolveFile(root: string, name: string) {
 }
 
 export async function apply(ctx: Context, pluginConfig: FileOptions) {
+  ctx.i18n({ file: { config: { root: { zh: "文件存储根目录", en: "File storage root", ja: "ファイルストレージのルート" } } } });
   const root = path.resolve(pluginConfig.root);
   await fs.mkdir(root, { recursive: true });
   const service: FileService = {

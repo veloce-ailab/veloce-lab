@@ -153,6 +153,16 @@ async function readBody(session: Session) {
 }
 
 export async function apply(ctx: Context, config: AuthConfig) {
+  ctx.i18n({ auth: { config: {
+    username: { zh: "管理员账号，启动时创建或覆盖", en: "Administrator username", ja: "管理者ユーザー名" },
+    password: { zh: "管理员密码，每次启动都覆盖", en: "Administrator password", ja: "管理者パスワード" },
+    email: { zh: "管理员邮箱", en: "Administrator email", ja: "管理者メールアドレス" },
+    passwordLoginEnabled: { zh: "允许账号密码登录", en: "Allow password login", ja: "パスワードログインを許可" },
+    passwordRegistrationEnabled: { zh: "允许账号密码自助注册", en: "Allow password registration", ja: "パスワード登録を許可" },
+    registrationMode: { zh: "允许自助注册的方式", en: "Registration mode", ja: "登録モード" },
+    allowedLoginMethods: { zh: "允许登录方式", en: "Allowed login methods", ja: "許可するログイン方法" },
+    allowedRegistrationProviders: { zh: "允许注册的 Provider", en: "Providers allowed to register", ja: "登録を許可する Provider" },
+  } } });
   const username = String(config?.username ?? "").trim();
   const password = String(config?.password ?? "");
   const email = String(config?.email ?? "").trim().toLowerCase() || `${username || "admin"}@localhost`;

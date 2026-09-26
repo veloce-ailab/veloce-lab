@@ -24,6 +24,7 @@ function sqliteParams(params: unknown[]): any[] {
 }
 
 export async function apply(ctx: Context, pluginConfig: SqliteConfig) {
+  ctx.i18n({ sqlite: { config: { path: { zh: "SQLite 数据库路径", en: "SQLite database path", ja: "SQLite データベースパス" } } } });
   const file = path.resolve(pluginConfig.path);
   await mkdir(path.dirname(file), { recursive: true });
 

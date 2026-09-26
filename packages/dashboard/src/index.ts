@@ -181,6 +181,7 @@ export class Dashboard extends Service implements DashboardService {
 declare module "yumeri" { interface Components { dashboard: DashboardService; } }
 
 export function apply(ctx: Context, pluginConfig?: DashboardConfig) {
+  ctx.i18n({ dashboard: { config: { dev: { zh: "从源码提供前端，而不是使用构建产物", en: "Serve the frontend from source instead of the build", ja: "ビルドではなくソースからフロントエンドを配信" } } } });
   ctx.registerService("dashboard", Dashboard);
   const state = stateFor(ctx);
   const core = ctx.getCore();

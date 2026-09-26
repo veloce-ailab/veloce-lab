@@ -51,6 +51,7 @@ function memoryPath(root: string, directories: string[], id: string) {
   return target;
 }
 export async function apply(ctx: Context, cfg: MemoryConfig) {
+  ctx.i18n({ memory: { config: { root: { zh: "记忆存储根目录", en: "Memory storage root", ja: "メモリーストレージのルート" } } } });
   ctx.component.dashboard.addEntry({
     dev: new URL("../frontend/index.tsx", import.meta.url).pathname,
     prod: new URL("./frontend/memory.js", import.meta.url).pathname,

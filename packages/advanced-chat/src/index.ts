@@ -458,6 +458,14 @@ function resolveList(
 const inFlightRuns = new Map<string, AbortController>();
 
 export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
+  ctx.i18n({ "advanced-chat": { config: {
+    connectorOnlineWindowSeconds: { zh: "连接器在线窗口（秒）", en: "Connector online window seconds", ja: "コネクターオンライン時間（秒）" },
+    retryAttempts: { zh: "聊天重试次数", en: "Chat retry attempts", ja: "チャット再試行回数" },
+    assistantRetryAttempts: { zh: "助手重试次数", en: "Assistant retry attempts", ja: "アシスタント再試行回数" },
+    retryDelayMs: { zh: "聊天重试延迟（毫秒）", en: "Chat retry delay milliseconds", ja: "チャット再試行遅延（ミリ秒）" },
+    retryMaxDelayMs: { zh: "聊天最大重试延迟（毫秒）", en: "Chat retry maximum delay milliseconds", ja: "チャット最大再試行遅延（ミリ秒）" },
+    requestTimeoutMs: { zh: "请求超时（毫秒）", en: "Request timeout milliseconds", ja: "リクエストタイムアウト（ミリ秒）" },
+  } } });
   const dashboard = ctx.component.dashboard;
   const packageRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),

@@ -36,6 +36,7 @@ interface StoredValue {
 }
 
 export function apply(ctx: Context, pluginConfig: CacheConfig) {
+  ctx.i18n({ cache: { config: { defaultTtlMs: { zh: "默认内存缓存 TTL（毫秒）", en: "Default in-memory cache TTL milliseconds", ja: "既定のメモリキャッシュ TTL（ミリ秒）" }, billingBalanceTtlMs: { zh: "计费余额缓存 TTL（毫秒）", en: "Billing balance cache TTL milliseconds", ja: "請求残高キャッシュ TTL（ミリ秒）" }, maxEntries: { zh: "最大内存缓存条目数", en: "Maximum in-memory cache entries", ja: "メモリキャッシュ最大件数" } } } });
   const defaultTtlMs = Math.max(0, Number(pluginConfig.defaultTtlMs) || 0);
   const maxEntries = Math.max(1, Number(pluginConfig.maxEntries) || 10000);
   const billingBalanceTtlMs = Math.max(0, Number(pluginConfig.billingBalanceTtlMs) || 600000);

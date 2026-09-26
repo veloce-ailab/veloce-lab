@@ -137,6 +137,7 @@ function consume(
 }
 
 export function apply(ctx: Context, pluginConfig: RateLimitConfig) {
+  ctx.i18n({ ratelimit: { config: { requestsPerMinute: { zh: "每分钟请求数", en: "Requests per minute", ja: "1分あたりのリクエスト数" }, burst: { zh: "突发请求数", en: "Burst size", ja: "バーストサイズ" } } } });
   const entries = new Map<string, Entry>();
   const userChannelEntries = new Map<string, Entry>();
 

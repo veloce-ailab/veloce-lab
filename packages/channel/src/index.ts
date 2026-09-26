@@ -115,6 +115,10 @@ function summary(provider: string, payload: unknown): WebhookSummary {
 }
 
 export async function apply(ctx: Context, pluginConfig: ChannelConfig) {
+  ctx.i18n({ channel: { config: {
+    contextMessageCount: { zh: "默认上下文消息数", en: "Default context message count", ja: "既定のコンテキストメッセージ数" },
+    webhookPayloadMaxBytes: { zh: "Webhook 最大负载字节数", en: "Maximum webhook payload bytes", ja: "Webhook 最大ペイロードバイト数" },
+  } } });
   const db = ctx.component.database;
   await db.extend("message_channel_integrations", {
     id: { type: "integer", autoIncrement: true }, user_id: { type: "integer", nullable: false }, name: { type: "string", nullable: false }, provider: { type: "string", nullable: false }, bot_token: { type: "text", nullable: false }, webhook_secret: { type: "string", nullable: false }, enabled: { type: "boolean", initial: true }, default_model: "string", created_at: "timestamp", updated_at: "timestamp",

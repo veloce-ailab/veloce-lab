@@ -25,6 +25,7 @@ function placeholders(sql: string) {
 }
 
 export async function apply(ctx: Context, pluginConfig: PgsqlConfig) {
+  ctx.i18n({ pgsql: { config: { host: { zh: "PostgreSQL 主机", en: "PostgreSQL host", ja: "PostgreSQL ホスト" }, port: { zh: "PostgreSQL 端口", en: "PostgreSQL port", ja: "PostgreSQL ポート" }, user: { zh: "PostgreSQL 用户", en: "PostgreSQL user", ja: "PostgreSQL ユーザー" }, password: { zh: "PostgreSQL 密码", en: "PostgreSQL password", ja: "PostgreSQL パスワード" }, database: { zh: "PostgreSQL 数据库", en: "PostgreSQL database", ja: "PostgreSQL データベース" } } } });
   const pool = new Pool(pluginConfig);
   await pool.query("SELECT 1");
   ctx.registerComponent(
