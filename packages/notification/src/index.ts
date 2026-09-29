@@ -1,12 +1,14 @@
-import { Context } from "yumeri";
+import { Context, Core, Service, Session } from "yumeri";
 import type { PWAService } from "@velocelab/pwa";
 import "@velocelab/dashboard";
 import "@velocelab/pwa";
 export const depend = ["dashboard", "pwa"];
 export const provide = ["notification"];
 export interface NotificationInput { userId: number; title: string; body?: string; tag?: string; url?: string }
-export interface NotificationService { send(input: NotificationInput): Promise<void> }
+export interface NotificationService { send(input: NotificationInput): Promise<void>; take(userId: number): NotificationInput[] }
 declare module "yumeri" { interface Components { notification: NotificationService } }
+const queues = new WeakMap<Core, Map<number, NotificationInput[]>>();
+const initialized = new WeakSet<Core>();
 const workerScript = `
 self.addEventListener("message", (event) => {
   const data = event.data;
@@ -32,4 +34,24 @@ self.addEventListener("notificationclick", (event) => {
   }));
 });
 `;
-export function apply(ctx: Context) { const pwa = ctx.component.pwa as PWAService; const unregisterWorkerScript = pwa.registerWorkerScript("notification", workerScript); ctx.affect(unregisterWorkerScript); ctx.registerComponent("notification", { async send() {} }); ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/notification.js", import.meta.url).pathname, plugin: "notification" }); }
+export class Notification extends Service implements NotificationService {
+  private readonly pending: Map<number, NotificationInput[]>;
+  constructor(ctx: Context) { super(ctx); const core = ctx.getCore(); this.pending = queues.get(core) ?? new Map(); queues.set(core, this.pending); }
+  async send(input: NotificationInput) { this.pending.set(input.userId, [...(this.pending.get(input.userId) ?? []), input].slice(-20)); }
+  take(userId: number) { const result = this.pending.get(userId) ?? []; this.pending.delete(userId); return result; }
+}
+export function apply(ctx: Context) {
+  const core = ctx.getCore();
+  if (initialized.has(core)) return;
+  const pwa = ctx.component.pwa as PWAService;
+  const unregisterWorkerScript = pwa.registerWorkerScript("notification", workerScript); ctx.affect(unregisterWorkerScript);
+  if (!(ctx.getCore() as Core & { services: Record<string, unknown> }).services.notification) ctx.registerService("notification", Notification);
+  const notification = (ctx.component.notification as NotificationService | undefined) ?? new Notification(ctx);
+  ctx.route("/api/user/notifications/pending").methods("GET").action(async (session: Session) => {
+    const userId = (session.properties.user as { id?: number } | undefined)?.id;
+    if (userId) session.respond({ notifications: notification.take(userId) }, "json");
+  });
+  ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/notification.js", import.meta.url).pathname, plugin: "notification" });
+  initialized.add(core);
+  ctx.affect(() => { initialized.delete(core); });
+}

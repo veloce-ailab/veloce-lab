@@ -26,7 +26,8 @@ export function notificationEnabled(kind: "taskCompleted" | "connectorApproval")
 }
 
 export async function sendWebNotification(input: { title: string; body: string; tag: string; url?: string }) {
-  if (typeof window === "undefined" || !notificationEnabled(input.tag.startsWith("connector-") ? "connectorApproval" : "taskCompleted") || Notification.permission !== "granted" || !("serviceWorker" in navigator)) return
+  const enabled = input.tag.startsWith("message-") ? getNotificationPreferences().enabled : notificationEnabled(input.tag.startsWith("connector-") ? "connectorApproval" : "taskCompleted")
+  if (typeof window === "undefined" || !enabled || Notification.permission !== "granted" || !("serviceWorker" in navigator)) return
   const registration = await navigator.serviceWorker.ready
   registration.active?.postMessage({ type: "veloce.notification", ...input })
 }

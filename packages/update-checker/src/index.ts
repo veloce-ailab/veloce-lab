@@ -24,6 +24,7 @@ async function npmMetadata(cfg: UpdateCheckerConfig, name: string) { const respo
 function sortVersions(values: string[]) { return [...new Set(values)].sort((left, right) => right.localeCompare(left, undefined, { numeric: true, sensitivity: "base" })) }
 export async function apply(ctx: Context, cfg: UpdateCheckerConfig) {
   const db = ctx.component.database as Database;
+  (ctx.component.message as import("@velocelab/message").MessageService).registerType(ctx, { id: "update-checker:plugin-update", plugin: "update-checker", label: "插件更新" });
   await db.extend("user_plugin_version_pins", { id: { type: "integer", autoIncrement: true }, user_id: { type: "integer", nullable: false }, plugin_name: { type: "string", nullable: false }, version: { type: "string", nullable: false }, updated_at: "timestamp" }, { unique: [["user_id", "plugin_name"]] });
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/update-checker.js", import.meta.url).pathname, plugin: "update-checker" });
   const checkConfiguredPlugins = async () => {
@@ -31,7 +32,7 @@ export async function apply(ctx: Context, cfg: UpdateCheckerConfig) {
     const names = Object.keys(loader?.config?.plugins ?? {}).map((name) => name.replace(/^~/, "")).filter(validPackageName);
     const updates = await Promise.all(names.map(async (name) => { const currentVersion = await installedVersion(name); if (!currentVersion) return null; try { const metadata = await npmMetadata(cfg, name); const availableVersion = String(metadata?.["dist-tags"]?.latest ?? ""); return availableVersion && availableVersion !== currentVersion ? { name, currentVersion, availableVersion } : null; } catch { return null; } }));
     const users = await (db as any).select("users", {}) as Array<{ id?: number }>;
-    for (const update of updates.filter(Boolean) as Array<{ name:string; currentVersion:string; availableVersion:string }>) for (const account of users) if (account.id) await ctx.component.message.send({ userId: account.id, dedupeKey: `plugin-update:${update.name}`, icon: "package-up", title: `${update.name} ${update.availableVersion} is available`, subtitle: `Current version ${update.currentVersion}`, source: "update-checker", action: { href: "/settings/plugin-updates" } });
+    for (const update of updates.filter(Boolean) as Array<{ name:string; currentVersion:string; availableVersion:string }>) for (const account of users) if (account.id) await ctx.component.message.send({ userId: account.id, type: "update-checker:plugin-update", dedupeKey: `plugin-update:${update.name}`, icon: "bell", title: `${update.name} ${update.availableVersion} is available`, subtitle: `Current version ${update.currentVersion}`, action: { href: "/settings/plugin-updates" } });
   };
   const interval = Math.max(0, Number(cfg.checkIntervalMinutes) || 0);
   if (interval > 0) { void checkConfiguredPlugins(); setInterval(() => void checkConfiguredPlugins(), interval * 60 * 1000); }
