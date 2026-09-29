@@ -2,6 +2,7 @@ import { Bell, Trash2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import type { DashboardContext } from "@velocelab/dashboard/frontend"
 import { api, Button, Sheet, SheetContent, SheetHeader, SheetTitle } from "@velocelab/dashboard/frontend"
+import MessageSettings from "./page"
 import { sendWebNotification } from "@velocelab/dashboard/frontend"
 
 type Message = { id:number; icon?:string; title:string; subtitle?:string; source:string; read:boolean; action?:{href?:string; method?:string; body?:Record<string,unknown>} }
@@ -20,5 +21,6 @@ export function MessageButton() {
 }
 export function apply(ctx: DashboardContext) {
   ctx.slot("topbar.actions", MessageButton, "message.button", 30)
+  ctx.page({ frame: "settings", path: "/settings/messages", component: MessageSettings, nav: { id: "message.settings", label: "消息", icon: Bell, order: 35, scope: "settings", group: "general" } })
 }
 export default apply
