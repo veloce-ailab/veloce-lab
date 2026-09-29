@@ -99,7 +99,6 @@ export default function TopBar({ leading, actions }: TopBarProps) {
           </div>
         )}
         {actions}
-        <DashboardSlot name="header.actions" />
         <ThemeSwitcher />
         <LanguageSwitcher compact />
         {accountPath ? (

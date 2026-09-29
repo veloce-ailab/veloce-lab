@@ -122,16 +122,10 @@ export default function ChatWorkspace() {
           frame: "chat",
           leading: <SidebarTrigger className="h-8 w-8" aria-label={t("advancedChat.openMenu")} />,
           actions: (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setIsGlobalSearchOpen(true)}
-              aria-label={language === "zh" ? "搜索会话" : "Search sessions"}
-              title={language === "zh" ? "搜索会话" : "Search sessions"}
-            >
-              <Search size={17} />
-            </Button>
+            <>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsGlobalSearchOpen(true)} aria-label={language === "zh" ? "搜索会话" : "Search sessions"} title={language === "zh" ? "搜索会话" : "Search sessions"}><Search size={17} /></Button>
+              <DashboardSlot name="topbar.actions" className="flex items-center gap-3" />
+            </>
           ),
         }}
       />

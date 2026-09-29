@@ -46,6 +46,7 @@ export function Layout({ children }: { children?: ReactNode }) {
               <Menu size={18} />
             </Button>
           ),
+          actions: <DashboardSlot name="topbar.actions" className="flex items-center gap-3" />,
         }}
       />
       <DashboardSlot name="header.after" />
