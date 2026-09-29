@@ -1,12 +1,15 @@
 import { Bell, Trash2 } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import type { DashboardContext } from "@velocelab/dashboard/frontend"
 import { api, Button, Sheet, SheetContent, SheetHeader, SheetTitle } from "@velocelab/dashboard/frontend"
+import { sendWebNotification } from "@velocelab/dashboard/frontend"
 
 type Message = { id:number; icon?:string; title:string; subtitle?:string; source:string; read:boolean; action?:{href?:string; method?:string; body?:Record<string,unknown>} }
 export function MessageButton() {
   const [open,setOpen]=useState(false); const [messages,setMessages]=useState<Message[]>([])
-  const load=async()=>{try{const response=await api.get("/user/messages"); setMessages(response.data.messages||[])}catch{setMessages([])}}
+  const [seen,setSeen]=useState("")
+  const load=async()=>{try{const response=await api.get("/user/messages"); const next=response.data.messages||[]; const newest=next.find((message:Message)=>!message.read); if (newest && newest.id !== Number(seen)) { setSeen(String(newest.id)); void sendWebNotification({ title: newest.title, body: newest.subtitle || newest.source, tag: `message-${newest.id}`, url: newest.action?.href || "/" }) } setMessages(next)}catch{setMessages([])}}
+  useEffect(() => { const timer = window.setInterval(() => void load(), 60000); return () => window.clearInterval(timer) }, [])
   const activate=async(message:Message)=>{await api.post("/user/messages/read",{id:message.id}); setOpen(false); if(message.action?.href) window.location.assign(message.action.href)}
   const remove=async(id:number)=>{await api.post("/user/messages/delete",{id}); await load()}
   const icon=(_message:Message)=><Bell size={16}/>

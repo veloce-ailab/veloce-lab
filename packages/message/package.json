@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@velocelab/dashboard": "^0.1.1",
-    "@velocelab/database-core": "^0.1.1"
+    "@velocelab/database-core": "^0.1.1",
+    "@velocelab/notification": "^0.1.1"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

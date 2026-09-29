@@ -3239,6 +3239,7 @@ __metadata:
   dependencies:
     "@velocelab/dashboard": "npm:^0.1.1"
     "@velocelab/database-core": "npm:^0.1.1"
+    "@velocelab/notification": "npm:^0.1.1"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -3267,7 +3268,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/notification@workspace:packages/notification":
+"@velocelab/notification@npm:^0.1.1, @velocelab/notification@workspace:packages/notification":
   version: 0.0.0-use.local
   resolution: "@velocelab/notification@workspace:packages/notification"
   dependencies:

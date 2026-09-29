@@ -1,8 +1,9 @@
 import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/database-core";
+import "@velocelab/notification";
 
-export const depend = ["database", "dashboard"];
+export const depend = ["database", "dashboard", "notification"];
 export const provide = ["message"];
 export interface MessageAction { href?: string; method?: "GET" | "POST" | "PUT" | "DELETE"; body?: Record<string, unknown> }
 export interface MessageInput { userId: number; dedupeKey: string; icon?: string; title: string; subtitle?: string; action?: MessageAction; source: string }
