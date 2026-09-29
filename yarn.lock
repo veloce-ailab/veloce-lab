@@ -3233,6 +3233,17 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@velocelab/message@npm:^0.1.1, @velocelab/message@workspace:packages/message":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/message@workspace:packages/message"
+  dependencies:
+    "@velocelab/dashboard": "npm:^0.1.1"
+    "@velocelab/database-core": "npm:^0.1.1"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/model-catalog@workspace:packages/model-catalog":
   version: 0.0.0-use.local
   resolution: "@velocelab/model-catalog@workspace:packages/model-catalog"
@@ -3373,6 +3384,7 @@ __metadata:
   resolution: "@velocelab/update-checker@workspace:packages/update-checker"
   dependencies:
     "@velocelab/dashboard": "npm:^0.1.1"
+    "@velocelab/message": "npm:^0.1.1"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown

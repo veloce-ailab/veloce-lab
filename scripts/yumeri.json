@@ -16,6 +16,7 @@
       "path": "./data/veloce.db"
     },
     "@velocelab/dashboard": {},
+    "@velocelab/message": {},
     "@velocelab/topbar": {},
     "@velocelab/home-redirect": {},
     "@velocelab/settings": {},
@@ -83,6 +84,7 @@
     "@velocelab/tools": {},
     "@velocelab/inner-tools": {},
     "@velocelab/audit": {},
-    "@velocelab/channel-admin": {}
+    "@velocelab/channel-admin": {},
+    "@velocelab/update-checker": { "checkIntervalMinutes": "360" }
   }
 }
