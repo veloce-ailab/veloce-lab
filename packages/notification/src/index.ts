@@ -4,6 +4,9 @@ import "@velocelab/dashboard";
 import "@velocelab/pwa";
 export const depend = ["dashboard", "pwa"];
 export const provide = ["notification"];
+export interface NotificationInput { userId: number; title: string; body?: string; tag?: string; url?: string }
+export interface NotificationService { send(input: NotificationInput): Promise<void> }
+declare module "yumeri" { interface Components { notification: NotificationService } }
 const workerScript = `
 self.addEventListener("message", (event) => {
   const data = event.data;
@@ -29,4 +32,4 @@ self.addEventListener("notificationclick", (event) => {
   }));
 });
 `;
-export function apply(ctx: Context) { const pwa = ctx.component.pwa as PWAService; const unregisterWorkerScript = pwa.registerWorkerScript("notification", workerScript); ctx.affect(unregisterWorkerScript); ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/notification.js", import.meta.url).pathname, plugin: "notification" }); }
+export function apply(ctx: Context) { const pwa = ctx.component.pwa as PWAService; const unregisterWorkerScript = pwa.registerWorkerScript("notification", workerScript); ctx.affect(unregisterWorkerScript); ctx.registerComponent("notification", { async send() {} }); ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/notification.js", import.meta.url).pathname, plugin: "notification" }); }
