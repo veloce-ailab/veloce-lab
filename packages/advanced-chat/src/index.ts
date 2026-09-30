@@ -18,6 +18,7 @@ import { fetchCompletionWithRetry } from "./completion-runtime.js";
 import type { ChatStreamEvent } from "./stream.js";
 import { registerSessionTaskTools } from "./session-tasks.js";
 import { registerRunTools } from "./run-tools.js";
+import { registerChatMessages } from "./messages.js";
 import { extractTokenUsage } from "@velocelab/adapters";
 import "@velocelab/dashboard";
 import "@velocelab/file";
@@ -27,7 +28,7 @@ import { compactContextMessages, DEFAULT_MAX_CONTEXT_TOKENS } from "./context-bu
 
 export * from "./types.js";
 
-export const depend = ["database", "dashboard", "file", "adapters"];
+export const depend = ["database", "dashboard", "file", "adapters", "message"];
 export const provide = ["advanced-chat"];
 
 declare module "@yumerijs/types" {
@@ -488,6 +489,19 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const contextProviders: ChatContextProvider[] = [];
   const db = ctx.component.database;
   await ensureTables(db);
+  const sendMessage = registerChatMessages(ctx);
+  ctx.on("connector.approval-required", async (task: { id: string; user_id: number; run_id: string; device_id: string; action: string }) => {
+    if (!task.run_id) return;
+    const run = await db.selectOne("advanced_chat_runs", { id: task.run_id, user_id: task.user_id });
+    if (!run) return;
+    await sendMessage({
+      userId: task.user_id,
+      type: "approval",
+      key: task.id,
+      subtitle: task.action,
+      href: `/settings/devices/${encodeURIComponent(task.device_id)}`,
+    });
+  });
   registerChatFileRoutes(
     ctx,
     db,
@@ -1458,7 +1472,29 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         cancelled: true,
       });
       try {
-        return await executeRun();
+        const result = await executeRun();
+        if (!result.cancelled && session.visible !== false && Number(session.visible) !== 0) {
+          const details = result.message.tool_calls as Array<{ name?: string; status?: string; result?: string }>;
+          const awaitingUser = details.some((call) => {
+            if (call.status !== "ok") return false;
+            if (call.name === "ask_user") return true;
+            try { return JSON.parse(call.result || "null")?.status === "pending_approval"; }
+            catch { return false; }
+          });
+          if (!awaitingUser) await sendMessage({ userId, type: "completed", key: runId, subtitle: String(session.title || "") || result.message.content, href: `/chat/session/${encodeURIComponent(sessionId)}` });
+        }
+        return result;
+      } catch (error) {
+        if (runController.signal.aborted || (await cancelled())) {
+          await markCancelled();
+          return cancelledResult();
+        }
+        const text = error instanceof Error ? error.message : String(error);
+        const finishedAt = new Date().toISOString();
+        await db.update("advanced_chat_runs", { id: runId, user_id: userId }, { status: "failed", error_message: text.slice(0, 10000), finished_at: finishedAt, updated_at: finishedAt });
+        if (session.visible !== false && Number(session.visible) !== 0)
+          await sendMessage({ userId, type: "failed", key: runId, subtitle: text, href: `/chat/session/${encodeURIComponent(sessionId)}` });
+        throw error;
       } finally {
         inFlightRuns.delete(runId);
         hooks?.signal?.removeEventListener("abort", abortRun);
@@ -1818,6 +1854,9 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
                   Number(session.connector_auto_approve ?? 0) === 1,
               });
               const serialized = JSON.stringify(value ?? null);
+              if (name === "ask_user") {
+                await sendMessage({ userId, type: "question", key: `${runId}:${id}`, subtitle: String((value as { question?: string })?.question || ""), href: `/chat/session/${encodeURIComponent(sessionId)}` });
+              }
               results.push({ id, name, status: "ok", arguments: args, result: serialized });
               emit("tool_call", {
                 id,

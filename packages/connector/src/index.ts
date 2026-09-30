@@ -1120,6 +1120,8 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
         created_at: now,
         updated_at: now,
       } as any);
+      if (input.requiresApproval)
+        await ctx.emit("connector.approval-required", task).catch(() => undefined);
       const { token_hash: _hash, ...record } = device;
       if (!input.requiresApproval)
         await dispatchTask(task, record as ConnectorDeviceRecord);

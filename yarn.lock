@@ -2943,6 +2943,7 @@ __metadata:
     "@tanstack/react-query": "npm:^5.100.14"
     "@velocelab/adapters": "npm:^0.1.1"
     "@velocelab/file": "npm:^0.1.1"
+    "@velocelab/message": "npm:^0.1.1"
     "@velocelab/user": "npm:^0.1.1"
     "@vitejs/plugin-react": "npm:^6.0.1"
     axios: "npm:^1.16.1"

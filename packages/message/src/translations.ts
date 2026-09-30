@@ -1,0 +1,15 @@
+export const messageTranslations = {
+  "message.title": { zh: "消息", en: "Messages", ja: "メッセージ" },
+  "message.description": { zh: "查看和管理来自 Veloce 各功能的消息。", en: "View and manage messages from Veloce features.", ja: "Veloce の各機能からのメッセージを確認・管理します。" },
+  "message.empty": { zh: "暂无消息", en: "No messages", ja: "メッセージはありません" },
+  "message.from": { zh: "来自 {source}", en: "From {source}", ja: "送信元: {source}" },
+  "message.delete": { zh: "删除消息", en: "Delete message", ja: "メッセージを削除" },
+  "message.markRead": { zh: "标记已读", en: "Mark as read", ja: "既読にする" },
+  "message.types": { zh: "消息类型", en: "Message types", ja: "メッセージの種類" },
+  "message.other": { zh: "其他消息", en: "Other messages", ja: "その他のメッセージ" },
+  "message.sendTest": { zh: "发送测试消息", en: "Send test message", ja: "テストメッセージを送信" },
+  "message.testTitle": { zh: "测试消息", en: "Test message", ja: "テストメッセージ" },
+  "message.testBody": { zh: "这是一条测试消息。", en: "This is a test message.", ja: "これはテストメッセージです。" },
+  "message.enablePlugin": { zh: "启用 {plugin} 的消息", en: "Enable messages from {plugin}", ja: "{plugin} のメッセージを有効にする" },
+  "message.enableType": { zh: "启用{type}", en: "Enable {type}", ja: "{type}を有効にする" },
+} as const

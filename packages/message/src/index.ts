@@ -2,11 +2,12 @@ import { Context, Core, Database, Service, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/database-core";
 import "@velocelab/notification";
+import { messageTranslations } from "./translations.js";
 
 export const depend = ["database", "dashboard", "notification"];
 export const provide = ["message"];
 export interface MessageAction { href?: string; method?: "GET" | "POST" | "PUT" | "DELETE"; body?: Record<string, unknown> }
-export interface MessageType { id: string; plugin: string; label: string }
+export interface MessageType { id: string; plugin: string; label: string; labelKey?: string }
 export interface MessageInput { userId: number; type: string; dedupeKey: string; icon?: string; title: string; subtitle?: string; action?: MessageAction }
 export interface MessageRecord extends MessageInput { id: number; source: string; read: boolean; created_at: string; updated_at: string }
 interface StoredMessage { id?: number; user_id: number; type?: string; dedupe_key: string; icon: string; title: string; subtitle: string; action: string; source: string; read: boolean; created_at: string; updated_at: string }
@@ -37,19 +38,20 @@ export class MessageService extends Service {
 export async function apply(ctx: Context) {
   const core = ctx.getCore();
   if (initialized.has(core)) return;
+  for (const [key, translations] of Object.entries(messageTranslations)) ctx.i18n(key, translations);
   const db = ctx.component.database as Database;
   await db.extend("messages", { id: { type: "integer", autoIncrement: true }, user_id: { type: "integer", nullable: false }, type: "string", dedupe_key: { type: "string", nullable: false }, icon: { type: "string", initial: "bell" }, title: { type: "string", nullable: false }, subtitle: "string", action: "json", source: { type: "string", nullable: false }, read: { type: "boolean", initial: false }, created_at: "timestamp", updated_at: "timestamp" }, { unique: [["user_id", "dedupe_key"]] });
   await db.extend("message_preferences", { id: { type: "integer", autoIncrement: true }, user_id: { type: "integer", nullable: false }, plugin: { type: "string", nullable: false }, type: { type: "string", nullable: false }, enabled: { type: "boolean", initial: true } }, { unique: [["user_id", "plugin", "type"]] });
   if (!(ctx.getCore() as Core & { services: Record<string, unknown> }).services.message) ctx.registerService("message", MessageService);
   const service = (ctx.component.message as MessageService | undefined) ?? new MessageService(ctx);
-  service.registerType(ctx, { id: "message:test", plugin: "message", label: "测试消息" });
+  service.registerType(ctx, { id: "message:test", plugin: "message", label: "测试消息", labelKey: "message.testTitle" });
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/message.js", import.meta.url).pathname, plugin: "message" });
   ctx.route("/api/user/messages").methods("GET").action(async session => { const id = currentUser(session); if (id) session.respond({ messages: await service.list(id) }, "json"); });
   ctx.route("/api/user/messages/types").methods("GET").action(async session => { const id = currentUser(session); if (id) session.respond({ types: service.types(), preferences: await service.preferences(id) }, "json"); });
   ctx.route("/api/user/messages/preferences").methods("POST").action(async session => { const id = currentUser(session); const body = await session.parseRequestBody() as any; if (id && typeof body?.plugin === "string" && typeof body?.enabled === "boolean") { await service.setEnabled(id, body.plugin, String(body.type || ""), body.enabled); session.respond({ ok: true }, "json"); } });
   ctx.route("/api/user/messages/delete").methods("POST").action(async session => { const id = currentUser(session); const body = await session.parseRequestBody() as any; if (id && Number(body?.id)) { await service.remove(id, Number(body.id)); session.respond({ ok: true }, "json"); } });
   ctx.route("/api/user/messages/read").methods("POST").action(async session => { const id = currentUser(session); const body = await session.parseRequestBody() as any; if (id && Number(body?.id)) { await service.markRead(id, Number(body.id)); session.respond({ ok: true }, "json"); } });
-  ctx.route("/api/user/messages/test").methods("POST").action(async session => { const id = currentUser(session); if (!id) { session.status = 401; session.respond({ error: "unauthorized" }, "json"); return; } try { const message = await service.send({ userId: id, type: "message:test", dedupeKey: `test-${Date.now()}`, title: "测试消息", subtitle: "这是一条测试消息。" }); if (!message) { session.status = 403; session.respond({ error: "test message type is disabled" }, "json"); return; } session.respond({ message }, "json"); } catch (error) { session.status = 400; session.respond({ error: error instanceof Error ? error.message : String(error) }, "json"); } });
+  ctx.route("/api/user/messages/test").methods("POST").action(async session => { const id = currentUser(session); if (!id) { session.status = 401; session.respond({ error: "unauthorized" }, "json"); return; } try { const body = await session.parseRequestBody() as { language?: string } | undefined; const language = body?.language === "en" || body?.language === "ja" ? body.language : "zh"; const message = await service.send({ userId: id, type: "message:test", dedupeKey: `test-${Date.now()}`, title: messageTranslations["message.testTitle"][language], subtitle: messageTranslations["message.testBody"][language] }); if (!message) { session.status = 403; session.respond({ error: "test message type is disabled" }, "json"); return; } session.respond({ message }, "json"); } catch (error) { session.status = 400; session.respond({ error: error instanceof Error ? error.message : String(error) }, "json"); } });
   initialized.add(core);
   ctx.affect(() => { initialized.delete(core); });
 }
