@@ -53,34 +53,41 @@ function normalizeCoverURLs(value: unknown, origin: string): unknown {
 }
 
 async function proxy(session: Session, cfg: CommunityConfig, route: string, query: URLSearchParams, id?: unknown) {
-  const suffix = route.includes(":id") ? route.replace(":id", safeID(id)) : route;
-  const target = new URL(`${apiBase(cfg.apiBaseUrl)}${suffix}`);
-  // These resources are public and read-only. Preserve only query parameters,
-  // never cookies or authorization headers from the current Veloce session.
-  target.search = query.toString();
-  const response = await fetch(target, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(Math.max(1000, Number(cfg.requestTimeoutMs) || 12000)),
-  });
-  if (!response.ok) {
-    session.status = response.status === 404 ? 404 : 502;
-    session.respond({ error: response.status === 404 ? "Community resource not found" : "Community API is temporarily unavailable" }, "json");
-    return;
-  }
-  const maxBytes = Math.max(1024, Number(cfg.maxResponseBytes) || 10 << 20);
-  const body = new Uint8Array(await response.arrayBuffer());
-  if (body.byteLength > maxBytes) {
-    session.status = 502;
-    session.respond({ error: "Community response is too large" }, "json");
+  let suffix: string;
+  try {
+    suffix = route.includes(":id") ? route.replace(":id", safeID(id)) : route;
+  } catch {
+    session.status = 400;
+    session.respond({ error: "Invalid community resource id" }, "json");
     return;
   }
   try {
+    const target = new URL(`${apiBase(cfg.apiBaseUrl)}${suffix}`);
+    // These resources are public and read-only. Preserve only query parameters,
+    // never cookies or authorization headers from the current Veloce session.
+    target.search = query.toString();
+    const response = await fetch(target, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(Math.max(1000, Number(cfg.requestTimeoutMs) || 12000)),
+    });
+    if (!response.ok) {
+      session.status = response.status === 404 ? 404 : 502;
+      session.respond({ error: response.status === 404 ? "Community resource not found" : "Community API is temporarily unavailable" }, "json");
+      return;
+    }
+    const maxBytes = Math.max(1024, Number(cfg.maxResponseBytes) || 10 << 20);
+    const body = new Uint8Array(await response.arrayBuffer());
+    if (body.byteLength > maxBytes) {
+      session.status = 502;
+      session.respond({ error: "Community response is too large" }, "json");
+      return;
+    }
     const apiURL = new URL(apiBase(cfg.apiBaseUrl));
     const origin = apiURL.origin;
     session.respond(normalizeCoverURLs(JSON.parse(new TextDecoder().decode(body)), origin), "json");
-  } catch {
+  } catch (error) {
     session.status = 502;
-    session.respond({ error: "Community API returned invalid JSON" }, "json");
+    session.respond({ error: error instanceof SyntaxError ? "Community API returned invalid JSON" : "Community API is temporarily unavailable" }, "json");
   }
 }
 
