@@ -10,7 +10,7 @@ import { ensureTables } from "./tables.js";
 const communityKnowledgeAPIBaseURL = "https://veloce-community.flweb.cn/api/v1";
 const maxCommunityKnowledgeImport = 32 << 20;
 const communityKnowledgeNotFound = Symbol("community-knowledge-not-found");
-export const depend = ["database", "dashboard", "file"];
+export const depend = ["database", "dashboard", "file", "advanced-chat"];
 export const provide = ["knowledge"];
 export interface KnowledgeService {
   list(userId: number): Promise<any[]>;
@@ -127,8 +127,17 @@ export async function apply(ctx: Context, cfg: KnowledgeConfig) {
   await ensureTables(db);
   const files = ctx.component.file;
   const service: KnowledgeService = {
-    list: (userId) =>
-      db.select("advanced_chat_knowledge_bases", { user_id: userId }),
+    list: async (userId) => {
+      const bases = await db.select("advanced_chat_knowledge_bases", { user_id: userId });
+      return Promise.all(bases.map(async (base) => {
+        const documents = await service.documents(userId, base.id);
+        return {
+          ...base,
+          document_count: documents.length,
+          vectorized: documents.length > 0 && documents.every(document => ["completed", "ready"].includes(document.embedding_status) && Number(document.chunk_count) > 0),
+        };
+      }));
+    },
     create: (userId, input) =>
       db.create("advanced_chat_knowledge_bases", {
         id: randomUUID(),
@@ -140,11 +149,18 @@ export async function apply(ctx: Context, cfg: KnowledgeConfig) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as any),
-    documents: (userId, baseId) =>
-      db.select("advanced_chat_knowledge_documents", {
+    documents: async (userId, baseId) => {
+      const rows = await db.select("advanced_chat_knowledge_documents", {
         user_id: userId,
         knowledge_base_id: baseId,
-      }),
+      });
+      return rows.map((row) => ({
+        ...row,
+        type: row.mime_type,
+        editable: Boolean(row.text_available),
+        download_url: `/api/user/advanced-chat/files/${encodeURIComponent(String(row.file_id))}/download`,
+      }));
+    },
   };
   ctx.registerComponent("knowledge", service);
   const user = (s: Session) =>
@@ -154,7 +170,7 @@ export async function apply(ctx: Context, cfg: KnowledgeConfig) {
     .methods("GET")
     .action(async (s) => {
       const id = user(s);
-      if (id !== undefined) s.respond(await service.list(id), "json");
+      if (id !== undefined) s.respond({ knowledge_bases: await service.list(id) }, "json");
     });
   ctx
     .route("/api/user/advanced-chat/knowledge-bases")
@@ -162,18 +178,33 @@ export async function apply(ctx: Context, cfg: KnowledgeConfig) {
     .action(async (s) => {
       const id = user(s);
       if (id === undefined) return;
-      s.status = 201;
-      s.respond(
-        await service.create(id, (await s.parseRequestBody()) as any),
-        "json",
-      );
+      try {
+        const input = (await s.parseRequestBody()) as Record<string, unknown> | null;
+        const name = String(input?.name ?? "").trim();
+        if (!name || [...name].length > 120) {
+          s.status = 400;
+          s.respond({ error: "Knowledge base name must contain 1 to 120 characters" }, "json");
+          return;
+        }
+        if (await db.selectOne("advanced_chat_knowledge_bases", { user_id: id, name })) {
+          s.status = 409;
+          s.respond({ error: "A knowledge base with this name already exists" }, "json");
+          return;
+        }
+        const base = await service.create(id, { ...input, name });
+        s.status = 201;
+        s.respond(base, "json");
+      } catch {
+        s.status = 500;
+        s.respond({ error: "Failed to create knowledge base" }, "json");
+      }
     });
   ctx
     .route("/api/user/advanced-chat/knowledge-bases/:id/documents")
     .methods("GET")
     .action(async (s, _p, baseId) => {
       const id = user(s);
-      if (id !== undefined) s.respond(await service.documents(id, baseId), "json");
+      if (id !== undefined) s.respond({ documents: await service.documents(id, baseId) }, "json");
     });
   ctx
     .route("/api/user/advanced-chat/knowledge-bases/:id")
@@ -472,54 +503,40 @@ export async function apply(ctx: Context, cfg: KnowledgeConfig) {
   const createDocument = async (s: Session, baseId: string) => {
     const userId = user(s);
     if (userId === undefined) return;
-    const base = await db.selectOne("advanced_chat_knowledge_bases", {
-      id: baseId,
-      user_id: userId,
-    });
-    if (!base) {
-      s.status = 404;
-      s.respond({ error: "Knowledge base not found" }, "json");
-      return;
-    }
+    const base = await db.selectOne("advanced_chat_knowledge_bases", { id: baseId, user_id: userId });
+    if (!base) { s.status = 404; s.respond({ error: "Knowledge base not found" }, "json"); return; }
     const input = (await s.parseRequestBody()) as any;
     let name: string;
-    try {
-      name = normalizeDocumentName(input.name ?? "Document.md");
-    } catch (error) {
-      s.status = 400;
-      s.respond(
-        { error: error instanceof Error ? error.message : String(error) },
-        "json",
-      );
-      return;
-    }
-    const content = String(input.content ?? input.data ?? "") || "\n";
+    try { name = normalizeDocumentName(input.name ?? "Document.md"); }
+    catch (error) { s.status = 400; s.respond({ error: error instanceof Error ? error.message : String(error) }, "json"); return; }
+    const raw = String(input.data ?? input.base64 ?? "").trim();
+    let data: Buffer;
+    try { data = raw ? Buffer.from(raw.startsWith("data:") ? raw.slice(raw.indexOf(",") + 1) : raw, "base64") : Buffer.from(String(input.content ?? "\n"), "utf8"); }
+    catch { s.status = 400; s.respond({ error: "Invalid document data" }, "json"); return; }
+    if (!data.length) { s.status = 400; s.respond({ error: "Document is empty" }, "json"); return; }
+    const mime = String(input.mime_type ?? input.type ?? "text/markdown").split(";", 1)[0].toLowerCase();
+    const text = (mime.startsWith("text/") || /\.(md|markdown|txt|json|csv|yaml|yml)$/i.test(name)) ? data.toString("utf8") : "";
     const documentId = randomUUID();
-    const fileId = randomUUID();
-    const storage = `knowledge/${userId}/${baseId}/${documentId}.txt`;
-    await files.write(storage, content);
+    const fileId = `acf-${randomUUID()}`;
+    const storage = `knowledge/${userId}/${baseId}/${documentId}-${name}`;
     const now = new Date().toISOString();
-    const row = await db.create("advanced_chat_knowledge_documents", {
-      id: documentId,
-      knowledge_base_id: baseId,
-      user_id: userId,
-      file_id: fileId,
-      name,
-      mime_type: "text/markdown",
-      size: Buffer.byteLength(content),
-      text_available: true,
-      embedding_status: "pending",
-      embedding_error: "",
-      embedding_model: "",
-      embedding_dim: 0,
-      chunk_count: 0,
-      storage_path: storage,
-      hash: createHash("sha256").update(content).digest("hex"),
-      created_at: now,
-      updated_at: now,
-    } as any);
-    s.status = 201;
-    s.respond(row, "json");
+    await files.write(storage, data);
+    try {
+      await db.create("advanced_chat_files", {
+        id: fileId, user_id: userId, name, mime_type: mime, size: data.length,
+        storage_path: storage, text_extract: text, text_available: Boolean(text),
+        hash: createHash("sha256").update(data).digest("hex"), source: "knowledge_document", source_key: `knowledge:${documentId}`, created_at: now, updated_at: now,
+      } as any);
+      const row = await db.create("advanced_chat_knowledge_documents", {
+        id: documentId, knowledge_base_id: baseId, user_id: userId, file_id: fileId, name,
+        mime_type: mime, size: data.length, text_available: Boolean(text), embedding_status: "pending", embedding_error: "", embedding_model: "", embedding_dim: 0, chunk_count: 0, storage_path: storage,
+        hash: createHash("sha256").update(data).digest("hex"), created_at: now, updated_at: now,
+      } as any);
+      s.status = 201; s.respond({ ...row, type: mime, editable: Boolean(text), download_url: `/api/user/advanced-chat/files/${encodeURIComponent(fileId)}/download` }, "json");
+    } catch (error) {
+      await files.remove(storage).catch(() => undefined);
+      s.status = 500; s.respond({ error: error instanceof Error ? error.message : "Failed to create document" }, "json");
+    }
   };
   ctx
     .route("/api/user/advanced-chat/knowledge-bases/:id/documents")
@@ -589,6 +606,10 @@ export async function apply(ctx: Context, cfg: KnowledgeConfig) {
       }
       if (row.storage_path)
         await files.write(String(row.storage_path), content);
+      await db.update("advanced_chat_files", { id: row.file_id, user_id: userId }, {
+        name, mime_type: "text/markdown", size: Buffer.byteLength(content), text_extract: content,
+        text_available: true, hash: createHash("sha256").update(content).digest("hex"), updated_at: new Date().toISOString(),
+      } as any);
       await db.update(
         "advanced_chat_knowledge_documents",
         { id: documentId, user_id: userId },
@@ -700,6 +721,7 @@ export async function apply(ctx: Context, cfg: KnowledgeConfig) {
         document_id: documentId,
         user_id: userId,
       });
+      await db.remove("advanced_chat_files", { id: row.file_id, user_id: userId });
       await db.remove("advanced_chat_knowledge_documents", {
         id: documentId,
         user_id: userId,

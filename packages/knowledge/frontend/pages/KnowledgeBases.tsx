@@ -164,9 +164,12 @@ export default function KnowledgeBases() {
     try {
       let uploaded = 0
       for (const file of Array.from(files)) {
-        const body = new FormData()
-        body.append("file", file)
-        await api.post(`/user/advanced-chat/knowledge-bases/${encodeURIComponent(selectedBase.id)}/documents`, body)
+        const data = Buffer.from(await file.arrayBuffer()).toString("base64")
+        await api.post(`/user/advanced-chat/knowledge-bases/${encodeURIComponent(selectedBase.id)}/documents`, {
+          name: file.name,
+          mime_type: file.type || "application/octet-stream",
+          data,
+        })
         uploaded += 1
       }
       await queryClient.invalidateQueries({ queryKey: knowledgeBasesQueryKey })
@@ -190,7 +193,7 @@ export default function KnowledgeBases() {
     setIsTextEditorLoading(true)
     try {
       const res = await api.get(`/user/advanced-chat/knowledge-bases/${encodeURIComponent(selectedBase.id)}/documents/${encodeURIComponent(document.id)}/content`)
-      setTextDocumentName(typeof res.data?.document?.name === "string" ? res.data.document.name : document.name)
+      setTextDocumentName(typeof res.data?.name === "string" ? res.data.document.name : document.name)
       setTextDocumentContent(typeof res.data?.content === "string" ? res.data.content : "")
     } catch (err) {
       error(apiErrorMessage(err, "读取文档失败"))
