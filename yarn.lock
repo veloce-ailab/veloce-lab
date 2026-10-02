@@ -3100,6 +3100,24 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@velocelab/companion@workspace:packages/companion":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/companion@workspace:packages/companion"
+  dependencies:
+    "@velocelab/advanced-chat": "npm:^0.1.1"
+    "@velocelab/file": "npm:^0.1.1"
+    "@velocelab/memory": "npm:^0.1.1"
+    "@vitejs/plugin-react": "npm:^6.0.1"
+    lucide-react: "npm:^1.16.0"
+    react: "npm:^19.2.6"
+    react-dom: "npm:^19.2.6"
+    react-router-dom: "npm:^7.15.1"
+    vite: "npm:^8.0.12"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/connector@npm:^0.1.1, @velocelab/connector@workspace:packages/connector":
   version: 0.0.0-use.local
   resolution: "@velocelab/connector@workspace:packages/connector"
@@ -3221,7 +3239,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/memory@workspace:packages/memory":
+"@velocelab/memory@npm:^0.1.1, @velocelab/memory@workspace:packages/memory":
   version: 0.0.0-use.local
   resolution: "@velocelab/memory@workspace:packages/memory"
   dependencies:
