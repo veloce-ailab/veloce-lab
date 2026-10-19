@@ -5,6 +5,7 @@ import { existsSync, statSync } from "node:fs";
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import { Context, Core, Schema, Service, Session, Logger } from "yumeri";
 import { startDashboardDevServer, type DashboardDevServer } from "./dev.js";
+import { dashboardAssetPath } from "./asset-path.js";
 
 const logger = new Logger("dashboard");
 export const depend: string[] = [];
@@ -66,7 +67,7 @@ function stateFor(context: Context): DashboardState {
 }
 
 function absoluteFile(file: string) {
-  return /^\/[A-Za-z]:[\\/]/.test(file) ? file.slice(1) : file;
+  return dashboardAssetPath(file);
 }
 
 function anyExists(files: string[]) {
@@ -112,7 +113,7 @@ export class Dashboard extends Service implements DashboardService {
   }
 
   private registerAsset(asset: DashboardAsset): DashboardAsset {
-    const file = /^\/[A-Za-z]:[\\/]/.test(asset.file) ? asset.file.slice(1) : asset.file;
+    const file = absoluteFile(asset.file);
     const value: DashboardAsset = { ...asset, file, mime: asset.mime ?? mimeFor(file), id: asset.id || createHash("md5").update(file).digest("hex") };
     this.state.assets.push(value);
     return value;
@@ -122,8 +123,8 @@ export class Dashboard extends Service implements DashboardService {
     // Plugins register both forms: the sources they are written in and the
     // bundle a build produces. Which one is served follows the mode, and the
     // other one is the fallback so a package without a build still loads.
-    const sources = entry.dev ? (Array.isArray(entry.dev) ? entry.dev : [entry.dev]) : [];
-    const builds = Array.isArray(entry.prod) ? entry.prod : [entry.prod];
+    const sources = (entry.dev ? (Array.isArray(entry.dev) ? entry.dev : [entry.dev]) : []).map(absoluteFile);
+    const builds = (Array.isArray(entry.prod) ? entry.prod : [entry.prod]).map(absoluteFile);
     const hasSources = sources.length > 0 && anyExists(sources);
     const hasBuild = builds.length > 0 && anyExists(builds);
     // Sources are what the development server compiles; a build stands in when
