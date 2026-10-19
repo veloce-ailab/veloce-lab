@@ -101,7 +101,12 @@ export function registerAdvancedChatRoutes(
   const terminalDevice = async (session: Session, value: unknown) => {
     const current = await user(session);
     const deviceId = String(value ?? "").trim();
-    if (current?.id === undefined || !deviceId) return undefined;
+    if (current?.id === undefined) return undefined;
+    if (!deviceId) {
+      session.status = 400;
+      session.respond({ error: "A connected device is required" }, "json");
+      return undefined;
+    }
     const device: any = await db.selectOne("advanced_chat_connector_devices", {
       id: deviceId,
       user_id: current.id,
@@ -196,13 +201,14 @@ export function registerAdvancedChatRoutes(
     .route("/api/user/advanced-chat/terminal/output")
     .methods("GET")
     .action(async (session) => {
+      const query = new URL(session.client.req?.url ?? "/", "http://localhost").searchParams;
       const target = await terminalDevice(
         session,
-        session.query.connector_device_id,
+        query.get("connector_device_id"),
       );
       if (!target) return;
-      const terminalId = String(session.query.terminal_id ?? "").trim();
-      const offset = Number(session.query.offset ?? 0);
+      const terminalId = String(query.get("terminal_id") ?? "").trim();
+      const offset = Number(query.get("offset") ?? 0);
       if (
         !terminalId ||
         terminalId.length > 80 ||

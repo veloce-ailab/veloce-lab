@@ -56,7 +56,14 @@ test("terminal HTTP routes reach the built-in PTY without creating polling tasks
   const call = async (action, payload) => {
     let result;
     const input = { connector_device_id: device.id, ...payload };
-    const session = { properties: { user: { id: 1 } }, query: input, async parseRequestBody() { return input; }, respond(value) { result = value; } };
+    let responses = 0;
+    const session = {
+      properties: { user: { id: 1 } },
+      // Yumeri can leave Session.query undefined; the request still has its URL.
+      client: { req: { url: `/api/user/advanced-chat/terminal/${action}?${new URLSearchParams(input)}` } },
+      async parseRequestBody() { return input; },
+      respond(value) { assert.equal(++responses, 1); result = value; },
+    };
     await routes.get(`/api/user/advanced-chat/terminal/${action}`)(session);
     assert.equal(session.status, undefined, JSON.stringify(result));
     return result;
@@ -77,4 +84,23 @@ test("terminal HTTP routes reach the built-in PTY without creating polling tasks
     assert.equal((await call("resize", { terminal_id, cols: 80, rows: 24 })).cols, 80);
     await call("close", { terminal_id });
   } finally { connector.dispose(); }
+});
+
+test("terminal output rejects missing or invalid query parameters with one response", async () => {
+  const routes = new Map();
+  registerAdvancedChatRoutes({
+    component: { database: { async selectOne() { return { id: "local", user_id: 1 }; } } },
+    route(url) { return { methods() { return this; }, action(fn) { routes.set(url, fn); return this; } }; },
+  }, {});
+  for (const query of ["", "connector_device_id=local", "connector_device_id=local&terminal_id=t&offset=-1", "connector_device_id=local&terminal_id=t&offset=NaN"]) {
+    let responses = 0;
+    const session = {
+      properties: { user: { id: 1 } },
+      client: { req: { url: `/api/user/advanced-chat/terminal/output?${query}` } },
+      respond(value) { assert.equal(++responses, 1); assert.ok(value.error); },
+    };
+    await routes.get("/api/user/advanced-chat/terminal/output")(session);
+    assert.equal(session.status, 400);
+    assert.equal(responses, 1);
+  }
 });
