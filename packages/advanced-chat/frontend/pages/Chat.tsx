@@ -3985,17 +3985,17 @@ export default function Chat() {
                 </div>,
             environmentSidebarHost
           )}
-          {activeRunMode !== "chat" && <Button
+          <Button
             variant="outline"
             size="icon"
-            className="hidden h-9 w-9 border-border bg-background xl:inline-flex"
+            className="hidden h-9 w-9 border-border bg-background lg:inline-flex"
             onClick={() => setIsDesktopSessionsSidebarVisible((visible) => !visible)}
             aria-label={isDesktopSessionsSidebarVisible ? copy.closeSessions : copy.openSessions}
             aria-expanded={isDesktopSessionsSidebarVisible}
             title={isDesktopSessionsSidebarVisible ? copy.closeSessions : copy.openSessions}
           >
             {isDesktopSessionsSidebarVisible ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-          </Button>}
+          </Button>
         </div>
       </div>
 
@@ -5123,8 +5123,8 @@ export default function Chat() {
         </Dialog>
       )}
       </div>
-      {activeRunMode !== "chat" && isDesktopSessionsSidebarVisible && (
-        <ResizableSidebar storageKey="chat-workspace" side="right" defaultWidth={288} minWidth={240} maxWidth={560} className="hidden h-full min-h-0 xl:flex">
+      {isDesktopSessionsSidebarVisible && (
+        <ResizableSidebar storageKey="chat-workspace" side="right" defaultWidth={288} minWidth={240} maxWidth={560} className="hidden h-full min-h-0 lg:flex">
         <aside className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto overscroll-contain border-l border-border bg-muted/20 p-3">
           <div ref={setEnvironmentSidebarHost} className="shrink-0" />
           <DashboardSlot name="frame.right-sidebar" scope="/chat" className="shrink-0" />
