@@ -50,6 +50,11 @@ func isTerminalTaskAction(action string) bool {
 	switch action {
 	case "terminal_open", "terminal_input", "terminal_read", "terminal_resize", "terminal_close":
 		return true
+	// A status poll must not queue behind a long-running command, and a git
+	// action is as quick as a terminal round trip, so both run alongside the
+	// poll loop like the terminal tasks do.
+	case "git_status", "git_action":
+		return true
 	default:
 		return false
 	}
@@ -235,6 +240,14 @@ func (client connectorClient) executeTask(task connectorTask) (taskResult, error
 		return textTaskResult(result), err
 	case "commit_delta":
 		result, err := commitDelta(workspace, task.Payload)
+		return textTaskResult(result), err
+	case "git_status":
+		// The result is the JSON the dashboard's git panel parses, so the
+		// workspace route can hand it through unchanged.
+		result, err := gitStatusJSON(workspace, stringArg(task.Payload, "compare_branch"))
+		return textTaskResult(result), err
+	case "git_action":
+		result, err := gitActionJSON(workspace, stringArg(task.Payload, "action"), stringArg(task.Payload, "message"))
 		return textTaskResult(result), err
 	case "run_command":
 		result, err := runCommandWithSandbox(workspace, stringArg(task.Payload, "command"), intArg(task.Payload, "timeout_sec", 30), sandboxCommandOptions{

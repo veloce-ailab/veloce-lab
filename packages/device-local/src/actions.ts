@@ -353,11 +353,29 @@ export interface WorkspaceGitFile {
   status: string;
   additions: number;
   deletions: number;
+  /**
+   * The file's own diff, so a click can open it without a second request. Only
+   * the first files are diffed and each one is capped, so a large change set
+   * cannot turn the status response into a payload the chat has to stream.
+   */
+  diff?: string;
 }
+
+/** Per-file diff cap; a longer diff is cut off with a marker line. */
+const MAX_FILE_DIFF_CHARS = 16_000;
+/** How many files carry a diff at all; the rest are listed without one. */
+const MAX_DIFF_FILES = 100;
+
+const truncatedDiff = (diff: string) =>
+  diff.length > MAX_FILE_DIFF_CHARS
+    ? `${diff.slice(0, MAX_FILE_DIFF_CHARS)}\n(diff truncated)`
+    : diff;
 
 /**
  * Branch, branch list and changed files of a workspace, in the shape the chat's
- * git panel reads.
+ * git panel reads. With no compare branch the files are the worktree changes
+ * (porcelain status, counts against HEAD); with one they are everything that
+ * differs from that branch, committed or not.
  */
 export async function gitStatus(input: Record<string, unknown>): Promise<{
   current_branch: string;
@@ -380,30 +398,60 @@ export async function gitStatus(input: Record<string, unknown>): Promise<{
     .map((line) => line.trim())
     .filter(Boolean)
     .sort();
-  const porcelain = await git(cwd, ["status", "--porcelain"]);
-  const numstat = await git(cwd, ["diff", "--numstat", "HEAD"]);
+  const base = compareBranch || "HEAD";
   const counts = new Map<string, { additions: number; deletions: number }>();
-  for (const line of numstat.split("\n")) {
+  for (const line of (await git(cwd, ["diff", "--numstat", base])).split("\n")) {
     if (!line.trim()) continue;
     const [added, removed, ...rest] = line.split("\t");
     const file = rest.join("\t").trim();
     if (!file) continue;
-    counts.set(file, {
+    counts.set(renameTarget(file), {
       additions: Number.isFinite(Number(added)) ? Number(added) : 0,
       deletions: Number.isFinite(Number(removed)) ? Number(removed) : 0,
     });
   }
   const files: WorkspaceGitFile[] = [];
-  for (const line of porcelain.split("\n")) {
-    if (!line.trim()) continue;
-    const status = line.slice(0, 2).trim() || "??";
-    // Renames read `R  old -> new`; the new name is what the user sees.
-    const rest = line.slice(3).trim();
-    const file = rest.includes(" -> ")
-      ? rest.split(" -> ").pop()!.trim()
-      : rest;
-    const count = counts.get(file) ?? { additions: 0, deletions: 0 };
-    files.push({ path: file, status, ...count });
+  if (compareBranch) {
+    // The compare view lists what differs from the picked branch, so the file
+    // set comes from name-status rather than the worktree-only porcelain.
+    for (const line of (
+      await git(cwd, ["diff", "--name-status", compareBranch])
+    ).split("\n")) {
+      if (!line.trim()) continue;
+      const [status, ...rest] = line.split("\t");
+      const restPath = rest.join("\t").trim();
+      const file = renameTarget(restPath);
+      if (!file) continue;
+      const count = counts.get(file) ?? { additions: 0, deletions: 0 };
+      files.push({ path: file, status: status.trim(), ...count });
+    }
+  } else {
+    const porcelain = await git(cwd, ["status", "--porcelain"]);
+    for (const line of porcelain.split("\n")) {
+      if (!line.trim()) continue;
+      const status = line.slice(0, 2).trim() || "??";
+      // Renames read `R  old -> new`; the new name is what the user sees.
+      const rest = line.slice(3).trim();
+      const file = rest.includes(" -> ")
+        ? rest.split(" -> ").pop()!.trim()
+        : rest;
+      const count = counts.get(file) ?? { additions: 0, deletions: 0 };
+      files.push({ path: file, status, ...count });
+    }
+  }
+  // Untracked files have no diff to show — the panel says "untracked file"
+  // instead — and everything after the first files is listed without one.
+  let diffed = 0;
+  for (const file of files) {
+    if (diffed >= MAX_DIFF_FILES || file.status.includes("?")) continue;
+    const diff = await git(cwd, ["diff", base, "--", file.path]).catch(
+      () => "",
+    );
+    const trimmed = diff.trim();
+    if (trimmed) {
+      file.diff = truncatedDiff(trimmed);
+      diffed += 1;
+    }
   }
   return {
     current_branch: currentBranch,
@@ -415,6 +463,11 @@ export async function gitStatus(input: Record<string, unknown>): Promise<{
     clean: files.length === 0,
     files,
   };
+}
+
+/** `a => b` rename spellings resolve to the name the user sees (the new one). */
+function renameTarget(file: string): string {
+  return file.includes(" => ") ? file.split(" => ").pop()!.trim() : file;
 }
 
 /**

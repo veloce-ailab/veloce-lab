@@ -4,6 +4,7 @@ import Agents from "./pages/Agents";
 import AgentEditor from "./pages/AgentEditor";
 import AgentGroupsPage from "./pages/AgentGroupsPage";
 import ChatGroups from "./pages/ChatGroups";
+import GitSidebar from "./components/chat/GitSidebar";
 import AdvancedChatManagement from "./pages/AdvancedChatManagement";
 import AssistantSettings from "./pages/AssistantSettings";
 import ConnectorCredentials from "./pages/ConnectorCredentials";
@@ -18,6 +19,7 @@ export function apply(ctx: DashboardContext) {
   // Everything inside it, the chat page included, is a contributed page, so a
   // package that adds a chat capability only registers a page and a menu entry.
   ctx.frame({ id: "chat", path: "/chat", component: ChatWorkspace });
+  ctx.slot("frame.right-sidebar", GitSidebar, "advanced-chat.git-sidebar", 20, "/chat");
   ctx.page({ frame: "chat", path: "/chat", component: Chat, home: true, layout: "full" });
   ctx.page({ frame: "chat", path: "/chat/session/:id", component: Chat, layout: "full" });
   ctx.page({

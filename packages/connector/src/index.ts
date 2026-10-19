@@ -737,26 +737,37 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
         s.respond({ error: "Invalid connector token" }, "json");
         return;
       }
+      // `select` matches one status exactly, so the candidates are fetched in
+      // two passes: a task a user just approved has `approved`, while a task
+      // the runtime queued without a gate has `queued`. Only fetching `queued`
+      // left approved tasks stranded for external agents — the local connector
+      // dispatches them in-process, but a polling agent never saw them.
       const queued: any[] = await db.select("advanced_chat_connector_tasks", {
         device_id: device.id,
         status: "queued",
       });
-      // Tasks are queued by the chat runtime (`chat.createConnectorTask` writes
-      // `queued`), and `select` has no ORDER BY, so the oldest candidate is
-      // chosen here to keep dispatch first-in-first-out.
-      const candidate = queued.sort((left, right) =>
-        String(left.created_at).localeCompare(String(right.created_at)),
-      )[0];
+      const approved: any[] = await db.select("advanced_chat_connector_tasks", {
+        device_id: device.id,
+        status: "approved",
+      });
+      // `select` has no ORDER BY, so the oldest candidate is chosen here to
+      // keep dispatch first-in-first-out across both pools.
+      const candidate = queued
+        .concat(approved)
+        .sort((left, right) =>
+          String(left.created_at).localeCompare(String(right.created_at)),
+        )[0];
       if (!candidate) {
         s.respond({ task: null }, "json");
         return;
       }
       const now = new Date().toISOString();
-      // Only the run that flips `queued` to `running` may hand the task out, so
-      // two concurrent long polls cannot both receive the same task.
+      // Only the run that flips the candidate's status to `running` may hand
+      // the task out, so two concurrent long polls cannot both receive the
+      // same task. The status matched is whatever the candidate held.
       const changed = await db.update(
         "advanced_chat_connector_tasks",
-        { id: candidate.id, status: "queued" },
+        { id: candidate.id, status: String(candidate.status) },
         {
           status: "running",
           started_at: now,

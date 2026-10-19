@@ -21,7 +21,7 @@ interface GitChangeCopy {
   renamed: string
 }
 
-export function GitChangeList({ files, clean, copy, className }: { files: GitChangeFile[]; clean?: boolean; copy: GitChangeCopy; className?: string }) {
+export function GitChangeList({ files, clean, copy, className, onFileClick }: { files: GitChangeFile[]; clean?: boolean; copy: GitChangeCopy; className?: string; onFileClick?: (file: GitChangeFile) => void }) {
   const [expandedPath, setExpandedPath] = useState(files.length === 1 ? files[0]?.path || "" : "")
   if (clean) return <div className={cn("rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground", className)}>{copy.clean}</div>
   if (files.length === 0) return <div className={cn("rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground", className)}>{copy.noDiff}</div>
@@ -34,7 +34,7 @@ export function GitChangeList({ files, clean, copy, className }: { files: GitCha
           const state = changeState(file.status, copy)
           const expanded = expandedPath === file.path
           return <div key={file.path} className="border-b last:border-b-0">
-            <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-muted/50" onClick={() => setExpandedPath((current) => current === file.path ? "" : file.path)} aria-expanded={expanded}>
+            <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-muted/50" onClick={() => onFileClick ? onFileClick(file) : setExpandedPath((current) => current === file.path ? "" : file.path)} aria-expanded={onFileClick ? undefined : expanded}>
               <state.Icon size={15} className={cn("shrink-0", state.iconClass)} />
               <span className="min-w-0 flex-1 truncate font-mono text-xs">{file.path}</span>
               <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium", state.badgeClass)}>{state.label}</span>
@@ -49,7 +49,7 @@ export function GitChangeList({ files, clean, copy, className }: { files: GitCha
   )
 }
 
-function GitDiffPreview({ diff }: { diff: string }) {
+export function GitDiffPreview({ diff }: { diff: string }) {
   let oldLine = 0
   let newLine = 0
   return <pre className="max-h-96 overflow-auto rounded border bg-background font-mono text-[11px] leading-5"><code>{diff.split(/\r?\n/).map((line, index) => {

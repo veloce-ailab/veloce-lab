@@ -83,6 +83,72 @@ export async function apply(ctx: Context) {
   ctx.registerComponent("workspace", service);
   const user = (s: Session) =>
     (s.properties.user as any)?.id as number | undefined;
+  /** Whether an action failed because no connector type answers it inline. */
+  const noRuntime = (error: unknown) =>
+    error instanceof Error &&
+    error.message.startsWith("No connector runtime serves the action");
+  const asError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
+  /**
+   * Queues an action for an external agent, which serves its work through the
+   * task table rather than an inline handler. A git action waits for approval
+   * unless the session runs with full access, mirroring the local connector.
+   */
+  const queueOnDevice = async (
+    userId: number,
+    action: string,
+    input: Record<string, unknown>,
+  ) => {
+    const deviceId = String(input.device_id ?? "").trim();
+    if (!deviceId) throw Error("A connected device is required");
+    const device: any = await db.selectOne("advanced_chat_connector_devices", {
+      id: deviceId,
+      user_id: userId,
+    });
+    if (!device) throw Error("Connector device not found");
+    return connector.createTask(userId, {
+      device_id: device.id,
+      action,
+      workspace_path: String(input.workspace_path ?? ""),
+      payload: input,
+      requiresApproval:
+        action === "git_action" &&
+        String(input.approval_mode ?? "manual") !== "full_access",
+    });
+  };
+  /**
+   * Queues an action and waits for the agent's answer, so a status request
+   * reads like the inline one it fell back from. The deadline matches the
+   * terminal routes: long enough for a poll round trip, short enough that a
+   * busy device fails the request instead of hanging the sidebar.
+   */
+  const queueAndWait = async (
+    userId: number,
+    action: string,
+    input: Record<string, unknown>,
+  ) => {
+    const task = await queueOnDevice(userId, action, input);
+    const deadline = Date.now() + 25_000;
+    while (Date.now() < deadline) {
+      const current: any = await db.selectOne("advanced_chat_connector_tasks", {
+        id: String(task.id),
+        user_id: userId,
+      });
+      if (current?.status === "completed") {
+        try {
+          return JSON.parse(String(current.result || "{}"));
+        } catch {
+          throw Error(`Invalid connector ${action} response`);
+        }
+      }
+      if (current?.status === "failed" || current?.status === "rejected")
+        throw Error(
+          String(current.error_message || `Connector ${action} task failed`),
+        );
+      await new Promise((resolve) => ctx.setTimeout(resolve, 150));
+    }
+    throw Error(`Connector ${action} task timed out`);
+  };
   ctx
     .route("/api/user/advanced-chat/workspaces")
     .methods("GET")
@@ -294,22 +360,33 @@ export async function apply(ctx: Context) {
       if (id === undefined) return;
       const query = s.client.req?.url?.split("?")[1] ?? "";
       const params = new URLSearchParams(query);
-      const deviceId = params.get("connector_device_id") ?? "";
-      const workspacePath = params.get("connector_workspace_path") ?? "";
+      const input = {
+        device_id: params.get("connector_device_id") ?? "",
+        workspace_path: params.get("connector_workspace_path") ?? "",
+        // The panel's compare-branch picker sends this; dropping it made every
+        // request a plain worktree status no matter which branch was picked.
+        compare_branch: params.get("compare_branch") ?? "",
+      };
       try {
         s.respond(
-          await connector.execute(id, "git_status", {
-            device_id: deviceId,
-            workspace_path: workspacePath,
-          }),
+          await connector.execute(id, "git_status", input),
           "json",
         );
       } catch (error) {
-        s.status = 502;
-        s.respond(
-          { error: error instanceof Error ? error.message : String(error) },
-          "json",
-        );
+        // An external agent has no inline handler, so the same action is
+        // queued as a connector task and waited for, the way the terminal
+        // routes wait for theirs.
+        if (!noRuntime(error)) {
+          s.status = 502;
+          s.respond({ error: asError(error) }, "json");
+          return;
+        }
+        try {
+          s.respond(await queueAndWait(id, "git_status", input), "json");
+        } catch (error) {
+          s.status = 502;
+          s.respond({ error: asError(error) }, "json");
+        }
       }
     });
   ctx
@@ -362,11 +439,33 @@ export async function apply(ctx: Context) {
           "json",
         );
       } catch (error) {
-        s.status = 502;
-        s.respond(
-          { error: error instanceof Error ? error.message : String(error) },
-          "json",
-        );
+        // No inline handler means an external agent, which answers through the
+        // task queue instead: the task is queued with the approval gate the
+        // session asked for and handed back for the client to poll.
+        if (!noRuntime(error)) {
+          s.status = 502;
+          s.respond(
+            { error: error instanceof Error ? error.message : String(error) },
+            "json",
+          );
+          return;
+        }
+        try {
+          s.respond(
+            await queueOnDevice(id, "git_action", {
+              ...input,
+              device_id: String(input.connector_device_id ?? ""),
+              workspace_path: String(input.connector_workspace_path ?? ""),
+            }),
+            "json",
+          );
+        } catch (error) {
+          s.status = 502;
+          s.respond(
+            { error: error instanceof Error ? error.message : String(error) },
+            "json",
+          );
+        }
       }
     });
 }

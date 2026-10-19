@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { notificationEnabled, sendWebNotification } from "@/lib/desktop-notifications"
 import { GitChangeList, type GitChangeFile } from "@/components/chat/GitChangeList"
 import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
+import { DashboardSlot } from "@/lib/slots"
 
 interface UpstreamChannelCatalog {
   id: number
@@ -5126,6 +5127,7 @@ export default function Chat() {
         <ResizableSidebar storageKey="chat-workspace" side="right" defaultWidth={288} minWidth={240} maxWidth={560} className="hidden h-full min-h-0 xl:flex">
         <aside className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto overscroll-contain border-l border-border bg-muted/20 p-3">
           <div ref={setEnvironmentSidebarHost} className="shrink-0" />
+          <DashboardSlot name="frame.right-sidebar" scope="/chat" className="shrink-0" />
           <section className="min-h-0 rounded-md border border-border bg-card shadow-sm">
             <div className="flex h-11 items-center justify-between border-b px-3">
               <div className="flex items-center gap-2 text-sm font-semibold"><FileText size={16} />{language === "zh" ? "生成的文件" : "Generated files"}</div>
