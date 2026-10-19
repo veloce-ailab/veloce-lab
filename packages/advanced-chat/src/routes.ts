@@ -29,6 +29,24 @@ export function registerAdvancedChatRoutes(
     action: string,
     payload: Record<string, unknown>,
   ) => {
+    // Host-provided connectors answer PTY I/O in-process. External agents use
+    // the task queue below; neither path waits behind ordinary command tasks.
+    try {
+      const connector = ctx.getComponent("connector") as {
+        execute(userId: number, action: string, input: Record<string, unknown>): Promise<unknown>;
+      } | undefined;
+      if (connector) {
+        const result = await connector.execute(userId, action, { ...payload, device_id: deviceId.trim() });
+        session.respond(result, "json");
+        return;
+      }
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.startsWith("No connector runtime serves the action")) {
+        session.status = 502;
+        session.respond({ error: error instanceof Error ? error.message : String(error) }, "json");
+        return;
+      }
+    }
     const task = await service.createConnectorTask(
       userId,
       deviceId.trim(),

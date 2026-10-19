@@ -6,6 +6,11 @@
   "workspaces": [
     "packages/*"
   ],
+  "dependenciesMeta": {
+    "node-pty": {
+      "built": true
+    }
+  },
   "scripts": {
     "build": "yarn workspaces foreach -Apt run build",
     "dev": "cross-env NODE_ENV=development yumeri --import @hirarijs/loader/import start",

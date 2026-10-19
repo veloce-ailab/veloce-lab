@@ -3029,6 +3029,9 @@ __metadata:
     tailwind-merge: "npm:^3.6.0"
     typescript: "npm:^5.9.2"
     yumeri: "npm:^3.0.0"
+  dependenciesMeta:
+    node-pty:
+      built: true
   languageName: unknown
   linkType: soft
 
@@ -3169,6 +3172,7 @@ __metadata:
   resolution: "@velocelab/device-local@workspace:packages/device-local"
   dependencies:
     "@velocelab/connector": "npm:^0.1.1"
+    node-pty: "npm:^1.1.0"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -6013,6 +6017,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"node-addon-api@npm:^7.1.0":
+  version: 7.1.1
+  resolution: "node-addon-api@npm:7.1.1"
+  dependencies:
+    node-gyp: "npm:latest"
+  checksum: 10c0/fb32a206276d608037fa1bcd7e9921e177fe992fc610d098aa3128baca3c0050fc1e014fa007e9b3874cf865ddb4f5bd9f43ccb7cbbbe4efaff6a83e920b17e9
+  languageName: node
+  linkType: hard
+
 "node-gyp@npm:latest":
   version: 13.0.2
   resolution: "node-gyp@npm:13.0.2"
@@ -6030,6 +6043,16 @@ __metadata:
   bin:
     node-gyp: bin/node-gyp.js
   checksum: 10c0/29d33ccf47ffeeb5e7af925550b416f698a26a72eb10975c7eb5775c1d0cecacd76d164a4aa45503d3ddcece209db65c712be00423c69381a4cd14e2e6540559
+  languageName: node
+  linkType: hard
+
+"node-pty@npm:^1.1.0":
+  version: 1.1.0
+  resolution: "node-pty@npm:1.1.0"
+  dependencies:
+    node-addon-api: "npm:^7.1.0"
+    node-gyp: "npm:latest"
+  checksum: 10c0/e527305263da36d554b7d2116aee6430b898675fc50e7bd82fbd762f14cb6b948fb8d997736af1f70d76bf9ffd4f5179bc1ed1d8002567dfcf3b29f039291798
   languageName: node
   linkType: hard
 

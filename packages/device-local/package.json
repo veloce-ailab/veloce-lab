@@ -9,7 +9,8 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@velocelab/connector": "^0.1.1"
+    "@velocelab/connector": "^0.1.1",
+    "node-pty": "^1.1.0"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

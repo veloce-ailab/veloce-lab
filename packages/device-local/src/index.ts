@@ -33,6 +33,7 @@ import {
 } from "./actions.js";
 import { pickFolder } from "./dialog.js";
 import { LocalMCPManager } from "./mcp.js";
+import { LocalTerminalManager } from "./terminal.js";
 
 // `advanced-chat` owns the device and task tables, so it has to have run first.
 export const depend = ["database", "advanced-chat", "connector"];
@@ -71,6 +72,11 @@ const CAPABILITIES = [
   "git_status",
   "git_action",
   "run_command",
+  "terminal_open",
+  "terminal_input",
+  "terminal_read",
+  "terminal_resize",
+  "terminal_close",
   "mcp_list_tools",
   "mcp_call_tool",
   "list_mcp_processes",
@@ -94,6 +100,12 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
   const connector = ctx.component.connector as ConnectorService;
   const mcp = new LocalMCPManager();
   ctx.affect(() => mcp.dispose());
+  const terminals = new LocalTerminalManager();
+  ctx.affect(() => terminals.dispose());
+  const terminalAction = (userId: number, deviceId: string, action: string, input: Record<string, unknown>) => {
+    if (!cfg.allowCommandExecution) throw Error("Local command execution is disabled");
+    return terminals.execute(`${userId}:${deviceId}`, action, input);
+  };
 
   /**
    * The auto-connect hook: one device per user for this machine, kept online. A
@@ -169,6 +181,10 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
         "",
     );
     try {
+      if (terminals.supports(String(task.action))) {
+        const result = await terminalAction(Number(task.user_id), String(task.device_id), String(task.action), { ...payload, workspace_path: workspacePath });
+        return { success: true, result: JSON.stringify(result) };
+      }
       if (String(task.action) === "git_action") {
         const outcome = await gitAction(
           String(payload.action ?? ""),
@@ -292,6 +308,9 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
       return { path: normalize(result.path), cancelled: false };
     },
     actions: {
+      ...Object.fromEntries(CAPABILITIES.filter((action) => terminals.supports(action)).map((action) => [action,
+        (userId: number, input: Record<string, unknown>, device: ConnectorDeviceRecord) => terminalAction(userId, String(device.id), action, input),
+      ])),
       list_directories: (_userId, input) => listDirectories(input),
       list_windows_drives: () => listWindowsDrives(),
       list_directory: (_userId, input) => listDirectory(input),
