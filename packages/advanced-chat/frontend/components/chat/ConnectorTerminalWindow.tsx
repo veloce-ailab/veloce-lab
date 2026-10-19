@@ -32,6 +32,7 @@ interface ConnectorTerminalWindowProps {
   workspacePath?: string
   copy: ConnectorTerminalCopy
   onClose: () => void
+  inline?: boolean
 }
 
 interface TerminalOpenResponse {
@@ -57,7 +58,7 @@ const defaultWidth = 720
 const defaultHeight = 420
 const terminalInputBatchDelay = 12
 
-export function ConnectorTerminalWindow({ deviceID, deviceName, deviceOS, workspacePath, copy, onClose }: ConnectorTerminalWindowProps) {
+export function ConnectorTerminalWindow({ deviceID, deviceName, deviceOS, workspacePath, copy, onClose, inline = false }: ConnectorTerminalWindowProps) {
   const [position, setPosition] = useState(() => initialPosition())
   const [size, setSize] = useState({ width: defaultWidth, height: defaultHeight })
   const [isMaximized, setIsMaximized] = useState(false)
@@ -414,15 +415,14 @@ export function ConnectorTerminalWindow({ deviceID, deviceName, deviceOS, worksp
     return null
   }
 
-  return createPortal(
-    <div className="pointer-events-none fixed inset-0 z-[80]" role="dialog" aria-modal={false} aria-label={copy.title + " · " + deviceName}>
-      <div ref={frameRef} className="pointer-events-auto absolute flex flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-2xl" style={frameStyle}>
+  const frame = (
+      <div ref={frameRef} className={cn("flex flex-col overflow-hidden border border-border bg-popover text-popover-foreground", inline ? "h-[min(68vh,560px)] min-h-[320px] w-full rounded-md" : "pointer-events-auto absolute rounded-lg shadow-2xl")} style={inline ? undefined : frameStyle}>
         <div
-          className={cn("flex h-10 shrink-0 items-center gap-2 border-b border-border/80 bg-muted/60 px-3", !isMaximized && "cursor-move")}
-          onPointerDown={handleDragStart}
-          onPointerMove={handleDragMove}
-          onPointerUp={handleDragEnd}
-          onPointerCancel={handleDragEnd}
+          className={cn("flex h-10 shrink-0 items-center gap-2 border-b border-border/80 bg-muted/60 px-3", !inline && !isMaximized && "cursor-move")}
+          onPointerDown={inline ? undefined : handleDragStart}
+          onPointerMove={inline ? undefined : handleDragMove}
+          onPointerUp={inline ? undefined : handleDragEnd}
+          onPointerCancel={inline ? undefined : handleDragEnd}
           onDoubleClick={(event) => {
             if (!(event.target as HTMLElement | null)?.closest("button")) {
               setIsMaximized((maximized) => !maximized)
@@ -438,12 +438,12 @@ export function ConnectorTerminalWindow({ deviceID, deviceName, deviceOS, worksp
           <button type="button" className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground" onClick={restartSession} aria-label={copy.restart} title={copy.restart}>
             <RefreshCw size={13} className={status === "connecting" ? "animate-spin" : ""} />
           </button>
-          <button type="button" className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setIsMaximized((maximized) => !maximized)} aria-label={isMaximized ? copy.restore : copy.maximize} title={isMaximized ? copy.restore : copy.maximize}>
+          {!inline && <button type="button" className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setIsMaximized((maximized) => !maximized)} aria-label={isMaximized ? copy.restore : copy.maximize} title={isMaximized ? copy.restore : copy.maximize}>
             {isMaximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-          </button>
-          <button type="button" className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={onClose} aria-label={copy.close} title={copy.close}>
+          </button>}
+          {!inline && <button type="button" className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={onClose} aria-label={copy.close} title={copy.close}>
             <X size={14} />
-          </button>
+          </button>}
         </div>
 
         <div
@@ -459,7 +459,7 @@ export function ConnectorTerminalWindow({ deviceID, deviceName, deviceOS, worksp
           </button>
         </div>
 
-        {!isMaximized && (
+        {!inline && !isMaximized && (
           <ResizeHandle
             onResize={(deltaX, deltaY) => setSize((current) => ({
               width: Math.max(minWidth, Math.min(current.width + deltaX, window.innerWidth - 32)),
@@ -468,7 +468,9 @@ export function ConnectorTerminalWindow({ deviceID, deviceName, deviceOS, worksp
           />
         )}
       </div>
-    </div>,
+  )
+  return inline ? frame : createPortal(
+    <div className="pointer-events-none fixed inset-0 z-[80]" role="dialog" aria-modal={false} aria-label={copy.title + " · " + deviceName}>{frame}</div>,
     document.body
   )
 }
