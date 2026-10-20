@@ -1089,16 +1089,12 @@ export default function Chat() {
       return normalizeAgentWorkResponse(res.data)
     },
   })
-  const hasApprovalRequiredToolCall = useMemo(
-    () => Boolean(currentSession?.messages.some((message) => message.tool_calls?.some((toolCall) => toolCall.status === "approval_required"))),
-    [currentSession?.messages]
-  )
   const {
     data: pendingConnectorApprovals = [],
     refetch: refetchConnectorApprovals,
   } = useQuery<ConnectorApprovalTask[]>({
     queryKey: connectorApprovalsQueryKey(activeRunID),
-    enabled: isAdvanced && Boolean(activeRunID) && (isActiveRunRunning || hasApprovalRequiredToolCall),
+    enabled: isAdvanced && Boolean(activeRunID),
     refetchInterval: 1000,
     queryFn: async () => {
       const res = await api.get(`/user/advanced-chat/runs/${encodeURIComponent(activeRunID)}/connector-tasks/pending`)
@@ -1118,7 +1114,7 @@ export default function Chat() {
       notifiedConnectorApprovalTaskIDsRef.current.add(task.id)
       const action = task.action || (language === "zh" ? "操作" : "action")
       const deviceName = task.device_name || (language === "zh" ? "连接器" : "Connector")
-      const workspace = task.workspace_path ? `\n${task.workspace_path}` : ""
+      const workspace = `\n${connectorApprovalTaskSubtitle(task)}`
       void sendWebNotification({ title: language === "zh" ? "需要审批" : "Approval required", body: language === "zh" ? `${deviceName} 请求执行 ${action}${workspace}` : `${deviceName} requests ${action}${workspace}`, tag: `connector-approval:${task.id}`, url: "/chat" })
     }
   }, [isDesktop, language, pendingConnectorApprovals])
@@ -5467,6 +5463,9 @@ function ToolCallDetails({
         onDecide={onDecide}
         className="mt-2"
       />
+      {builtinKind === "command" && command && (
+        <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted/40 p-2 font-mono text-xs">{command}</pre>
+      )}
       {builtinKind === "write" ? (
         <div className="mt-2 overflow-hidden rounded-md bg-muted/40">
           <LineDiff oldText={stringArgument(toolCall.arguments, "preview_old_content")} newText={content} />
@@ -5829,7 +5828,7 @@ function PendingConnectorApprovalsPanel({
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 text-xs">
                 <div className="font-medium">{connectorApprovalTaskTitle(task)}</div>
-                <div className="mt-1 truncate text-muted-foreground">{connectorApprovalTaskSubtitle(task)}</div>
+                <div className="mt-1 whitespace-pre-wrap break-words font-mono text-muted-foreground">{connectorApprovalTaskSubtitle(task)}</div>
               </div>
               <ConnectorApprovalControls
                 task={task}
@@ -6694,7 +6693,17 @@ function normalizeConnectorApprovalTask(value: unknown): ConnectorApprovalTask |
   if (!id) {
     return null
   }
-  const payload = isRecord(value.payload) ? value.payload : {}
+  let payload: Record<string, unknown> = {}
+  if (isRecord(value.payload)) {
+    payload = value.payload
+  } else if (typeof value.payload === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value.payload)
+      if (isRecord(parsed)) payload = parsed
+    } catch {
+      // Keep malformed connector payloads displayable without hiding approval.
+    }
+  }
   return {
     id,
     device_id: stringFromUnknown(value.device_id) || "",
@@ -8195,7 +8204,7 @@ function toolLabel(toolCall: ChatToolCall) {
 }
 
 function findConnectorApprovalTask(toolCall: ChatToolCall, tasks: ConnectorApprovalTask[]) {
-  if (toolCall.status !== "approval_required" || tasks.length === 0) {
+  if (!["approval_required", "running"].includes(toolCall.status) || tasks.length === 0) {
     return undefined
   }
   return tasks.find((task) => connectorApprovalTaskMatchesToolCall(toolCall, task))
@@ -8220,6 +8229,7 @@ function connectorApprovalTaskMatchesToolCall(toolCall: ChatToolCall, task: Conn
 
 function connectorApprovalTaskTitle(task: ConnectorApprovalTask) {
   const action = task.action || "connector action"
+  if (task.action === "run_command") return action
   const target =
     stringArgument(task.payload, "path") ||
     stringArgument(task.payload, "command") ||
@@ -8229,8 +8239,9 @@ function connectorApprovalTaskTitle(task: ConnectorApprovalTask) {
 }
 
 function connectorApprovalTaskSubtitle(task: ConnectorApprovalTask) {
-  const parts = [task.device_name, task.workspace_path].filter(Boolean)
-  return parts.length > 0 ? parts.join(" · ") : task.id
+  const command = stringArgument(task.payload, "command")
+  const parts = [task.device_name, task.workspace_path, command].filter(Boolean)
+  return parts.length > 0 ? parts.join("\n") : task.id
 }
 
 function connectorActionForToolCall(toolCall: ChatToolCall) {
@@ -8259,7 +8270,7 @@ function connectorActionForToolCall(toolCall: ChatToolCall) {
 
 function builtinToolKind(toolCall: ChatToolCall): "list" | "read" | "write" | "replace" | "command" | "search" | "fetch" | "" {
   const name = toolCall.name.toLowerCase()
-  if (!name.startsWith("workspace_")) {
+  if (!name.startsWith("workspace_") && !name.startsWith("connector_")) {
     return ""
   }
   if (name.includes("workspace_list_files")) {
@@ -8274,7 +8285,7 @@ function builtinToolKind(toolCall: ChatToolCall): "list" | "read" | "write" | "r
   if (name.includes("workspace_replace_text")) {
     return "replace"
   }
-  if (name.includes("workspace_run_command")) {
+  if (name.includes("workspace_run_command") || name === "connector_run_command") {
     return "command"
   }
   if (name.includes("workspace_web_search")) {

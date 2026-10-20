@@ -82,14 +82,38 @@ test("sends failure and persists failed run state", async t => {
 test("sends approval immediately when a connector task is created", async t => {
   const f = await setup(t);
   await f.db.create("advanced_chat_runs", { id: "run-1", session_id: "session-1", user_id: 7 });
-  const task = await f.ctx.component.connector.createTask(7, { device_id: "device-1", action: "run_command", run_id: "run-1", requiresApproval: true });
+  const command = "git status --short\nprintf 'review me'";
+  const task = await f.ctx.component.connector.createTask(7, { device_id: "device-1", action: "run_command", run_id: "run-1", workspace_path: "/project", payload: { command }, requiresApproval: true });
   assert.equal(task.status, "pending_approval");
   assert.equal(f.sent.length, 1);
   assert.equal(f.sent[0].type, "advanced-chat:approval");
   assert.equal(f.sent[0].dedupeKey, task.id);
-  assert.equal(f.sent[0].action.href, "/settings/devices/device-1");
+  assert.equal(f.sent[0].action.href, "/chat/session/session-1");
+  assert.ok(f.sent[0].subtitle.includes(command));
+  assert.ok(f.sent[0].subtitle.includes("/project"));
   await f.ctx.component.connector.createTask(7, { device_id: "device-1", action: "read_file", requiresApproval: false });
   assert.equal(f.sent.length, 1);
+});
+
+test("approval list exposes command payloads and excludes decided tasks and other users/runs", async t => {
+  const f = await setup(t);
+  const service = f.ctx.component["advanced-chat"];
+  for (const [id, status, user_id, run_id, payload] of [
+    ["pending", "pending_approval", 7, "run-1", JSON.stringify({ command: "echo hello\npwd" })],
+    ["invalid", "pending_approval", 7, "run-1", "invalid JSON"],
+    ["running", "running", 7, "run-1", "{}"],
+    ["queued", "queued", 7, "run-1", "{}"],
+    ["approved", "approved", 7, "run-1", "{}"],
+    ["rejected", "rejected", 7, "run-1", "{}"],
+    ["other-user", "pending_approval", 8, "run-1", "{}"],
+    ["other-run", "pending_approval", 7, "run-2", "{}"],
+  ]) await f.db.create("advanced_chat_connector_tasks", { id, status, user_id, run_id, payload, created_at: "2026-10-19" });
+  const tasks = await service.listPendingConnectorTasks(7, "run-1");
+  assert.deepEqual(tasks.map(task => task.id), ["pending", "invalid"]);
+  assert.equal(tasks[0].payload.command, "echo hello\npwd");
+  assert.deepEqual(tasks[1].payload, {});
+  await f.db.update("advanced_chat_connector_tasks", { id: "pending" }, { status: "approved" });
+  assert.deepEqual((await service.listPendingConnectorTasks(7, "run-1")).map(task => task.id), ["invalid"]);
 });
 
 test("question requests send a message without a completion notification", async t => {

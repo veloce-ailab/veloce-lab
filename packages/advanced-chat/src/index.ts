@@ -490,16 +490,26 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const db = ctx.component.database;
   await ensureTables(db);
   const sendMessage = registerChatMessages(ctx);
-  ctx.on("connector.approval-required", async (task: { id: string; user_id: number; run_id: string; device_id: string; action: string }) => {
+  ctx.on("connector.approval-required", async (task: { id: string; user_id: number; run_id: string; device_id: string; action: string; workspace_path?: string; payload?: unknown }) => {
     if (!task.run_id) return;
     const run = await db.selectOne("advanced_chat_runs", { id: task.run_id, user_id: task.user_id });
     if (!run) return;
+    let payload: Record<string, unknown> = {};
+    if (typeof task.payload === "string") {
+      try {
+        const parsed = JSON.parse(task.payload);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) payload = parsed;
+      } catch { /* malformed payload */ }
+    } else if (task.payload && typeof task.payload === "object") {
+      payload = task.payload as Record<string, unknown>;
+    }
+    const command = typeof payload.command === "string" ? payload.command : "";
     await sendMessage({
       userId: task.user_id,
       type: "approval",
       key: task.id,
-      subtitle: task.action,
-      href: `/settings/devices/${encodeURIComponent(task.device_id)}`,
+      subtitle: [task.action, command, task.workspace_path].filter(Boolean).join(" · "),
+      href: `/chat/session/${encodeURIComponent(String(run.session_id))}`,
     });
   });
   registerChatFileRoutes(
@@ -1073,10 +1083,16 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         run_id: runId,
       });
       return tasks
-        .filter((task) =>
-          ["queued", "pending_approval", "running"].includes(task.status),
-        )
-        .sort((left, right) => left.created_at.localeCompare(right.created_at));
+        .filter((task) => task.status === "pending_approval")
+        .sort((left, right) => left.created_at.localeCompare(right.created_at))
+        .map((task) => {
+          let payload: Record<string, unknown> = {};
+          try {
+            const parsed = typeof task.payload === "string" ? JSON.parse(task.payload) : task.payload;
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) payload = parsed;
+          } catch { /* Keep approval visible even when a connector stored invalid JSON. */ }
+          return { ...task, payload };
+        });
     },
     async createConnectorTask(userId, deviceId, action, payload) {
       const device = await db.selectOne("advanced_chat_connector_devices", {
