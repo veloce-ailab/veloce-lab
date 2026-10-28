@@ -5,12 +5,11 @@ import { Context, Database, Session } from "yumeri";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/file";
-import "@velocelab/memory";
 import { ensureCompanionTables } from "./tables.js";
-import { OneBotV11Adapter, parseOneBotEvent, type OneBotEvent } from "./onebot.js";
+import { OneBotV11Adapter, OneBotV12Adapter, OneBotWsClient, parseOneBotEvent, type OneBotEvent } from "./onebot.js";
 import { parseQQOfficialEvent, QQOfficialAdapter, QQOfficialGateway } from "./qq-official.js";
 
-export const depend = ["database", "dashboard", "advanced-chat", "file", "memory"];
+export const depend = ["database", "dashboard", "advanced-chat", "file"];
 export const provide = ["companion"];
 
 type Row = Record<string, any>;
@@ -59,8 +58,12 @@ export async function apply(ctx: Context) {
   const files = ctx.component.file as { write(name: string, data: string | Uint8Array): Promise<void>; remove(name: string): Promise<void> };
   await ensureCompanionTables(db);
   const gateways = new Map<number, QQOfficialGateway>();
+  const onebotSockets = new Map<number, OneBotWsClient>();
+  const reverseSockets = new Map<number, { send(value: string): void }>();
+  const reversePending = new Map<number, Map<string, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>>();
   let handleEvent: (integration: Row, raw: unknown) => Promise<void> = async () => undefined;
   const stopGateway = (id: number) => { gateways.get(id)?.stop(); gateways.delete(id); };
+  const stopOneBotSocket = (id: number) => { onebotSockets.get(id)?.stop(); onebotSockets.delete(id); reverseSockets.delete(id); };
   const startGateway = (integration: Row) => {
     const id = Number(integration.id); stopGateway(id);
     if (integration.provider !== "qq_official" || !integration.enabled || !integration.app_id || !integration.app_secret) return;
@@ -71,6 +74,35 @@ export async function apply(ctx: Context) {
     }, `${integration.id}/${integration.name}`);
     gateways.set(id, gateway); gateway.start();
   };
+  const startOneBotSocket = (integration: Row) => {
+    const id = Number(integration.id); stopOneBotSocket(id);
+    if (integration.provider === "qq_official" || integration.onebot_transport !== "forward_ws" || !integration.enabled) return;
+    const client = new OneBotWsClient(String(integration.base_url), String(integration.access_token ?? ""), (event) => { void handleEvent(integration, event).catch((error) => console.error("OneBot WebSocket event failed", error)); });
+    onebotSockets.set(id, client); client.start();
+  };
+  const onebotAction = (integration: Row, action: string, params: Record<string, unknown> = {}): Promise<any> => {
+    const id = Number(integration.id);
+    if (integration.onebot_transport === "forward_ws") {
+      const client = onebotSockets.get(id);
+      if (!client) return Promise.reject(new Error("OneBot WebSocket is not connected"));
+      return client.action(action, params) as Promise<any>;
+    }
+    if (integration.onebot_transport === "reverse_ws") {
+      const socket = reverseSockets.get(id);
+      if (!socket) return Promise.reject(new Error("OneBot reverse WebSocket is not connected"));
+      const echo = randomUUID();
+      const requests = reversePending.get(id) ?? new Map();
+      reversePending.set(id, requests);
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { requests.delete(echo); reject(new Error(`OneBot WebSocket ${action} timed out`)); }, 15000);
+        requests.set(echo, { resolve, reject, timer });
+        socket.send(JSON.stringify({ action, params, echo }));
+      });
+    }
+    return integration.provider === "onebot_v12"
+      ? new OneBotV12Adapter(String(integration.base_url), String(integration.access_token ?? "")).action(action, params)
+      : new OneBotV11Adapter(String(integration.base_url), String(integration.access_token ?? "")).action(action, params);
+  };
   ctx.i18n({ companion: { title: { zh: "聊天陪伴", en: "Chat companions", ja: "チャットコンパニオン" } } });
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/companion.js", import.meta.url).pathname, plugin: "companion" });
   ctx.registerComponent("companion", { provider: "onebot_v11", sessionID: idFor });
@@ -79,7 +111,8 @@ export async function apply(ctx: Context) {
   const ownedIntegration = (userID: number, id: string | number) => db.selectOne("companion_integrations", { id: Number(id), user_id: userID });
   const safeIntegration = (row: Row) => {
     const { access_token: _token, app_secret: _secret, webhook_secret: _webhookSecret, ...rest } = row;
-    return { ...rest, has_access_token: Boolean(row.access_token), has_app_secret: Boolean(row.app_secret), webhook_url: row.provider === "onebot_v11" ? `/api/companion/onebot/${row.id}/${row.webhook_secret}` : "" };
+    const transport = String(row.onebot_transport || "reverse_http");
+    return { ...rest, has_access_token: Boolean(row.access_token), has_app_secret: Boolean(row.app_secret), webhook_url: ["onebot_v11", "onebot_v12"].includes(String(row.provider)) && transport.includes("http") ? `/api/companion/onebot/${row.id}/${row.webhook_secret}` : "", websocket_url: ["onebot_v11", "onebot_v12"].includes(String(row.provider)) && transport === "reverse_ws" ? `/api/companion/onebot-ws/${row.id}/${row.webhook_secret}` : "" };
   };
   const safePersona = (row: Row) => ({ id: row.id, integration_id: row.integration_id, name: row.name, assistant_agent_id: row.assistant_agent_id, base_agent_id: row.base_agent_id, enabled: row.enabled, created_at: row.created_at, updated_at: row.updated_at });
   const removeSticker = async (sticker: Row) => {
@@ -100,12 +133,14 @@ export async function apply(ctx: Context) {
   ctx.route("/api/user/companions").methods("POST").action(async (session) => {
     const userID = currentUser(session); if (userID === undefined) return;
     const input = await body(session);
-    const provider = input.provider === "qq_official" ? "qq_official" : "onebot_v11";
+    const provider = input.provider === "qq_official" ? "qq_official" : input.provider === "onebot_v12" ? "onebot_v12" : "onebot_v11";
     const name = String(input.name ?? (provider === "qq_official" ? "QQ 官方机器人" : "OneBot 机器人")).trim().slice(0, 100);
     const baseURL = provider === "qq_official" ? QQ_API_BASE_URL : String(input.base_url ?? "").trim().replace(/\/+$/, "");
-    if (!name || !/^https?:\/\//i.test(baseURL) || (provider === "onebot_v11" && !baseURL)) { session.status = 400; session.respond({ error: "名称和有效的接入 API 地址为必填项" }, "json"); return; }
+    const onebotTransport = ["forward_http", "reverse_http", "forward_ws", "reverse_ws"].includes(String(input.onebot_transport)) ? String(input.onebot_transport) : "reverse_http";
+    const validURL = provider === "qq_official" ? /^https?:\/\//i.test(baseURL) : (onebotTransport.includes("ws") ? /^wss?:\/\//i : /^https?:\/\//i).test(baseURL);
+    if (!name || !validURL) { session.status = 400; session.respond({ error: "名称和匹配连接方式的 API 地址为必填项" }, "json"); return; }
     const row = await db.create("companion_integrations", {
-      user_id: userID, name, provider, base_url: baseURL, access_token: String(input.access_token ?? ""),
+      user_id: userID, name, provider, onebot_version: provider === "onebot_v12" ? "v12" : "v11", onebot_transport: onebotTransport, base_url: baseURL, access_token: String(input.access_token ?? ""),
       app_id: String(input.app_id ?? ""), app_secret: String(input.app_secret ?? ""),
       webhook_secret: randomUUID().replaceAll("-", ""), enabled: true,
       default_persona_id: "", session_mode: "per_chat", allow_image_input: true, allow_image_output: true,
@@ -113,6 +148,7 @@ export async function apply(ctx: Context) {
       allowed_user_ids: "[]", blocked_user_ids: "[]", allowed_group_ids: "[]", blocked_group_ids: "[]", group_personas: "{}", created_at: now(), updated_at: now(),
     } as any);
     if (provider === "qq_official") startGateway(row as Row);
+    else startOneBotSocket(row as Row);
     session.status = 201; session.respond(safeIntegration(row), "json");
   });
   ctx.route("/api/user/companions/:id").methods("PUT").action(async (session, _params, id) => {
@@ -122,6 +158,7 @@ export async function apply(ctx: Context) {
     if (input.session_mode !== undefined && !["unified", "per_chat"].includes(String(input.session_mode))) { session.status = 400; session.respond({ error: "Invalid session mode" }, "json"); return; }
     if (input.interrupt_mode !== undefined && !["stop", "queue", "ignore"].includes(String(input.interrupt_mode))) { session.status = 400; session.respond({ error: "Invalid interruption mode" }, "json"); return; }
     for (const key of ["name", "session_mode", "interrupt_mode"]) if (input[key] !== undefined) updates[key] = String(input[key]).trim();
+    if (input.onebot_transport !== undefined && ["forward_http", "reverse_http", "forward_ws", "reverse_ws"].includes(String(input.onebot_transport))) updates.onebot_transport = String(input.onebot_transport);
     if (existing.provider === "onebot_v11" && input.base_url !== undefined) updates.base_url = String(input.base_url).trim();
     if (input.access_token !== undefined) updates.access_token = String(input.access_token);
     if (input.app_id !== undefined) updates.app_id = String(input.app_id).trim();
@@ -142,9 +179,9 @@ export async function apply(ctx: Context) {
       if (Object.values(mapping).some((personaID) => !validIDs.has(String(personaID)))) { session.status = 400; session.respond({ error: "群人格映射包含未知人格" }, "json"); return; }
       updates.group_personas = JSON.stringify(mapping);
     }
-    if (updates.base_url && !/^https?:\/\//i.test(updates.base_url)) { session.status = 400; session.respond({ error: "接入 API 地址必须使用 http(s)" }, "json"); return; }
+    if (updates.base_url && !((String(updates.onebot_transport ?? existing.onebot_transport ?? "reverse_http").includes("ws") ? /^wss?:\/\//i : /^https?:\/\//i).test(String(updates.base_url)))) { session.status = 400; session.respond({ error: "接入地址必须使用匹配的 http(s) 或 ws(s) 协议" }, "json"); return; }
     await db.update("companion_integrations", { id: Number(id), user_id: userID }, updates);
-    const updated = await ownedIntegration(userID, id); startGateway(updated as Row); session.respond(safeIntegration(updated as Row), "json");
+    const updated = await ownedIntegration(userID, id); startGateway(updated as Row); startOneBotSocket(updated as Row); session.respond(safeIntegration(updated as Row), "json");
   });
   ctx.route("/api/user/companions/:id").methods("DELETE").action(async (session, _params, id) => {
     const userID = currentUser(session); if (userID === undefined) return;
@@ -166,7 +203,7 @@ export async function apply(ctx: Context) {
     try {
       const result = integration.provider === "qq_official"
         ? await new QQOfficialAdapter(String(integration.app_id ?? ""), String(integration.app_secret ?? ""), QQ_API_BASE_URL).ping()
-        : await new OneBotV11Adapter(String(integration.base_url), String(integration.access_token ?? "")).ping();
+        : await onebotAction(integration, integration.provider === "onebot_v12" ? "get_status" : "get_login_info");
       session.respond({ success: true, bot: result.data ?? result }, "json");
     }
     catch (error) { session.status = 502; session.respond({ success: false, error: error instanceof Error ? error.message : String(error) }, "json"); }
@@ -339,10 +376,25 @@ export async function apply(ctx: Context) {
     return parts;
   };
   const sendReply = async (event: OneBotEvent, integration: Row, parts: ReplyPart[], startSequence = 1) => {
-    if (event.provider === "onebot_v11") {
-      const message = parts.map((part) => part.type === "text" ? part.text : `[CQ:image,file=${String(part.sticker.image_url).replace(/[,\[\]]/g, encodeURIComponent)}]`).join("").trim();
-      if (message) await new OneBotV11Adapter(String(integration.base_url), String(integration.access_token ?? "")).send(event, message);
-      return { content: message, nextSequence: startSequence };
+    if (event.provider === "onebot_v11" || event.provider === "onebot_v12") {
+      const text = parts.filter((part) => part.type === "text").map((part) => part.text).join("").trim();
+      const stickers = parts.filter((part) => part.type === "sticker").map((part) => String(part.sticker.image_url));
+      const message = integration.provider === "onebot_v12"
+        ? text
+        : parts.map((part) => part.type === "text" ? part.text : `[CQ:image,file=${String(part.sticker.image_url).replace(/[,\[\]]/g, encodeURIComponent)}]`).join("").trim();
+      if (message || stickers.length) {
+        if (integration.onebot_transport === "forward_ws") {
+          const client = onebotSockets.get(Number(integration.id));
+          if (!client) throw new Error("OneBot WebSocket is not connected");
+          await client.action(integration.provider === "onebot_v12" ? "send_message" : "send_msg", integration.provider === "onebot_v12" ? { detail_type: event.messageType, ...(event.messageType === "group" ? { group_id: event.groupId } : { user_id: event.userId }), message: [{ type: "text", data: { text } }, ...stickers.map((url) => ({ type: "image", data: { file: url } }))] } : { message_type: event.messageType, ...(event.messageType === "group" ? { group_id: event.groupId } : { user_id: event.userId }), message });
+        } else if (integration.onebot_transport === "reverse_ws") {
+          const socket = reverseSockets.get(Number(integration.id));
+          if (!socket) throw new Error("OneBot reverse WebSocket is not connected");
+          socket.send(JSON.stringify({ action: integration.provider === "onebot_v12" ? "send_message" : "send_msg", params: integration.provider === "onebot_v12" ? { detail_type: event.messageType, ...(event.messageType === "group" ? { group_id: event.groupId } : { user_id: event.userId }), message: [{ type: "text", data: { text } }, ...stickers.map((url) => ({ type: "image", data: { file: url } }))] } : { message_type: event.messageType, ...(event.messageType === "group" ? { group_id: event.groupId } : { user_id: event.userId }), message } }));
+        } else if (integration.provider === "onebot_v12") await new OneBotV12Adapter(String(integration.base_url), String(integration.access_token ?? "")).send(event, text, stickers);
+        else await new OneBotV11Adapter(String(integration.base_url), String(integration.access_token ?? "")).send(event, message);
+      }
+      return { content: text || (stickers.length ? `[${stickers.length} image]` : ""), nextSequence: startSequence };
     }
     const adapter = new QQOfficialAdapter(String(integration.app_id ?? ""), String(integration.app_secret ?? ""), QQ_API_BASE_URL);
     let msgSeq = startSequence; let sent = 0;
@@ -378,7 +430,10 @@ export async function apply(ctx: Context) {
       for (const [index, image] of (event.images as Array<{ url: string; file: string }>).entries()) {
         let imageURL = image.url;
         if (!imageURL && image.file) {
-          try { const result = await fetch(`${String(integration.base_url).replace(/\/+$/, "")}/get_image`, { method: "POST", headers: { "Content-Type": "application/json", ...(integration.access_token ? { Authorization: `Bearer ${integration.access_token}` } : {}) }, body: JSON.stringify({ file: image.file }), signal: AbortSignal.timeout(7000) }); const body = await result.json() as Row; imageURL = String(body.data?.url ?? ""); } catch { imageURL = ""; }
+          try {
+            if (integration.provider === "onebot_v12") imageURL = await new OneBotV12Adapter(String(integration.base_url), String(integration.access_token ?? "")).imageURL(image.file);
+            else { const result = await fetch(`${String(integration.base_url).replace(/\/+$/, "")}/get_image`, { method: "POST", headers: { "Content-Type": "application/json", ...(integration.access_token ? { Authorization: `Bearer ${integration.access_token}` } : {}) }, body: JSON.stringify({ file: image.file }), signal: AbortSignal.timeout(7000) }); const body = await result.json() as Row; imageURL = String(body.data?.url ?? ""); }
+          } catch { imageURL = ""; }
         }
         const stickerID = randomUUID();
         if (!imageURL || !await publicURL(imageURL, String(integration.base_url))) continue;
@@ -417,7 +472,7 @@ export async function apply(ctx: Context) {
     const payload = object(raw);
     const event = payload.provider === "qq_official"
       ? parseQQOfficialEvent(String(payload.eventName ?? ""), payload.eventData)
-      : parseOneBotEvent(raw);
+      : parseOneBotEvent(raw, integration.provider === "onebot_v12" ? "v12" : "v11");
     if (!event || event.provider !== integration.provider || (event.selfId && String(payload.self_id) === event.userId) || !allowed(integration, event)) return;
     if (event.messageId) {
       const duplicate: any = await db.selectOne("companion_messages", { integration_id: Number(integration.id), external_message_id: event.messageId, direction: "inbound" });
@@ -453,7 +508,37 @@ export async function apply(ctx: Context) {
     session.respond({ status: "ok", retcode: 0, data: {} }, "json");
     void handleEvent(integration, input).catch((error) => console.error("OneBot companion event failed", error));
   });
+  ctx.route("/api/companion/onebot-ws/:id/:secret").wsOn("connection", (socket: { on(event: string, handler: (value: any) => void): void; send(value: string): void; close(): void }, req: { url?: string }) => {
+    const match = /^\/api\/companion\/onebot-ws\/([^/]+)\/([^/?]+)/.exec(String(req.url || ""));
+    if (!match) { socket.close(); return; }
+    void (async () => {
+      const integration: any = await db.selectOne("companion_integrations", { id: Number(match[1]), webhook_secret: match[2] });
+      if (!integration || !integration.enabled || !String(integration.onebot_transport || "").includes("ws")) { socket.close(); return; }
+      reverseSockets.set(Number(integration.id), socket);
+      const clearSocket = () => {
+        if (reverseSockets.get(Number(integration.id)) === socket) reverseSockets.delete(Number(integration.id));
+        for (const request of reversePending.get(Number(integration.id))?.values() ?? []) { clearTimeout(request.timer); request.reject(new Error("OneBot reverse WebSocket disconnected")); }
+        reversePending.delete(Number(integration.id));
+      };
+      socket.on("close", clearSocket);
+      socket.on("message", (raw) => {
+        let input: unknown;
+        try { input = JSON.parse(String(raw)); } catch { return; }
+        const payload = object(input);
+        const echo = payload.echo == null ? "" : String(payload.echo);
+        const pending = echo ? reversePending.get(Number(integration.id))?.get(echo) : undefined;
+        if (pending) {
+          reversePending.get(Number(integration.id))?.delete(echo); clearTimeout(pending.timer);
+          if (payload.status === "failed" || (Number(payload.retcode) !== 0 && payload.retcode !== undefined)) pending.reject(new Error(String(payload.message ?? payload.wording ?? payload.retcode)));
+          else pending.resolve(payload.data ?? payload);
+          return;
+        }
+        socket.send(JSON.stringify({ status: "ok", retcode: 0, data: {} }));
+        void handleEvent(integration, input).catch((error) => console.error("OneBot WebSocket event failed", error));
+      });
+    })().catch(() => socket.close());
+  });
   const integrations = await db.select("companion_integrations", {}) as Row[];
-  for (const integration of integrations) startGateway(integration);
-  ctx.affect(() => { for (const gateway of gateways.values()) gateway.stop(); gateways.clear(); });
+  for (const integration of integrations) { startGateway(integration); startOneBotSocket(integration); }
+  ctx.affect(() => { for (const gateway of gateways.values()) gateway.stop(); gateways.clear(); for (const socket of onebotSockets.values()) socket.stop(); onebotSockets.clear(); reverseSockets.clear(); });
 }

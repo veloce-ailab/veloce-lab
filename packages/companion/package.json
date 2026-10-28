@@ -6,12 +6,12 @@
   "dev": "src/index.ts",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@velocelab/advanced-chat": "^0.1.1",
-    "@velocelab/file": "^0.1.1",
-    "@velocelab/memory": "^0.1.1"
+    "@velocelab/file": "^0.1.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.1",

@@ -13,6 +13,8 @@ export async function ensureCompanionTables(db: Database) {
   await db.extend("companion_integrations", {
     id: { type: "integer", autoIncrement: true }, user_id: { type: "integer", nullable: false },
     name: { type: "string", nullable: false }, provider: { type: "string", initial: "onebot_v11" },
+    onebot_version: { type: "string", initial: "v11" },
+    onebot_transport: { type: "string", initial: "reverse_http" },
     base_url: { type: "string", nullable: false }, access_token: { type: "text", initial: "" },
     app_id: { type: "string", initial: "" }, app_secret: { type: "text", initial: "" },
     webhook_secret: { type: "string", nullable: false },

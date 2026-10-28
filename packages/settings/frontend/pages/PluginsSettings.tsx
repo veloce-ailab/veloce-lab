@@ -40,6 +40,11 @@ interface ManagedPlugin {
   config: Record<string, unknown>
 }
 
+interface AvailablePlugin {
+  name: string
+  title: string
+}
+
 interface AuthCapabilities {
   providers: Array<{ id: string; displayName: string; available: boolean }>
   loginMethods: Array<{ id: string; displayName: string; available: boolean }>
@@ -71,13 +76,15 @@ export default function PluginsSettings() {
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null)
   const [invalid, setInvalid] = useState<string[]>([])
   const [syncToken, setSyncToken] = useState(0)
+  const [installName, setInstallName] = useState("")
 
-  const plugins = useQuery<{ plugins: ManagedPlugin[] }>({
+  const plugins = useQuery<{ plugins: ManagedPlugin[]; available: AvailablePlugin[] }>({
     queryKey: ["settings", "plugins", language],
     queryFn: async () => (await api.get("/settings/plugins")).data,
   })
 
   const all = plugins.data?.plugins ?? []
+  const available = plugins.data?.available ?? []
   const needle = filter.trim().toLowerCase()
   const visible = useMemo(
     () => (needle ? all.filter((plugin) => plugin.name.toLowerCase().includes(needle) || plugin.title.toLowerCase().includes(needle)) : all),
@@ -126,6 +133,15 @@ export default function PluginsSettings() {
     onError: (cause: unknown) => toastError(apiError(cause, t("settings.plugins.failed"))),
   })
 
+  const install = useMutation({
+    mutationFn: async () => {
+      if (!installName) throw new Error("no plugin selected")
+      return (await api.post("/settings/plugins/install", { name: installName })).data as { ok: boolean }
+    },
+    onSuccess: () => success(t("settings.plugins.installRestart")),
+    onError: (cause: unknown) => toastError(apiError(cause, t("settings.plugins.failed"))),
+  })
+
   const runAction = async (action: PluginAction) => {
     if (action === "disable") {
       // Disabling cascades through the loader, so the plugins that go down with
@@ -142,7 +158,7 @@ export default function PluginsSettings() {
   const onValidity = (path: string, valid: boolean) =>
     setInvalid((current) => (valid ? current.filter((item) => item !== path) : current.includes(path) ? current : [...current, path]))
 
-  const blocked = act.isPending || invalid.length > 0
+  const blocked = act.isPending || install.isPending || invalid.length > 0
   const status = pluginStatus(selected?.status)
 
   return (
@@ -189,6 +205,22 @@ export default function PluginsSettings() {
               somewhere to land, otherwise a package like the setup guide can
               only exist as a page of its own instead of meeting the user here. */}
           <DashboardSlot name="settings.plugins.before" />
+          <section className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1">
+              <label className="mb-1.5 block text-sm font-medium" htmlFor="install-plugin">{t("settings.plugins.installTitle")}</label>
+              <Select value={installName} onValueChange={setInstallName}>
+                <SelectTrigger id="install-plugin" className="w-full" disabled={!available.length || install.isPending}>
+                  <SelectValue placeholder={available.length ? t("settings.plugins.chooseInstall") : t("settings.plugins.noAvailable")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {available.map((plugin) => <SelectItem key={plugin.name} value={plugin.name}>{plugin.title} <span className="ml-2 font-mono text-xs text-muted-foreground">{plugin.name}</span></SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button className="gap-2" disabled={!installName || blocked} onClick={() => install.mutate()}>
+              {install.isPending ? <Loader2 size={16} className="animate-spin" /> : <Puzzle size={16} />}{t("settings.plugins.install")}
+            </Button>
+          </section>
           <div className="lg:hidden">
             <Select value={selected?.name ?? ""} onValueChange={(next) => setSelectedName(next)}>
               <SelectTrigger className="w-full"><SelectValue placeholder={t("settings.plugins.select")} /></SelectTrigger>

@@ -1,5 +1,8 @@
 import { Context, Schema, Session, resolveDescription } from "yumeri";
 import "@velocelab/dashboard";
+import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const depend = ["dashboard"];
 export const provide = ["settings"];
@@ -37,6 +40,30 @@ interface PluginLoader {
   reloadPlugin(name: string): Promise<void>;
   unloadPlugin(name: string): Promise<void>;
   loadSinglePlugin(name: string, triggerPendingCheck?: boolean): Promise<boolean>;
+}
+
+interface WorkspacePackage {
+  name?: string;
+  private?: boolean;
+}
+
+/** Packages shipped with this workspace that can be added to yumeri.json. */
+function discoverWorkspacePlugins(): string[] {
+  // This resolves to the repository's packages directory in both src and dist.
+  const packagesDir = dirname(fileURLToPath(import.meta.url));
+  const root = join(packagesDir, "..", "..");
+  if (!existsSync(root)) return [];
+  const names: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    try {
+      const packageJson = JSON.parse(readFileSync(join(root, entry.name, "package.json"), "utf8")) as WorkspacePackage;
+      if (packageJson.name && !packageJson.private) names.push(packageJson.name);
+    } catch {
+      // A non-package directory is not an installable plugin.
+    }
+  }
+  return names.sort((left, right) => left.localeCompare(right));
 }
 
 /** Key a plugin is stored under, whether it is currently enabled or disabled. */
@@ -130,6 +157,11 @@ export function apply(ctx: Context) {
       plugins: {
         title: { zh: "插件", en: "Plugins", ja: "プラグイン" },
         list: { zh: "插件列表", en: "Plugin list", ja: "プラグイン一覧" },
+        installTitle: { zh: "安装插件", en: "Install plugin", ja: "プラグインをインストール" },
+        install: { zh: "安装", en: "Install", ja: "インストール" },
+        chooseInstall: { zh: "选择要安装的插件", en: "Choose a plugin to install", ja: "インストールするプラグインを選択" },
+        installRestart: { zh: "插件已写入配置并保持禁用，框架正在重启。重启后可在列表中启用。", en: "The plugin was added as disabled. The framework is restarting; enable it from the list after restart.", ja: "プラグインを無効状態で設定に追加しました。フレームワークを再起動しています。再起動後に一覧から有効化できます。" },
+        noAvailable: { zh: "没有可安装的插件", en: "No plugins available to install", ja: "インストール可能なプラグインはありません" },
         search: { zh: "搜索插件", en: "Search plugins", ja: "プラグインを検索" },
         empty: { zh: "没有匹配的插件", en: "No plugin matches", ja: "一致するプラグインがありません" },
         select: {
@@ -263,9 +295,39 @@ export function apply(ctx: Context) {
     // Enabled plugins first, then alphabetically, so the ones actually running
     // are the ones in view.
     listed.sort((left, right) => Number(right.enabled) - Number(left.enabled) || left.name.localeCompare(right.name));
+    const installed = new Set(listed.map((entry) => entry.name));
+    const available = discoverWorkspacePlugins()
+      .filter((name) => !installed.has(name))
+      .map((name) => ({ name, title: ctx.getCore().getShortPluginName(name) }));
     session.respond({
       plugins: listed.map((entry) => ({ ...entry, dependents: dependentsOf(entry.name, listed) })),
+      available,
     }, "json");
+  });
+
+  ctx.route("/api/settings/plugins/install").methods("POST").action(async (session: Session) => {
+    const current = loader();
+    if (!current) return unavailable(session);
+    const body = await readBody(session);
+    const name = String(body.name ?? "").trim();
+    if (!name || !discoverWorkspacePlugins().includes(name)) {
+      session.status = 400;
+      session.respond({ error: "Only workspace plugins can be installed" }, "json");
+      return;
+    }
+    const plugins = current.config.plugins ?? (current.config.plugins = {});
+    if (name in plugins || `~${name}` in plugins) {
+      session.status = 409;
+      session.respond({ error: "Plugin is already installed" }, "json");
+      return;
+    }
+    // New plugins are deliberately disabled until the next worker starts. This
+    // prevents a half-installed dependency graph from changing the live app.
+    plugins[`~${name}`] = {};
+    await current.saveConfig();
+    session.respond({ ok: true, name, restart: true }, "json");
+    // yumeri/bin.js treats exit code 10 as a managed worker restart request.
+    setTimeout(() => process.exit(10), 500);
   });
 
   ctx.route("/api/settings/plugins/config").methods("POST").action(async (session: Session) => {

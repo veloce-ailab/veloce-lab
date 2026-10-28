@@ -13,8 +13,8 @@
   },
   "scripts": {
     "build": "yarn workspaces foreach -Apt run build",
-    "dev": "cross-env NODE_ENV=development yumeri --import @hirarijs/loader/import start",
-    "start": "yumeri start"
+    "dev": "cross-env NODE_ENV=development yumeri --import @hirarijs/loader/import start --auto-install",
+    "start": "yumeri start --auto install"
   },
   "dependencies": {
     "yumeri": "^3.0.0"
