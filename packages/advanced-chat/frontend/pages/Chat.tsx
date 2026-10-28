@@ -6,10 +6,9 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, GitCompareArrows, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, PanelRightClose, PanelRightOpen, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, Upload, User, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
-import { ConnectorTerminalWindow, type ConnectorTerminalCopy } from "@/components/chat/ConnectorTerminalWindow"
 import { useI18n, type TranslationKey } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
 import { withPublicSettingsDefaults } from "@/lib/public-settings"
@@ -24,9 +23,8 @@ import { PageInlineSlot, PageTitleSlot } from "@/components/layout/PageTitleSlot
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
 import { notificationEnabled, sendWebNotification } from "@/lib/desktop-notifications"
-import { GitChangeList, type GitChangeFile } from "@/components/chat/GitChangeList"
-import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
 import { DashboardSlot } from "@/lib/slots"
+import type { ChatSlotData } from "../slots"
 
 interface UpstreamChannelCatalog {
   id: number
@@ -45,13 +43,7 @@ interface ChatToolCall {
   result?: string
 }
 
-interface GeneratedFileEntry {
-  path: string
-  name: string
-  description: string
-}
 
-const GENERATED_FILE_TOOL_NAME = "report_generated_file"
 
 interface ChatContentPart {
   round?: number
@@ -399,23 +391,7 @@ interface ConnectorApprovalTask {
   created_at: string
 }
 
-interface WorkspaceGitStatus {
-  current_branch: string
-  compare_branch?: string
-  branches: string[]
-  changed_files: number
-  additions: number
-  deletions: number
-  clean: boolean
-  files: GitChangeFile[]
-}
 
-interface ConnectorTaskStatus {
-  id: string
-  status: string
-  result?: string
-  error_message?: string
-}
 
 interface WorkspaceDirectories {
   path: string
@@ -613,8 +589,7 @@ export default function Chat() {
   const approvalModeCopy = useMemo(() => (language === "zh" ? zhConnectorApprovalModeCopy : enConnectorApprovalModeCopy), [language])
   const newSessionGreeting = greetingForHour(language)
   const recentAgentsLabel = language === "zh" ? "最近助理" : language === "ja" ? "最近のアシスタント" : "Recent assistants"
-  const gitCopy = useMemo(() => (language === "zh" ? zhGitWorkspaceCopy : enGitWorkspaceCopy), [language])
-  const terminalCopy = useMemo(() => (language === "zh" ? zhConnectorTerminalCopy : enConnectorTerminalCopy), [language])
+  const workspaceEditorCopy = language === "zh" ? { openInVSCode: "在 VS Code 中打开", openVSCodeFailed: "无法在 VS Code 中打开工作区" } : { openInVSCode: "Open in VS Code", openVSCodeFailed: "Failed to open the workspace in VS Code" }
   const workspacePickerCopy = useMemo(() => (language === "zh" ? zhWorkspacePickerCopy : enWorkspacePickerCopy), [language])
   const taskChangeCopy = useMemo(() => (language === "zh" ? zhTaskChangeCopy : enTaskChangeCopy), [language])
   const sessionSidebarCopy = useMemo(() => (language === "zh" ? zhSessionSidebarCopy : enSessionSidebarCopy), [language])
@@ -637,7 +612,6 @@ export default function Chat() {
   const [isAgentWorkOpen, setIsAgentWorkOpen] = useState(false)
   const [selectedWorkAgentID, setSelectedWorkAgentID] = useState("")
   const [, setIsSessionsSidebarOpen] = useState(false)
-  const [isDesktopSessionsSidebarVisible, setIsDesktopSessionsSidebarVisible] = useState(true)
   const [desktopSessionsSidebarHost, setDesktopSessionsSidebarHost] = useState<HTMLElement | null>(null)
   const [visibleSessionCount, setVisibleSessionCount] = useState(20)
   const [sessionGroupMode, setSessionGroupMode] = useState<SessionGroupMode>(readSessionGroupMode)
@@ -660,13 +634,6 @@ export default function Chat() {
   const [workspacePickerTarget, setWorkspacePickerTarget] = useState<WorkspacePickerTarget>("session")
   const [isTaskChangesOpen, setIsTaskChangesOpen] = useState(false)
   const [selectedTaskChangePath, setSelectedTaskChangePath] = useState("")
-  const [environmentSidebarHost, setEnvironmentSidebarHost] = useState<HTMLDivElement | null>(null)
-  const [isEnvironmentDevicePickerOpen, setIsEnvironmentDevicePickerOpen] = useState(false)
-  const [isEnvironmentWorkspacePickerOpen, setIsEnvironmentWorkspacePickerOpen] = useState(false)
-  const [gitCompareBranch, setGitCompareBranch] = useState("")
-  const [gitCommitMessage, setGitCommitMessage] = useState("")
-  const [gitActionTaskID, setGitActionTaskID] = useState("")
-  const [isGitActionSubmitting, setIsGitActionSubmitting] = useState(false)
   const [workspaceSkills, setWorkspaceSkills] = useState<WorkspaceSkill[]>([])
   const [isRefreshingWorkspaceSkills, setIsRefreshingWorkspaceSkills] = useState(false)
   const [decidingConnectorTaskID, setDecidingConnectorTaskID] = useState("")
@@ -689,7 +656,6 @@ export default function Chat() {
   const [isStopping, setIsStopping] = useState(false)
   const [processingSessionID, setProcessingSessionID] = useState("")
   const [, setProcessingTick] = useState(0)
-  const [terminalWindow, setTerminalWindow] = useState<{ deviceID: string; deviceName: string; deviceOS?: string; workspacePath: string } | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const handledNewSessionRequestRef = useRef("")
   const observedTaskRunStatesRef = useRef<Map<string, { runID: string; status: string }>>(new Map())
@@ -699,8 +665,6 @@ export default function Chat() {
   const messagesViewportRef = useRef<HTMLDivElement | null>(null)
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composerOverlayRef = useRef<HTMLDivElement | null>(null)
-  const environmentDeviceButtonRef = useRef<HTMLButtonElement | null>(null)
-  const environmentWorkspaceButtonRef = useRef<HTMLButtonElement | null>(null)
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(0)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [sessionTasks, setSessionTasks] = useState<SessionTask[]>([])
@@ -1073,7 +1037,6 @@ export default function Chat() {
     () => taskChangeSummaryFromToolCalls(taskChangeMessage?.tool_calls?.length ? taskChangeMessage.tool_calls : activeRun?.tool_call_details || []),
     [activeRun?.tool_call_details, taskChangeMessage?.tool_calls]
   )
-  const generatedFiles = useMemo(() => generatedFilesFromMessages(currentMessages), [currentMessages])
   useEffect(() => {
     if (!taskChangeSummary.files.some((file) => file.path === selectedTaskChangePath)) {
       setSelectedTaskChangePath(taskChangeSummary.files[0]?.path || "")
@@ -1188,7 +1151,6 @@ export default function Chat() {
     currentConnectorDevice.desktop_instance_id === desktopInstanceID
   )
   const canOpenWorkspaceInVSCode = Boolean(isAdvanced && isCurrentConnectorLocal && currentSession?.connector_workspace_path)
-  const canOpenConnectorTerminal = Boolean(isAdvanced && currentConnectorDevice?.online)
   useEffect(() => {
     if (!isDesktop || typeof window === "undefined" || !window.veloceDesktop?.getDesktopSystemInfo) {
       return
@@ -1234,36 +1196,6 @@ export default function Chat() {
       return normalizeWorkspaceDirectories(res.data)
     },
   })
-  const canInspectGitWorkspace = isAdvanced && activeRunMode !== "chat" && Boolean(currentConnectorDeviceID && currentSession?.connector_workspace_path)
-  const gitStatusQuery = useQuery<WorkspaceGitStatus>({
-    queryKey: ["advanced-chat-workspace-git-status", currentConnectorDeviceID, currentSession?.connector_workspace_path || "", gitCompareBranch],
-    enabled: canInspectGitWorkspace,
-    queryFn: async () => {
-      const res = await api.get("/user/advanced-chat/workspace/git/status", {
-        params: {
-          connector_device_id: currentConnectorDeviceID,
-          connector_workspace_path: currentSession?.connector_workspace_path || "",
-          compare_branch: gitCompareBranch,
-        },
-      })
-      return normalizeWorkspaceGitStatus(res.data)
-    },
-  })
-  const { refetch: refetchGitStatus } = gitStatusQuery
-  const gitTaskQuery = useQuery<ConnectorTaskStatus | undefined>({
-    queryKey: ["advanced-chat-workspace-git-task", gitActionTaskID],
-    enabled: Boolean(gitActionTaskID),
-    refetchInterval: (query) => isActiveConnectorTask(query.state.data?.status) ? 1000 : false,
-    queryFn: async () => {
-      const res = await api.get(`/user/advanced-chat/connector-tasks/${encodeURIComponent(gitActionTaskID)}`)
-      return normalizeConnectorTaskStatus(res.data)
-    },
-  })
-  useEffect(() => {
-    if (gitTaskQuery.data?.status === "completed") {
-      void refetchGitStatus()
-    }
-  }, [gitTaskQuery.data?.status, refetchGitStatus])
   const { data: agentGroups = [], isFetching: isFetchingAgentGroups } = useQuery<ChatAgentGroup[]>({
     queryKey: agentGroupsQueryKey,
     enabled: isAdvanced,
@@ -1798,10 +1730,10 @@ export default function Chat() {
     try {
       const result = await window.veloceDesktop.openInVSCode(workspacePath)
       if (!result.ok) {
-        error(result.message || gitCopy.openVSCodeFailed)
+        error(result.message || workspaceEditorCopy.openVSCodeFailed)
       }
     } catch (err) {
-      error(apiErrorMessage(err, gitCopy.openVSCodeFailed))
+      error(apiErrorMessage(err, workspaceEditorCopy.openVSCodeFailed))
     }
   }
 
@@ -2387,56 +2319,6 @@ export default function Chat() {
       error(apiErrorMessage(err, copy.connectorApprovalFailed))
     } finally {
       setDecidingConnectorTaskID("")
-    }
-  }
-
-  const runGitAction = async (action: "commit" | "push" | "rollback") => {
-    if (!currentConnectorDeviceID || isGitActionSubmitting) {
-      return
-    }
-    if (action === "rollback") {
-      const confirmed = window.confirm(language === "zh"
-        ? "确定回滚工作区吗？已跟踪文件的未提交修改将恢复到当前提交，未跟踪文件会保留。"
-        : "Roll back this workspace? Uncommitted changes to tracked files will be restored to HEAD. Untracked files will be kept.")
-      if (!confirmed) {
-        return
-      }
-    }
-    if (action === "commit" && !gitCommitMessage.trim()) {
-      error(gitCopy.commitMessageRequired)
-      return
-    }
-    setIsGitActionSubmitting(true)
-    try {
-      const res = await api.post("/user/advanced-chat/workspace/git/action", {
-        connector_device_id: currentConnectorDeviceID,
-        connector_workspace_path: currentSession?.connector_workspace_path || "",
-        approval_mode: connectorApprovalModeFor(currentSession),
-        action,
-        message: action === "commit" ? gitCommitMessage.trim() : "",
-      })
-      const task = normalizeConnectorTaskStatus(res.data)
-      setGitActionTaskID(task.id)
-      if (action === "commit") {
-        setGitCommitMessage("")
-      }
-      await gitStatusQuery.refetch()
-    } catch (err) {
-      error(apiErrorMessage(err, gitCopy.actionFailed))
-    } finally {
-      setIsGitActionSubmitting(false)
-    }
-  }
-
-  const decideGitTask = async (approved: boolean) => {
-    if (!gitActionTaskID) {
-      return
-    }
-    try {
-      await api.post(`/user/advanced-chat/connector-tasks/${encodeURIComponent(gitActionTaskID)}/decision`, { approved })
-      await gitTaskQuery.refetch()
-    } catch (err) {
-      error(apiErrorMessage(err, gitCopy.actionFailed))
     }
   }
 
@@ -3632,20 +3514,27 @@ export default function Chat() {
   const desktopSessionsSidebarPortal = desktopSessionsSidebarHost
     ? createPortal(sessionsSidebar, desktopSessionsSidebarHost)
     : null
+  const chatSlotData: ChatSlotData = {
+    session: currentSession ? {
+      id: currentSession.id,
+      run_mode: currentSession.run_mode,
+      connector_device_id: currentSession.connector_device_id,
+      connector_workspace_path: currentSession.connector_workspace_path,
+      connector_approval_mode: connectorApprovalModeFor(currentSession),
+    } : undefined,
+    runMode: activeRunMode,
+    messages: currentMessages,
+    device: currentConnectorDevice,
+    devices: selectableConnectorDevices,
+    recentWorkspacePaths,
+    setDevice: setSessionConnectorDevice,
+    setWorkspacePath: setSessionWorkspacePath,
+    openWorkspacePicker: () => openWorkspacePicker("session"),
+  }
+
   return (
     <div className={cn("flex min-w-0", isAdvanced && "h-full min-h-0 overflow-hidden")}>
       {desktopSessionsSidebarPortal}
-      {terminalWindow && (
-        <ConnectorTerminalWindow
-          key={`${terminalWindow.deviceID}:${terminalWindow.workspacePath}`}
-          deviceID={terminalWindow.deviceID}
-          deviceName={terminalWindow.deviceName}
-          deviceOS={terminalWindow.deviceOS}
-          workspacePath={terminalWindow.workspacePath}
-          copy={terminalCopy}
-          onClose={() => setTerminalWindow(null)}
-        />
-      )}
       <Dialog open={Boolean(subagentDialogTask)} onOpenChange={(open) => { if (!open) setSubagentDialogTask(null) }}>
         <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
           <DialogHeader><DialogTitle>{subagentDialogTask?.title || (language === "zh" ? "子代理" : "Sub-agent")}</DialogTitle></DialogHeader>
@@ -3713,8 +3602,8 @@ export default function Chat() {
               size="icon"
               className="h-9 w-9 border-border bg-background"
               onClick={() => void openCurrentWorkspaceInVSCode()}
-              aria-label={gitCopy.openInVSCode}
-              title={gitCopy.openInVSCode}
+              aria-label={workspaceEditorCopy.openInVSCode}
+              title={workspaceEditorCopy.openInVSCode}
             >
               <VSCodeIcon size={18} />
             </Button>
@@ -3724,274 +3613,7 @@ export default function Chat() {
               <Settings size={16} />
             </Button>
           )}
-          {environmentSidebarHost && createPortal(
-                <div className="w-full rounded-md border border-border bg-card p-3 text-card-foreground shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
-                      <GitBranch size={16} className="shrink-0 text-muted-foreground" />
-                      <span className="truncate">{gitCopy.environment}</span>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      disabled={!canInspectGitWorkspace || gitStatusQuery.isFetching}
-                      onClick={() => void gitStatusQuery.refetch()}
-                      aria-label={gitCopy.refresh}
-                      title={gitCopy.refresh}
-                    >
-                      <RefreshCw size={14} className={gitStatusQuery.isFetching ? "animate-spin" : ""} />
-                    </Button>
-                  </div>
-
-                  <div className="relative mt-3 overflow-visible rounded-md border border-border">
-                    <button
-                      ref={environmentDeviceButtonRef}
-                      type="button"
-                      className="flex min-h-12 w-full items-center gap-2 px-3 text-left hover:bg-muted/50"
-                      onClick={() => {
-                        setIsEnvironmentDevicePickerOpen((open) => !open)
-                        setIsEnvironmentWorkspacePickerOpen(false)
-                      }}
-                      aria-expanded={isEnvironmentDevicePickerOpen}
-                    >
-                      <Monitor size={16} className="shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-xs text-muted-foreground">{gitCopy.executionEnvironment}</span>
-                        <span className="block truncate text-sm font-medium">{currentConnectorDevice?.name || gitCopy.noDevice}</span>
-                      </span>
-                      <ChevronRight size={16} className={cn("shrink-0 text-muted-foreground transition-transform", isEnvironmentDevicePickerOpen && "translate-x-0.5")} />
-                    </button>
-                    <button
-                      ref={environmentWorkspaceButtonRef}
-                      type="button"
-                      className="flex min-h-12 w-full items-center gap-2 border-t border-border/70 px-3 text-left hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={!currentConnectorDeviceID}
-                      onClick={() => {
-                        setIsEnvironmentWorkspacePickerOpen((open) => !open)
-                        setIsEnvironmentDevicePickerOpen(false)
-                      }}
-                    >
-                      <Folder size={16} className="shrink-0 text-primary" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-xs text-muted-foreground">{gitCopy.runDirectory}</span>
-                        <span className="block truncate font-mono text-xs text-foreground">{currentSession?.connector_workspace_path || gitCopy.noWorkspacePath}</span>
-                      </span>
-                      <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
-                    </button>
-
-                    {isEnvironmentDevicePickerOpen && typeof document !== "undefined" && createPortal(
-                      <div className="fixed z-[70] w-72 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-lg" style={floatingMenuStyle(environmentDeviceButtonRef.current)}>
-                        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{gitCopy.selectDevice}</div>
-                        <button
-                          type="button"
-                          className={cn("flex min-h-10 w-full items-center justify-between gap-2 rounded px-2 text-left text-sm hover:bg-muted", !currentConnectorDeviceID && "bg-primary/10 text-primary")}
-                          onClick={() => {
-                            setSessionConnectorDevice("")
-                            setGitCompareBranch("")
-                            setGitActionTaskID("")
-                            setIsEnvironmentDevicePickerOpen(false)
-                          }}
-                        >
-                          <span>{gitCopy.noDevice}</span>
-                          {!currentConnectorDeviceID && <Check size={14} />}
-                        </button>
-                        {selectableConnectorDevices.length === 0 ? (
-                          <div className="px-2 py-3 text-center text-xs text-muted-foreground">{copy.noDevices}</div>
-                        ) : (
-                          selectableConnectorDevices.map((device) => {
-                            const selected = device.id === currentConnectorDeviceID
-                            return (
-                              <button
-                                key={device.id}
-                                type="button"
-                                className={cn(
-                                  "flex min-h-11 w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted",
-                                  selected && "bg-primary/10 text-primary"
-                                )}
-                                onClick={() => {
-                                  setSessionConnectorDevice(device.id)
-                                  setGitCompareBranch("")
-                                  setGitActionTaskID("")
-                                  setIsEnvironmentDevicePickerOpen(false)
-                                }}
-                              >
-                                <span className="min-w-0 truncate font-medium">{device.name}</span>
-                                <span className={cn("shrink-0 text-[11px]", device.online ? "text-primary" : "text-muted-foreground")}>
-                                  {device.online ? copy.deviceOnline : copy.deviceOffline}
-                                </span>
-                              </button>
-                            )
-                          })
-                        )}
-                      </div>,
-                      document.body
-                    )}
-                    {isEnvironmentWorkspacePickerOpen && typeof document !== "undefined" && createPortal(
-                      <div className="fixed z-[70] w-72 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-lg" style={floatingMenuStyle(environmentWorkspaceButtonRef.current)}>
-                        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{gitCopy.runDirectory}</div>
-                        {recentWorkspacePaths.length === 0 ? (
-                          <div className="px-2 py-4 text-center text-sm text-muted-foreground">{copy.noWorkspaces}</div>
-                        ) : (
-                          recentWorkspacePaths.map((workspacePath) => (
-                            <button
-                              key={workspacePath}
-                              type="button"
-                              className={cn(
-                                "flex min-h-10 w-full items-center rounded px-2 text-left text-sm hover:bg-muted",
-                                workspacePath === currentSession?.connector_workspace_path && "bg-primary/10 text-primary"
-                              )}
-                              onClick={() => {
-                                setSessionWorkspacePath(workspacePath)
-                                setIsEnvironmentWorkspacePickerOpen(false)
-                              }}
-                            >
-                              <span className="truncate font-mono text-xs">{workspacePath}</span>
-                            </button>
-                          ))
-                        )}
-                        <div className="mt-1 border-t border-border/70 pt-1">
-                          <button
-                            type="button"
-                            className="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-sm hover:bg-muted"
-                            onClick={() => {
-                              setIsEnvironmentWorkspacePickerOpen(false)
-                              openWorkspacePicker("session")
-                            }}
-                          >
-                            <Folder size={15} />
-                            {copy.selectWorkspace}
-                          </button>
-                        </div>
-                      </div>,
-                      document.body
-                    )}
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="mt-2 h-9 w-full justify-start gap-2"
-                    disabled={!canOpenConnectorTerminal}
-                    title={canOpenConnectorTerminal ? terminalCopy.openTerminal : terminalCopy.deviceRequired}
-                    onClick={() => {
-                      if (!currentConnectorDevice) {
-                        return
-                      }
-                      setTerminalWindow({
-                        deviceID: currentConnectorDevice.id,
-                        deviceName: currentConnectorDevice.name,
-                        deviceOS: currentConnectorDevice.os,
-                        workspacePath: currentSession?.connector_workspace_path || "",
-                      })
-                    }}
-                  >
-                    <TerminalSquare size={15} />
-                    {terminalCopy.openTerminal}
-                  </Button>
-
-                  {!canInspectGitWorkspace ? (
-                    <div className="py-6 text-center text-sm text-muted-foreground">{gitCopy.noWorkspace}</div>
-                  ) : gitStatusQuery.isLoading ? (
-                    <div className="py-6 text-center text-sm text-muted-foreground">{gitCopy.loading}</div>
-                  ) : gitStatusQuery.isError ? (
-                    <div className="py-4 text-sm text-destructive">{apiErrorMessage(gitStatusQuery.error, gitCopy.actionFailed)}</div>
-                  ) : (
-                    <div className="mt-3 space-y-3">
-                      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-y border-border/70 py-3 text-sm">
-                        <div className="min-w-0">
-                          <div className="text-xs text-muted-foreground">{gitCopy.local}</div>
-                          <div className="mt-1 flex min-w-0 items-center gap-1.5 font-medium">
-                            <GitBranch size={14} className="shrink-0 text-muted-foreground" />
-                            <span className="truncate">{gitStatusQuery.data?.current_branch || "-"}</span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xs text-muted-foreground">{gitCopy.changes}</div>
-                          <div className="mt-1 flex items-center justify-end gap-1.5 font-medium tabular-nums">
-                            <span className="text-primary">+{gitStatusQuery.data?.additions || 0}</span>
-                            <span className="text-destructive">-{gitStatusQuery.data?.deletions || 0}</span>
-                            <span className="text-xs font-normal text-muted-foreground">{gitCopy.files.replace("{count}", String(gitStatusQuery.data?.changed_files || 0))}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <GitChangeList files={gitStatusQuery.data?.files || []} clean={gitStatusQuery.data?.clean} copy={gitCopy} />
-
-                      <label className="block text-xs font-medium text-muted-foreground">
-                        <span className="mb-1.5 flex items-center gap-1.5"><GitCompareArrows size={14} />{gitCopy.compareBranch}</span>
-                        <Select value={String((gitCompareBranch) || "__shadcn_empty__")} onValueChange={(value) => setGitCompareBranch((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="h-9 w-full rounded-2xl border border-border bg-background px-2 text-sm text-foreground"><SelectValue /></SelectTrigger><SelectContent>
-                          <SelectItem value="__shadcn_empty__">{gitCopy.noComparison}</SelectItem>
-                          {(gitStatusQuery.data?.branches || []).filter((branch) => branch !== gitStatusQuery.data?.current_branch).map((branch) => (
-                            <SelectItem key={branch} value={String(branch)}>{branch}</SelectItem>
-                          ))}
-                        </SelectContent></Select>
-                      </label>
-
-                      <div className="space-y-2 border-t border-border/70 pt-3">
-                        <label className="block text-xs font-medium text-muted-foreground" htmlFor="git-commit-message">{gitCopy.commitMessage}</label>
-                        <Input
-                          id="git-commit-message"
-                          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-ring"
-                          value={gitCommitMessage}
-                          maxLength={200}
-                          placeholder={gitCopy.commitMessage}
-                          onChange={(event) => setGitCommitMessage(event.target.value)}
-                        />
-                        <div className="grid grid-cols-3 gap-2">
-                          <Button type="button" variant="outline" className="h-9 gap-2" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status)} onClick={() => void runGitAction("commit")}>
-                            <FileDiff size={15} />
-                            {gitCopy.commit}
-                          </Button>
-                          <Button type="button" className="h-9 gap-2" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status)} onClick={() => void runGitAction("push")}>
-                            <Upload size={15} />
-                            {gitCopy.push}
-                          </Button>
-                          <Button type="button" variant="outline" className="h-9 gap-2 text-destructive hover:text-destructive" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status) || gitStatusQuery.data?.clean} onClick={() => void runGitAction("rollback")}>
-                            <RotateCcw size={15} />
-                            {gitCopy.rollback}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {gitTaskQuery.data && (
-                        <div className="border-t border-border/70 pt-3 text-sm">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium">{gitTaskStatusLabel(gitTaskQuery.data.status, gitCopy)}</span>
-                            {gitTaskQuery.data.status === "pending_approval" && (
-                              <div className="flex items-center gap-1.5">
-                                <Button type="button" size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => void decideGitTask(false)}>
-                                  <X size={14} />
-                                  {gitCopy.reject}
-                                </Button>
-                                <Button type="button" size="sm" className="h-8 gap-1.5" onClick={() => void decideGitTask(true)}>
-                                  <Check size={14} />
-                                  {gitCopy.approve}
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                          {gitTaskQuery.data.error_message && <div className="mt-1.5 whitespace-pre-wrap text-xs text-destructive">{gitTaskQuery.data.error_message}</div>}
-                          {gitTaskQuery.data.result && gitTaskQuery.data.status === "completed" && <div className="mt-1.5 max-h-20 overflow-y-auto whitespace-pre-wrap text-xs text-muted-foreground">{gitTaskQuery.data.result}</div>}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>,
-            environmentSidebarHost
-          )}
-          <Button
-            variant="outline"
-            size="icon"
-            className="hidden h-9 w-9 border-border bg-background lg:inline-flex"
-            onClick={() => setIsDesktopSessionsSidebarVisible((visible) => !visible)}
-            aria-label={isDesktopSessionsSidebarVisible ? copy.closeSessions : copy.openSessions}
-            aria-expanded={isDesktopSessionsSidebarVisible}
-            title={isDesktopSessionsSidebarVisible ? copy.closeSessions : copy.openSessions}
-          >
-            {isDesktopSessionsSidebarVisible ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-          </Button>
+          <DashboardSlot name="chat.toolbar.sidebar" scope="/chat" data={chatSlotData} />
         </div>
       </div>
 
@@ -5119,45 +4741,11 @@ export default function Chat() {
         </Dialog>
       )}
       </div>
-      {isDesktopSessionsSidebarVisible && (
-        <ResizableSidebar storageKey="chat-workspace" side="right" defaultWidth={288} minWidth={240} maxWidth={560} className="hidden h-full min-h-0 lg:flex">
-        <aside className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto overscroll-contain border-l border-border bg-muted/20 p-3">
-          <div ref={setEnvironmentSidebarHost} className="shrink-0" />
-          <DashboardSlot name="frame.right-sidebar" scope="/chat" className="shrink-0" />
-          <section className="min-h-0 rounded-md border border-border bg-card shadow-sm">
-            <div className="flex h-11 items-center justify-between border-b px-3">
-              <div className="flex items-center gap-2 text-sm font-semibold"><FileText size={16} />{language === "zh" ? "生成的文件" : "Generated files"}</div>
-              <span className="text-xs tabular-nums text-muted-foreground">{generatedFiles.length}</span>
-            </div>
-            <div className="max-h-[calc(100vh-20rem)] space-y-1 overflow-y-auto p-2">
-              {generatedFiles.length === 0 ? (
-                <div className="px-3 py-8 text-center text-xs text-muted-foreground">{language === "zh" ? "助理登记的文件会显示在这里" : "Files reported by the assistant appear here"}</div>
-              ) : generatedFiles.map((file) => (
-                <div key={file.path} className="rounded-md px-2 py-2 hover:bg-muted">
-                  <div className="flex items-center gap-2"><FileText size={14} className="shrink-0 text-primary" /><span className="truncate text-sm font-medium" title={file.path}>{file.name}</span></div>
-                  {file.description && <div className="mt-1 line-clamp-2 pl-6 text-xs text-muted-foreground">{file.description}</div>}
-                  <div className="mt-1 truncate pl-6 font-mono text-[11px] text-muted-foreground" title={file.path}>{file.path}</div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </aside>
-        </ResizableSidebar>
-      )}
+      <DashboardSlot name="frame.right-sidebar" scope="/chat" data={chatSlotData} className="h-full min-h-0 shrink-0" />
     </div>
   )
 }
 
-function floatingMenuStyle(anchor: HTMLElement | null) {
-  if (!anchor) {
-    return undefined
-  }
-  const rect = anchor.getBoundingClientRect()
-  return {
-    left: Math.min(rect.right + 8, window.innerWidth - 304),
-    top: Math.max(8, Math.min(rect.top, window.innerHeight - 240)),
-  }
-}
 
 type MarkdownBlock =
   | { type: "paragraph"; text: string }
@@ -6737,42 +6325,8 @@ function normalizeWorkspaceDirectories(value: unknown): WorkspaceDirectories {
   }
 }
 
-function normalizeWorkspaceGitStatus(value: unknown): WorkspaceGitStatus {
-  const item = isRecord(value) ? value : {}
-  const numberValue = (candidate: unknown) => {
-    const parsed = Number(candidate)
-    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0
-  }
-  return {
-    current_branch: stringFromUnknown(item.current_branch) || "",
-    compare_branch: stringFromUnknown(item.compare_branch) || undefined,
-    branches: stringArrayFromUnknown(item.branches),
-    changed_files: numberValue(item.changed_files),
-    additions: numberValue(item.additions),
-    deletions: numberValue(item.deletions),
-    clean: item.clean === true,
-    files: Array.isArray(item.files) ? item.files.flatMap((entry) => {
-      if (!isRecord(entry)) return []
-      const path = stringFromUnknown(entry.path)
-      if (!path) return []
-      return [{ path, status: stringFromUnknown(entry.status) || "", additions: numberValue(entry.additions), deletions: numberValue(entry.deletions), diff: stringFromUnknown(entry.diff) || undefined }]
-    }) : [],
-  }
-}
 
-function normalizeConnectorTaskStatus(value: unknown): ConnectorTaskStatus {
-  const item = isRecord(value) ? value : {}
-  return {
-    id: stringFromUnknown(item.id) || "",
-    status: stringFromUnknown(item.status) || "",
-    result: stringFromUnknown(item.result) || undefined,
-    error_message: stringFromUnknown(item.error_message) || undefined,
-  }
-}
 
-function isActiveConnectorTask(status?: string) {
-  return status === "pending_approval" || status === "queued" || status === "running"
-}
 
 
 function normalizeWorkspaceSkill(value: unknown): WorkspaceSkill | null {
@@ -7998,23 +7552,6 @@ function formatToolArguments(value?: Record<string, unknown>) {
   }
 }
 
-function generatedFilesFromMessages(messages: ChatMessage[]): GeneratedFileEntry[] {
-  const files = new Map<string, GeneratedFileEntry>()
-  for (const message of messages) {
-    for (const call of message.tool_calls || []) {
-      if (call.name !== GENERATED_FILE_TOOL_NAME || call.status !== "ok") continue
-      const path = stringArgument(call.arguments, "path").trim()
-      if (!path) continue
-      const segments = path.replace(/\\/g, "/").split("/").filter(Boolean)
-      files.set(path, {
-        path,
-        name: stringArgument(call.arguments, "name").trim() || segments.at(-1) || path,
-        description: stringArgument(call.arguments, "description").trim(),
-      })
-    }
-  }
-  return Array.from(files.values()).reverse()
-}
 
 interface ReplacementEntry {
   path: string
@@ -8731,119 +8268,7 @@ const enConnectorApprovalModeCopy: typeof zhConnectorApprovalModeCopy = {
   agentRequired: "Select an approval assistant in personal settings first.",
 }
 
-const zhConnectorTerminalCopy: ConnectorTerminalCopy & { openTerminal: string; deviceRequired: string } = {
-  openTerminal: "打开终端",
-  deviceRequired: "请先选择一台在线设备。",
-  title: "终端",
-  connecting: "正在连接设备终端…",
-  connectFailed: "无法打开设备终端",
-  disconnected: "终端已断开",
-  inputPlaceholder: "输入命令后回车执行",
-  inputPlaceholderClosed: "终端不可用",
-  maximize: "最大化",
-  restore: "还原",
-  close: "关闭",
-  restart: "重启终端",
-  clear: "清屏",
-  truncatedNotice: "较早的输出已被截断",
-  exitedWithCode: "终端已退出（退出码 {code}）",
-}
 
-const enConnectorTerminalCopy: typeof zhConnectorTerminalCopy = {
-  openTerminal: "Open terminal",
-  deviceRequired: "Select an online device first.",
-  title: "Terminal",
-  connecting: "Connecting to the device terminal…",
-  connectFailed: "Failed to open the device terminal",
-  disconnected: "Terminal disconnected",
-  inputPlaceholder: "Type a command and press Enter",
-  inputPlaceholderClosed: "Terminal unavailable",
-  maximize: "Maximize",
-  restore: "Restore",
-  close: "Close",
-  restart: "Restart terminal",
-  clear: "Clear",
-  truncatedNotice: "Earlier output was truncated",
-  exitedWithCode: "Terminal exited with code {code}",
-}
-
-const zhGitWorkspaceCopy = {
-  environment: "环境信息",
-  executionEnvironment: "执行环境",
-  runDirectory: "运行目录",
-  selectDevice: "选择设备",
-  noDevice: "未选择设备",
-  noWorkspacePath: "未选择运行目录",
-  changes: "变更",
-  clean: "工作目录干净，没有待提交改动。",
-  untracked: "未跟踪文件，尚无 Git diff。",
-  noDiff: "当前比较范围没有可展示的文本差异。",
-  added: "新增",
-  modified: "修改",
-  deleted: "删除",
-  renamed: "重命名",
-  local: "本地",
-  files: "{count} 个文件",
-  compareBranch: "比较分支",
-  noComparison: "不比较分支",
-  commit: "提交",
-  push: "推送",
-  rollback: "回滚",
-  commitMessage: "提交说明",
-  commitMessageRequired: "请输入提交说明。",
-  approve: "批准",
-  reject: "拒绝",
-  refresh: "刷新",
-  loading: "加载中",
-  actionFailed: "Git 操作失败",
-  noWorkspace: "请选择本地设备和工作区。",
-  openInVSCode: "在 VS Code 中打开",
-  openVSCodeFailed: "无法在 VS Code 中打开工作区",
-  pendingApproval: "等待审批",
-  queued: "已排队",
-  running: "执行中",
-  completed: "已完成",
-  failed: "失败",
-}
-
-const enGitWorkspaceCopy: typeof zhGitWorkspaceCopy = {
-  environment: "Environment",
-  executionEnvironment: "Execution environment",
-  runDirectory: "Run directory",
-  selectDevice: "Select device",
-  noDevice: "No device selected",
-  noWorkspacePath: "No run directory selected",
-  changes: "Changes",
-  clean: "Working tree is clean.",
-  untracked: "Untracked file; no Git diff yet.",
-  noDiff: "No text diff is available for this comparison.",
-  added: "Added",
-  modified: "Modified",
-  deleted: "Deleted",
-  renamed: "Renamed",
-  local: "Local",
-  files: "{count} files",
-  compareBranch: "Compare branch",
-  noComparison: "No comparison",
-  commit: "Commit",
-  push: "Push",
-  rollback: "Rollback",
-  commitMessage: "Commit message",
-  commitMessageRequired: "Enter a commit message.",
-  approve: "Approve",
-  reject: "Reject",
-  refresh: "Refresh",
-  loading: "Loading",
-  actionFailed: "Git action failed",
-  noWorkspace: "Select a local device and workspace.",
-  openInVSCode: "Open in VS Code",
-  openVSCodeFailed: "Failed to open the workspace in VS Code",
-  pendingApproval: "Approval required",
-  queued: "Queued",
-  running: "Running",
-  completed: "Completed",
-  failed: "Failed",
-}
 
 const zhWorkspacePickerCopy = {
   title: "选择工作区文件夹",
@@ -8928,19 +8353,4 @@ function VSCodeIcon({ size = 16 }: { size?: number }) {
       <path fill="#0179CB" d="m7.3 6.1 3.7 2.8v6.2l-3.7 2.8L2 14.8V9.2l5.3-3.1Z" />
     </svg>
   )
-}
-
-function gitTaskStatusLabel(status: string, copy: typeof zhGitWorkspaceCopy) {
-  switch (status) {
-    case "pending_approval":
-      return copy.pendingApproval
-    case "queued":
-      return copy.queued
-    case "running":
-      return copy.running
-    case "completed":
-      return copy.completed
-    default:
-      return copy.failed
-  }
 }

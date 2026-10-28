@@ -1,0 +1,25 @@
+{
+  "name": "@velocelab/chat-files",
+  "version": "0.1.1",
+  "type": "module",
+  "main": "dist/index.js",
+  "dev": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
+  },
+  "dependencies": {
+    "@velocelab/advanced-chat": "^0.1.1",
+    "@velocelab/dashboard": "^0.1.4",
+    "@velocelab/sidebar": "^0.1.1"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "lucide-react": "^1.16.0",
+    "react": "^19.2.6",
+    "vite": "^8.0.12"
+  }
+}

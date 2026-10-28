@@ -5,7 +5,7 @@ import { ArrowLeft, Bot, FileText, Folder, FolderGit2, GitBranch, Loader2, Messa
 import { api } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import { GitChangeList } from "@/components/chat/GitChangeList"
+import { GitChangeList } from "../../../workspace/frontend/components/GitChangeList"
 import { ResizableSidebar } from "@/components/layout/ResizableSidebar"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"

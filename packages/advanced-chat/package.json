@@ -26,5 +26,14 @@
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./frontend/slots": {
+      "types": "./frontend/slots.ts"
+    }
   }
 }

@@ -6,7 +6,6 @@ declare module "@yumerijs/types" {
     companion_personas: Record<string, unknown>;
     companion_messages: Record<string, unknown>;
     companion_stickers: Record<string, unknown>;
-    advanced_chat_files: Record<string, unknown>;
   }
 }
 
