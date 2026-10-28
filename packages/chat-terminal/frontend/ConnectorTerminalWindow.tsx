@@ -416,7 +416,7 @@ export function ConnectorTerminalWindow({ deviceID, deviceName, deviceOS, worksp
   }
 
   const frame = (
-      <div ref={frameRef} className={cn("flex flex-col overflow-hidden border border-border bg-popover text-popover-foreground", inline ? "h-[min(68vh,560px)] min-h-[320px] w-full rounded-md" : "pointer-events-auto absolute rounded-lg shadow-2xl")} style={inline ? undefined : frameStyle}>
+      <div ref={frameRef} className={cn("flex flex-col overflow-hidden bg-popover text-popover-foreground", inline ? "h-full min-h-0 w-full flex-1" : "pointer-events-auto absolute rounded-lg border border-border shadow-2xl")} style={inline ? undefined : frameStyle}>
         <div
           className={cn("flex h-10 shrink-0 items-center gap-2 border-b border-border/80 bg-muted/60 px-3", !inline && !isMaximized && "cursor-move")}
           onPointerDown={inline ? undefined : handleDragStart}

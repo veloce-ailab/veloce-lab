@@ -24,8 +24,24 @@ function Terminal(props: Record<string, unknown>) {
   return <TerminalPanel key={`${data.session?.id}:${data.device?.id}:${data.session?.connector_workspace_path}`} {...data} />
 }
 
+function TerminalTabType(props: Record<string, unknown>) {
+  const { onCreateTab } = props as { onCreateTab?: (type: string, label: string) => void }
+  const { language } = useI18n()
+  return <button type="button" className="flex w-full items-center gap-2 rounded-md border border-border bg-card p-3 text-left text-sm font-medium hover:bg-muted" onClick={() => onCreateTab?.("terminal", language === "zh" ? "终端" : "Terminal")}><TerminalSquare size={16} />{language === "zh" ? "终端" : "Terminal"}</button>
+}
+
+function TerminalTabContent(props: Record<string, unknown>) {
+  const tabs = props.tabs as Array<{ id: string; type: string }> | undefined
+  const activeID = String(props.activeTab ?? "")
+  const data = props as ChatSlotData
+  if (!data.device?.online) return <div className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">{(data as any).language === "zh" ? "请先选择一台在线设备。" : "Select an online device first."}</div>
+  return <>{tabs?.filter((tab) => tab.type === "terminal").map((tab) => <div key={tab.id} className={tab.id === activeID ? "flex min-h-0 flex-1 flex-col" : "hidden"}><ConnectorTerminalWindow key={tab.id} inline deviceID={data.device.id} deviceName={data.device.name} deviceOS={data.device.os} workspacePath={data.session?.connector_workspace_path || ""} copy={data.language === "zh" ? zhConnectorTerminalCopy : enConnectorTerminalCopy} onClose={() => data.onCloseTab?.(tab.id)} /></div>)}</>
+}
+
 export default function apply(ctx: DashboardContext) {
   ctx.slot("chat.sidebar.panels", Terminal, "chat-terminal.panel", 30, "/chat")
+  ctx.slot("chat.sidebar.tab-types", TerminalTabType, "chat-terminal.tab-type", 30, "/chat")
+  ctx.slot("chat.sidebar.tab-content", TerminalTabContent, "chat-terminal.tab-content", 30, "/chat")
 }
 
 const zhConnectorTerminalCopy: ConnectorTerminalCopy & { openTerminal: string; deviceRequired: string } = {
