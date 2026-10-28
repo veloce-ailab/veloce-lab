@@ -56,7 +56,7 @@ export function ResizableSidebar({ storageKey, side, defaultWidth, minWidth = 20
   }
 
   return <div className={cn("relative min-w-0 shrink-0", className)} style={{ width }}>
-    <div className="h-full min-w-0">{children}</div>
+    <div className="h-full min-w-0 w-full">{children}</div>
     <div
       role="separator"
       aria-orientation="vertical"
