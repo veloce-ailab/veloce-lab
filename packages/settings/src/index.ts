@@ -1,8 +1,11 @@
 import { Context, Schema, Session, resolveDescription } from "yumeri";
 import "@velocelab/dashboard";
-import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const run = promisify(execFile);
 
 export const depend = ["dashboard"];
 export const provide = ["settings"];
@@ -42,28 +45,30 @@ interface PluginLoader {
   loadSinglePlugin(name: string, triggerPendingCheck?: boolean): Promise<boolean>;
 }
 
-interface WorkspacePackage {
-  name?: string;
-  private?: boolean;
+function validPackageName(name: string): boolean {
+  return /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i.test(name);
 }
 
-/** Packages shipped with this workspace that can be added to yumeri.json. */
-function discoverWorkspacePlugins(): string[] {
-  // This resolves to the repository's packages directory in both src and dist.
-  const packagesDir = dirname(fileURLToPath(import.meta.url));
-  const root = join(packagesDir, "..", "..");
-  if (!existsSync(root)) return [];
-  const names: string[] = [];
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    try {
-      const packageJson = JSON.parse(readFileSync(join(root, entry.name, "package.json"), "utf8")) as WorkspacePackage;
-      if (packageJson.name && !packageJson.private) names.push(packageJson.name);
-    } catch {
-      // A non-package directory is not an installable plugin.
-    }
+function packageManager(): { command: string; args: (spec: string) => string[] } {
+  let manager = "";
+  try {
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as { packageManager?: string };
+    manager = pkg.packageManager?.split("@")[0] ?? "";
+  } catch { /* Fall back to lockfiles when package.json is absent. */ }
+  if (!manager) {
+    if (existsSync(join(process.cwd(), "yarn.lock"))) manager = "yarn";
+    else if (existsSync(join(process.cwd(), "pnpm-lock.yaml"))) manager = "pnpm";
+    else if (existsSync(join(process.cwd(), "bun.lockb")) || existsSync(join(process.cwd(), "bun.lock"))) manager = "bun";
+    else manager = "npm";
   }
-  return names.sort((left, right) => left.localeCompare(right));
+  if (manager === "yarn") return { command: "yarn", args: (spec) => ["add", "-W", "--exact", spec] };
+  if (manager === "pnpm") return { command: "pnpm", args: (spec) => ["add", "-w", "--save-exact", spec] };
+  if (manager === "bun") return { command: "bun", args: (spec) => ["add", "--exact", spec] };
+  return { command: "npm", args: (spec) => ["install", "--save-exact", spec] };
+}
+
+function packageSpec(name: string, version: string): string {
+  return `${name}@${version}`;
 }
 
 /** Key a plugin is stored under, whether it is currently enabled or disabled. */
@@ -159,9 +164,14 @@ export function apply(ctx: Context) {
         list: { zh: "插件列表", en: "Plugin list", ja: "プラグイン一覧" },
         installTitle: { zh: "安装插件", en: "Install plugin", ja: "プラグインをインストール" },
         install: { zh: "安装", en: "Install", ja: "インストール" },
-        chooseInstall: { zh: "选择要安装的插件", en: "Choose a plugin to install", ja: "インストールするプラグインを選択" },
+        installDescription: { zh: "输入 npm 包名并选择版本。安装完成后框架会自动重启，插件会以禁用状态加入列表。", en: "Enter an npm package name and choose a version. The framework restarts after installation and adds the plugin disabled.", ja: "npm パッケージ名とバージョンを入力してください。インストール後にフレームワークが再起動し、プラグインは無効状態で追加されます。" },
+        packageName: { zh: "包名", en: "Package name", ja: "パッケージ名" },
+        version: { zh: "版本", en: "Version", ja: "バージョン" },
+        loadingVersions: { zh: "正在加载版本列表…", en: "Loading versions…", ja: "バージョン一覧を読み込み中…" },
+        versionsUnavailable: { zh: "无法加载版本列表，可直接输入版本后重试。", en: "Versions could not be loaded; enter a version and try again.", ja: "バージョン一覧を取得できません。バージョンを入力して再試行してください。" },
+        cancel: { zh: "取消", en: "Cancel", ja: "キャンセル" },
+        installing: { zh: "安装中…", en: "Installing…", ja: "インストール中…" },
         installRestart: { zh: "插件已写入配置并保持禁用，框架正在重启。重启后可在列表中启用。", en: "The plugin was added as disabled. The framework is restarting; enable it from the list after restart.", ja: "プラグインを無効状態で設定に追加しました。フレームワークを再起動しています。再起動後に一覧から有効化できます。" },
-        noAvailable: { zh: "没有可安装的插件", en: "No plugins available to install", ja: "インストール可能なプラグインはありません" },
         search: { zh: "搜索插件", en: "Search plugins", ja: "プラグインを検索" },
         empty: { zh: "没有匹配的插件", en: "No plugin matches", ja: "一致するプラグインがありません" },
         select: {
@@ -295,14 +305,28 @@ export function apply(ctx: Context) {
     // Enabled plugins first, then alphabetically, so the ones actually running
     // are the ones in view.
     listed.sort((left, right) => Number(right.enabled) - Number(left.enabled) || left.name.localeCompare(right.name));
-    const installed = new Set(listed.map((entry) => entry.name));
-    const available = discoverWorkspacePlugins()
-      .filter((name) => !installed.has(name))
-      .map((name) => ({ name, title: ctx.getCore().getShortPluginName(name) }));
     session.respond({
       plugins: listed.map((entry) => ({ ...entry, dependents: dependentsOf(entry.name, listed) })),
-      available,
     }, "json");
+  });
+
+  ctx.route("/api/settings/plugins/versions").methods("GET").action(async (session: Session, query: URLSearchParams) => {
+    const name = String(query.get("name") ?? "").trim();
+    if (!validPackageName(name)) {
+      session.status = 400;
+      session.respond({ error: "Invalid package name" }, "json");
+      return;
+    }
+    try {
+      const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}`);
+      if (!response.ok) throw new Error(`Registry returned ${response.status}`);
+      const metadata = await response.json() as { versions?: Record<string, unknown>; "dist-tags"?: Record<string, string> };
+      const versions = Object.keys(metadata.versions ?? {}).sort((left, right) => right.localeCompare(left, undefined, { numeric: true })).slice(0, 100);
+      session.respond({ versions, distTags: metadata["dist-tags"] ?? {} }, "json");
+    } catch (error) {
+      session.status = 502;
+      session.respond({ error: error instanceof Error ? error.message : "Could not query npm registry" }, "json");
+    }
   });
 
   ctx.route("/api/settings/plugins/install").methods("POST").action(async (session: Session) => {
@@ -310,22 +334,31 @@ export function apply(ctx: Context) {
     if (!current) return unavailable(session);
     const body = await readBody(session);
     const name = String(body.name ?? "").trim();
-    if (!name || !discoverWorkspacePlugins().includes(name)) {
+    const version = String(body.version ?? "latest").trim() || "latest";
+    if (!validPackageName(name) || !/^[a-z0-9][a-z0-9._+\-/*^~<>=| ]*$/i.test(version)) {
       session.status = 400;
-      session.respond({ error: "Only workspace plugins can be installed" }, "json");
+      session.respond({ error: "Invalid package name or version" }, "json");
+      return;
+    }
+    const spec = packageSpec(name, version);
+    const manager = packageManager();
+    try {
+      await run(manager.command, manager.args(spec), { cwd: process.cwd(), timeout: 300_000, maxBuffer: 2 * 1024 * 1024 });
+    } catch (error) {
+      const detail = error as { stderr?: string; message?: string };
+      session.status = 502;
+      session.respond({ error: (detail.stderr || detail.message || "Package installation failed").trim() }, "json");
       return;
     }
     const plugins = current.config.plugins ?? (current.config.plugins = {});
-    if (name in plugins || `~${name}` in plugins) {
-      session.status = 409;
-      session.respond({ error: "Plugin is already installed" }, "json");
-      return;
-    }
+    const existingConfig = plugins[name] ?? plugins[`~${name}`] ?? {};
+    delete plugins[name];
+    delete plugins[`~${name}`];
     // New plugins are deliberately disabled until the next worker starts. This
     // prevents a half-installed dependency graph from changing the live app.
-    plugins[`~${name}`] = {};
+    plugins[`~${name}`] = existingConfig;
     await current.saveConfig();
-    session.respond({ ok: true, name, restart: true }, "json");
+    session.respond({ ok: true, name, version, manager: manager.command, restart: true }, "json");
     // yumeri/bin.js treats exit code 10 as a managed worker restart request.
     setTimeout(() => process.exit(10), 500);
   });

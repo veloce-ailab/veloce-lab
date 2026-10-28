@@ -7,6 +7,12 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   DashboardSlot,
   Input,
   PageTitleSlot,
@@ -38,11 +44,6 @@ interface ManagedPlugin {
   dependents: string[]
   schema: PluginSchema | null
   config: Record<string, unknown>
-}
-
-interface AvailablePlugin {
-  name: string
-  title: string
 }
 
 interface AuthCapabilities {
@@ -77,14 +78,15 @@ export default function PluginsSettings() {
   const [invalid, setInvalid] = useState<string[]>([])
   const [syncToken, setSyncToken] = useState(0)
   const [installName, setInstallName] = useState("")
+  const [installVersion, setInstallVersion] = useState("latest")
+  const [installOpen, setInstallOpen] = useState(false)
 
-  const plugins = useQuery<{ plugins: ManagedPlugin[]; available: AvailablePlugin[] }>({
+  const plugins = useQuery<{ plugins: ManagedPlugin[] }>({
     queryKey: ["settings", "plugins", language],
     queryFn: async () => (await api.get("/settings/plugins")).data,
   })
 
   const all = plugins.data?.plugins ?? []
-  const available = plugins.data?.available ?? []
   const needle = filter.trim().toLowerCase()
   const visible = useMemo(
     () => (needle ? all.filter((plugin) => plugin.name.toLowerCase().includes(needle) || plugin.title.toLowerCase().includes(needle)) : all),
@@ -100,6 +102,11 @@ export default function PluginsSettings() {
     allowedLoginMethods: (authCapabilities.data?.loginMethods ?? []).filter((method) => method.available).map((method) => method.id),
     allowedRegistrationProviders: (authCapabilities.data?.providers ?? []).filter((provider) => provider.available).map((provider) => provider.id),
   } : undefined
+  const packageVersions = useQuery<{ versions: string[]; distTags: Record<string, string> }>({
+    queryKey: ["settings", "plugin-versions", installName],
+    queryFn: async () => (await api.get(`/settings/plugins/versions?name=${encodeURIComponent(installName)}`)).data,
+    enabled: installOpen && Boolean(installName.trim()),
+  })
 
   // The draft follows the selection and every completed action, never a
   // background refetch: an edit in progress must survive one.
@@ -136,9 +143,13 @@ export default function PluginsSettings() {
   const install = useMutation({
     mutationFn: async () => {
       if (!installName) throw new Error("no plugin selected")
-      return (await api.post("/settings/plugins/install", { name: installName })).data as { ok: boolean }
+      return (await api.post("/settings/plugins/install", { name: installName.trim(), version: installVersion })).data as { ok: boolean }
     },
-    onSuccess: () => success(t("settings.plugins.installRestart")),
+    onSuccess: () => {
+      success(t("settings.plugins.installRestart"))
+      setInstallOpen(false)
+      void queryClient.invalidateQueries({ queryKey: ["settings", "plugins"] })
+    },
     onError: (cause: unknown) => toastError(apiError(cause, t("settings.plugins.failed"))),
   })
 
@@ -205,22 +216,9 @@ export default function PluginsSettings() {
               somewhere to land, otherwise a package like the setup guide can
               only exist as a page of its own instead of meeting the user here. */}
           <DashboardSlot name="settings.plugins.before" />
-          <section className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-end">
-            <div className="min-w-0 flex-1">
-              <label className="mb-1.5 block text-sm font-medium" htmlFor="install-plugin">{t("settings.plugins.installTitle")}</label>
-              <Select value={installName} onValueChange={setInstallName}>
-                <SelectTrigger id="install-plugin" className="w-full" disabled={!available.length || install.isPending}>
-                  <SelectValue placeholder={available.length ? t("settings.plugins.chooseInstall") : t("settings.plugins.noAvailable")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {available.map((plugin) => <SelectItem key={plugin.name} value={plugin.name}>{plugin.title} <span className="ml-2 font-mono text-xs text-muted-foreground">{plugin.name}</span></SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button className="gap-2" disabled={!installName || blocked} onClick={() => install.mutate()}>
-              {install.isPending ? <Loader2 size={16} className="animate-spin" /> : <Puzzle size={16} />}{t("settings.plugins.install")}
-            </Button>
-          </section>
+          <div className="flex justify-end border-b pb-5">
+            <Button className="gap-2" onClick={() => setInstallOpen(true)}><Puzzle size={16} />{t("settings.plugins.installTitle")}</Button>
+          </div>
           <div className="lg:hidden">
             <Select value={selected?.name ?? ""} onValueChange={(next) => setSelectedName(next)}>
               <SelectTrigger className="w-full"><SelectValue placeholder={t("settings.plugins.select")} /></SelectTrigger>
@@ -332,6 +330,38 @@ export default function PluginsSettings() {
           <DashboardSlot name="settings.plugins.after" />
         </div>
       </div>
+      <Dialog open={installOpen} onOpenChange={setInstallOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("settings.plugins.installTitle")}</DialogTitle>
+            <DialogDescription>{t("settings.plugins.installDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label htmlFor="plugin-package" className="text-sm font-medium">{t("settings.plugins.packageName")}</label>
+              <Input id="plugin-package" value={installName} onChange={(event) => { setInstallName(event.target.value); setInstallVersion("latest") }} placeholder="@scope/plugin-name" autoComplete="off" />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="plugin-version" className="text-sm font-medium">{t("settings.plugins.version")}</label>
+              <Select value={installVersion} onValueChange={setInstallVersion}>
+                <SelectTrigger id="plugin-version" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="latest">latest{packageVersions.data?.distTags.latest ? ` (${packageVersions.data.distTags.latest})` : ""}</SelectItem>
+                  {(packageVersions.data?.versions ?? []).filter((version) => version !== packageVersions.data?.distTags.latest).map((version) => <SelectItem key={version} value={version}>{version}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {packageVersions.isFetching && <p className="text-xs text-muted-foreground">{t("settings.plugins.loadingVersions")}</p>}
+              {packageVersions.isError && installName.trim() && <p className="text-xs text-muted-foreground">{t("settings.plugins.versionsUnavailable")}</p>}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={install.isPending} onClick={() => setInstallOpen(false)}>{t("settings.plugins.cancel")}</Button>
+            <Button className="gap-2" disabled={!installName.trim() || install.isPending} onClick={() => install.mutate()}>
+              {install.isPending ? <Loader2 size={16} className="animate-spin" /> : <Puzzle size={16} />}{install.isPending ? t("settings.plugins.installing") : t("settings.plugins.install")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {confirmDialog}
     </div>
   )
