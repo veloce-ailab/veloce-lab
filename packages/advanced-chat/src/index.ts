@@ -80,6 +80,8 @@ export interface AdvancedChatConfig {
 export interface AdvancedChatService {
   registerTool(tool: ChatToolDefinition): () => void;
   tools(): ChatToolDefinition[];
+  registeredTools(): ChatToolDefinition[];
+  setToolEnabled(name: string, enabled: boolean): void;
   registerContextProvider(provider: ChatContextProvider): () => void;
   createConnector(
     userId: number,
@@ -486,6 +488,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
     plugin: "advanced-chat",
   });
   const tools: ChatToolDefinition[] = [];
+  const disabledTools = new Set<string>();
   const contextProviders: ChatContextProvider[] = [];
   const db = ctx.component.database;
   await ensureTables(db);
@@ -583,7 +586,14 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         if (i >= 0) tools.splice(i, 1);
       };
     },
-    tools: () => tools.slice(),
+    tools: () => tools.filter((tool) => !disabledTools.has(tool.name)).slice(),
+    registeredTools: () => tools.slice(),
+    setToolEnabled(name, enabled) {
+      const trimmed = String(name ?? "").trim();
+      if (!trimmed) return;
+      if (enabled) disabledTools.delete(trimmed);
+      else disabledTools.add(trimmed);
+    },
     registerContextProvider(provider) {
       contextProviders.push(provider);
       return () => {
