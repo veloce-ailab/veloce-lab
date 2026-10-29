@@ -66,6 +66,21 @@ const ASK_USER_TOOL_NAME = "ask_user"
 
 const CHAT_TOOL_GROUP_KEYS = ["workspace", "web", "tasks", "ask_user", "memory"] as const
 type ChatToolGroupKey = typeof CHAT_TOOL_GROUP_KEYS[number]
+type SlashCommand = { id: "compact" | "file" | "stored-file"; label: string; name: string; hint: string; icon: typeof Paperclip }
+
+function slashCommands(language: string): SlashCommand[] {
+  return language === "zh"
+    ? [
+        { id: "file", label: "文件", name: "file", hint: "上传文件到当前消息", icon: Paperclip },
+        { id: "stored-file", label: "选择附件", name: "files", hint: "从文件库选择已上传附件", icon: FileText },
+        { id: "compact", label: "压缩会话", name: "compact", hint: "压缩以上对话内容", icon: Sparkles },
+      ]
+    : [
+        { id: "file", label: "File", name: "file", hint: "Upload a file to this message", icon: Paperclip },
+        { id: "stored-file", label: "Choose attachment", name: "files", hint: "Choose an uploaded attachment", icon: FileText },
+        { id: "compact", label: "Compact session", name: "compact", hint: "Compact the conversation above", icon: Sparkles },
+      ]
+}
 
 function chatToolGroupItems(copy: ChatCopy): { key: ChatToolGroupKey; label: string; hint: string }[] {
   return [
@@ -398,6 +413,11 @@ interface WorkspaceDirectories {
   directories: Array<{ name: string; path: string; kind?: "drive" }>
 }
 
+interface WorkspaceFileEntries {
+  path: string
+  entries: Array<{ name: string; path: string; type: string; size: number }>
+}
+
 interface TaskFileChange {
   path: string
   additions: number
@@ -638,6 +658,9 @@ export default function Chat() {
   const [isRefreshingWorkspaceSkills, setIsRefreshingWorkspaceSkills] = useState(false)
   const [decidingConnectorTaskID, setDecidingConnectorTaskID] = useState("")
   const [prompt, setPrompt] = useState("")
+  const [slashMenuOpen, setSlashMenuOpen] = useState(false)
+  const [slashMenuIndex, setSlashMenuIndex] = useState(0)
+  const [mentionMenuOpen, setMentionMenuOpen] = useState(false)
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
   const [sessionPendingDeletion, setSessionPendingDeletion] = useState<ChatSession | null>(null)
@@ -664,6 +687,7 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
   const messagesViewportRef = useRef<HTMLDivElement | null>(null)
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const composerFileInputRef = useRef<HTMLInputElement | null>(null)
   const composerOverlayRef = useRef<HTMLDivElement | null>(null)
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(0)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
@@ -1194,6 +1218,19 @@ export default function Chat() {
         },
       })
       return normalizeWorkspaceDirectories(res.data)
+    },
+  })
+  const mentionMatch = /(?:^|\s)@([^\s]*)$/.exec(prompt)
+  const mentionToken = mentionMatch?.[1] || ""
+  const mentionSlash = mentionToken.lastIndexOf("/")
+  const mentionDirectory = mentionSlash >= 0 ? mentionToken.slice(0, mentionSlash + 1) : ""
+  const mentionFilter = mentionSlash >= 0 ? mentionToken.slice(mentionSlash + 1).toLowerCase() : mentionToken.toLowerCase()
+  const mentionFilesQuery = useQuery<WorkspaceFileEntries>({
+    queryKey: ["advanced-chat-workspace-mention-files", currentConnectorDeviceID, currentSession?.connector_workspace_path || "", mentionDirectory],
+    enabled: isAdvanced && mentionMenuOpen && Boolean(currentConnectorDeviceID && currentSession?.connector_workspace_path),
+    queryFn: async () => {
+      const res = await api.get("/user/advanced-chat/workspace/files", { params: { connector_device_id: currentConnectorDeviceID, connector_workspace_path: currentSession?.connector_workspace_path || "", path: mentionDirectory || currentSession?.connector_workspace_path || "" } })
+      return { path: String(res.data?.path || ""), entries: Array.isArray(res.data?.entries) ? res.data.entries : [] }
     },
   })
   const { data: agentGroups = [], isFetching: isFetchingAgentGroups } = useQuery<ChatAgentGroup[]>({
@@ -2365,21 +2402,87 @@ export default function Chat() {
   }
 
   const handleComposerPromptChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    setPrompt(event.currentTarget.value)
+    const value = event.currentTarget.value
+    setPrompt(value)
+    const match = /^\/([^\s]*)$/.exec(value)
+    setSlashMenuOpen(Boolean(match))
+    setMentionMenuOpen(/(?:^|\s)@[^\s]*$/.test(value))
+    setSlashMenuIndex(0)
   }
 
   const handleComposerPromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    const query = prompt.startsWith("/") ? prompt.slice(1).toLowerCase() : ""
+    const commands = slashCommands(language).filter((command) => command.name.startsWith(query))
+    if (slashMenuOpen && commands.length > 0 && event.key === "ArrowDown") {
+      event.preventDefault()
+      setSlashMenuIndex((current) => (current + 1) % commands.length)
+      return
+    }
+    if (slashMenuOpen && commands.length > 0 && event.key === "ArrowUp") {
+      event.preventDefault()
+      setSlashMenuIndex((current) => (current - 1 + commands.length) % commands.length)
+      return
+    }
+    if (slashMenuOpen && commands.length > 0 && event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault()
+      selectSlashCommand(commands[slashMenuIndex]?.id)
+      return
+    }
+    if (event.key === "Escape" && slashMenuOpen) {
+      event.preventDefault()
+      setSlashMenuOpen(false)
+      return
+    }
+    if (event.key === "Escape" && mentionMenuOpen) {
+      event.preventDefault()
+      setMentionMenuOpen(false)
+      return
+    }
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
+      setSlashMenuOpen(false)
       sendMessage()
     }
+  }
+
+  const selectSlashCommand = (id?: string) => {
+    setSlashMenuOpen(false)
+    if (id === "file") {
+      setPrompt("")
+      composerFileInputRef.current?.click()
+      return
+    }
+    if (id === "stored-file") {
+      setPrompt("")
+      openFilePicker("composer")
+      return
+    }
+    if (id === "compact") {
+      setPrompt("")
+      void sendMessageWithContent(language === "zh"
+        ? "请将此前的对话压缩成一份简洁、完整的摘要，保留关键事实、已作决定、用户偏好、未完成事项和必要上下文，便于后续继续工作。只输出摘要。"
+        : "Compress the conversation so far into a concise, complete summary. Preserve key facts, decisions, user preferences, open tasks, and context needed to continue. Output only the summary.", undefined, true)
+    }
+  }
+
+  const selectMentionEntry = (entry: WorkspaceFileEntries["entries"][number]) => {
+    if (entry.type === "directory") {
+      const token = `${mentionDirectory}${entry.name}/`
+      setPrompt((current) => current.replace(/@[^\s]*$/, `@${token}`))
+      setMentionMenuOpen(true)
+      return
+    }
+    const relative = `${mentionDirectory}${entry.name}`
+    setPrompt((current) => current.replace(/@[^\s]*$/, `[文件: ${relative}] `))
+    setMentionMenuOpen(false)
+    window.setTimeout(() => composerTextareaRef.current?.focus(), 0)
   }
 
   const sendMessage = async () => sendMessageWithContent(null)
 
   // rawText comes from interactive cards (e.g. ask_user answers); it bypasses
   // the composer draft and leaves staged attachments untouched.
-  const sendMessageWithContent = async (rawText: string | null, baseMessages?: ChatMessage[]) => {
+  const sendMessageWithContent = async (rawText: string | null, baseMessages?: ChatMessage[], compactSession = false) => {
     const content = (rawText ?? prompt).trim()
     const activeAttachments = rawText == null ? attachments : []
     const session = currentSession
@@ -2589,6 +2692,10 @@ export default function Chat() {
               ...current,
               messages: [...current.messages, { ...assistantMessage, content_parts: finalParts }],
             }))
+            if (compactSession && content.trim()) {
+              await api.post(`/user/advanced-chat/sessions/${encodeURIComponent(session.id)}/compact`, { summary: content.trim() })
+              updateSession(session.id, (current) => ({ ...current, messages: [{ ...assistantMessage, content: content.trim(), content_parts: finalParts, tool_calls: [] }] }))
+            }
           } catch (err) {
             throw err
           }
@@ -2716,6 +2823,13 @@ export default function Chat() {
           }
           if (buffer.trim()) {
             handleStreamEvent(parseSSEEvent(buffer))
+          }
+          if (compactSession && accumulatedText.trim()) {
+            await api.post(`/user/advanced-chat/sessions/${encodeURIComponent(session.id)}/compact`, { summary: accumulatedText.trim() })
+            updateSession(session.id, (current) => {
+              const summaryMessage = current.messages.find((message) => message.id === assistantMessageID) || assistantMessage
+              return { ...current, messages: [{ ...summaryMessage, content: accumulatedText.trim(), tool_calls: [] }] }
+            })
           }
         } catch (err) {
           if (err instanceof DOMException && err.name === "AbortError") {
@@ -2973,42 +3087,14 @@ export default function Chat() {
   const attachmentMenuButton = (target: AttachmentTarget, className = "") => {
     const disabled = !currentAdvancedSettings.file_storage_enabled
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={cn("h-5 w-5 shrink-0 rounded-full", className)}
-            disabled={disabled}
-            aria-label={copy.addAttachment}
-          >
-            <Plus size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="start" className="w-48">
-          <DropdownMenuItem asChild disabled={isUploadingAttachments || disabled}>
-            <label className="flex cursor-pointer items-center gap-2">
-              <Paperclip size={15} />
-              {isUploadingAttachments ? fileCopy.uploading : copy.addAttachment}
-              <Input
-                className="sr-only"
-                type="file"
-                multiple
-                disabled={isUploadingAttachments || disabled}
-                onChange={(event) => {
-                  void handleAttachmentFiles(event.target.files, target)
-                  event.target.value = ""
-                }}
-              />
-            </label>
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={disabled} onSelect={() => openFilePicker(target)}>
-            <FileText size={15} />
-            {fileCopy.selectFile}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <Button type="button" variant="ghost" size="icon" className={cn("h-5 w-5 shrink-0 rounded-full", className)} disabled={disabled} aria-label={copy.addAttachment} onClick={() => {
+        setFilePickerTarget(target)
+        setPrompt("/")
+        setSlashMenuOpen(true)
+        window.setTimeout(() => composerTextareaRef.current?.focus(), 0)
+      }}>
+        <Plus size={16} />
+      </Button>
     )
   }
 
@@ -3376,6 +3462,40 @@ export default function Chat() {
     <>
       <div className="rounded-xl border border-border bg-card p-1 shadow-md">
         <div className="relative min-w-0 flex-1">
+          {mentionMenuOpen && mentionMatch && currentConnectorDeviceID && (() => {
+            const entries = (mentionFilesQuery.data?.entries || []).filter((entry) => entry.name.toLowerCase().startsWith(mentionFilter))
+            return <div className="absolute bottom-full left-0 z-50 mb-2 max-h-[min(24rem,50vh)] w-full overflow-y-auto rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl" role="listbox" aria-label={language === "zh" ? "工作区文件" : "Workspace files"}>
+              <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">{mentionDirectory ? `@${mentionDirectory}` : (language === "zh" ? "文件" : "Files")}</div>
+              {mentionFilesQuery.isLoading ? <div className="px-2 py-4 text-sm text-muted-foreground">{language === "zh" ? "加载中..." : "Loading..."}</div> : entries.length === 0 ? <div className="px-2 py-4 text-sm text-muted-foreground">{language === "zh" ? "没有匹配文件" : "No matching files"}</div> : entries.slice(0, 80).map((entry) => <button key={entry.path} type="button" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-muted" onMouseDown={(event) => event.preventDefault()} onClick={() => selectMentionEntry(entry)}>
+                {entry.type === "directory" ? <Folder size={16} className="shrink-0 text-primary" /> : <FileText size={16} className="shrink-0 text-muted-foreground" />}<span className="min-w-0 flex-1 truncate font-mono text-xs">{entry.name}</span><span className="text-[11px] text-muted-foreground">{entry.type === "directory" ? ">" : formatBytes(entry.size)}</span>
+              </button>)}
+            </div>
+          })()}
+          {slashMenuOpen && prompt.startsWith("/") && (() => {
+            const query = prompt.slice(1).toLowerCase()
+            const commands = slashCommands(language).filter((command) => command.name.startsWith(query))
+            const filteredIndex = Math.min(slashMenuIndex, Math.max(0, commands.length - 1))
+            if (commands.length === 0) return null
+            return <div className="absolute bottom-full left-0 z-50 mb-2 max-h-[min(24rem,50vh)] w-full overflow-y-auto rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl" role="listbox" aria-label={language === "zh" ? "斜杠指令" : "Slash commands"}>
+              <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">{language === "zh" ? "添加" : "Add"}</div>
+              {commands.filter((command) => command.id === "file" || command.id === "stored-file").map((command) => {
+                const index = commands.indexOf(command)
+                const Icon = command.icon
+                return <button key={command.id} type="button" role="option" aria-selected={filteredIndex === index} className={cn("flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-muted", filteredIndex === index && "bg-muted")} onMouseDown={(event) => event.preventDefault()} onClick={() => selectSlashCommand(command.id)}>
+                  <Icon size={17} className="shrink-0 text-muted-foreground" /><span className="font-medium">{command.label}</span><span className="text-sm text-muted-foreground">{command.name}</span><span className="ml-auto truncate text-xs text-muted-foreground">{command.hint}</span>
+                </button>
+              })}
+              <div className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">{language === "zh" ? "指令" : "Commands"}</div>
+              {commands.filter((command) => command.id === "compact").map((command) => {
+                const index = commands.indexOf(command)
+                const Icon = command.icon
+                return <button key={command.id} type="button" role="option" aria-selected={filteredIndex === index} className={cn("flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-muted", filteredIndex === index && "bg-muted")} onMouseDown={(event) => event.preventDefault()} onClick={() => selectSlashCommand(command.id)}>
+                  <Icon size={17} className="shrink-0 text-muted-foreground" /><span className="font-medium">{command.label}</span><span className="text-sm text-muted-foreground">{command.name}</span><span className="ml-auto truncate text-xs text-muted-foreground">{command.hint}</span>
+                </button>
+              })}
+            </div>
+          })()}
+          <Input ref={composerFileInputRef} type="file" multiple className="hidden" disabled={!currentAdvancedSettings.file_storage_enabled || isUploadingAttachments} onChange={(event) => { void handleAttachmentFiles(event.currentTarget.files, filePickerTarget); event.currentTarget.value = "" }} />
           <textarea
             ref={composerTextareaRef}
             className="h-8 max-h-40 min-h-8 w-full resize-none overflow-y-auto rounded-md border-0 bg-transparent px-3 py-1 text-sm leading-5 outline-none focus:ring-0"

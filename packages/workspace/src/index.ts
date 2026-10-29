@@ -419,6 +419,35 @@ export async function apply(ctx: Context) {
       }
     });
   ctx
+    .route("/api/user/advanced-chat/workspace/files")
+    .methods("GET")
+    .action(async (s) => {
+      const id = user(s);
+      if (id === undefined) return;
+      const query = s.client.req?.url?.split("?")[1] ?? "";
+      const params = new URLSearchParams(query);
+      const input = {
+        device_id: params.get("connector_device_id") ?? "",
+        workspace_path: params.get("connector_workspace_path") ?? "",
+        path: params.get("path") ?? params.get("connector_workspace_path") ?? "",
+      };
+      try {
+        s.respond(await connector.execute(id, "list_directory", input), "json");
+      } catch (error) {
+        if (!noRuntime(error)) {
+          s.status = 502;
+          s.respond({ error: asError(error) }, "json");
+          return;
+        }
+        try {
+          s.respond(await queueAndWait(id, "list_directory", input), "json");
+        } catch (error) {
+          s.status = 502;
+          s.respond({ error: asError(error) }, "json");
+        }
+      }
+    });
+  ctx
     .route("/api/user/advanced-chat/workspace/git/action")
     .methods("POST")
     .action(async (s) => {

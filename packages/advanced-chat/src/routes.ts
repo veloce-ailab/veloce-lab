@@ -528,6 +528,50 @@ export function registerAdvancedChatRoutes(
       session.respond({ success: true }, "json");
     });
   ctx
+    .route("/api/user/advanced-chat/sessions/:id/compact")
+    .methods("POST")
+    .action(async (session, _params, id) => {
+      const current = await user(session);
+      if (current?.id === undefined) return;
+      const input = await body(session);
+      const summary = String(input.summary ?? "").trim();
+      if (!summary) {
+        session.status = 400;
+        session.respond({ error: "Summary is required" }, "json");
+        return;
+      }
+      const existing = await db.selectOne("advanced_chat_sessions", {
+        id,
+        user_id: current.id,
+      });
+      if (!existing) {
+        session.status = 404;
+        session.respond({ error: "Session not found" }, "json");
+        return;
+      }
+      const now = new Date().toISOString();
+      await db.remove("advanced_chat_messages", {
+        session_id: id,
+        user_id: current.id,
+      });
+      await db.create("advanced_chat_messages", {
+        id: randomUUID(),
+        session_id: id,
+        user_id: current.id,
+        role: "assistant",
+        content: summary.slice(0, 200_000),
+        content_parts: "[]",
+        tool_calls: "[]",
+        input_tokens: 0,
+        output_tokens: 0,
+        sort_order: 0,
+        created_at: now,
+        updated_at: now,
+      });
+      await db.update("advanced_chat_sessions", { id, user_id: current.id }, { updated_at: now });
+      session.respond({ success: true }, "json");
+    });
+  ctx
     .route("/api/user/advanced-chat/sessions/:id")
     .methods("PUT")
     .action(async (session, _params, id) => {
