@@ -39,6 +39,7 @@
     "@velocelab/adapter-claude": {},
     "@velocelab/adapter-dashscope": {},
     "@velocelab/adapter-deepseek": {},
+    "@velocelab/adapter-deepseek-account": {},
     "@velocelab/adapter-gemini": {},
     "@velocelab/adapter-kling": {},
     "@velocelab/adapter-midjourney": {},

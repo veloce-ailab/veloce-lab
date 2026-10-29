@@ -1,0 +1,17 @@
+{
+  "name": "@velocelab/adapter-deepseek-account",
+  "version": "0.1.1",
+  "type": "module",
+  "main": "dist/index.js",
+  "dev": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@velocelab/adapters": "^0.1.1"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  }
+}

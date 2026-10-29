@@ -2,7 +2,7 @@ import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Download, Edit, ListTree, Plus, Power, Trash } from "lucide-react"
+import { Download, Edit, ListTree, Loader2, Plus, Power, Trash } from "lucide-react"
 import type { AxiosError } from "axios"
 import { api } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
@@ -72,6 +72,15 @@ interface PluginUpstreamConfigField {
   optionsFrom: string
   optionLabel: string
   optionValue: string
+}
+
+interface AdapterConfiguration {
+  kind: string
+  label?: string
+  description?: string
+  startPath?: string
+  statusPath?: string
+  types: string[]
 }
 
 interface ChannelModelConfig {
@@ -182,11 +191,18 @@ export default function Channels() {
       return Array.isArray(response.data) ? response.data.map(String) : []
     },
   })
+  const { data: adapterConfigurations = [] } = useQuery<AdapterConfiguration[]>({
+    queryKey: ["registered-channel-adapter-configurations"],
+    queryFn: async () => {
+      const response = await api.get("/channel-adapter-configurations")
+      return Array.isArray(response.data) ? response.data : []
+    },
+  })
 
   const availableProviderTypes = useMemo(() => {
     const registered = new Set(adapterTypes.map(normalizeChannelType))
-    return [...providerTypes.filter((item) => registered.has(normalizeChannelType(item.value))), ...pluginTypes]
-  }, [adapterTypes, pluginTypes])
+    return [...providerTypes.filter((item) => registered.has(normalizeChannelType(item.value))).map((item) => ({ ...item, adapterConfig: adapterConfigurations.find((config) => config.types.some((type) => normalizeChannelType(type) === normalizeChannelType(item.value))) })), ...pluginTypes]
+  }, [adapterConfigurations, adapterTypes, pluginTypes])
 
   const { data: channelUsage = emptyChannelUsage() } = useQuery<ChannelUsageResponse>({
     queryKey: ["admin-channel-usage"],
@@ -350,8 +366,10 @@ function UpstreamDialog({
   onClose: () => void
   onSave: (channel: Partial<UpstreamChannel>) => void
 }) {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
+  const { error } = useToast()
   const [draft, setDraft] = useState<Partial<UpstreamChannel>>(emptyUpstream())
+  const [isStartingAdapterLogin, setIsStartingAdapterLogin] = useState(false)
   const selectedType = draft.type || "completion"
 	const selectedTypeConfig = channelTypeConfig(selectedType, providerTypes)
 	const pluginID = selectedTypeConfig.pluginID || ""
@@ -383,6 +401,37 @@ function UpstreamDialog({
 	const updatePluginConfig = (name: string, value: unknown) => {
 		setDraft({ ...draft, plugin_config: JSON.stringify({ ...pluginConfig, [name]: value }) })
 	}
+
+  const startAdapterLogin = async () => {
+    const configuration = selectedTypeConfig.adapterConfig
+    if (!configuration?.startPath || isStartingAdapterLogin) return
+    setIsStartingAdapterLogin(true)
+    const popup = window.open("about:blank", "deepseek-account-login", "popup,width=520,height=720")
+    try {
+      const callbackURL = `http://127.0.0.1:${window.location.port || "80"}/api/auth/callback/deepseek-account`
+      const started = await api.post(configuration.startPath, { channel_id: draft.id ?? null, redirect_uri: callbackURL })
+      const authorizationUrl = String(started.data?.authorization_url ?? "")
+      const loginID = String(started.data?.login_id ?? "")
+      if (!authorizationUrl || !loginID || !configuration.statusPath) throw new Error(language === "zh" ? "适配器未返回完整登录信息" : "Adapter returned incomplete login information")
+      if (!popup) throw new Error(language === "zh" ? "浏览器阻止了登录弹窗，请允许弹窗后重试" : "The browser blocked the login popup. Allow popups and try again.")
+      popup.location.href = authorizationUrl
+      for (let attempt = 0; attempt < 180; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2000))
+        const status = await api.get(configuration.statusPath, { params: { login_id: loginID } })
+        if (status.data?.status === "completed" && typeof status.data?.token === "string") {
+          setDraft((current) => ({ ...current, api_key: status.data.token }))
+          return
+        }
+        if (status.data?.status === "failed") throw new Error(String(status.data?.error || (language === "zh" ? "登录失败" : "Login failed")))
+      }
+      throw new Error(language === "zh" ? "登录超时，请重试" : "Login timed out; please try again")
+    } catch (cause) {
+      popup?.close()
+      error(cause instanceof Error ? cause.message : (language === "zh" ? "DeepSeek 登录失败" : "DeepSeek login failed"))
+    } finally {
+      setIsStartingAdapterLogin(false)
+    }
+  }
 
   return (
     <Dialog open={Boolean(channel)} onOpenChange={(open) => !open && onClose()}>
@@ -423,12 +472,13 @@ function UpstreamDialog({
             {selectedTypeConfig.baseURLHelp && <p className="text-xs text-muted-foreground">{selectedTypeConfig.baseURLHelp}</p>}
           </FieldLabel>
 		  <FieldLabel label={selectedTypeConfig.apiKeyLabel}>
-            <Input
+			<Input
               value={draft.api_key || ""}
               onChange={(e) => setDraft({ ...draft, api_key: e.target.value })}
               placeholder={selectedTypeConfig.apiKeyPlaceholder}
             />
             {selectedTypeConfig.apiKeyHelp && <p className="text-xs text-muted-foreground">{selectedTypeConfig.apiKeyHelp}</p>}
+			{selectedTypeConfig.adapterConfig?.kind === "oauth_login" && <div className="space-y-2"><Button type="button" variant="outline" disabled={isStartingAdapterLogin} onClick={() => void startAdapterLogin()}>{isStartingAdapterLogin && <Loader2 className="animate-spin" size={15} />}{isStartingAdapterLogin ? (language === "zh" ? "等待授权..." : "Waiting for authorization...") : (selectedTypeConfig.adapterConfig.label || (language === "zh" ? "登录账号" : "Log in to account"))}</Button>{selectedTypeConfig.adapterConfig.description && <p className="text-xs text-muted-foreground">{selectedTypeConfig.adapterConfig.description}</p>}</div>}
 		  </FieldLabel>
 		  {pluginFields.map((field) => <PluginUpstreamConfigControl key={field.name} field={field} value={pluginConfig[field.name]} settings={pluginSettings?.config} onChange={(value) => updatePluginConfig(field.name, value)} />)}
           <FieldLabel label={t("channels.priority")}>
@@ -1347,6 +1397,7 @@ interface ChannelTypeConfig {
   defaultBaseURLAction?: string
 	pluginID?: string
 	pluginConfig?: unknown
+	adapterConfig?: AdapterConfiguration
 }
 
 const providerTypes: ChannelTypeConfig[] = [
@@ -1420,6 +1471,14 @@ const providerTypes: ChannelTypeConfig[] = [
     defaultBaseURL: "https://api.deepseek.com",
     baseURLPlaceholder: "https://api.deepseek.com",
     baseURLHelp: "Claude-compatible requests use /anthropic/v1/messages.",
+  },
+  {
+    value: "deepseek_account",
+    label: "DeepSeek Account",
+    defaultBaseURL: "https://api.deepseek.com",
+    baseURLPlaceholder: "https://api.deepseek.com",
+    apiKeyLabel: "Account token",
+    apiKeyPlaceholder: "Log in to DeepSeek to obtain a token",
   },
   {
     value: "moonshot",

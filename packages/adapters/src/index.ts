@@ -65,8 +65,17 @@ export interface AdapterOutput {
   body: Record<string, unknown>;
 }
 
+export interface AdapterConfiguration {
+  kind: string;
+  label?: string;
+  description?: string;
+  startPath?: string;
+  statusPath?: string;
+}
+
 export interface AdapterDefinition {
   types: string[];
+  configuration?: AdapterConfiguration;
   build(input: AdapterInput): AdapterOutput;
   parse?(body: unknown): {
     content: string;
@@ -80,6 +89,7 @@ export interface AdapterDefinition {
 
 export interface AdapterRegistry {
   names(): string[];
+  configurations(): Array<AdapterConfiguration & { types: string[] }>;
   register(adapter: AdapterDefinition): () => void;
   build(input: AdapterInput): AdapterOutput | undefined;
   parse(
@@ -181,6 +191,7 @@ export function apply(ctx: Context) {
       );
   ctx.registerComponent("adapters", {
     names: () => adapters.flatMap((adapter) => adapter.types),
+    configurations: () => adapters.filter((adapter) => adapter.configuration).map((adapter) => ({ ...adapter.configuration!, types: adapter.types })),
     register(adapter) {
       adapters.push(adapter);
       return () => {

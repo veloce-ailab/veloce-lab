@@ -42,6 +42,10 @@ export async function apply(ctx: Context) {
     if (!admin(session)) return;
     session.respond(adapters.names(), "json");
   });
+  ctx.route("/api/channel-adapter-configurations").methods("GET").action(async (session) => {
+    if (!admin(session)) return;
+    session.respond(adapters.configurations(), "json");
+  });
   ctx.route("/api/channel-usage").methods("GET").action(async (session) => {
     if (!admin(session)) return;
     const channelRows = await channels.list();
