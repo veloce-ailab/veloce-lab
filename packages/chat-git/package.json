@@ -9,10 +9,12 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@velocelab/advanced-chat": "^0.1.1",
     "@velocelab/dashboard": "^0.1.4",
     "@velocelab/sidebar": "^0.1.1",
-    "@velocelab/workspace": "^0.1.1"
+    "@velocelab/workspace": "^0.1.1",
+    "monaco-editor": "^0.52.2"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

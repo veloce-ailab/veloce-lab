@@ -915,6 +915,28 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@monaco-editor/loader@npm:^1.5.0":
+  version: 1.7.0
+  resolution: "@monaco-editor/loader@npm:1.7.0"
+  dependencies:
+    state-local: "npm:^1.0.6"
+  checksum: 10c0/1fd3579cb09b669493cf553dfc0723a93483140a44353ce9a739827edfa7b2c6541b254024d15c48176ece749ef666b6d16cce6cf0e4396c7fa1c5a48012d08a
+  languageName: node
+  linkType: hard
+
+"@monaco-editor/react@npm:^4.7.0":
+  version: 4.7.0
+  resolution: "@monaco-editor/react@npm:4.7.0"
+  dependencies:
+    "@monaco-editor/loader": "npm:^1.5.0"
+  peerDependencies:
+    monaco-editor: ">= 0.25.0 < 1"
+    react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+    react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+  checksum: 10c0/a4e91c6eda1a71f5fd23871bd801de435490ccbc43934d23cba65cefe2be7e9d02c9a57c4ef80fc9fe99e4d4deea51e5db19cb4e0ecf3f51818dda0eb9cdbf12
+  languageName: node
+  linkType: hard
+
 "@napi-rs/wasm-runtime@npm:^1.1.4":
   version: 1.2.4
   resolution: "@napi-rs/wasm-runtime@npm:1.2.4"
@@ -3247,6 +3269,26 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@velocelab/explorer@workspace:packages/explorer":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/explorer@workspace:packages/explorer"
+  dependencies:
+    "@monaco-editor/react": "npm:^4.7.0"
+    "@velocelab/advanced-chat": "npm:^0.1.1"
+    "@velocelab/connector": "npm:^0.1.1"
+    "@velocelab/dashboard": "npm:^0.1.4"
+    "@velocelab/sidebar": "npm:^0.1.1"
+    "@vitejs/plugin-react": "npm:^6.0.1"
+    lucide-react: "npm:^1.16.0"
+    monaco-editor: "npm:^0.52.2"
+    react: "npm:^19.2.6"
+    react-dom: "npm:^19.2.6"
+    vite: "npm:^8.0.12"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/file@npm:^0.1.1, @velocelab/file@workspace:packages/file":
   version: 0.0.0-use.local
   resolution: "@velocelab/file@workspace:packages/file"
@@ -3470,6 +3512,10 @@ __metadata:
   resolution: "@velocelab/tools@workspace:packages/tools"
   dependencies:
     "@velocelab/advanced-chat": "npm:^0.1.1"
+    "@velocelab/dashboard": "npm:^0.1.1"
+    "@vitejs/plugin-react": "npm:^6.0.1"
+    react: "npm:^19.2.6"
+    vite: "npm:^8.0.12"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -6051,6 +6097,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"monaco-editor@npm:^0.52.2":
+  version: 0.52.2
+  resolution: "monaco-editor@npm:0.52.2"
+  checksum: 10c0/5a92da64f1e2ab375c0ce99364137f794d057c97bed10ecc65a08d6e6846804b8ecbd377eacf01e498f7dfbe1b21e8be64f728256681448f0484df90e767b435
+  languageName: node
+  linkType: hard
+
 "ms@npm:^2.1.3":
   version: 2.1.3
   resolution: "ms@npm:2.1.3"
@@ -7299,6 +7352,13 @@ __metadata:
   version: 1.5.2
   resolution: "sql-escaper@npm:1.5.2"
   checksum: 10c0/44a3dec22687b25b4f2866dbf736dbf85397475ab0ece65e0e0cd7da002cd1e9c8e45325e0e64c373278a77e23aa734f8b168e3a0b08dd824ab6675b77895aa1
+  languageName: node
+  linkType: hard
+
+"state-local@npm:^1.0.6":
+  version: 1.0.7
+  resolution: "state-local@npm:1.0.7"
+  checksum: 10c0/8dc7daeac71844452fafb514a6d6b6f40d7e2b33df398309ea1c7b3948d6110c57f112b7196500a10c54fdde40291488c52c875575670fb5c819602deca48bd9
   languageName: node
   linkType: hard
 

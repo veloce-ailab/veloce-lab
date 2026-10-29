@@ -28,4 +28,5 @@ export interface ChatSlotData extends Record<string, unknown> {
   setDevice: (deviceID: string) => void
   setWorkspacePath: (path: string) => void
   openWorkspacePicker: () => void
+  addFileToPrompt?: (path: string) => void
 }

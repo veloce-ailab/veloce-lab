@@ -161,7 +161,11 @@ export async function readTextFile(
   if (info.isDirectory()) throw Error(`Not a file: ${target}`);
   if (info.size > MAX_TEXT_BYTES)
     throw Error(`File is larger than 2 MiB: ${target}`);
-  return { path: target, content: await readFile(target, "utf8") };
+  const bytes = await readFile(target);
+  const content = bytes.toString("utf8");
+  if (bytes.includes(0) || !Buffer.from(content, "utf8").equals(bytes))
+    throw Error("Binary files cannot be opened in the text editor");
+  return { path: target, content };
 }
 
 export async function writeTextFile(
@@ -353,23 +357,9 @@ export interface WorkspaceGitFile {
   status: string;
   additions: number;
   deletions: number;
-  /**
-   * The file's own diff, so a click can open it without a second request. Only
-   * the first files are diffed and each one is capped, so a large change set
-   * cannot turn the status response into a payload the chat has to stream.
-   */
+  /** The complete file diff, so the viewer can render the selected change. */
   diff?: string;
 }
-
-/** Per-file diff cap; a longer diff is cut off with a marker line. */
-const MAX_FILE_DIFF_CHARS = 16_000;
-/** How many files carry a diff at all; the rest are listed without one. */
-const MAX_DIFF_FILES = 100;
-
-const truncatedDiff = (diff: string) =>
-  diff.length > MAX_FILE_DIFF_CHARS
-    ? `${diff.slice(0, MAX_FILE_DIFF_CHARS)}\n(diff truncated)`
-    : diff;
 
 /**
  * Branch, branch list and changed files of a workspace, in the shape the chat's
@@ -439,19 +429,14 @@ export async function gitStatus(input: Record<string, unknown>): Promise<{
       files.push({ path: file, status, ...count });
     }
   }
-  // Untracked files have no diff to show — the panel says "untracked file"
-  // instead — and everything after the first files is listed without one.
-  let diffed = 0;
+  // Untracked files have no Git diff; tracked files carry their complete diff.
   for (const file of files) {
-    if (diffed >= MAX_DIFF_FILES || file.status.includes("?")) continue;
+    if (file.status.includes("?")) continue;
     const diff = await git(cwd, ["diff", base, "--", file.path]).catch(
       () => "",
     );
     const trimmed = diff.trim();
-    if (trimmed) {
-      file.diff = truncatedDiff(trimmed);
-      diffed += 1;
-    }
+    if (trimmed) file.diff = trimmed;
   }
   return {
     current_branch: currentBranch,

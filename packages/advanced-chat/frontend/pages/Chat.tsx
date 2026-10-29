@@ -3530,6 +3530,7 @@ export default function Chat() {
     setDevice: setSessionConnectorDevice,
     setWorkspacePath: setSessionWorkspacePath,
     openWorkspacePicker: () => openWorkspacePicker("session"),
+    addFileToPrompt: (path) => setPrompt((current) => `${current}${current ? "\n" : ""}[文件: ${path}] `),
   }
 
   return (

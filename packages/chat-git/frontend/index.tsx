@@ -1,21 +1,28 @@
 import { useEffect, useMemo, useState } from "react"
+import { DiffEditor, loader } from "@monaco-editor/react"
+import * as monaco from "monaco-editor"
 import { useQuery } from "@tanstack/react-query"
 import { Check, FileDiff, GitBranch, GitCompareArrows, RefreshCw, RotateCcw, Upload, X } from "lucide-react"
-import { api, Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, useI18n, useToast, type DashboardContext } from "@velocelab/dashboard/frontend"
+import { api, Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, useI18n, useTheme, useToast, type DashboardContext } from "@velocelab/dashboard/frontend"
 import { GitChangeList, type GitChangeFile } from "../../workspace/frontend/components/GitChangeList"
 import type { ChatSlotData } from "@velocelab/advanced-chat/frontend/slots"
+
+loader.config({ monaco })
 
 function GitPanel(props: Record<string, unknown>) {
   const { session: currentSession, runMode } = props as ChatSlotData
   const currentConnectorDeviceID = currentSession?.connector_device_id || ""
   const approvalMode = currentSession?.connector_approval_mode || "manual"
   const { language } = useI18n()
+  const { resolvedTheme } = useTheme()
   const { error } = useToast()
   const gitCopy = useMemo(() => language === "zh" ? zhGitWorkspaceCopy : enGitWorkspaceCopy, [language])
   const [gitCompareBranch, setGitCompareBranch] = useState("")
   const [gitCommitMessage, setGitCommitMessage] = useState("")
   const [gitActionTaskID, setGitActionTaskID] = useState("")
   const [isGitActionSubmitting, setIsGitActionSubmitting] = useState(false)
+  const [selectedChange, setSelectedChange] = useState<GitChangeFile | null>(null)
+  const diffContents = useMemo(() => selectedChange?.diff ? parseUnifiedDiff(selectedChange.diff) : null, [selectedChange])
   const canInspectGitWorkspace = runMode !== "chat" && Boolean(currentConnectorDeviceID && currentSession?.connector_workspace_path)
   const gitStatusQuery = useQuery<WorkspaceGitStatus>({
     queryKey: ["advanced-chat-workspace-git-status", currentConnectorDeviceID, currentSession?.connector_workspace_path || "", gitCompareBranch],
@@ -42,22 +49,13 @@ function GitPanel(props: Record<string, unknown>) {
     },
   })
   useEffect(() => {
-    if (gitTaskQuery.data?.status === "completed") {
-      void refetchGitStatus()
-    }
+    if (gitTaskQuery.data?.status === "completed") void refetchGitStatus()
   }, [gitTaskQuery.data?.status, refetchGitStatus])
   const runGitAction = async (action: "commit" | "push" | "rollback") => {
-    if (!currentConnectorDeviceID || isGitActionSubmitting) {
-      return
-    }
-    if (action === "rollback") {
-      const confirmed = window.confirm(language === "zh"
-        ? "确定回滚工作区吗？已跟踪文件的未提交修改将恢复到当前提交，未跟踪文件会保留。"
-        : "Roll back this workspace? Uncommitted changes to tracked files will be restored to HEAD. Untracked files will be kept.")
-      if (!confirmed) {
-        return
-      }
-    }
+    if (!currentConnectorDeviceID || isGitActionSubmitting) return
+    if (action === "rollback" && !window.confirm(language === "zh"
+      ? "确定回滚工作区吗？已跟踪文件的未提交修改将恢复到当前提交，未跟踪文件会保留。"
+      : "Roll back this workspace? Uncommitted changes to tracked files will be restored to HEAD. Untracked files will be kept.")) return
     if (action === "commit" && !gitCommitMessage.trim()) {
       error(gitCopy.commitMessageRequired)
       return
@@ -73,9 +71,7 @@ function GitPanel(props: Record<string, unknown>) {
       })
       const task = normalizeConnectorTaskStatus(res.data)
       setGitActionTaskID(task.id)
-      if (action === "commit") {
-        setGitCommitMessage("")
-      }
+      if (action === "commit") setGitCommitMessage("")
       await gitStatusQuery.refetch()
     } catch (err) {
       error(apiErrorMessage(err, gitCopy.actionFailed))
@@ -83,11 +79,8 @@ function GitPanel(props: Record<string, unknown>) {
       setIsGitActionSubmitting(false)
     }
   }
-
   const decideGitTask = async (approved: boolean) => {
-    if (!gitActionTaskID) {
-      return
-    }
+    if (!gitActionTaskID) return
     try {
       await api.post(`/user/advanced-chat/connector-tasks/${encodeURIComponent(gitActionTaskID)}/decision`, { approved })
       await gitTaskQuery.refetch()
@@ -95,101 +88,91 @@ function GitPanel(props: Record<string, unknown>) {
       error(apiErrorMessage(err, gitCopy.actionFailed))
     }
   }
-
-
   return <section className="rounded-md border border-border bg-card p-3 shadow-sm">
     <div className="flex items-center justify-between gap-2">
       <div className="flex items-center gap-2 text-sm font-semibold"><GitBranch size={16} />{language === "zh" ? "源代码管理" : "Source Control"}</div>
       <Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={!canInspectGitWorkspace || gitStatusQuery.isFetching} onClick={() => void gitStatusQuery.refetch()} title={gitCopy.refresh} aria-label={gitCopy.refresh}><RefreshCw size={14} className={gitStatusQuery.isFetching ? "animate-spin" : ""} /></Button>
     </div>
-                  {!canInspectGitWorkspace ? (
-                    <div className="py-6 text-center text-sm text-muted-foreground">{gitCopy.noWorkspace}</div>
-                  ) : gitStatusQuery.isLoading ? (
-                    <div className="py-6 text-center text-sm text-muted-foreground">{gitCopy.loading}</div>
-                  ) : gitStatusQuery.isError ? (
-                    <div className="py-4 text-sm text-destructive">{apiErrorMessage(gitStatusQuery.error, gitCopy.actionFailed)}</div>
-                  ) : (
-                    <div className="mt-3 space-y-3">
-                      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-y border-border/70 py-3 text-sm">
-                        <div className="min-w-0">
-                          <div className="text-xs text-muted-foreground">{gitCopy.local}</div>
-                          <div className="mt-1 flex min-w-0 items-center gap-1.5 font-medium">
-                            <GitBranch size={14} className="shrink-0 text-muted-foreground" />
-                            <span className="truncate">{gitStatusQuery.data?.current_branch || "-"}</span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xs text-muted-foreground">{gitCopy.changes}</div>
-                          <div className="mt-1 flex items-center justify-end gap-1.5 font-medium tabular-nums">
-                            <span className="text-primary">+{gitStatusQuery.data?.additions || 0}</span>
-                            <span className="text-destructive">-{gitStatusQuery.data?.deletions || 0}</span>
-                            <span className="text-xs font-normal text-muted-foreground">{gitCopy.files.replace("{count}", String(gitStatusQuery.data?.changed_files || 0))}</span>
-                          </div>
-                        </div>
-                      </div>
+    {!canInspectGitWorkspace ? (
+      <div className="py-6 text-center text-sm text-muted-foreground">{gitCopy.noWorkspace}</div>
+    ) : gitStatusQuery.isLoading ? (
+      <div className="py-6 text-center text-sm text-muted-foreground">{gitCopy.loading}</div>
+    ) : gitStatusQuery.isError ? (
+      <div className="py-4 text-sm text-destructive">{apiErrorMessage(gitStatusQuery.error, gitCopy.actionFailed)}</div>
+    ) : (
+      <div className="mt-3 space-y-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-y border-border/70 py-3 text-sm">
+          <div className="min-w-0"><div className="text-xs text-muted-foreground">{gitCopy.local}</div><div className="mt-1 flex min-w-0 items-center gap-1.5 font-medium"><GitBranch size={14} className="shrink-0 text-muted-foreground" /><span className="truncate">{gitStatusQuery.data?.current_branch || "-"}</span></div></div>
+          <div className="text-right"><div className="text-xs text-muted-foreground">{gitCopy.changes}</div><div className="mt-1 flex items-center justify-end gap-1.5 font-medium tabular-nums"><span className="text-primary">+{gitStatusQuery.data?.additions || 0}</span><span className="text-destructive">-{gitStatusQuery.data?.deletions || 0}</span><span className="text-xs font-normal text-muted-foreground">{gitCopy.files.replace("{count}", String(gitStatusQuery.data?.changed_files || 0))}</span></div></div>
+        </div>
+        <GitChangeList files={gitStatusQuery.data?.files || []} clean={gitStatusQuery.data?.clean} copy={gitCopy} onFileClick={setSelectedChange} />
+        <label className="block text-xs font-medium text-muted-foreground">
+          <span className="mb-1.5 flex items-center gap-1.5"><GitCompareArrows size={14} />{gitCopy.compareBranch}</span>
+          <Select value={gitCompareBranch || "__shadcn_empty__"} onValueChange={(value) => setGitCompareBranch(value === "__shadcn_empty__" ? "" : value)}><SelectTrigger className="h-9 w-full rounded-2xl border border-border bg-background px-2 text-sm text-foreground"><SelectValue /></SelectTrigger><SelectContent>
+            <SelectItem value="__shadcn_empty__">{gitCopy.noComparison}</SelectItem>
+            {(gitStatusQuery.data?.branches || []).filter((branch) => branch !== gitStatusQuery.data?.current_branch).map((branch) => <SelectItem key={branch} value={branch}>{branch}</SelectItem>)}
+          </SelectContent></Select>
+        </label>
+        <div className="space-y-2 border-t border-border/70 pt-3">
+          <label className="block text-xs font-medium text-muted-foreground" htmlFor="git-commit-message">{gitCopy.commitMessage}</label>
+          <Input id="git-commit-message" className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-ring" value={gitCommitMessage} maxLength={200} placeholder={gitCopy.commitMessage} onChange={(event) => setGitCommitMessage(event.target.value)} />
+          <div className="grid grid-cols-3 gap-2">
+            <Button type="button" variant="outline" className="h-9 gap-2" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status)} onClick={() => void runGitAction("commit")}><FileDiff size={15} />{gitCopy.commit}</Button>
+            <Button type="button" className="h-9 gap-2" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status)} onClick={() => void runGitAction("push")}><Upload size={15} />{gitCopy.push}</Button>
+            <Button type="button" variant="outline" className="h-9 gap-2 text-destructive hover:text-destructive" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status) || gitStatusQuery.data?.clean} onClick={() => void runGitAction("rollback")}><RotateCcw size={15} />{gitCopy.rollback}</Button>
+          </div>
+        </div>
+        {gitTaskQuery.data && <div className="border-t border-border/70 pt-3 text-sm">
+          <div className="flex items-center justify-between gap-2"><span className="font-medium">{gitTaskStatusLabel(gitTaskQuery.data.status, gitCopy)}</span>
+            {gitTaskQuery.data.status === "pending_approval" && <div className="flex items-center gap-1.5"><Button type="button" size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => void decideGitTask(false)}><X size={14} />{gitCopy.reject}</Button><Button type="button" size="sm" className="h-8 gap-1.5" onClick={() => void decideGitTask(true)}><Check size={14} />{gitCopy.approve}</Button></div>}
+          </div>
+          {gitTaskQuery.data.error_message && <div className="mt-1.5 whitespace-pre-wrap text-xs text-destructive">{gitTaskQuery.data.error_message}</div>}
+          {gitTaskQuery.data.result && gitTaskQuery.data.status === "completed" && <div className="mt-1.5 max-h-20 overflow-y-auto whitespace-pre-wrap text-xs text-muted-foreground">{gitTaskQuery.data.result}</div>}
+        </div>}
+      </div>
+    )}
+      <Dialog open={Boolean(selectedChange)} onOpenChange={(open) => !open && setSelectedChange(null)}>
+        <DialogContent className="max-w-5xl overflow-hidden bg-popover p-0 text-popover-foreground">
+          <DialogHeader className="border-b px-5 py-3">
+            <DialogTitle className="truncate text-sm">{selectedChange?.path || gitCopy.changes}</DialogTitle>
+            <DialogDescription>{selectedChange?.status || ""}</DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 overflow-hidden">
+            {diffContents ? <DiffEditor height="68vh" original={diffContents.original} modified={diffContents.modified} language={diffContents.language} theme={resolvedTheme === "dark" ? "vs-dark" : "vs"} options={{ readOnly: true, originalEditable: false, renderSideBySide: true, minimap: { enabled: false }, wordWrap: "off", automaticLayout: true, renderOverviewRuler: false, renderIndicators: true, diffCodeLens: false }} /> : <div className="p-8 text-center text-sm text-muted-foreground">{selectedChange?.status.includes("??") ? gitCopy.untracked : gitCopy.noDiff}</div>}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </section>
+}
 
-                      <GitChangeList files={gitStatusQuery.data?.files || []} clean={gitStatusQuery.data?.clean} copy={gitCopy} />
+function parseUnifiedDiff(diff: string) {
+  const original: string[] = []
+  const modified: string[] = []
+  let inHunk = false
+  for (const line of diff.split(/\r?\n/)) {
+    if (line.startsWith("@@")) {
+      inHunk = true
+      continue
+    }
+    if (!inHunk || line.startsWith("\\")) continue
+    if (line.startsWith(" ")) {
+      original.push(line.slice(1))
+      modified.push(line.slice(1))
+    } else if (line.startsWith("-")) {
+      original.push(line.slice(1))
+    } else if (line.startsWith("+")) {
+      modified.push(line.slice(1))
+    }
+  }
+  if (original.length === 0 && modified.length === 0) return null
+  return { original: original.join("\n"), modified: modified.join("\n"), language: inferMonacoLanguage(diff) }
+}
 
-                      <label className="block text-xs font-medium text-muted-foreground">
-                        <span className="mb-1.5 flex items-center gap-1.5"><GitCompareArrows size={14} />{gitCopy.compareBranch}</span>
-                        <Select value={String((gitCompareBranch) || "__shadcn_empty__")} onValueChange={(value) => setGitCompareBranch((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="h-9 w-full rounded-2xl border border-border bg-background px-2 text-sm text-foreground"><SelectValue /></SelectTrigger><SelectContent>
-                          <SelectItem value="__shadcn_empty__">{gitCopy.noComparison}</SelectItem>
-                          {(gitStatusQuery.data?.branches || []).filter((branch) => branch !== gitStatusQuery.data?.current_branch).map((branch) => (
-                            <SelectItem key={branch} value={String(branch)}>{branch}</SelectItem>
-                          ))}
-                        </SelectContent></Select>
-                      </label>
-
-                      <div className="space-y-2 border-t border-border/70 pt-3">
-                        <label className="block text-xs font-medium text-muted-foreground" htmlFor="git-commit-message">{gitCopy.commitMessage}</label>
-                        <Input
-                          id="git-commit-message"
-                          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-ring"
-                          value={gitCommitMessage}
-                          maxLength={200}
-                          placeholder={gitCopy.commitMessage}
-                          onChange={(event) => setGitCommitMessage(event.target.value)}
-                        />
-                        <div className="grid grid-cols-3 gap-2">
-                          <Button type="button" variant="outline" className="h-9 gap-2" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status)} onClick={() => void runGitAction("commit")}>
-                            <FileDiff size={15} />
-                            {gitCopy.commit}
-                          </Button>
-                          <Button type="button" className="h-9 gap-2" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status)} onClick={() => void runGitAction("push")}>
-                            <Upload size={15} />
-                            {gitCopy.push}
-                          </Button>
-                          <Button type="button" variant="outline" className="h-9 gap-2 text-destructive hover:text-destructive" disabled={isGitActionSubmitting || isActiveConnectorTask(gitTaskQuery.data?.status) || gitStatusQuery.data?.clean} onClick={() => void runGitAction("rollback")}>
-                            <RotateCcw size={15} />
-                            {gitCopy.rollback}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {gitTaskQuery.data && (
-                        <div className="border-t border-border/70 pt-3 text-sm">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium">{gitTaskStatusLabel(gitTaskQuery.data.status, gitCopy)}</span>
-                            {gitTaskQuery.data.status === "pending_approval" && (
-                              <div className="flex items-center gap-1.5">
-                                <Button type="button" size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => void decideGitTask(false)}>
-                                  <X size={14} />
-                                  {gitCopy.reject}
-                                </Button>
-                                <Button type="button" size="sm" className="h-8 gap-1.5" onClick={() => void decideGitTask(true)}>
-                                  <Check size={14} />
-                                  {gitCopy.approve}
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                          {gitTaskQuery.data.error_message && <div className="mt-1.5 whitespace-pre-wrap text-xs text-destructive">{gitTaskQuery.data.error_message}</div>}
-                          {gitTaskQuery.data.result && gitTaskQuery.data.status === "completed" && <div className="mt-1.5 max-h-20 overflow-y-auto whitespace-pre-wrap text-xs text-muted-foreground">{gitTaskQuery.data.result}</div>}
-                        </div>
-                      )}
-                    </div>
-                  )}
-  </section>
+function inferMonacoLanguage(diff: string) {
+  const path = diff.match(/^\+\+\+ b\/(.+)$/m)?.[1] || diff.match(/^--- a\/(.+)$/m)?.[1] || ""
+  const extension = path.split(".").pop()?.toLowerCase()
+  const languages: Record<string, string> = { ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript", json: "json", css: "css", html: "html", md: "markdown", py: "python", go: "go", rs: "rust", java: "java", yaml: "yaml", yml: "yaml", toml: "ini", sh: "shell", sql: "sql", xml: "xml" }
+  return extension ? languages[extension] || "plaintext" : "plaintext"
 }
 
 function Git(props: Record<string, unknown>) {
@@ -219,6 +202,30 @@ interface ConnectorTaskStatus {
   error_message?: string
 }
 
+function normalizeConnectorTaskStatus(value: unknown): ConnectorTaskStatus {
+  const item = isRecord(value) ? value : {}
+  return {
+    id: stringFromUnknown(item.id) || "",
+    status: stringFromUnknown(item.status) || "",
+    result: stringFromUnknown(item.result) || undefined,
+    error_message: stringFromUnknown(item.error_message) || undefined,
+  }
+}
+
+function isActiveConnectorTask(status?: string) {
+  return status === "pending_approval" || status === "queued" || status === "running"
+}
+
+function gitTaskStatusLabel(status: string, copy: typeof zhGitWorkspaceCopy) {
+  switch (status) {
+    case "pending_approval": return copy.pendingApproval
+    case "queued": return copy.queued
+    case "running": return copy.running
+    case "completed": return copy.completed
+    default: return copy.failed
+  }
+}
+
 function normalizeWorkspaceGitStatus(value: unknown): WorkspaceGitStatus {
   const item = isRecord(value) ? value : {}
   const numberValue = (candidate: unknown) => {
@@ -239,35 +246,6 @@ function normalizeWorkspaceGitStatus(value: unknown): WorkspaceGitStatus {
       if (!path) return []
       return [{ path, status: stringFromUnknown(entry.status) || "", additions: numberValue(entry.additions), deletions: numberValue(entry.deletions), diff: stringFromUnknown(entry.diff) || undefined }]
     }) : [],
-  }
-}
-
-function normalizeConnectorTaskStatus(value: unknown): ConnectorTaskStatus {
-  const item = isRecord(value) ? value : {}
-  return {
-    id: stringFromUnknown(item.id) || "",
-    status: stringFromUnknown(item.status) || "",
-    result: stringFromUnknown(item.result) || undefined,
-    error_message: stringFromUnknown(item.error_message) || undefined,
-  }
-}
-
-function isActiveConnectorTask(status?: string) {
-  return status === "pending_approval" || status === "queued" || status === "running"
-}
-
-function gitTaskStatusLabel(status: string, copy: typeof zhGitWorkspaceCopy) {
-  switch (status) {
-    case "pending_approval":
-      return copy.pendingApproval
-    case "queued":
-      return copy.queued
-    case "running":
-      return copy.running
-    case "completed":
-      return copy.completed
-    default:
-      return copy.failed
   }
 }
 

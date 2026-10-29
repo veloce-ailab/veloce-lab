@@ -11,6 +11,8 @@
 // and the way it lets the user pick a folder.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { normalize } from "node:path";
+import { stat } from "node:fs/promises";
+import path from "node:path";
 import type {
   ConnectorDeviceRecord,
   ConnectorService,
@@ -34,6 +36,37 @@ import {
 import { pickFolder } from "./dialog.js";
 import { LocalMCPManager } from "./mcp.js";
 import { LocalTerminalManager } from "./terminal.js";
+import { resolveInsideWorkspace } from "./actions.js";
+import { spawn } from "node:child_process";
+import { platform } from "node:os";
+const runExternal = (command: string, args: string[]) => new Promise<void>((resolve, reject) => {
+  const child = spawn(command, args, { detached: true, stdio: "ignore", windowsHide: true });
+  child.once("error", reject);
+  child.once("spawn", () => { child.unref(); resolve() });
+});
+
+async function openLocalPath(input: Record<string, unknown>, kind: "file-manager" | "terminal" | "vscode") {
+  const root = String(input.workspace_path ?? "").trim();
+  const requested = String(input.path ?? root).trim();
+  if (!root || !requested) throw Error("A workspace path is required");
+  const target = resolveInsideWorkspace(requested, root);
+  if (!(await stat(target)).isDirectory()) throw Error("Path is not a directory");
+  const os = platform();
+  if (kind === "file-manager") {
+    if (os === "win32") await runExternal("explorer.exe", [target]);
+    else if (os === "darwin") await runExternal("open", [target]);
+    else await runExternal("xdg-open", [target]);
+  } else if (kind === "vscode") {
+    await runExternal("code", [target]);
+  } else if (os === "win32") {
+    await runExternal("wt.exe", ["-d", target]);
+  } else if (os === "darwin") {
+    await runExternal("open", ["-a", "Terminal", target]);
+  } else {
+    await runExternal("x-terminal-emulator", ["--working-directory", target]);
+  }
+  return { ok: true, path: target };
+}
 
 // `advanced-chat` owns the device and task tables, so it has to have run first.
 export const depend = ["database", "advanced-chat", "connector"];
@@ -81,6 +114,9 @@ const CAPABILITIES = [
   "mcp_call_tool",
   "list_mcp_processes",
   "stop_mcp_process",
+  "open_file_manager",
+  "open_terminal",
+  "open_vscode",
 ];
 
 /**
@@ -338,6 +374,9 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
        mcp_call_tool: (_userId, input) => { if (!cfg.allowMcpProcesses) throw Error("Local MCP processes are disabled"); return mcp.callTool(input); },
       list_mcp_processes: () => mcp.listProcesses(),
       stop_mcp_process: (_userId, input) => mcp.stop(String(input.key ?? "")),
+      open_file_manager: (_userId, input) => openLocalPath(input, "file-manager"),
+      open_terminal: (_userId, input) => openLocalPath(input, "terminal"),
+      open_vscode: (_userId, input) => openLocalPath(input, "vscode"),
       // `run_command` is queued and then waited for, so the model sees the
       // output of what it asked to run. A session that has not been given
       // full access still goes through the approval prompt first; the wait
