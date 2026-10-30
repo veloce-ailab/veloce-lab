@@ -3503,6 +3503,7 @@ __metadata:
   resolution: "@velocelab/sidebar@workspace:packages/sidebar"
   dependencies:
     "@velocelab/dashboard": "npm:^0.1.4"
+    "@velocelab/database-core": "npm:^0.1.1"
     "@vitejs/plugin-react": "npm:^6.0.1"
     lucide-react: "npm:^1.16.0"
     react: "npm:^19.2.6"

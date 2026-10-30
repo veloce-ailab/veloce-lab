@@ -10,7 +10,8 @@
     "test": "node --experimental-vm-modules --test tests/*.test.mjs"
   },
   "dependencies": {
-    "@velocelab/dashboard": "^0.1.4"
+    "@velocelab/dashboard": "^0.1.4",
+    "@velocelab/database-core": "^0.1.1"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"
@@ -19,8 +20,8 @@
     "@vitejs/plugin-react": "^6.0.1",
     "lucide-react": "^1.16.0",
     "react": "^19.2.6",
-    "vite": "^8.0.12",
+    "react-dom": "^19.2.6",
     "typescript": "^5.9.2",
-    "react-dom": "^19.2.6"
+    "vite": "^8.0.12"
   }
 }

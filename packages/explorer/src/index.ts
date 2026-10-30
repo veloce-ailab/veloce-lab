@@ -28,6 +28,28 @@ export function apply(ctx: Context) {
     return { device_id: String(value.device_id ?? ""), workspace_path: root, path: target }
   }
   ctx.route("/api/explorer/list").methods("GET").action(async (session: Session, query: URLSearchParams) => respond(session, () => connector.execute(uid(session), "list_directory", input({ device_id: query.get("device_id"), workspace_path: query.get("workspace_path"), path: query.get("path") }))))
+  ctx.route("/api/explorer/search").methods("GET").action(async (session: Session, query: URLSearchParams) => respond(session, async () => {
+    const base = input({ device_id: query.get("device_id"), workspace_path: query.get("workspace_path"), path: query.get("workspace_path") });
+    const needle = String(query.get("query") || "").trim().toLowerCase();
+    if (needle.length < 2) return { entries: [], truncated: false };
+    const queue = [base.path];
+    const entries: Array<{ name: string; path: string; type: string; size: number }> = [];
+    let visited = 0;
+    while (queue.length && visited < 3000 && entries.length < 500) {
+      const path = queue.shift()!;
+      visited += 1;
+      let result: { entries?: Array<{ name: string; path: string; type: string; size: number }> };
+      try { result = await connector.execute(uid(session), "list_directory", { ...base, path }) as typeof result; }
+      catch { continue; }
+      for (const entry of result.entries ?? []) {
+        if (entry.type === "directory") {
+          if (!new Set([".git", "node_modules", "dist", ".next", ".cache"]).has(entry.name)) queue.push(entry.path);
+        }
+        if (entry.name.toLowerCase().includes(needle) || entry.path.toLowerCase().includes(needle)) entries.push(entry);
+      }
+    }
+    return { entries, truncated: queue.length > 0 || visited >= 3000 };
+  }))
   ctx.route("/api/explorer/read").methods("GET").action(async (session: Session, query: URLSearchParams) => respond(session, () => connector.execute(uid(session), "read_file", input({ device_id: query.get("device_id"), workspace_path: query.get("workspace_path"), path: query.get("path") }))))
   ctx.route("/api/explorer/write").methods("POST").action(async (session: Session) => respond(session, async () => { const value = await body(session); return connector.execute(uid(session), "write_file", { ...input(value), content: String(value.content ?? "") }) }))
   ctx.route("/api/explorer/open").methods("POST").action(async (session: Session) => respond(session, async () => { const value = await body(session); const action = ["open_file_manager", "open_terminal", "open_vscode"].includes(String(value.action)) ? String(value.action) : ""; if (!action) throw Error("Unsupported open action"); return connector.execute(uid(session), action, input(value)) }))
