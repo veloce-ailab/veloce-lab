@@ -50,7 +50,8 @@ export function apply(ctx: DashboardContext) {
     frame: "settings",
     path: "/settings/assistant",
     component: AssistantSettings,
-    nav: { id: "advanced-chat-assistant", labelKey: "advancedChat.assistant", icon: Bot, order: 40, scope: "settings", group: "ai" },
+    minimumPermissionLevel: 10,
+    nav: { id: "advanced-chat-assistant", labelKey: "advancedChat.assistant", icon: Bot, order: 40, minimumPermissionLevel: 10, scope: "settings", group: "ai" },
   });
   ctx.page({
     frame: "settings",
@@ -63,7 +64,8 @@ export function apply(ctx: DashboardContext) {
     frame: "settings",
     path: "/settings/credentials",
     component: ConnectorCredentials,
-    nav: { id: "advanced-chat-credentials", labelKey: "advancedChat.credentials", icon: KeyRound, order: 20, scope: "settings", group: "chat" },
+    minimumPermissionLevel: 10,
+    nav: { id: "advanced-chat-credentials", labelKey: "advancedChat.credentials", icon: KeyRound, order: 20, minimumPermissionLevel: 10, scope: "settings", group: "chat" },
   });
 }
 

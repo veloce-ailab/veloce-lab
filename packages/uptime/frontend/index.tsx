@@ -7,6 +7,7 @@ export default function apply(ctx: DashboardContext) {
     frame: "settings",
     path: "/settings/statistics",
     component: SettingsStatistics,
-    nav: { id: "uptime.settings", labelKey: "uptime.settings", icon: Activity, order: 10, scope: "settings", group: "general" },
+    minimumPermissionLevel: 10,
+    nav: { id: "uptime.settings", labelKey: "uptime.settings", icon: Activity, order: 10, minimumPermissionLevel: 10, scope: "settings", group: "general" },
   })
 }

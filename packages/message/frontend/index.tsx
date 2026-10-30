@@ -23,6 +23,6 @@ export function MessageButton() {
 }
 export function apply(ctx: DashboardContext) {
   ctx.slot("topbar.actions", MessageButton, "message.button", 30)
-  ctx.page({ frame: "settings", path: "/settings/messages", component: MessageSettings, nav: { id: "message.settings", labelKey: "message.title", icon: Bell, order: 35, scope: "settings", group: "general" } })
+  ctx.page({ frame: "settings", path: "/settings/messages", component: MessageSettings, minimumPermissionLevel: 10, nav: { id: "message.settings", labelKey: "message.title", icon: Bell, order: 35, minimumPermissionLevel: 10, scope: "settings", group: "general" } })
 }
 export default apply
