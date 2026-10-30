@@ -36,6 +36,7 @@ interface Account {
   username: string
   email: string
   is_admin: boolean
+  permission_level: number
   avatar_url?: string
   created_at?: string
   providers?: string[]
@@ -54,9 +55,10 @@ interface Draft {
   email: string
   password: string
   is_admin: boolean
+  permission_level: number
 }
 
-const emptyDraft: Draft = { username: "", email: "", password: "", is_admin: false }
+const emptyDraft: Draft = { username: "", email: "", password: "", is_admin: false, permission_level: 10 }
 
 /** Server error codes, so the wording lives in the translation table. */
 const errorKeys: Record<string, string> = {
@@ -114,6 +116,7 @@ export default function UsersSettings() {
           email: draft.email,
           password: draft.password,
           is_admin: draft.is_admin,
+          permission_level: draft.permission_level,
         })
         toast.success(t("auth.users.updated"))
       } else {
@@ -122,6 +125,7 @@ export default function UsersSettings() {
           email: draft.email,
           password: draft.password,
           is_admin: draft.is_admin,
+          permission_level: draft.permission_level,
         })
         toast.success(t("auth.users.created"))
       }
@@ -155,6 +159,8 @@ export default function UsersSettings() {
     draft &&
       draft.username.trim().length >= 3 &&
       draft.email.includes("@") &&
+      Number.isInteger(draft.permission_level) && draft.permission_level >= 10 && draft.permission_level <= 100 &&
+      (draft.is_admin ? draft.permission_level === 100 : draft.permission_level < 100) &&
       (draft.id ? draft.password.length === 0 || draft.password.length >= 8 : draft.password.length >= 8),
   )
 
@@ -199,6 +205,7 @@ export default function UsersSettings() {
                   <TableRow>
                     <TableHead>{t("auth.users.columnUser")}</TableHead>
                     <TableHead className="w-40">{t("auth.users.columnRole")}</TableHead>
+                    <TableHead className="w-24">{t("auth.users.columnPermission")}</TableHead>
                     <TableHead className="hidden w-48 md:table-cell">{t("auth.users.columnProviders")}</TableHead>
                     <TableHead className="hidden w-48 sm:table-cell">{t("auth.users.columnCreated")}</TableHead>
                     <TableHead className="w-24 text-right">{t("auth.users.columnActions")}</TableHead>
@@ -217,6 +224,7 @@ export default function UsersSettings() {
                           {account.is_admin ? t("auth.users.admin") : t("auth.users.member")}
                         </Badge>
                       </TableCell>
+                      <TableCell className="font-mono text-sm">{account.permission_level}</TableCell>
                        <TableCell className="hidden md:table-cell">
                          <div className="flex flex-wrap gap-1">{account.providers?.length ? account.providers.map((provider) => <Badge key={provider} variant="outline" className="font-mono text-xs">{provider}</Badge>) : <span className="text-sm text-muted-foreground">—</span>}</div>
                        </TableCell>
@@ -236,6 +244,7 @@ export default function UsersSettings() {
                                 email: account.email,
                                 password: "",
                                 is_admin: account.is_admin,
+                                permission_level: account.permission_level ?? (account.is_admin ? 100 : 10),
                               })
                             }
                           >
@@ -303,8 +312,13 @@ export default function UsersSettings() {
                 </div>
                 <Switch
                   checked={draft.is_admin}
-                  onCheckedChange={(checked) => setDraft({ ...draft, is_admin: checked })}
+                  onCheckedChange={(checked) => setDraft({ ...draft, is_admin: checked, permission_level: checked ? 100 : Math.min(draft.permission_level, 99) })}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="account-permission">{t("auth.users.permission")}</Label>
+                <Input id="account-permission" type="number" min={10} max={100} step={1} disabled={draft.is_admin} value={draft.permission_level} onChange={(event) => setDraft({ ...draft, permission_level: Math.max(10, Math.min(99, Number(event.target.value) || 10)) })} />
+                <p className="text-xs text-muted-foreground">{t("auth.users.permissionHint")}</p>
               </div>
             </div>
           )}

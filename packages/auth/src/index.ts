@@ -143,6 +143,12 @@ function publicUser(user: User): PublicUser {
   return rest;
 }
 
+function normalizePermissionLevel(value: unknown, fallback: number): number {
+  if (value === undefined || value === null || value === "") return fallback;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 100 ? parsed : -1;
+}
+
 /** Bodies are read by hand so a malformed request is a 400, not a crash. */
 async function readBody(session: Session) {
   try {
@@ -211,6 +217,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
         remove: { zh: "删除", en: "Delete", ja: "削除" },
         columnUser: { zh: "账号", en: "Account", ja: "アカウント" },
         columnRole: { zh: "角色", en: "Role", ja: "権限" },
+        columnPermission: { zh: "权限等级", en: "Permission", ja: "権限レベル" },
         columnCreated: { zh: "创建时间", en: "Created", ja: "作成日時" },
         columnProviders: { zh: "登录方式", en: "Linked providers", ja: "ログイン方法" },
         columnActions: { zh: "操作", en: "Actions", ja: "操作" },
@@ -221,12 +228,14 @@ export async function apply(ctx: Context, config: AuthConfig) {
         admin: { zh: "管理员", en: "Administrator", ja: "管理者" },
         member: { zh: "普通用户", en: "Member", ja: "一般ユーザー" },
         adminHint: { zh: "管理员可以看到并修改实例的每一项配置。", en: "Administrators can see and change every setting on the instance.", ja: "管理者はインスタンスのすべての設定を閲覧・変更できます。" },
+        permission: { zh: "权限等级数字", en: "Permission level", ja: "権限レベル" },
+        permissionHint: { zh: "普通用户请输入 10 到 99 的整数；管理员固定为 100。数值越大，可访问的功能越多。", en: "Enter an integer from 10 to 99 for a regular user. Administrators are fixed at 100. Higher values unlock more features.", ja: "一般ユーザーは 10 から 99 の整数を入力してください。管理者は 100 固定です。値が大きいほど多くの機能を利用できます。" },
         created: { zh: "账号已创建", en: "Account created", ja: "アカウントを作成しました" },
         updated: { zh: "账号已更新", en: "Account updated", ja: "アカウントを更新しました" },
         deleted: { zh: "账号已删除", en: "Account deleted", ja: "アカウントを削除しました" },
         confirmRemove: { zh: "删除账号", en: "Delete account", ja: "アカウントを削除" },
         confirmRemoveBody: { zh: "该账号将无法再登录,这个操作不能撤销。", en: "This account will no longer be able to sign in, and this cannot be undone.", ja: "このアカウントはログインできなくなり、元に戻せません。" },
-        errorInvalid: { zh: "用户名、邮箱和密码都是必填的,密码至少 8 位。", en: "A username, an email and a password of at least 8 characters are required.", ja: "ユーザー名・メール・8文字以上のパスワードが必要です。" },
+        errorInvalid: { zh: "请检查用户名、邮箱、密码和权限等级。密码至少 8 位，普通用户等级为 10 到 99 的整数，管理员固定为 100。", en: "Check the username, email, password and permission level. Passwords need at least 8 characters; regular users use integer levels 10–99 and administrators are fixed at 100.", ja: "ユーザー名、メール、パスワード、権限レベルを確認してください。パスワードは8文字以上、一般ユーザーは10から99の整数、管理者は100固定です。" },
         errorDuplicate: { zh: "用户名或邮箱已被占用。", en: "That username or email is already taken.", ja: "そのユーザー名またはメールは既に使われています。" },
         errorConfigured: { zh: "这是配置里指定的管理员账号,不能删除或降级。", en: "This is the administrator named in the configuration; it cannot be deleted or demoted.", ja: "設定で指定された管理者アカウントのため、削除も降格もできません。" },
         errorSelf: { zh: "不能删除当前登录的账号。", en: "You cannot delete the account you are signed in as.", ja: "ログイン中のアカウントは削除できません。" },
@@ -682,7 +691,8 @@ export async function apply(ctx: Context, config: AuthConfig) {
       const name = String(body.username ?? "").trim();
       const address = String(body.email ?? "").trim().toLowerCase();
       const secret = String(body.password ?? "");
-      if (name.length < 3 || !address.includes("@") || secret.length < 8) {
+      const permissionLevel = normalizePermissionLevel(body.permission_level, 10);
+      if (name.length < 3 || !address.includes("@") || secret.length < 8 || permissionLevel < 10 || (!body.is_admin && permissionLevel >= 100)) {
         session.status = 400;
         session.respond({ error: "invalid" }, "json");
         return;
@@ -700,7 +710,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
         oidc_sub: null,
         password_hash: bcrypt.hashSync(secret, bcrypt.genSaltSync(10)),
         is_admin: body.is_admin === true,
-        permission_level: body.is_admin === true ? 100 : 10,
+        permission_level: body.is_admin === true ? 100 : permissionLevel,
         email_verified: true,
         avatar_url: "",
         balance: "0",
@@ -727,6 +737,15 @@ export async function apply(ctx: Context, config: AuthConfig) {
       if (!target) {
         session.status = 404;
         session.respond({ error: "not_found" }, "json");
+        return;
+      }
+      const resultingAdmin = typeof body.is_admin === "boolean" ? body.is_admin : target.is_admin;
+      const requestedPermission = body.permission_level === undefined
+        ? undefined
+        : normalizePermissionLevel(body.permission_level, -1);
+      if (requestedPermission === -1 || (requestedPermission !== undefined && (requestedPermission < 10 || (resultingAdmin ? requestedPermission !== 100 : requestedPermission >= 100)))) {
+        session.status = 400;
+        session.respond({ error: "invalid" }, "json");
         return;
       }
       const updates: Partial<User> = {};
@@ -776,8 +795,9 @@ export async function apply(ctx: Context, config: AuthConfig) {
           return;
         }
         updates.is_admin = body.is_admin;
-        updates.permission_level = body.is_admin ? 100 : 10;
+        updates.permission_level = body.is_admin ? 100 : (requestedPermission ?? 10);
       }
+      if (requestedPermission !== undefined) updates.permission_level = requestedPermission;
       const updated = await userService.update(target.id, updates);
       session.respond({ user: updated ? publicUser(updated) : publicUser(target) }, "json");
     });
