@@ -3077,6 +3077,22 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@velocelab/browser@workspace:packages/browser":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/browser@workspace:packages/browser"
+  dependencies:
+    "@velocelab/dashboard": "npm:^0.1.4"
+    "@velocelab/sidebar": "npm:^0.1.1"
+    "@vitejs/plugin-react": "npm:^6.0.1"
+    lucide-react: "npm:^1.16.0"
+    react: "npm:^19.2.6"
+    react-dom: "npm:^19.2.6"
+    vite: "npm:^8.0.12"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/cache@workspace:packages/cache":
   version: 0.0.0-use.local
   resolution: "@velocelab/cache@workspace:packages/cache"

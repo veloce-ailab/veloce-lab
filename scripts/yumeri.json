@@ -89,6 +89,7 @@
     "@velocelab/uptime": {},
     "@velocelab/tools": {},
     "@velocelab/explorer": {},
+    "@velocelab/browser": {},
     "@velocelab/inner-tools": {},
     "@velocelab/audit": {},
     "@velocelab/channel-admin": {},

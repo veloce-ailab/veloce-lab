@@ -24,8 +24,8 @@ function Sidebar(data: Record<string, unknown>) {
   const zh = language === "zh"
   const [activeTab, setActiveTab] = useState("home")
   const [tabs, setTabs] = useState<Array<{ id: string; type: string; label: string }>>([])
-  const createTab = (type: string, label: string) => {
-    const id = `${type}:${crypto.randomUUID()}`
+  const createTab = (type: string, label: string, existingID?: string) => {
+    const id = existingID || `${type}:${crypto.randomUUID()}`
     setTabs((current) => [...current, { id, type, label }])
     setActiveTab(id)
   }
