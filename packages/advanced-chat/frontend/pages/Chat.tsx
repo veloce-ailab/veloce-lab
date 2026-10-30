@@ -223,6 +223,7 @@ interface ChatMessage {
   processing_duration_ms?: number
   input_tokens?: number
   output_tokens?: number
+  cached_input_tokens?: number
   tool_calls?: ChatToolCall[]
 }
 
@@ -423,6 +424,7 @@ interface TaskFileChange {
   additions: number
   deletions: number
   entries: ReplacementEntry[]
+  content?: string
 }
 
 interface TaskChangeSummary {
@@ -654,6 +656,9 @@ export default function Chat() {
   const [workspacePickerTarget, setWorkspacePickerTarget] = useState<WorkspacePickerTarget>("session")
   const [isTaskChangesOpen, setIsTaskChangesOpen] = useState(false)
   const [selectedTaskChangePath, setSelectedTaskChangePath] = useState("")
+  const [markdownFilePath, setMarkdownFilePath] = useState("")
+  const [markdownFileContent, setMarkdownFileContent] = useState("")
+  const [markdownFileLoading, setMarkdownFileLoading] = useState(false)
   const [workspaceSkills, setWorkspaceSkills] = useState<WorkspaceSkill[]>([])
   const [isRefreshingWorkspaceSkills, setIsRefreshingWorkspaceSkills] = useState(false)
   const [decidingConnectorTaskID, setDecidingConnectorTaskID] = useState("")
@@ -1061,6 +1066,28 @@ export default function Chat() {
     () => taskChangeSummaryFromToolCalls(taskChangeMessage?.tool_calls?.length ? taskChangeMessage.tool_calls : activeRun?.tool_call_details || []),
     [activeRun?.tool_call_details, taskChangeMessage?.tool_calls]
   )
+  useEffect(() => {
+    const openLocalFile = (event: Event) => {
+      const path = (event as CustomEvent<string>).detail
+      const root = currentSession?.connector_workspace_path || ""
+      const deviceID = currentSession?.connector_device_id || ""
+      if (!root || !deviceID || typeof path !== "string") return
+      const normalized = resolveMarkdownWorkspacePath(root, path)
+      if (!normalized) return
+      setMarkdownFilePath(normalized)
+      setMarkdownFileContent("")
+      setMarkdownFileLoading(true)
+      setIsTaskChangesOpen(true)
+      const changedFile = taskChangeSummary.files.find((file) => normalizeWorkspacePath(file.path) === normalizeWorkspacePath(normalized))
+      setSelectedTaskChangePath(changedFile?.path || normalized)
+      void api.get("/explorer/read", { params: { device_id: deviceID, workspace_path: root, path: normalized } })
+        .then(({ data }) => setMarkdownFileContent(typeof data?.content === "string" ? data.content : ""))
+        .catch((cause) => error(apiErrorMessage(cause, copy.sendFailed)))
+        .finally(() => setMarkdownFileLoading(false))
+    }
+    window.addEventListener("advanced-chat:open-local-markdown-link", openLocalFile)
+    return () => window.removeEventListener("advanced-chat:open-local-markdown-link", openLocalFile)
+  }, [copy.sendFailed, currentSession?.connector_device_id, currentSession?.connector_workspace_path, taskChangeSummary.files])
   useEffect(() => {
     if (!taskChangeSummary.files.some((file) => file.path === selectedTaskChangePath)) {
       setSelectedTaskChangePath(taskChangeSummary.files[0]?.path || "")
@@ -2692,6 +2719,7 @@ export default function Chat() {
             const assistantMessage = createMessage("assistant", content || copy.emptyResponse, finalToolCalls)
             assistantMessage.input_tokens = tokenCountFromPayload(res.data?.input_tokens)
             assistantMessage.output_tokens = tokenCountFromPayload(res.data?.output_tokens)
+            assistantMessage.cached_input_tokens = tokenCountFromPayload(res.data?.cached_input_tokens)
             updateSession(session.id, (current) => ({
               ...current,
               messages: [...current.messages, { ...assistantMessage, content_parts: finalParts }],
@@ -2809,6 +2837,7 @@ export default function Chat() {
                 tool_calls: finalToolCalls,
                 input_tokens: tokenCountFromPayload(event.payload.input_tokens),
                 output_tokens: tokenCountFromPayload(event.payload.output_tokens),
+                cached_input_tokens: tokenCountFromPayload(event.payload.cached_input_tokens),
               }))
             } else if (event.type === "error") {
               throw new Error(typeof event.payload.error === "string" ? event.payload.error : copy.sendFailed)
@@ -4058,10 +4087,13 @@ export default function Chat() {
       {isAdvanced && (
         <TaskChangesDialog
           open={isTaskChangesOpen}
-          onOpenChange={setIsTaskChangesOpen}
-          summary={taskChangeSummary}
+          onOpenChange={(open) => { setIsTaskChangesOpen(open); if (!open) setMarkdownFilePath("") }}
+          summary={markdownFilePath && !taskChangeSummary.files.some((file) => normalizeWorkspacePath(file.path) === normalizeWorkspacePath(markdownFilePath))
+            ? { files: [{ path: markdownFilePath, additions: 0, deletions: 0, entries: [], content: markdownFileContent }], additions: 0, deletions: 0 }
+            : taskChangeSummary}
           selectedPath={selectedTaskChangePath}
           onSelectPath={setSelectedTaskChangePath}
+          loadingFile={markdownFileLoading}
           copy={taskChangeCopy}
         />
       )}
@@ -5223,6 +5255,7 @@ function TaskChangesDialog({
   summary,
   selectedPath,
   onSelectPath,
+  loadingFile,
   copy,
 }: {
   open: boolean
@@ -5230,6 +5263,7 @@ function TaskChangesDialog({
   summary: TaskChangeSummary
   selectedPath: string
   onSelectPath: (path: string) => void
+  loadingFile: boolean
   copy: typeof zhTaskChangeCopy
 }) {
   const selectedFile = summary.files.find((file) => file.path === selectedPath) || summary.files[0]
@@ -5275,11 +5309,16 @@ function TaskChangesDialog({
               <>
                 <div className="sticky top-0 z-10 border-b bg-popover px-4 py-3 font-mono text-xs text-muted-foreground">{selectedFile.path}</div>
                 <div className="space-y-3 p-3">
-                  {selectedFile.entries.map((entry, index) => (
+                  {selectedFile.entries.length > 0 ? selectedFile.entries.map((entry, index) => (
                     <div key={`${entry.path}-${index}`} className="overflow-hidden rounded-md border">
                       <LineDiff oldText={entry.oldText} newText={entry.newText} />
                     </div>
-                  ))}
+                  )) : selectedFile.content !== undefined ? (
+                    <div>
+                      <div className="mb-2 text-xs text-muted-foreground">{copy.empty}</div>
+                      <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-xs leading-relaxed">{loadingFile ? copy.loadingFile : selectedFile.content}</pre>
+                    </div>
+                  ) : <div className="py-12 text-center text-sm text-muted-foreground">{copy.empty}</div>}
                 </div>
               </>
             ) : (
@@ -6107,9 +6146,10 @@ function renderLinksAndEmphasis(text: string, keyPrefix: string): ReactNode[] {
       nodes.push(...renderEmphasis(text.slice(lastIndex, match.index), `${keyPrefix}-${nodes.length}`))
     }
     const href = safeMarkdownHref(match[2])
+    const localLink = href && !isExternalHref(href) && !href.startsWith("#")
     nodes.push(
       href ? (
-        <a key={`${keyPrefix}-link-${match.index}`} href={href} target={isExternalHref(href) ? "_blank" : undefined} rel={isExternalHref(href) ? "noreferrer" : undefined} className="font-medium text-primary underline underline-offset-2">
+        <a key={`${keyPrefix}-link-${match.index}`} href={localLink ? undefined : href} target={isExternalHref(href) ? "_blank" : undefined} rel={isExternalHref(href) ? "noreferrer" : undefined} className="font-medium text-primary underline underline-offset-2" onClick={localLink ? (event) => { event.preventDefault(); window.dispatchEvent(new CustomEvent("advanced-chat:open-local-markdown-link", { detail: href })) } : undefined}>
           {renderEmphasis(match[1], `${keyPrefix}-link-label-${match.index}`)}
         </a>
       ) : (
@@ -6122,6 +6162,32 @@ function renderLinksAndEmphasis(text: string, keyPrefix: string): ReactNode[] {
     nodes.push(...renderEmphasis(text.slice(lastIndex), `${keyPrefix}-${nodes.length}`))
   }
   return nodes
+}
+
+function normalizeWorkspacePath(path: string) {
+  return path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "")
+}
+
+function resolveMarkdownWorkspacePath(root: string, href: string) {
+  if (!href || href.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(href)) return ""
+  let clean = ""
+  try { clean = decodeURIComponent(href.split("#")[0].split("?")[0]).trim() } catch { return "" }
+  if (!clean || clean.startsWith("//")) return ""
+  const normalizedRoot = normalizeWorkspacePath(root)
+  const rawCandidate = clean.startsWith("/") ? clean : `${normalizedRoot}/${clean}`
+  const segments: string[] = []
+  const rootSegmentCount = normalizedRoot.split("/").filter(Boolean).length
+  for (const segment of rawCandidate.replace(/\\/g, "/").split("/")) {
+    if (!segment || segment === ".") continue
+    if (segment === "..") {
+      if (segments.length <= rootSegmentCount) return ""
+      segments.pop()
+    } else {
+      segments.push(segment)
+    }
+  }
+  const candidate = `${rawCandidate.startsWith("/") ? "/" : ""}${segments.join("/")}`
+  return candidate === normalizedRoot || candidate.startsWith(`${normalizedRoot}/`) ? candidate : ""
 }
 
 function renderEmphasis(text: string, keyPrefix: string): ReactNode[] {
@@ -6152,10 +6218,9 @@ function renderEmphasis(text: string, keyPrefix: string): ReactNode[] {
 
 function safeMarkdownHref(value: string) {
   const href = value.trim()
-  if (/^(https?:|mailto:)/i.test(href) || href.startsWith("/") || href.startsWith("#")) {
-    return href
-  }
-  return ""
+  if (!href || href.startsWith("//")) return ""
+  if (/^(https?:|mailto:)/i.test(href) || href.startsWith("/") || href.startsWith("#")) return href
+  return /^[a-z][a-z0-9+.-]*:/i.test(href) ? "" : href
 }
 
 function isExternalHref(href: string) {
@@ -6926,6 +6991,7 @@ function normalizeMessage(value: unknown): ChatMessage | null {
     processing_duration_ms: typeof value.processing_duration_ms === "number" && Number.isFinite(value.processing_duration_ms) && value.processing_duration_ms >= 0 ? value.processing_duration_ms : undefined,
     input_tokens: tokenCountFromPayload(value.input_tokens),
     output_tokens: tokenCountFromPayload(value.output_tokens),
+    cached_input_tokens: tokenCountFromPayload(value.cached_input_tokens),
     tool_calls: normalizeToolCalls(value.tool_calls),
   }
 }
@@ -7174,14 +7240,17 @@ function SessionTokenUsage({ session, language }: { session?: ChatSession; langu
     return messages.reduce((total, message) => ({
       input: total.input + (message.input_tokens || 0),
       output: total.output + (message.output_tokens || 0),
-    }), { input: 0, output: 0 })
+      cached: total.cached + (message.cached_input_tokens || 0),
+    }), { input: 0, output: 0, cached: 0 })
   }, [session?.messages])
   const total = usage.input + usage.output
   const isChinese = language === "zh"
   const label = isChinese ? "本会话 Token" : "Session tokens"
   const inputLabel = isChinese ? "输入" : "Input"
   const outputLabel = isChinese ? "输出" : "Output"
-  const title = `${label}\n${inputLabel}: ${formatTokenCount(usage.input)}\n${outputLabel}: ${formatTokenCount(usage.output)}\n${isChinese ? "总计" : "Total"}: ${formatTokenCount(total)}`
+  const cacheRate = usage.input > 0 ? `${(usage.cached / usage.input * 100).toFixed(1)}%` : "--"
+  const cacheLabel = isChinese ? "缓存命中" : "Cache hit"
+  const title = `${label}\n${inputLabel}: ${formatTokenCount(usage.input)}\n${outputLabel}: ${formatTokenCount(usage.output)}\n${cacheLabel}: ${formatTokenCount(usage.cached)} (${cacheRate})\n${isChinese ? "总计" : "Total"}: ${formatTokenCount(total)}`
   return (
     <span className="hidden cursor-help whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground hover:bg-muted sm:inline" title={title} aria-label={title}>
       {formatTokenCount(total)} tok
@@ -7201,6 +7270,7 @@ function ChatRunSummary({ session, run, language }: { session?: ChatSession; run
     const rounds = run?.current_round || Math.max(1, ...(run?.tool_call_details || []).map((call) => normalizedRound(call.round)))
     const input = assistantMessage?.input_tokens || 0
     const output = assistantMessage?.output_tokens || 0
+    const cached = assistantMessage?.cached_input_tokens || 0
     return {
       visible: Boolean(run || assistantMessage?.input_tokens || assistantMessage?.output_tokens || duration),
       rounds,
@@ -7209,6 +7279,7 @@ function ChatRunSummary({ session, run, language }: { session?: ChatSession; run
       toolCalls,
       input,
       output,
+      cached,
       firstTokenAverage: run && Number(run.first_token_count || 0) > 0
         ? Number(run.first_token_ms || 0) / Number(run.first_token_count)
         : undefined,
@@ -7224,10 +7295,11 @@ function ChatRunSummary({ session, run, language }: { session?: ChatSession; run
   const duration = summary.duration === undefined ? unknown : formatMetricDuration(summary.duration)
   const input = formatCompactTokenCount(summary.input)
   const output = formatCompactTokenCount(summary.output)
+  const cacheRate = summary.input > 0 ? `${Math.min(100, summary.cached / summary.input * 100).toFixed(1)}% (${formatCompactTokenCount(summary.cached)} tok)` : unknown
   const firstToken = summary.firstTokenAverage === undefined ? unknown : formatMetricDuration(summary.firstTokenAverage)
   const parts = zh
-    ? [`${summary.rounds}轮 · ${summary.steps}步`, `LLM ${duration} · 工具调用 ${summary.toolCalls > 0 ? `${summary.toolCalls}次` : unknown}`, `首 token 平均 ${firstToken}`, `缓存命中 ${unknown}`, `输入 ${input} tok · 输出 ${output} tok`]
-    : [`${summary.rounds} rounds · ${summary.steps} steps`, `LLM ${duration} · Tools ${summary.toolCalls > 0 ? `${summary.toolCalls}` : unknown}`, `First token avg ${firstToken}`, `Cache hit ${unknown}`, `Input ${input} tok · Output ${output} tok`]
+    ? [`${summary.rounds}轮 · ${summary.steps}步`, `LLM ${duration} · 工具调用 ${summary.toolCalls > 0 ? `${summary.toolCalls}次` : unknown}`, `首 token 平均 ${firstToken}`, `缓存命中 ${cacheRate}`, `输入 ${input} tok · 输出 ${output} tok`]
+    : [`${summary.rounds} rounds · ${summary.steps} steps`, `LLM ${duration} · Tools ${summary.toolCalls > 0 ? `${summary.toolCalls}` : unknown}`, `First token avg ${firstToken}`, `Cache hit ${cacheRate}`, `Input ${input} tok · Output ${output} tok`]
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 pt-0.5 text-[11px] tabular-nums text-muted-foreground" aria-label={zh ? "运行统计" : "Run statistics"}>
       {parts.map((part, index) => (
@@ -8431,6 +8503,7 @@ const zhTaskChangeCopy = {
   summary: "已修改 {count} 个文件",
   inProgress: "进行中",
   empty: "本轮任务没有可显示的文件修改。",
+  loadingFile: "正在读取文件…",
 }
 
 const enTaskChangeCopy: typeof zhTaskChangeCopy = {
@@ -8438,6 +8511,7 @@ const enTaskChangeCopy: typeof zhTaskChangeCopy = {
   summary: "{count} files changed",
   inProgress: "In progress",
   empty: "This task has no file changes to show.",
+  loadingFile: "Reading file…",
 }
 
 const zhSessionSidebarCopy = {

@@ -40,6 +40,7 @@ export interface AdapterInput {
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
+  cachedInputTokens: number;
 }
 
 /** Normalise usage metadata from OpenAI-compatible, Anthropic, Gemini and relay responses. */
@@ -53,9 +54,22 @@ export function extractTokenUsage(body: unknown): TokenUsage {
     }
     return 0;
   };
+  const cachedInputTokens = [
+    usage.cached_tokens,
+    usage.cached_input_tokens,
+    usage.cache_read_input_tokens,
+    usage.cacheReadInputTokens,
+    usage.prompt_tokens_details?.cached_tokens,
+    usage.input_tokens_details?.cached_tokens,
+    usage.cachedContentTokenCount,
+  ].reduce((maximum, item) => {
+    const parsed = Number(item);
+    return Number.isFinite(parsed) && parsed >= 0 ? Math.max(maximum, parsed) : maximum;
+  }, 0);
   return {
     inputTokens: number(usage.prompt_tokens, usage.input_tokens, usage.promptTokenCount, usage.inputTokenCount, usage.input),
     outputTokens: number(usage.completion_tokens, usage.output_tokens, usage.candidatesTokenCount, usage.outputTokenCount, usage.output),
+    cachedInputTokens,
   };
 }
 
@@ -82,6 +96,7 @@ export interface AdapterDefinition {
     toolCalls?: unknown[];
     inputTokens?: number;
     outputTokens?: number;
+    cachedInputTokens?: number;
     finishReason?: string;
   };
   stream?(response: Response, onDelta: (delta: string) => void): Promise<void>;

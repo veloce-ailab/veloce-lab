@@ -68,6 +68,7 @@ export async function ensureTables(db: Database): Promise<void> {
       tool_calls: { type: "string", initial: "[]" },
       input_tokens: { type: "integer", initial: 0 },
       output_tokens: { type: "integer", initial: 0 },
+      cached_input_tokens: { type: "integer", initial: 0 },
       sort_order: { type: "integer", nullable: false },
       created_at: "timestamp",
       updated_at: "timestamp",

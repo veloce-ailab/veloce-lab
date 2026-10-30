@@ -280,6 +280,7 @@ export interface ChatResult {
   finishReason: string;
   inputTokens: number;
   outputTokens: number;
+  cachedInputTokens: number;
   /** Set when the run was stopped or the caller went away mid-flight. */
   cancelled?: boolean;
 }
@@ -1497,6 +1498,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         finishReason: "cancelled",
         inputTokens: 0,
         outputTokens: 0,
+        cachedInputTokens: 0,
         cancelled: true,
       });
       try {
@@ -1788,6 +1790,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         const usage = extractTokenUsage(data);
         let inputTokens = Number(parsed?.inputTokens || usage.inputTokens || 0);
         let outputTokens = Number(parsed?.outputTokens || usage.outputTokens || 0);
+        let cachedInputTokens = Number(parsed?.cachedInputTokens || usage.cachedInputTokens || 0);
         // Non-streaming upstreams have no delta callback; their first completed
         // response is the closest observable first-token boundary.
         if (!firstTokenMS && !streaming) {
@@ -2001,6 +2004,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           const followupUsage = extractTokenUsage(followupData);
           inputTokens += Number(parsed?.inputTokens || followupUsage.inputTokens || 0);
           outputTokens += Number(parsed?.outputTokens || followupUsage.outputTokens || 0);
+          cachedInputTokens += Number(parsed?.cachedInputTokens || followupUsage.cachedInputTokens || 0);
           const roundContent = parsed?.content ?? "";
           if (roundContent) {
             content = roundContent;
@@ -2026,6 +2030,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           tool_calls: JSON.stringify(toolCallDetails),
           input_tokens: inputTokens,
           output_tokens: outputTokens,
+          cached_input_tokens: cachedInputTokens,
           sort_order: prior.length + 1,
           created_at: finishedAt,
           updated_at: finishedAt,
@@ -2077,6 +2082,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           tool_call_details: toolCallDetails,
           input_tokens: inputTokens,
           output_tokens: outputTokens,
+          cached_input_tokens: cachedInputTokens,
         });
         return {
           sessionId,
@@ -2090,6 +2096,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           finishReason,
           inputTokens,
           outputTokens,
+          cachedInputTokens,
         };
       }
     },
