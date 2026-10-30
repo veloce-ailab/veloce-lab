@@ -1,5 +1,7 @@
 import { Context, Schema, Session, resolveDescription } from "yumeri";
 import "@velocelab/dashboard";
+import "@velocelab/user";
+import type { UserService } from "@velocelab/user";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
@@ -7,7 +9,7 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 
-export const depend = ["dashboard"];
+export const depend = ["dashboard", "user"];
 export const provide = ["settings"];
 
 /** A configuration schema as yumeri's `Schema` serialises to JSON. */
@@ -26,6 +28,7 @@ interface PluginModuleMeta {
   config?: PluginConfigSchema;
   depend?: string[];
   provide?: string[];
+  minimumPermissionLevel?: number;
 }
 
 /**
@@ -137,6 +140,7 @@ async function describePlugin(loader: PluginLoader, name: string): Promise<Plugi
       config: module.config ?? fallback.config,
       depend: module.depend ?? fallback.depend ?? [],
       provide: module.provide ?? fallback.provide ?? [],
+      minimumPermissionLevel: module.minimumPermissionLevel ?? fallback.minimumPermissionLevel,
     };
   } catch {
     return { depend: [], provide: [] };
@@ -262,6 +266,8 @@ export function apply(ctx: Context) {
   // plugins are enabled: `~name` means disabled, and every action here saves
   // before it acts.
   const loader = () => (ctx.getCore() as unknown as { loader?: PluginLoader }).loader;
+  const user = ctx.component.user as UserService;
+  const requireAdmin = (session: Session) => user.require(session, 100);
 
   // Who is allowed to reach these routes is not decided here: access control is
   // a layer in front of the application, and duplicating a permission check in
@@ -284,6 +290,7 @@ export function apply(ctx: Context) {
   };
 
   ctx.route("/api/settings/plugins").methods("GET").action(async (session: Session) => {
+    if (!requireAdmin(session)) return;
     const current = loader();
     if (!current) return unavailable(session);
     const plugins = current.config.plugins ?? {};
@@ -298,6 +305,7 @@ export function apply(ctx: Context) {
         status: current.pluginStatus[name] ?? (disabled ? "disabled" : "pending"),
         depend: meta.depend ?? [],
         provide: meta.provide ?? [],
+        minimumPermissionLevel: Math.max(0, Number(meta.minimumPermissionLevel) || 0),
         schema: meta.config ? localizedSchema(meta.config, ctx.getCore(), requestLanguages(session)) : null,
         config: plugins[key] ?? {},
       };
@@ -311,6 +319,7 @@ export function apply(ctx: Context) {
   });
 
   ctx.route("/api/settings/plugins/versions").methods("GET").action(async (session: Session, query: URLSearchParams) => {
+    if (!requireAdmin(session)) return;
     const name = String(query.get("name") ?? "").trim();
     if (!validPackageName(name)) {
       session.status = 400;
@@ -330,6 +339,7 @@ export function apply(ctx: Context) {
   });
 
   ctx.route("/api/settings/plugins/install").methods("POST").action(async (session: Session) => {
+    if (!requireAdmin(session)) return;
     const current = loader();
     if (!current) return unavailable(session);
     const body = await readBody(session);
@@ -364,6 +374,7 @@ export function apply(ctx: Context) {
   });
 
   ctx.route("/api/settings/plugins/config").methods("POST").action(async (session: Session) => {
+    if (!requireAdmin(session)) return;
     const current = loader();
     if (!current) return unavailable(session);
     const body = await readBody(session);
@@ -391,6 +402,7 @@ export function apply(ctx: Context) {
   });
 
   ctx.route("/api/settings/plugins/action").methods("POST").action(async (session: Session) => {
+    if (!requireAdmin(session)) return;
     const current = loader();
     if (!current) return unavailable(session);
     const body = await readBody(session);

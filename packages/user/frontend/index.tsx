@@ -10,7 +10,8 @@ export function apply(ctx: DashboardContext) {
     component: ProfileSettings,
     // Landing page of the settings frame: the shell sends `/settings` here.
     home: true,
-    nav: { id: "settings-profile", labelKey: "user.settings", icon: UserCircle, order: 20, scope: "settings", group: "general" },
+    minimumPermissionLevel: 10,
+    nav: { id: "settings-profile", labelKey: "user.settings", icon: UserCircle, order: 20, minimumPermissionLevel: 10, scope: "settings", group: "general" },
   })
   // Passwords, passkeys and bindings are account settings, so they live with
   // the account page rather than with the package that authenticates requests.
@@ -18,7 +19,8 @@ export function apply(ctx: DashboardContext) {
     frame: "settings",
     path: "/settings/security",
     component: SecuritySettings,
-    nav: { id: "settings-security", labelKey: "user.security", icon: KeyRound, order: 30, scope: "settings", group: "general" },
+    minimumPermissionLevel: 10,
+    nav: { id: "settings-security", labelKey: "user.security", icon: KeyRound, order: 30, minimumPermissionLevel: 10, scope: "settings", group: "general" },
   })
 }
 

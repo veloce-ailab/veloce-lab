@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, ChevronRight, Home, LogOut, Menu, MessageSquare, Settings as SettingsIcon, UserCircle } from "lucide-react"
-import { Link, NavLink, useLocation } from "react-router-dom"
+import { Link, Navigate, NavLink, useLocation } from "react-router-dom"
 import { useEffect, useState } from "react"
 import {
   Button,
@@ -29,6 +29,8 @@ interface CurrentUser {
   username?: string
   email?: string
   avatar_url?: string
+  is_admin?: boolean
+  permission_level?: number
 }
 
 interface SettingsNavEntry {
@@ -70,6 +72,11 @@ export default function SettingsWorkspace() {
   const homePath = frameHome("settings")
   const chatPath = frameHome("chat")
   const fullHeight = pageForPath("settings", location.pathname)?.layout === "full"
+  const currentPage = pageForPath("settings", location.pathname)
+  const permissionLevel = Number(user?.permission_level) || (user?.is_admin ? 100 : 10)
+  const pageMinimumLevel = currentPage?.minimumPermissionLevel ?? currentPage?.nav?.minimumPermissionLevel ?? 100
+  const pageForbidden = user !== undefined && pageMinimumLevel > permissionLevel
+  const accessibleHome = settingsNavigationGroups(t, permissionLevel)[0]?.items[0]?.href || chatPath
   const title = settingsPageTitle(location.pathname, t)
   useEffect(() => subscribeExtensions(() => refreshNavigation((value) => value + 1)), [])
 
@@ -123,7 +130,7 @@ export default function SettingsWorkspace() {
         </div>
         <main className={cn("flex min-h-0 flex-1 flex-col transition-[filter] duration-200", fullHeight ? "overflow-hidden" : "overflow-y-auto", isSidebarOpen && "max-lg:blur-sm")}>
           <DashboardSlot name="content.before" />
-          {fullHeight ? (
+          {pageForbidden ? <Navigate to={accessibleHome} replace /> : fullHeight ? (
             <PageTransition transitionKey={location.pathname} className="page-shell-transition h-full min-h-0">
               <DashboardFrameOutlet frame="settings" fallback={homePath} />
             </PageTransition>
@@ -154,7 +161,8 @@ function SettingsSidebar({ homePath, chatPath, user, onLogout, className, onNavi
   onNavigate?: () => void
 }) {
   const { t } = useI18n()
-  const groups = settingsNavigationGroups(t)
+  const permissionLevel = Number(user?.permission_level) || (user?.is_admin ? 100 : 10)
+  const groups = settingsNavigationGroups(t, permissionLevel)
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([])
   const toggleGroup = (groupID: string) => setCollapsedGroups((current) => current.includes(groupID) ? current.filter((id) => id !== groupID) : [...current, groupID])
   const displayName = user?.username || user?.email || t("settings.account")
@@ -211,8 +219,10 @@ function SettingsSidebar({ homePath, chatPath, user, onLogout, className, onNavi
  * supplies their default order so undeclared and declared sections interleave
  * predictably.
  */
-function settingsNavigationGroups(t: Translate): SettingsNavGroup[] {
+function settingsNavigationGroups(t: Translate, permissionLevel: number): SettingsNavGroup[] {
   return navSections("settings")
+    .map((section) => ({ ...section, items: section.items.filter((item) => Number(item.minimumPermissionLevel ?? 100) <= permissionLevel) }))
+    .filter((section) => section.items.length > 0)
     .map((section, index) => ({ section, index, order: section.order ?? settingsGroupOrder(section.id) }))
     .sort((a, b) => a.order - b.order || a.index - b.index)
     .map(({ section }) => {

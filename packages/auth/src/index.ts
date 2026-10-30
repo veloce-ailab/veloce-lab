@@ -282,6 +282,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
         email,
         password_hash,
         is_admin: true,
+        permission_level: 100,
         email_verified: true,
       });
       logger.info(`administrator "${username}" adopted from configuration`);
@@ -295,6 +296,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
       oidc_sub: null,
       password_hash,
       is_admin: true,
+      permission_level: 100,
       email_verified: true,
       avatar_url: "",
       balance: "0",
@@ -418,6 +420,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
         oidc_sub: null,
         password_hash: bcrypt.hashSync(randomBytes(32).toString("base64url"), bcrypt.genSaltSync(10)),
         is_admin: false,
+        permission_level: 10,
         email_verified: Boolean(identity.email && identity.emailVerified),
         avatar_url: identity.avatarUrl,
         balance: "0",
@@ -697,6 +700,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
         oidc_sub: null,
         password_hash: bcrypt.hashSync(secret, bcrypt.genSaltSync(10)),
         is_admin: body.is_admin === true,
+        permission_level: body.is_admin === true ? 100 : 10,
         email_verified: true,
         avatar_url: "",
         balance: "0",
@@ -772,6 +776,7 @@ export async function apply(ctx: Context, config: AuthConfig) {
           return;
         }
         updates.is_admin = body.is_admin;
+        updates.permission_level = body.is_admin ? 100 : 10;
       }
       const updated = await userService.update(target.id, updates);
       session.respond({ user: updated ? publicUser(updated) : publicUser(target) }, "json");

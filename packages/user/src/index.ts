@@ -24,6 +24,8 @@ export const depend = ["database", "dashboard"];
 export const provide = ["user"];
 export const sessionCookieName = "veloce_session";
 const sessionLifetimeSeconds = 7 * 24 * 60 * 60;
+export const USER_PERMISSION_LEVEL = 10;
+export const ADMIN_PERMISSION_LEVEL = 100;
 
 export interface UserService {
   current(session: Session): Promise<User | undefined>;
@@ -35,6 +37,9 @@ export interface UserService {
   ensureDefaultGroup(): Promise<Group>;
   create(data: Omit<User, "id" | "created_at" | "updated_at">): Promise<User>;
   update(id: number, data: Partial<User>): Promise<User | undefined>;
+  permissionLevel(user?: Pick<User, "is_admin" | "permission_level">): number;
+  canAccess(user: Pick<User, "is_admin" | "permission_level"> | undefined, minimumLevel: number): boolean;
+  require(session: Session, minimumLevel: number): User | undefined;
 }
 
 /**
@@ -74,6 +79,7 @@ export async function apply(ctx: Context) {
     referral_code: "string",
     referrer_id: "integer",
     is_admin: { type: "boolean", nullable: false },
+    permission_level: { type: "integer", initial: USER_PERMISSION_LEVEL },
     created_at: "timestamp",
     updated_at: "timestamp",
   }, { unique: ["username", "email", "phone", "oidc_sub", "referral_code"] });
@@ -153,6 +159,14 @@ export async function apply(ctx: Context) {
       return user;
     },
     update: users.update,
+    permissionLevel: (user) => user ? Math.max(user.is_admin ? ADMIN_PERMISSION_LEVEL : USER_PERMISSION_LEVEL, Number(user.permission_level) || 0) : 0,
+    canAccess: (user, minimumLevel) => service.permissionLevel(user) >= Math.max(0, Number(minimumLevel) || 0),
+    require: (session, minimumLevel) => {
+      const current = session.properties.user as User | undefined;
+      if (!current) { session.status = 401; session.respond({ error: "Authorization is required" }, "json"); return undefined; }
+      if (!service.canAccess(current, minimumLevel)) { session.status = 403; session.respond({ error: "Forbidden" }, "json"); return undefined; }
+      return current;
+    },
     async establishSession(session, user) {
       if (user.id === undefined) throw Error("user is required to establish a session");
       const token = randomBytes(32).toString("base64url");

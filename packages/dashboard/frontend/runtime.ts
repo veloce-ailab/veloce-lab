@@ -9,6 +9,8 @@ export type DashboardPageLayout = "default" | "full"
 export interface DashboardPage extends DashboardRoute {
   frame: string
   nav?: Omit<DashboardNavItem, "path">
+  /** Minimum user permission level required to open this page. Defaults to admin for settings pages. */
+  minimumPermissionLevel?: number
   /** Marks the frame landing page: frames use it for breadcrumbs and fallbacks. */
   home?: boolean
   layout?: DashboardPageLayout
@@ -38,6 +40,8 @@ export interface DashboardNavItem {
   order?: number
   scope?: string
   group?: string | DashboardNavGroup
+  /** Minimum user permission level required to see and open this page. */
+  minimumPermissionLevel?: number
 }
 /** A rendered section: contributions grouped by id, in the order they were declared. */
 export interface DashboardNavSection {

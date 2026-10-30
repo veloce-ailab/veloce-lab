@@ -33,24 +33,24 @@ export default function apply(ctx: DashboardContext) {
     path: "/settings/plugins",
     component: PluginsSettings,
     layout: "full",
-    nav: { id: "settings-plugins", labelKey: "settings.plugins.title", icon: Puzzle, order: 50, ...GENERAL },
+    nav: { id: "settings-plugins", labelKey: "settings.plugins.title", icon: Puzzle, order: 50, minimumPermissionLevel: 100, ...GENERAL },
   });
   ctx.page({
     frame: "settings",
     path: "/settings/system",
     component: ProxySettings,
-    nav: { id: "settings-system", labelKey: "settings.proxy", icon: SettingsIcon, order: 70, ...SCOPE },
+    nav: { id: "settings-system", labelKey: "settings.proxy", icon: SettingsIcon, order: 70, minimumPermissionLevel: 100, ...SCOPE },
   });
   ctx.page({
     frame: "settings",
     path: "/settings/theme",
     component: ThemeSettings,
-    nav: { id: "settings-theme", labelKey: "settings.theme", icon: Palette, order: 90, ...SCOPE },
+    nav: { id: "settings-theme", labelKey: "settings.theme", icon: Palette, order: 90, minimumPermissionLevel: 100, ...SCOPE },
   });
   ctx.page({
     frame: "settings",
     path: "/settings/about",
     component: AboutSettings,
-    nav: { id: "settings-about", labelKey: "settings.about", icon: Shield, order: 100, ...SCOPE },
+    nav: { id: "settings-about", labelKey: "settings.about", icon: Shield, order: 100, minimumPermissionLevel: 100, ...SCOPE },
   });
 }

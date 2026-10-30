@@ -3489,6 +3489,7 @@ __metadata:
   resolution: "@velocelab/settings@workspace:packages/settings"
   dependencies:
     "@velocelab/dashboard": "npm:^0.1.1"
+    "@velocelab/user": "npm:^0.1.1"
     "@vitejs/plugin-react": "npm:^6.0.1"
     react: "npm:^19.2.6"
     vite: "npm:^8.0.12"
