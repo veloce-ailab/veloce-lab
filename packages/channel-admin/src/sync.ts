@@ -17,6 +17,7 @@ import type { Model, ModelConfig } from "./types.js";
 export interface SyncChannel {
   id: number;
   name: string;
+  type: string;
   base_url: string;
   api_key: string;
 }
@@ -52,9 +53,9 @@ interface ModelProvider {
 }
 
 /** Narrows a channel row to what syncing needs; a stored row always has an id. */
-export function toSyncChannel(channel: { id?: number; name: string; base_url: string; api_key: string } | undefined): SyncChannel | undefined {
+export function toSyncChannel(channel: { id?: number; name: string; type: string; base_url: string; api_key: string } | undefined): SyncChannel | undefined {
   if (!channel || channel.id === undefined) return undefined;
-  return { id: channel.id, name: channel.name, base_url: channel.base_url, api_key: channel.api_key };
+  return { id: channel.id, name: channel.name, type: channel.type, base_url: channel.base_url, api_key: channel.api_key };
 }
 
 // ---------------------------------------------------------------------------
@@ -274,15 +275,24 @@ function looksLikeHTML(body: string): boolean {
   return trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html") || trimmed.startsWith("<script");
 }
 
-async function getUpstreamJSON(channel: SyncChannel, path: string): Promise<unknown> {
+async function getUpstreamJSON(channel: SyncChannel, path: string, authFormat: "openai" | "anthropic" | "deepseek-account"): Promise<unknown> {
   const url = upstreamURLForPath(channel.base_url, path);
   if (!url) throw Error("channel base URL is required");
   assertSafeUpstreamURL(url);
   const apiKey = String(channel.api_key ?? "").trim();
   let response: Response;
+  const headers: Record<string, string> = { Accept: "application/json, text/plain, */*" };
+  if (apiKey && authFormat === "anthropic") {
+    headers["x-api-key"] = apiKey;
+    headers["anthropic-version"] = "2023-06-01";
+  } else if (apiKey && authFormat === "deepseek-account") {
+    headers["x-dsh-auth-token"] = apiKey;
+  } else if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
   try {
     response = await fetch(url, {
-      headers: { Accept: "application/json, text/plain, */*", ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
+      headers,
       signal: AbortSignal.timeout(30_000),
     });
   } catch (error) {
@@ -437,6 +447,7 @@ function collectModelNames(value: unknown, names: Set<string>, depth: number): v
 
 export interface SyncTargets {
   paths: string[];
+  authFormat: "openai" | "anthropic" | "deepseek-account";
   /** Auto detection tries every path; an explicit format uses exactly one. */
   auto: boolean;
 }
@@ -450,17 +461,28 @@ const LIST_FORMATS: Record<string, string> = {
   oneapi_models: "/api/models",
 };
 
-export function resolveSyncTargets(format: string, customPath: string): SyncTargets | { error: string } {
+export function resolveSyncTargets(format: string, customPath: string, channelType = "", requestedAuthFormat = ""): SyncTargets | { error: string } {
   const value = String(format ?? "").trim().toLowerCase() || "auto";
-  if (value === "auto") return { paths: ["/v1/models", "/models", "/api/models"], auto: true };
+  const type = String(channelType).trim().toLowerCase().replaceAll("-", "_");
+  const authFormat: SyncTargets["authFormat"] = requestedAuthFormat === "anthropic" || value === "anthropic_models"
+    ? "anthropic"
+    : value === "deepseek_account_models" || type === "deepseek_account" || type === "deepseekaccount"
+      ? "deepseek-account"
+      : type === "claude" || type === "anthropic"
+        ? "anthropic"
+        : "openai";
+  if (value === "auto") {
+    if (authFormat === "deepseek-account") return { paths: ["/models"], auto: false, authFormat };
+    return { paths: ["/v1/models", "/models", "/api/models"], auto: true, authFormat };
+  }
   if (value === "custom") {
     const path = normalizeSyncPath(customPath);
     if (!path) return { error: "custom sync path is required" };
-    return { paths: [path], auto: false };
+    return { paths: [path], auto: false, authFormat };
   }
-  const path = LIST_FORMATS[value];
+  const path = value === "anthropic_models" ? "/v1/models" : value === "deepseek_account_models" ? "/models" : LIST_FORMATS[value];
   if (!path) return { error: `unsupported model list sync format: ${format}` };
-  return { paths: [path], auto: false };
+  return { paths: [path], auto: false, authFormat };
 }
 
 export interface SyncFetchResult {
@@ -472,7 +494,7 @@ export async function fetchUpstreamModelNames(channel: SyncChannel, targets: Syn
   const failures: string[] = [];
   for (const path of targets.paths) {
     try {
-      const payload = await getUpstreamJSON(channel, path);
+      const payload = await getUpstreamJSON(channel, path, targets.authFormat);
       const names = parseModelNames(payload);
       if (names.length || !targets.auto) return { names, source: path };
       failures.push(`${path}: upstream returned no models`);

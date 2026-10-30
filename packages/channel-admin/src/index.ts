@@ -174,7 +174,7 @@ export async function apply(ctx: Context) {
     const input = await body(session);
     const channel = toSyncChannel(await channels.findById(Number(input.channel_id ?? 0)));
     if (!channel) { session.status = 404; session.respond({ error: "Channel not found" }, "json"); return; }
-    const targets = resolveSyncTargets(String(input.format ?? "auto"), String(input.path ?? ""));
+    const targets = resolveSyncTargets(String(input.format ?? "auto"), String(input.path ?? ""), channel.type, String(input.auth_format ?? ""));
     if ("error" in targets) { session.status = 400; session.respond({ error: targets.error }, "json"); return; }
     try {
       const { names, source } = await fetchUpstreamModelNames(channel, targets);

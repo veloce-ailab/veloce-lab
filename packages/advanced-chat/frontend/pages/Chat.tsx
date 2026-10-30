@@ -6115,13 +6115,17 @@ function markdownTableAlignmentClass(alignment?: "left" | "center" | "right") {
 }
 
 function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+  return renderLinksAndEmphasis(text, keyPrefix)
+}
+
+function renderCodeAndEmphasis(text: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = []
   const codePattern = /`([^`]+)`/g
   let lastIndex = 0
   let match: RegExpExecArray | null
   while ((match = codePattern.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      nodes.push(...renderLinksAndEmphasis(text.slice(lastIndex, match.index), `${keyPrefix}-${nodes.length}`))
+      nodes.push(...renderEmphasis(text.slice(lastIndex, match.index), `${keyPrefix}-${nodes.length}`))
     }
     nodes.push(
       <code key={`${keyPrefix}-code-${match.index}`} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]">
@@ -6131,7 +6135,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
     lastIndex = match.index + match[0].length
   }
   if (lastIndex < text.length) {
-    nodes.push(...renderLinksAndEmphasis(text.slice(lastIndex), `${keyPrefix}-${nodes.length}`))
+    nodes.push(...renderEmphasis(text.slice(lastIndex), `${keyPrefix}-${nodes.length}`))
   }
   return nodes
 }
@@ -6143,23 +6147,23 @@ function renderLinksAndEmphasis(text: string, keyPrefix: string): ReactNode[] {
   let match: RegExpExecArray | null
   while ((match = linkPattern.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      nodes.push(...renderEmphasis(text.slice(lastIndex, match.index), `${keyPrefix}-${nodes.length}`))
+      nodes.push(...renderCodeAndEmphasis(text.slice(lastIndex, match.index), `${keyPrefix}-${nodes.length}`))
     }
     const href = safeMarkdownHref(match[2])
     const localLink = href && !isExternalHref(href) && !href.startsWith("#")
     nodes.push(
       href ? (
         <a key={`${keyPrefix}-link-${match.index}`} href={localLink ? undefined : href} target={isExternalHref(href) ? "_blank" : undefined} rel={isExternalHref(href) ? "noreferrer" : undefined} className="font-medium text-primary underline underline-offset-2" onClick={localLink ? (event) => { event.preventDefault(); window.dispatchEvent(new CustomEvent("advanced-chat:open-local-markdown-link", { detail: href })) } : undefined}>
-          {renderEmphasis(match[1], `${keyPrefix}-link-label-${match.index}`)}
+          {renderCodeAndEmphasis(match[1], `${keyPrefix}-link-label-${match.index}`)}
         </a>
       ) : (
-        <span key={`${keyPrefix}-link-${match.index}`}>{renderEmphasis(match[1], `${keyPrefix}-link-label-${match.index}`)}</span>
+        <span key={`${keyPrefix}-link-${match.index}`}>{renderCodeAndEmphasis(match[1], `${keyPrefix}-link-label-${match.index}`)}</span>
       )
     )
     lastIndex = match.index + match[0].length
   }
   if (lastIndex < text.length) {
-    nodes.push(...renderEmphasis(text.slice(lastIndex), `${keyPrefix}-${nodes.length}`))
+    nodes.push(...renderCodeAndEmphasis(text.slice(lastIndex), `${keyPrefix}-${nodes.length}`))
   }
   return nodes
 }
@@ -6306,12 +6310,12 @@ async function saveAdvancedSessionSnapshot(session: ChatSession): Promise<ChatSe
     skill_ids: safeSession.skill_ids,
     mcp_server_ids: safeSession.mcp_server_ids,
 		knowledge_base_ids: safeSession.knowledge_base_ids,
-    connector_device_id: isChat || safeSession.cloud_sandbox_id ? "" : safeSession.connector_device_id || "",
-    connector_workspace_path: isChat || safeSession.cloud_sandbox_id ? "" : safeSession.connector_workspace_path || "",
+    connector_device_id: safeSession.cloud_sandbox_id ? "" : safeSession.connector_device_id || "",
+    connector_workspace_path: safeSession.cloud_sandbox_id ? "" : safeSession.connector_workspace_path || "",
     cloud_sandbox_id: isChat ? "" : safeSession.cloud_sandbox_id || "",
-    connector_auto_approve: isChat ? false : safeSession.connector_auto_approve,
-    connector_approval_mode: isChat ? "manual" : connectorApprovalModeFor(safeSession),
-    connector_command_prefixes: isChat ? [] : safeSession.connector_command_prefixes,
+    connector_auto_approve: safeSession.connector_auto_approve,
+    connector_approval_mode: connectorApprovalModeFor(safeSession),
+    connector_command_prefixes: safeSession.connector_command_prefixes,
     model_name: isStudio ? "" : safeSession.model_name || "",
     user_channel_id: safeSession.user_channel_id || 0,
     max_tokens: safeSession.max_tokens || 0,

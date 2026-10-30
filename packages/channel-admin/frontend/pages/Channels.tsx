@@ -408,9 +408,16 @@ function UpstreamDialog({
     setIsStartingAdapterLogin(true)
     const popup = window.open("about:blank", "deepseek-account-login", "popup,width=520,height=720")
     try {
-      const callbackURL = `http://127.0.0.1:${window.location.port || "80"}/api/auth/callback/deepseek-account`
-      const started = await api.post(configuration.startPath, { channel_id: draft.id ?? null, redirect_uri: callbackURL })
-      const authorizationUrl = String(started.data?.authorization_url ?? "")
+      // The redirect URI must be the exact origin that served this page. DeepSeek
+      // binds the PKCE authorization to it and rejects a hard-coded loopback port.
+      const callbackURL = `${window.location.origin}/oauth/callback`
+      const timezoneOffset = String(-new Date().getTimezoneOffset() * 60)
+      const locale = language === "zh" ? "zh_CN" : "en_US"
+      const started = await api.post(configuration.startPath, { channel_id: draft.id ?? null, redirect_uri: callbackURL, locale, timezone_offset: timezoneOffset })
+      const authorizationURL = String(started.data?.authorization_url ?? "")
+      const authorization = new URL(authorizationURL)
+      authorization.searchParams.set("theme", document.documentElement.classList.contains("dark") ? "dark" : "light")
+      const authorizationUrl = authorization.href
       const loginID = String(started.data?.login_id ?? "")
       if (!authorizationUrl || !loginID || !configuration.statusPath) throw new Error(language === "zh" ? "适配器未返回完整登录信息" : "Adapter returned incomplete login information")
       if (!popup) throw new Error(language === "zh" ? "浏览器阻止了登录弹窗，请允许弹窗后重试" : "The browser blocked the login popup. Allow popups and try again.")
@@ -420,6 +427,7 @@ function UpstreamDialog({
         const status = await api.get(configuration.statusPath, { params: { login_id: loginID } })
         if (status.data?.status === "completed" && typeof status.data?.token === "string") {
           setDraft((current) => ({ ...current, api_key: status.data.token }))
+          popup.close()
           return
         }
         if (status.data?.status === "failed") throw new Error(String(status.data?.error || (language === "zh" ? "登录失败" : "Login failed")))
@@ -585,6 +593,7 @@ function UpstreamModelConfigDialog({
         channel_id: channel.id,
         format: syncFormat,
         path: customSyncPath,
+        auth_format: syncFormat === "anthropic_models" ? "anthropic" : undefined,
       })
       return res.data as SyncPreview
     },
@@ -662,7 +671,15 @@ function UpstreamModelConfigDialog({
       info(copy.browserFetching)
       const headers: HeadersInit = { Accept: "application/json, text/plain, */*" }
       if (browserFallback.includeToken && browserFallback.channel.api_key) {
-        headers.Authorization = `Bearer ${browserFallback.channel.api_key}`
+        const normalizedType = normalizeChannelType(browserFallback.channel.type)
+        if (syncFormat === "anthropic_models" || normalizedType === "claude" || normalizedType === "anthropic") {
+          headers["x-api-key"] = browserFallback.channel.api_key
+          headers["anthropic-version"] = "2023-06-01"
+        } else if (syncFormat === "deepseek_account_models" || normalizedType === "deepseek_account" || normalizedType === "deepseekaccount") {
+          headers["x-dsh-auth-token"] = browserFallback.channel.api_key
+        } else {
+          headers.Authorization = `Bearer ${browserFallback.channel.api_key}`
+        }
       }
       const response = await fetch(browserFallback.url, {
         method: "GET",
@@ -1200,7 +1217,7 @@ function channelModelPayload(model: Partial<ChannelModelConfig>) {
 }
 
 function browserFallbackForChannel(channel: UpstreamChannel, format: string, customPath: string, error: string): BrowserSyncFallback {
-  const path = browserSyncPath(format, customPath)
+  const path = browserSyncPath(format, customPath, channel.type)
   const url = upstreamURLForPath(channel.base_url, path)
   return {
     channel,
@@ -1212,11 +1229,18 @@ function browserFallbackForChannel(channel: UpstreamChannel, format: string, cus
   }
 }
 
-function browserSyncPath(format: string, customPath: string) {
+function browserSyncPath(format: string, customPath: string, channelType = "") {
+  const normalizedType = normalizeChannelType(channelType)
+  if (format === "auto" && (normalizedType === "deepseek_account" || normalizedType === "deepseekaccount")) return "/models"
   switch (format) {
     case "openai_models":
     case "openai":
       return "/v1/models"
+    case "anthropic_models":
+    case "anthropic":
+      return "/v1/models"
+    case "deepseek_account_models":
+      return "/models"
     case "generic_models":
     case "models":
       return "/models"
@@ -1371,6 +1395,8 @@ function syncFormatOptionLabels(language: string) {
     return [
       { value: "auto", label: "自动识别" },
       { value: "openai_models", label: "OpenAI /v1/models" },
+      { value: "anthropic_models", label: "Anthropic /v1/models" },
+      { value: "deepseek_account_models", label: "DeepSeek Account /models" },
       { value: "generic_models", label: "通用 /models" },
       { value: "api_models", label: "通用 /api/models" },
       { value: "custom", label: "自定义路径" },
@@ -1379,6 +1405,8 @@ function syncFormatOptionLabels(language: string) {
   return [
     { value: "auto", label: "Auto detect" },
     { value: "openai_models", label: "OpenAI /v1/models" },
+    { value: "anthropic_models", label: "Anthropic /v1/models" },
+    { value: "deepseek_account_models", label: "DeepSeek Account /models" },
     { value: "generic_models", label: "Generic /models" },
     { value: "api_models", label: "Generic /api/models" },
     { value: "custom", label: "Custom path" },
