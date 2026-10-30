@@ -2648,7 +2648,11 @@ export default function Chat() {
           return
         }
 
-        if (selectedAgent?.stream !== true) {
+        // Keep the transport streamed for every assistant run so tool start and
+        // completion events reach the UI while they happen. `stream` below
+        // still controls whether the upstream model text is streamed.
+        const liveToolProgress = true
+        if (selectedAgent?.stream !== true && !liveToolProgress) {
           try {
             const res = await api.post("/user/advanced-chat/completions", {
               session_id: session.id,
@@ -2751,7 +2755,8 @@ export default function Chat() {
               reasoning_effort: session.reasoning_effort || "",
               auto_compress_context: session.auto_compress_context,
               disabled_tool_groups: session.disabled_tool_groups || [],
-              stream: true,
+              stream: selectedAgent?.stream === true,
+              progress_stream: true,
             }),
             signal: controller.signal,
           })

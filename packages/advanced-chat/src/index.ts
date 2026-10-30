@@ -248,6 +248,8 @@ export interface ChatInput {
   }>;
   userChannelId?: number;
   stream?: boolean;
+  /** Keeps tool progress live even when the model response itself is non-streaming. */
+  progressStream?: boolean;
   maxTokens?: number;
   temperature?: number;
   reasoningEffort?: string;

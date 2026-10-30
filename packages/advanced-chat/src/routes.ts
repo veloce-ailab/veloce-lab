@@ -826,6 +826,7 @@ export function registerAdvancedChatRoutes(
         messages,
         userChannelId: Number(input.channel_id ?? 0) || undefined,
         stream: input.stream === true,
+        progressStream: input.progress_stream === true,
         maxTokens: Number(input.max_tokens ?? 0) || undefined,
         temperature:
           typeof input.temperature === "number" ? input.temperature : undefined,
@@ -862,7 +863,7 @@ export function registerAdvancedChatRoutes(
         autoCompressContext: input.auto_compress_context !== false,
         disabledToolGroups: list(input.disabled_tool_groups),
       };
-      if (!payload.stream) {
+      if (!payload.stream && !payload.progressStream) {
         // A thrown error here escapes to the router, whose error path writes a
         // second response (`ERR_HTTP_HEADERS_SENT`) and takes the worker down —
         // so run failures are answered as JSON instead of being raised.
