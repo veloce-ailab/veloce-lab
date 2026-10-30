@@ -1577,11 +1577,47 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           1,
           Number(selected.config.max_context_tokens) || DEFAULT_MAX_CONTEXT_TOKENS,
         );
+        // Rebuild stored tool rounds as assistant(tool_use) followed immediately
+        // by tool results. Anthropic-compatible adapters require this adjacency;
+        // keeping only the assistant call leaves an invalid dangling tool_use.
+        const priorMessages = prior.flatMap((message: any) => {
+          const base = { role: message.role, content: String(message.content ?? "") };
+          let storedCalls: any[] = [];
+          if (Array.isArray(message.tool_calls)) storedCalls = message.tool_calls;
+          else if (typeof message.tool_calls === "string") {
+            try {
+              const decoded = JSON.parse(message.tool_calls);
+              if (Array.isArray(decoded)) storedCalls = decoded;
+            } catch {
+              storedCalls = [];
+            }
+          }
+          if (message.role !== "assistant" || !storedCalls.length)
+            return [base];
+          const completedCalls = storedCalls.flatMap((call: any) => {
+            const id = String(call.id ?? "");
+            const name = String(call.name ?? call.function?.name ?? "");
+            if (!id || !name) return [];
+            const rawArguments = call.arguments ?? call.function?.arguments ?? "{}";
+            const argumentsText = typeof rawArguments === "string"
+              ? rawArguments
+              : JSON.stringify(rawArguments);
+            const hasResult = call.result !== undefined || call.error !== undefined;
+            if (!hasResult) return [];
+            const result = call.result !== undefined
+              ? String(call.result)
+              : JSON.stringify({ error: String(call.error) });
+            return [{ id, name, arguments: argumentsText, result }];
+          });
+          const calls = completedCalls.map(({ id, name, arguments: args }) => ({ id, name, arguments: args }));
+          if (!calls.length) return [base];
+          const restored: any[] = [{ ...base, tool_calls: calls }];
+          for (const call of completedCalls)
+            restored.push({ role: "tool", content: call.result, tool_call_id: call.id });
+          return restored;
+        });
         let messages = [
-          ...prior.map((message: any) => ({
-            role: message.role,
-            content: message.content,
-          })),
+          ...priorMessages,
           ...input.messages,
         ].map((message: any) => ({
           role: ["system", "user", "assistant", "tool"].includes(message.role)

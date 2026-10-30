@@ -6,7 +6,14 @@ export const provide = ["adapters"];
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | Array<Record<string, unknown>>;
-  toolCalls?: Array<{ id: string; name: string; arguments: string }>;
+  toolCalls?: Array<{
+    id: string;
+    name: string;
+    arguments: string;
+    result?: string;
+    error?: string;
+    status?: string;
+  }>;
   toolCallId?: string;
   name?: string;
 }

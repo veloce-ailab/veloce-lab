@@ -39,6 +39,76 @@ function upstreamModelName(value: string) {
   return value;
 }
 
+function parseDSML(content: string) {
+  const token = "(?:\\|DSML\\|>|｜DSML｜)";
+  const marker = new RegExp(`<${token}function_calls[\\s\\S]*?<${token}/function_calls>`, "g");
+  const calls: Array<{ id: string; name: string; arguments: string }> = [];
+  const clean = content.replace(marker, (block) => {
+    const invokePattern = new RegExp(`<${token}invoke\\b([^>]*)>([\\s\\S]*?)<${token}/invoke>`, "g");
+    let invoke: RegExpExecArray | null;
+    while ((invoke = invokePattern.exec(block)) !== null) {
+      const name = /\bname\s*=\s*["']([^"']+)["']/.exec(invoke[1])?.[1]?.trim();
+      if (!name) continue;
+      const args: Record<string, unknown> = {};
+      const parameterPattern = new RegExp(`<${token}parameter\\b([^>]*?)(?:\\/>|>([\\s\\S]*?)<${token}/parameter>)`, "g");
+      let parameter: RegExpExecArray | null;
+      while ((parameter = parameterPattern.exec(invoke[2])) !== null) {
+        const key = /\bname\s*=\s*["']([^"']+)["']/.exec(parameter[1])?.[1];
+        if (!key) continue;
+        const raw = (parameter[2] ?? /\bvalue\s*=\s*["']([^"']*)["']/.exec(parameter[1])?.[1] ?? "").trim();
+        try { args[key] = JSON.parse(raw); } catch { args[key] = raw; }
+      }
+      calls.push({ id: `dsml-${calls.length + 1}`, name, arguments: JSON.stringify(args) });
+    }
+    return "";
+  }).trim();
+  return { content: clean, calls };
+}
+
+function parseResponseContent(value: any) {
+  const blocks = Array.isArray(value?.content) ? value.content : [];
+  const nativeCalls = blocks.filter((part: any) => part?.type === "tool_use").map((part: any, index: number) => ({
+    id: String(part.id || `tool-${index + 1}`),
+    name: String(part.name || ""),
+    arguments: JSON.stringify(part.input && typeof part.input === "object" ? part.input : {}),
+  })).filter((call: any) => call.name);
+  const text = blocks.filter((part: any) => part?.type === "text").map((part: any) => String(part.text || "")).join("");
+  const parsed = parseDSML(typeof value?.content === "string" ? value.content : text);
+  return { content: parsed.content, toolCalls: [...nativeCalls, ...parsed.calls] };
+}
+
+function anthropicMessages(messages: AdapterInput["messages"]) {
+  const result: Array<Record<string, unknown>> = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message.role === "system") continue;
+    if (message.role === "tool") {
+      const blocks: Array<Record<string, unknown>> = [];
+      while (index < messages.length && messages[index]?.role === "tool") {
+        const tool = messages[index];
+        blocks.push({ type: "tool_result", tool_use_id: tool.toolCallId || "", content: tool.content });
+        index += 1;
+      }
+      index -= 1;
+      result.push({ role: "user", content: blocks });
+      continue;
+    }
+    if (message.role === "assistant" && message.toolCalls?.length) {
+      const content: Array<Record<string, unknown>> = [];
+      if (typeof message.content === "string" && message.content.trim()) content.push({ type: "text", text: message.content });
+      for (const call of message.toolCalls) {
+        let input: Record<string, unknown> = {};
+        try { input = JSON.parse(call.arguments || "{}"); } catch { /* malformed arguments are normalized as an empty object */ }
+        content.push({ type: "tool_use", id: call.id, name: call.name, input });
+      }
+      result.push({ role: "assistant", content });
+      continue;
+    }
+    result.push({ role: message.role === "assistant" ? "assistant" : "user", content: message.content });
+  }
+  return result;
+}
+
 async function startLogin(session: Session) {
   const input = await session.parseRequestBody() as Record<string, unknown>;
   const redirectUri = String(input.redirect_uri || "http://127.0.0.1:3000/oauth/callback").trim();
@@ -83,11 +153,12 @@ const adapter: AdapterDefinition = {
   types: ["deepseek_account", "deepseek-account"],
   configuration: { kind: "oauth_login", label: "登录 DeepSeek 账号", description: "使用 DeepSeek 平台网页登录并自动获取账号凭据。", startPath: "/adapter-deepseek-account/login/start", statusPath: "/adapter-deepseek-account/login/status" },
   build(input: AdapterInput) {
-    return { urlPath: "/anthropic/v1/messages", headers: { "Content-Type": "application/json", Accept: input.stream ? "text/event-stream" : "application/json", "anthropic-version": "2023-06-01", ...(input.apiKey ? { "x-dsh-auth-token": input.apiKey } : {}) }, body: { model: upstreamModelName(input.model), max_tokens: input.maxTokens || 1024, messages: input.messages.filter((message) => message.role !== "system").map((message) => ({ role: message.role === "assistant" ? "assistant" : "user", content: message.content })), ...(input.system ? { system: input.system } : {}), ...(input.temperature === undefined ? {} : { temperature: input.temperature }), ...(input.stream ? { stream: true } : {}) } };
+    return { urlPath: "/anthropic/v1/messages", headers: { "Content-Type": "application/json", Accept: input.stream ? "text/event-stream" : "application/json", "anthropic-version": "2023-06-01", ...(input.apiKey ? { "x-dsh-auth-token": input.apiKey } : {}) }, body: { model: upstreamModelName(input.model), max_tokens: input.maxTokens || 1024, messages: anthropicMessages(input.messages), ...(input.tools?.length ? { tools: input.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}), ...(input.system ? { system: input.system } : {}), ...(input.temperature === undefined ? {} : { temperature: input.temperature }), ...(input.stream ? { stream: true } : {}) } };
   },
   parse(body: unknown) {
     const value = body as any;
-    return { content: Array.isArray(value?.content) ? value.content.map((part: any) => part.text || "").join("") : "", inputTokens: Number(value?.usage?.input_tokens || 0), outputTokens: Number(value?.usage?.output_tokens || 0), finishReason: "stop" };
+    const parsed = parseResponseContent(value);
+    return { content: parsed.content, toolCalls: parsed.toolCalls, inputTokens: Number(value?.usage?.input_tokens || 0), outputTokens: Number(value?.usage?.output_tokens || 0), finishReason: parsed.toolCalls.length ? "tool_use" : "stop" };
   },
   async stream(response, onDelta) {
     const text = await response.text();
