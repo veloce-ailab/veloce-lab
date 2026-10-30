@@ -48,6 +48,25 @@ interface PluginLoader {
   loadSinglePlugin(name: string, triggerPendingCheck?: boolean): Promise<boolean>;
 }
 
+function pluginEntryConfig(value: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!value || Array.isArray(value)) return {};
+  if (typeof value.module === "string") {
+    return value.config && typeof value.config === "object" && !Array.isArray(value.config)
+      ? value.config as Record<string, unknown>
+      : {};
+  }
+  return value;
+}
+
+function setPluginEntryConfig(plugins: Record<string, Record<string, unknown>>, key: string, config: Record<string, unknown>) {
+  const current = plugins[key];
+  if (current && typeof current.module === "string") {
+    plugins[key] = { ...current, config };
+    return;
+  }
+  plugins[key] = config;
+}
+
 function validPackageName(name: string): boolean {
   return /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i.test(name);
 }
@@ -130,11 +149,11 @@ function localizedSchema(schema: PluginConfigSchema, core: ReturnType<Context["g
 }
 
 
-async function describePlugin(loader: PluginLoader, name: string): Promise<PluginModuleMeta> {
+async function describePlugin(loader: PluginLoader, name: string, moduleName = name): Promise<PluginModuleMeta> {
   const loaded = loader.plugins[name];
   if (loaded) return loaded;
   try {
-    const module = (await import(name)) as PluginModuleMeta & { default?: PluginModuleMeta };
+    const module = (await import(moduleName)) as PluginModuleMeta & { default?: PluginModuleMeta };
     const fallback = module.default && typeof module.default === "object" ? module.default : {};
     return {
       config: module.config ?? fallback.config,
@@ -297,17 +316,20 @@ export function apply(ctx: Context) {
     const listed = await Promise.all(Object.keys(plugins).map(async (key) => {
       const disabled = key.startsWith("~");
       const name = disabled ? key.slice(1) : key;
-      const meta = await describePlugin(current, name);
+      const entry = plugins[key] ?? {};
+      const moduleName = typeof entry.module === "string" ? entry.module : name;
+      const meta = await describePlugin(current, name, moduleName);
       return {
         name,
-        title: ctx.getCore().getShortPluginName(name),
+        module: moduleName,
+        title: ctx.getCore().getShortPluginName(moduleName),
         enabled: !disabled,
         status: current.pluginStatus[name] ?? (disabled ? "disabled" : "pending"),
         depend: meta.depend ?? [],
         provide: meta.provide ?? [],
         minimumPermissionLevel: Math.max(0, Number(meta.minimumPermissionLevel) || 0),
         schema: meta.config ? localizedSchema(meta.config, ctx.getCore(), requestLanguages(session)) : null,
-        config: plugins[key] ?? {},
+        config: pluginEntryConfig(plugins[key]),
       };
     }));
     // Enabled plugins first, then alphabetically, so the ones actually running
@@ -396,7 +418,7 @@ export function apply(ctx: Context) {
       session.respond({ error: "config must be an object" }, "json");
       return;
     }
-    current.config.plugins![key] = config as Record<string, unknown>;
+    setPluginEntryConfig(current.config.plugins!, key, config as Record<string, unknown>);
     await current.saveConfig();
     session.respond({ ok: true, name, enabled: !key.startsWith("~") }, "json");
   });
@@ -424,7 +446,7 @@ export function apply(ctx: Context) {
     // loses what the form held.
     const config = body.config;
     if (config && typeof config === "object" && !Array.isArray(config)) {
-      plugins[key] = config as Record<string, unknown>;
+      setPluginEntryConfig(plugins, key, config as Record<string, unknown>);
     }
     const before = { ...current.pluginStatus };
 

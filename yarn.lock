@@ -3060,7 +3060,7 @@ __metadata:
     recharts: "npm:^3.5.1"
     tailwind-merge: "npm:^3.6.0"
     typescript: "npm:^5.9.2"
-    yumeri: "npm:^3.0.0"
+    yumeri: "npm:^3.1.4"
   dependenciesMeta:
     node-pty:
       built: true
@@ -3704,9 +3704,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@yumerijs/core@npm:^3.0.0":
-  version: 3.0.5
-  resolution: "@yumerijs/core@npm:3.0.5"
+"@yumerijs/core@npm:^3.0.7":
+  version: 3.0.7
+  resolution: "@yumerijs/core@npm:3.0.7"
   dependencies:
     chokidar: "npm:^4.0.3"
     formidable: "npm:^3.5.4"
@@ -3715,13 +3715,13 @@ __metadata:
     picocolors: "npm:^1.1.1"
     semver: "npm:^7.8.4"
     ws: "npm:^8.18.3"
-  checksum: 10c0/ebe7cddf38403f5a775c67acfee7c0ddc7aaa49d9e70a51adecd0e2a91ea1bb1b595ca757d5a3e023b1222b22ea3f324bdebe58705fb520d2f254f23d364f78d
+  checksum: 10c0/3dd9446ff5cf2983956d83a7f28f54cfb67a0d773e24af5e45c3d8c69da492333363d7b1519b24a32ee72e55ebb47cbc8202c3856d7c0dcf1c308aea98dbbee5
   languageName: node
   linkType: hard
 
-"@yumerijs/loader@npm:^3.0.0":
-  version: 3.0.1
-  resolution: "@yumerijs/loader@npm:3.0.1"
+"@yumerijs/loader@npm:^3.1.5":
+  version: 3.1.5
+  resolution: "@yumerijs/loader@npm:3.1.5"
   dependencies:
     "@types/js-yaml": "npm:^4.0.9"
     "@vue/compiler-sfc": "npm:^3.5.25"
@@ -3729,8 +3729,8 @@ __metadata:
     esbuild: "npm:^0.28.1"
     js-yaml: "npm:^4.1.0"
   peerDependencies:
-    "@yumerijs/core": ^3.0.0
-  checksum: 10c0/9572aaaefe2a9545e7217510f5c8c574d68db3c19aedc3e98e7d1a14464492c82fb8e195d5e40ed2f1587ea411bf4f4e4432134d7dece02445e0e9e6d8a74be7
+    "@yumerijs/core": ^3.0.7
+  checksum: 10c0/0c3c9a7c17b14637f330f4d31c2c4748feb7b7efb28f7bff685a312207009465ec3cb1622cc3ab2c566fabc0a69e93ff6575a0798f16432906b1c632b12506fa
   languageName: node
   linkType: hard
 
@@ -7914,18 +7914,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"yumeri@npm:^3.0.0":
-  version: 3.0.0
-  resolution: "yumeri@npm:3.0.0"
+"yumeri@npm:^3.0.0, yumeri@npm:^3.1.4":
+  version: 3.1.4
+  resolution: "yumeri@npm:3.1.4"
   dependencies:
-    "@yumerijs/core": "npm:^3.0.0"
-    "@yumerijs/loader": "npm:^3.0.0"
+    "@yumerijs/core": "npm:^3.0.7"
+    "@yumerijs/loader": "npm:^3.1.5"
     "@yumerijs/types": "npm:^3.0.0"
     cac: "npm:^6.7.14"
     js-yaml: "npm:^4.1.1"
   bin:
     yumeri: bin.js
-  checksum: 10c0/ed56e98274a87b4af4cf5d955f80dc8b3c61f6c65d5f0f92a8ce37743d19fa44ae5a31f0326a24b2ebb6385b68ff5cce0caa260b9779dfbf977cc52c5ee0dafb
+  checksum: 10c0/63502f39454fb1ba47853df015fb4be83878541c149d44a0df7b87077f3e5f95ebf8b9540c548898dbafedec3686eec3f6ccfd15d093c334723c3ec06d16a706
   languageName: node
   linkType: hard
 
