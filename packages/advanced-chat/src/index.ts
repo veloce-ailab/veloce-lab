@@ -217,6 +217,7 @@ export interface ChatToolDefinition {
        */
       connectorDeviceId?: string;
       connectorWorkspacePath?: string;
+      workspaceId?: string;
       connectorApprovalMode?: string;
       connectorAutoApprove?: boolean;
     },
@@ -263,6 +264,7 @@ export interface ChatInput {
   mcpServerIds?: string[];
   connectorDeviceId?: string;
   connectorWorkspacePath?: string;
+  workspaceId?: string;
   connectorAutoApprove?: boolean;
   connectorApprovalMode?: string;
   connectorCommandPrefixes?: string[];
@@ -1289,6 +1291,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             knowledgeBaseIds: input.knowledgeBaseIds,
             connectorDeviceId: input.connectorDeviceId,
             connectorWorkspacePath: input.connectorWorkspacePath,
+            workspaceId: input.workspaceId,
             connectorAutoApprove: input.connectorAutoApprove,
             connectorApprovalMode: input.connectorApprovalMode,
             connectorCommandPrefixes: input.connectorCommandPrefixes,
@@ -1314,6 +1317,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             knowledge_base_ids: JSON.stringify(input.knowledgeBaseIds ?? []),
             connector_device_id: String(input.connectorDeviceId ?? ""),
             connector_workspace_path: String(input.connectorWorkspacePath ?? ""),
+            workspace_id: String(input.workspaceId ?? ""),
             connector_auto_approve: input.connectorAutoApprove === true,
             connector_approval_mode: String(
               input.connectorApprovalMode ?? "manual",
@@ -1334,6 +1338,19 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       // Only a malformed id can get here now: an unknown one is created above.
       if (!session) throw new ChatInputError("Invalid session id");
       const sessionId = String(session.id);
+      if (input.workspaceId) {
+        const workspace = await db.selectOne("advanced_chat_workspaces", {
+          id: input.workspaceId,
+          user_id: userId,
+        });
+        if (workspace) {
+          await db.update("advanced_chat_sessions", { id: sessionId, user_id: userId }, {
+            workspace_id: input.workspaceId,
+            connector_device_id: String(workspace.device_id || ""),
+            connector_workspace_path: String(workspace.path || ""),
+          });
+        }
+      }
       const now = new Date().toISOString();
       // Resolve everything the run uses before touching the upstream: the
       // request wins, the session is the fallback, and the agent only fills a

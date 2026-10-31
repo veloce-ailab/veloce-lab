@@ -882,6 +882,8 @@ export function registerAdvancedChatRoutes(
           typeof input.connector_workspace_path === "string"
             ? input.connector_workspace_path
             : undefined,
+        workspaceId:
+          typeof input.workspace_id === "string" ? input.workspace_id : undefined,
         connectorAutoApprove: input.connector_auto_approve === true,
         connectorApprovalMode:
           typeof input.connector_approval_mode === "string"
