@@ -1,7 +1,13 @@
 import { Context } from "yumeri";
-import { AdapterInput, AdapterRegistry } from "@velocelab/adapters";
+import { AdapterInput, AdapterRegistry, anthropicChatMessages } from "@velocelab/adapters";
+import type { ChatMessage } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
+
+export function anthropicMessages(messages: ChatMessage[] | undefined) {
+  return anthropicChatMessages(messages) as Array<{ role: "user" | "assistant"; content: unknown }>;
+}
+
 async function stream(response: Response, onDelta: (delta: string) => void) {
   const text = await response.text();
   for (const line of text.split(/\r?\n/)) {
@@ -27,13 +33,17 @@ export function apply(ctx: Context) {
       body: {
         model: input.model,
         max_tokens: input.maxTokens || 1024,
-        messages: input.messages
-          .filter((message) => message.role !== "system")
-          .map((message) => ({
-            role: message.role === "assistant" ? "assistant" : "user",
-            content: message.content,
-          })),
+        messages: anthropicMessages(input.messages),
         ...(input.system ? { system: input.system } : {}),
+        ...(input.tools?.length
+          ? {
+              tools: input.tools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                input_schema: tool.parameters,
+              })),
+            }
+          : {}),
         ...(input.temperature === undefined
           ? {}
           : { temperature: input.temperature }),
@@ -44,7 +54,7 @@ export function apply(ctx: Context) {
       const value = (body ?? {}) as any;
       return {
         content: Array.isArray(value.content)
-          ? value.content.map((part: any) => part.text ?? "").join("")
+          ? value.content.filter((part: any) => part.type === "text").map((part: any) => part.text ?? "").join("")
           : "",
         toolCalls: Array.isArray(value.content)
           ? value.content.filter((part: any) => part.type === "tool_use")

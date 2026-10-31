@@ -4,13 +4,14 @@ import type {
   AdapterInput,
   AdapterRegistry,
 } from "@velocelab/adapters";
-import { openAIChatMessages, openAIChatTools } from "@velocelab/adapters";
+import { anthropicChatMessages, openAIChatMessages, openAIChatTools } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
 function build(input: AdapterInput) {
+  const anthropic = input.model.toLowerCase().includes("claude");
   const payload: Record<string, unknown> = {
     model: input.model,
-    messages: openAIChatMessages(input.messages),
+    messages: anthropic ? anthropicChatMessages(input.messages) : openAIChatMessages(input.messages),
     ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
     ...(input.temperature === undefined
       ? {}
@@ -18,7 +19,9 @@ function build(input: AdapterInput) {
     ...(input.stream ? { stream: true } : {}),
     ...(() => {
       const tools = openAIChatTools(input.tools);
-      return tools ? { tools, tool_choice: "auto" } : {};
+      return tools ? (anthropic
+        ? { tools: tools.map((tool: any) => ({ name: tool.function.name, description: tool.function.description, input_schema: tool.function.parameters })) }
+        : { tools, tool_choice: "auto" }) : {};
     })(),
   };
   const match = input.model.match(
@@ -34,7 +37,7 @@ function build(input: AdapterInput) {
     payload.reasoning_effort = input.reasoningEffort.trim();
   }
   return {
-    urlPath: input.model.includes("claude")
+    urlPath: anthropic
       ? "/anthropic/v1/messages"
       : "/v1/chat/completions",
     headers: {
@@ -50,6 +53,16 @@ const adapter: AdapterDefinition = {
   build,
   parse: (body) => {
     const value = (body ?? {}) as any;
+    if (Array.isArray(value.content)) {
+      const blocks = value.content;
+      return {
+        content: blocks.filter((part: any) => part.type === "text").map((part: any) => String(part.text ?? "")).join(""),
+        toolCalls: blocks.filter((part: any) => part.type === "tool_use").map((part: any) => ({ id: String(part.id ?? ""), name: String(part.name ?? ""), arguments: JSON.stringify(part.input ?? {}) })),
+        inputTokens: Number(value.usage?.input_tokens ?? 0),
+        outputTokens: Number(value.usage?.output_tokens ?? 0),
+        finishReason: blocks.some((part: any) => part.type === "tool_use") ? "tool_use" : "stop",
+      };
+    }
     const choice = value.choices?.[0] ?? {};
     const message = choice.message ?? {};
     return {

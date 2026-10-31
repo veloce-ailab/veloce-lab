@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { apply as applyChat } from "../dist/index.js";
+import { apply as applyAgentRuntime } from "../../agent-runtime/dist/index.js";
 import { apply as applyConnector } from "../../connector/dist/index.js";
 
 async function setup(t, responses = [{ content: "Finished" }], { visible = true, messageFailure = false } = {}) {
@@ -46,6 +47,7 @@ async function setup(t, responses = [{ content: "Finished" }], { visible = true,
     async emit(name, value) { await listeners.get(name)?.(value); },
     registerComponent(name, service) { this.component[name] = service; },
   };
+  applyAgentRuntime(ctx);
   t.mock.method(globalThis, "fetch", async () => {
     const next = responses.shift();
     if (next instanceof Error) throw next;

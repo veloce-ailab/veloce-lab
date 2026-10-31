@@ -2974,6 +2974,7 @@ __metadata:
   dependencies:
     "@tanstack/react-query": "npm:^5.100.14"
     "@velocelab/adapters": "npm:^0.1.1"
+    "@velocelab/agent-runtime": "npm:^0.1.1"
     "@velocelab/file": "npm:^0.1.1"
     "@velocelab/message": "npm:^0.1.1"
     "@velocelab/user": "npm:^0.1.1"
@@ -2984,6 +2985,14 @@ __metadata:
     react-dom: "npm:^19.2.6"
     react-router-dom: "npm:^7.15.1"
     vite: "npm:^8.0.12"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/agent-runtime@npm:^0.1.1, @velocelab/agent-runtime@workspace:packages/agent-runtime":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/agent-runtime@workspace:packages/agent-runtime"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown

@@ -25,10 +25,11 @@ import "@velocelab/file";
 import "@velocelab/database-core";
 import { ensureTables } from "./tables.js";
 import { compactContextMessages, DEFAULT_MAX_CONTEXT_TOKENS } from "./context-budget.js";
+import type { AgentModelStep, AgentRuntimeService } from "@velocelab/agent-runtime";
 
 export * from "./types.js";
 
-export const depend = ["database", "dashboard", "file", "adapters", "message"];
+export const depend = ["agent-runtime", "database", "dashboard", "file", "adapters", "message"];
 export const provide = ["advanced-chat"];
 
 declare module "@yumerijs/types" {
@@ -1837,218 +1838,139 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           streamedContent.trim()
             ? [{ round: 1, content: streamedContent }]
             : [];
-        const toolCallDetails: Array<Record<string, unknown>> = [];
         let runEventSeq = 0;
-        // An assistant turn is not a single question and answer: a tool call has
-        // to be able to start another round. The limits match the ones the Go
-        // implementation used per run mode.
         const maxToolRounds =
           mode === "assistant" || mode === "agent_group" ? 20 : 8;
-        const conversation: any[] = [...messages];
-        let round = 1;
-        for (
-          let step = 0;
-          Array.isArray(toolCalls) && toolCalls.length > 0 && step < maxToolRounds;
-          step += 1
-        ) {
-          const calls = toolCalls as any[];
-          const results: Array<{
-            id: string;
-            name: string;
-            status: string;
-            arguments: unknown;
-            result?: string;
-            error?: string;
-          }> = [];
-          for (const call of calls) {
-            const name = String(call.function?.name ?? call.name ?? "");
-            const id = String(call.id ?? "");
-            let args: unknown = {};
-            try {
-              args = JSON.parse(
-                String(call.function?.arguments ?? call.arguments ?? "{}"),
-              );
-            } catch {
-              args = {};
-            }
-            const definition = availableTools.find((tool) => tool.name === name);
-            if (!definition?.execute) {
-              const message = `unknown tool: ${name}`;
-              results.push({ id, name, status: "error", arguments: args, error: message });
-              emit("tool_call", {
-                id,
-                name,
-                status: "error",
-                arguments: args,
-                result: JSON.stringify({ error: message }),
-                round,
-              });
-              continue;
-            }
-            try {
-              // Publish the tool call before awaiting it. Connector commands may
-              // wait for an approval or a long-running local process; the client
-              // merges the later result event into this same call by id.
-              emit("tool_call", { id, name, status: "running", arguments: args, round });
-              const value = await definition.execute(args, {
-                userId,
-                sessionId,
-                runId,
-                agentId: agentKey,
-                skillIds,
-                knowledgeBaseIds,
-                mcpServerIds,
-                mode,
-                disabledToolGroups,
-                // The device, the folder and the approval mode travel with the
-                // run: a connector tool executed without them either lands in
-                // the server's own directory or cannot tell whether the user
-                // has already allowed the action.
-                connectorDeviceId,
-                connectorWorkspacePath: String(
-                  input.connectorWorkspacePath ??
-                    session.connector_workspace_path ??
-                    "",
-                ),
-                connectorApprovalMode: String(
-                  input.connectorApprovalMode ??
-                    session.connector_approval_mode ??
-                    "manual",
-                ),
-                connectorAutoApprove:
-                  input.connectorAutoApprove === true ||
-                  session.connector_auto_approve === true ||
-                  Number(session.connector_auto_approve ?? 0) === 1,
-              });
-              const serialized = JSON.stringify(value ?? null);
-              if (name === "ask_user") {
-                await sendMessage({ userId, type: "question", key: `${runId}:${id}`, subtitle: String((value as { question?: string })?.question || ""), href: `/chat/session/${encodeURIComponent(sessionId)}` });
-              }
-              results.push({ id, name, status: "ok", arguments: args, result: serialized });
-              emit("tool_call", {
-                id,
-                name,
-                status: "ok",
-                arguments: args,
-                result: serialized,
-                round,
-              });
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error);
-              results.push({ id, name, status: "error", arguments: args, error: message });
-              emit("tool_call", {
-                id,
-                name,
-                status: "error",
-                arguments: args,
-                result: JSON.stringify({ error: message }),
-                round,
-              });
-            }
-          }
-          toolCallDetails.push(...results);
-          // `agent_task` belongs to the Agent Studio convention for sub-agent
-          // snapshots, whose payloads carry `task_id`/`agent_id`; a tool round is
-          // this run's own progress and is recorded under its own name so it does
-          // not masquerade as a sub-agent.
-          await db.create("advanced_chat_run_events", {
-            run_id: runId,
-            session_id: sessionId,
-            user_id: userId,
-            seq: (runEventSeq += 1),
-            event: "tool_round",
-            payload: JSON.stringify({ round, tool_calls: results }),
-            created_at: new Date().toISOString(),
-          });
-          conversation.push({ role: "assistant", content, toolCalls });
-          conversation.push(
-            ...results.map((item) => ({
-              role: "tool",
-              content: item.result ?? JSON.stringify({ error: item.error }),
-              toolCallId: item.id,
-            })),
-          );
-          round += 1;
-          emit("status", { message: "model_round" });
-          await db.update(
-            "advanced_chat_runs",
-            { id: runId, user_id: userId },
-            {
-              current_round: round,
-              tool_calls: toolCallDetails.length,
-              updated_at: new Date().toISOString(),
-            },
-          );
-          const followup = adapters.build({
-            channelType: channel.type,
-            model: upstreamModel,
-            apiKey: channel.api_key || "",
-            stream: false,
-            messages: conversation as any,
-            maxTokens,
-            temperature,
-            reasoningEffort,
-            system: systemPrompt,
-            // Without tools on the follow-up the agent could not chain a second
-            // step, which made the previous single round the whole run.
-            tools: toolPayload,
-          });
-          if (!followup) break;
-          let followupResponse: Response;
-          try {
-            followupResponse = await fetchCompletionWithRetry(
-              ctx,
-              upstreamURL(channel.base_url, followup.urlPath),
-              {
-                method: "POST",
-                headers: followup.headers,
-                body: JSON.stringify(followup.body),
-              },
+        const runtime = ctx.component["agent-runtime"] as AgentRuntimeService;
+        const turn = await runtime.runTurn({
+          initial: {
+            content,
+            toolCalls: Array.isArray(toolCalls) ? toolCalls : [],
+            finishReason,
+            inputTokens,
+            outputTokens,
+            cachedInputTokens,
+          },
+          messages,
+          tools: availableTools,
+          maxToolRounds,
+          signal: runController.signal,
+          executeTool: async (definition, args) => {
+            const value = await definition.execute!(args, {
+              userId,
+              sessionId,
+              runId,
+              agentId: agentKey,
+              skillIds,
+              knowledgeBaseIds,
+              mcpServerIds,
               mode,
-              {
-                retryAttempts: Math.max(1, Number(pluginConfig.retryAttempts) || 3),
-                assistantRetryAttempts: Math.max(
-                  1,
-                  Number(pluginConfig.assistantRetryAttempts) || 10,
-                ),
-                retryDelayMs: Math.max(50, Number(pluginConfig.retryDelayMs) || 500),
-                retryMaxDelayMs: Math.max(
-                  100,
-                  Number(pluginConfig.retryMaxDelayMs) || 30000,
-                ),
-                requestTimeoutMs: Math.max(
-                  1000,
-                  Number(pluginConfig.requestTimeoutMs) || 120000,
-                ),
-                signal: runController.signal,
-              },
-            );
-          } catch (error) {
-            if (runController.signal.aborted || (await cancelled())) {
-              await markCancelled();
-              return cancelledResult();
+              disabledToolGroups,
+              connectorDeviceId,
+              connectorWorkspacePath: String(input.connectorWorkspacePath ?? session.connector_workspace_path ?? ""),
+              connectorApprovalMode: String(input.connectorApprovalMode ?? session.connector_approval_mode ?? "manual"),
+              connectorAutoApprove: input.connectorAutoApprove === true || session.connector_auto_approve === true || Number(session.connector_auto_approve ?? 0) === 1,
+            });
+            return value;
+          },
+          onToolCall: async (call, phase, round) => {
+            if (phase === "running") {
+              emit("tool_call", { id: call.id, name: call.name, status: "running", arguments: call.arguments, round });
+            } else {
+              if (call.name === "ask_user" && call.status === "ok") {
+                let question = "";
+                try { question = String((JSON.parse(call.result ?? "{}") as any).question ?? ""); } catch { /* keep empty */ }
+                await sendMessage({ userId, type: "question", key: `${runId}:${call.id}`, subtitle: question, href: `/chat/session/${encodeURIComponent(sessionId)}` });
+              }
+              emit("tool_call", {
+                id: call.id,
+                name: call.name,
+                status: call.status,
+                arguments: call.arguments,
+                result: call.result ?? JSON.stringify({ error: call.error }),
+                round,
+              });
             }
-            throw error;
-          }
-          if (!followupResponse.ok) {
-            // Keep the rounds that already succeeded instead of losing the turn.
-            finishReason = "error";
-            break;
-          }
-          const followupData = await followupResponse.json().catch(() => ({}));
-          parsed = adapters.parse(channel.type, followupData);
-          const followupUsage = extractTokenUsage(followupData);
-          inputTokens += Number(parsed?.inputTokens || followupUsage.inputTokens || 0);
-          outputTokens += Number(parsed?.outputTokens || followupUsage.outputTokens || 0);
-          cachedInputTokens += Number(parsed?.cachedInputTokens || followupUsage.cachedInputTokens || 0);
-          const roundContent = parsed?.content ?? "";
-          if (roundContent) {
-            content = roundContent;
-            contentParts.push({ round, content: roundContent });
-          }
-          finishReason = parsed?.finishReason || "stop";
-          toolCalls = parsed?.toolCalls ?? [];
-        }
+          },
+          onToolRound: async (round, calls) => {
+            await db.create("advanced_chat_run_events", {
+              run_id: runId,
+              session_id: sessionId,
+              user_id: userId,
+              seq: (runEventSeq += 1),
+              event: "tool_round",
+              payload: JSON.stringify({ round, tool_calls: calls }),
+              created_at: new Date().toISOString(),
+            });
+          },
+          onNextModelRequest: async (round) => {
+            emit("status", { message: "model_round" });
+            await db.update("advanced_chat_runs", { id: runId, user_id: userId }, {
+              current_round: round,
+              updated_at: new Date().toISOString(),
+            });
+          },
+          onAssistantContent: (roundContent, round) => {
+            if (roundContent) contentParts.push({ round, content: roundContent });
+          },
+          requestNext: async (conversation) => {
+            const followup = adapters.build({
+              channelType: channel.type,
+              model: upstreamModel,
+              apiKey: channel.api_key || "",
+              stream: false,
+              messages: conversation as any,
+              maxTokens,
+              temperature,
+              reasoningEffort,
+              system: systemPrompt,
+              tools: toolPayload,
+            });
+            if (!followup) return undefined;
+            let followupResponse: Response;
+            try {
+              followupResponse = await fetchCompletionWithRetry(
+                ctx,
+                upstreamURL(channel.base_url, followup.urlPath),
+                { method: "POST", headers: followup.headers, body: JSON.stringify(followup.body) },
+                mode,
+                {
+                  retryAttempts: Math.max(1, Number(pluginConfig.retryAttempts) || 3),
+                  assistantRetryAttempts: Math.max(1, Number(pluginConfig.assistantRetryAttempts) || 10),
+                  retryDelayMs: Math.max(50, Number(pluginConfig.retryDelayMs) || 500),
+                  retryMaxDelayMs: Math.max(100, Number(pluginConfig.retryMaxDelayMs) || 30000),
+                  requestTimeoutMs: Math.max(1000, Number(pluginConfig.requestTimeoutMs) || 120000),
+                  signal: runController.signal,
+                },
+              );
+            } catch (error) {
+              if (runController.signal.aborted || (await cancelled())) {
+                await markCancelled();
+                return undefined;
+              }
+              throw error;
+            }
+            if (!followupResponse.ok) return undefined;
+            const followupData = await followupResponse.json().catch(() => ({}));
+            const next = adapters.parse(channel.type, followupData);
+            const nextUsage = extractTokenUsage(followupData);
+            return {
+              content: next?.content ?? "",
+              toolCalls: next?.toolCalls ?? [],
+              finishReason: next?.finishReason || "stop",
+              inputTokens: Number(next?.inputTokens || nextUsage.inputTokens || 0),
+              outputTokens: Number(next?.outputTokens || nextUsage.outputTokens || 0),
+              cachedInputTokens: Number(next?.cachedInputTokens || nextUsage.cachedInputTokens || 0),
+            } satisfies AgentModelStep;
+          },
+        });
+        content = turn.content;
+        finishReason = turn.finishReason;
+        const toolCallDetails: Array<Record<string, unknown>> = turn.toolCallDetails.map((call) => ({ ...call }));
+        inputTokens = turn.inputTokens;
+        outputTokens = turn.outputTokens;
+        cachedInputTokens = turn.cachedInputTokens;
+        const round = turn.rounds;
         // A stop request may have landed while the last round was in flight; the
         // run must not come back to life as `completed` after that.
         if (runController.signal.aborted || (await cancelled())) {

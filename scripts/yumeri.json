@@ -77,6 +77,7 @@
       "retryMaxDelayMs": 30000,
       "requestTimeoutMs": 120000
     },
+    "@velocelab/agent-runtime": {},
     "@velocelab/workspace": {},
     "@velocelab/file": {
       "root": "./data"

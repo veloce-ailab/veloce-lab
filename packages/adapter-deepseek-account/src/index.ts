@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { arch, platform, release } from "node:os";
 import { Context, Session } from "yumeri";
 import type { AdapterDefinition, AdapterInput, AdapterRegistry } from "@velocelab/adapters";
+import { anthropicChatMessages } from "@velocelab/adapters";
 
 export const depend = ["adapters"];
 export const provide: string[] = [];
@@ -77,38 +78,6 @@ function parseResponseContent(value: any) {
   return { content: parsed.content, toolCalls: [...nativeCalls, ...parsed.calls] };
 }
 
-function anthropicMessages(messages: AdapterInput["messages"]) {
-  const result: Array<Record<string, unknown>> = [];
-  for (let index = 0; index < messages.length; index += 1) {
-    const message = messages[index];
-    if (message.role === "system") continue;
-    if (message.role === "tool") {
-      const blocks: Array<Record<string, unknown>> = [];
-      while (index < messages.length && messages[index]?.role === "tool") {
-        const tool = messages[index];
-        blocks.push({ type: "tool_result", tool_use_id: tool.toolCallId || "", content: tool.content });
-        index += 1;
-      }
-      index -= 1;
-      result.push({ role: "user", content: blocks });
-      continue;
-    }
-    if (message.role === "assistant" && message.toolCalls?.length) {
-      const content: Array<Record<string, unknown>> = [];
-      if (typeof message.content === "string" && message.content.trim()) content.push({ type: "text", text: message.content });
-      for (const call of message.toolCalls) {
-        let input: Record<string, unknown> = {};
-        try { input = JSON.parse(call.arguments || "{}"); } catch { /* malformed arguments are normalized as an empty object */ }
-        content.push({ type: "tool_use", id: call.id, name: call.name, input });
-      }
-      result.push({ role: "assistant", content });
-      continue;
-    }
-    result.push({ role: message.role === "assistant" ? "assistant" : "user", content: message.content });
-  }
-  return result;
-}
-
 async function startLogin(session: Session) {
   const input = await session.parseRequestBody() as Record<string, unknown>;
   const redirectUri = String(input.redirect_uri || "http://127.0.0.1:3000/oauth/callback").trim();
@@ -153,7 +122,7 @@ const adapter: AdapterDefinition = {
   types: ["deepseek_account", "deepseek-account"],
   configuration: { kind: "oauth_login", label: "登录 DeepSeek 账号", description: "使用 DeepSeek 平台网页登录并自动获取账号凭据。", startPath: "/adapter-deepseek-account/login/start", statusPath: "/adapter-deepseek-account/login/status" },
   build(input: AdapterInput) {
-    return { urlPath: "/anthropic/v1/messages", headers: { "Content-Type": "application/json", Accept: input.stream ? "text/event-stream" : "application/json", "anthropic-version": "2023-06-01", ...(input.apiKey ? { "x-dsh-auth-token": input.apiKey } : {}) }, body: { model: upstreamModelName(input.model), max_tokens: input.maxTokens || 1024, messages: anthropicMessages(input.messages), ...(input.tools?.length ? { tools: input.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}), ...(input.system ? { system: input.system } : {}), ...(input.temperature === undefined ? {} : { temperature: input.temperature }), ...(input.stream ? { stream: true } : {}) } };
+    return { urlPath: "/anthropic/v1/messages", headers: { "Content-Type": "application/json", Accept: input.stream ? "text/event-stream" : "application/json", "anthropic-version": "2023-06-01", ...(input.apiKey ? { "x-dsh-auth-token": input.apiKey } : {}) }, body: { model: upstreamModelName(input.model), max_tokens: input.maxTokens || 1024, messages: anthropicChatMessages(input.messages), ...(input.tools?.length ? { tools: input.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}), ...(input.system ? { system: input.system } : {}), ...(input.temperature === undefined ? {} : { temperature: input.temperature }), ...(input.stream ? { stream: true } : {}) } };
   },
   parse(body: unknown) {
     const value = body as any;

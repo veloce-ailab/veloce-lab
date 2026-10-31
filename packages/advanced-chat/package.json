@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@velocelab/adapters": "^0.1.1",
+    "@velocelab/agent-runtime": "^0.1.1",
     "@velocelab/file": "^0.1.1",
     "@velocelab/message": "^0.1.1",
     "@velocelab/user": "^0.1.1"

@@ -193,6 +193,60 @@ export function openAIChatTools(
   return mapped.length ? mapped : undefined;
 }
 
+/** Convert the internal tool history to Anthropic's adjacent tool blocks. */
+export function anthropicChatMessages(
+  messages: ChatMessage[] | undefined,
+): Array<Record<string, unknown>> {
+  const result: Array<Record<string, unknown>> = [];
+  const input = Array.isArray(messages) ? messages : [];
+  for (let index = 0; index < input.length; index += 1) {
+    const message = input[index];
+    if (message.role === "system") continue;
+    if (message.role === "tool") {
+      // Orphaned results are historical debris. Only assistant-owned results
+      // are emitted, and those are consumed by the assistant branch below.
+      continue;
+    }
+    if (message.role === "assistant" && message.toolCalls?.length) {
+      const following: ChatMessage[] = [];
+      let next = index + 1;
+      while (next < input.length && input[next].role === "tool") following.push(input[next++]);
+      const resultsByID = new Map(following.map((tool) => [String(tool.toolCallId ?? ""), tool]));
+      const completeCalls = message.toolCalls.filter((call) => resultsByID.has(String(call.id ?? "")));
+      // A persisted assistant call without its result cannot be represented in
+      // Anthropic history. Drop only that call and retain valid siblings.
+      if (!completeCalls.length) {
+        if (typeof message.content === "string" && message.content.trim())
+          result.push({ role: "assistant", content: message.content });
+        index = next - 1;
+        continue;
+      }
+      const blocks: Array<Record<string, unknown>> = [];
+      if (typeof message.content === "string" && message.content.trim())
+        blocks.push({ type: "text", text: message.content });
+      for (const call of completeCalls) {
+        let inputValue: unknown = {};
+        try {
+          inputValue = typeof call.arguments === "string" ? JSON.parse(call.arguments || "{}") : call.arguments;
+        } catch { /* malformed arguments become an empty object */ }
+        blocks.push({ type: "tool_use", id: call.id, name: call.name, input: inputValue && typeof inputValue === "object" ? inputValue : {} });
+      }
+      result.push({ role: "assistant", content: blocks });
+      result.push({
+        role: "user",
+        content: completeCalls.map((call) => {
+          const tool = resultsByID.get(String(call.id ?? ""))!;
+          return { type: "tool_result", tool_use_id: String(call.id), content: tool.content };
+        }),
+      });
+      index = next - 1;
+      continue;
+    }
+    result.push({ role: message.role === "assistant" ? "assistant" : "user", content: message.content });
+  }
+  return result;
+}
+
 declare module "yumeri" {
   interface Components {
     adapters: AdapterRegistry;

@@ -6,7 +6,7 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, Upload, User, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, Upload, User, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
 import { useI18n, type TranslationKey } from "@/lib/i18n"
@@ -662,7 +662,8 @@ export default function Chat() {
   const [workspaceSkills, setWorkspaceSkills] = useState<WorkspaceSkill[]>([])
   const [isRefreshingWorkspaceSkills, setIsRefreshingWorkspaceSkills] = useState(false)
   const [decidingConnectorTaskID, setDecidingConnectorTaskID] = useState("")
-  const [prompt, setPrompt] = useState("")
+  const [prompt, setPromptState] = useState("")
+  const promptRef = useRef("")
   const [slashMenuOpen, setSlashMenuOpen] = useState(false)
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
   const [mentionMenuOpen, setMentionMenuOpen] = useState(false)
@@ -707,6 +708,21 @@ export default function Chat() {
   const [sharedSessionID, setSharedSessionID] = useState("")
   const [sharedSessionPoolID, setSharedSessionPoolID] = useState("")
   const [loadedSharedSession, setLoadedSharedSession] = useState<ChatSession | null>(null)
+
+  const setPrompt = (next: string | ((current: string) => string)) => {
+    const value = typeof next === "function" ? next(promptRef.current) : next
+    promptRef.current = value
+    setPromptState(value)
+    const textarea = composerTextareaRef.current
+    if (textarea && textarea.value !== value) {
+      textarea.value = value
+      requestAnimationFrame(() => {
+        if (composerTextareaRef.current !== textarea) return
+        textarea.style.height = "32px"
+        textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 32), 160)}px`
+      })
+    }
+  }
 
   useEffect(() => {
     const updateHost = () => setDesktopSessionsSidebarHost(document.getElementById("chat-sessions-sidebar-slot"))
@@ -1510,9 +1526,17 @@ export default function Chat() {
 
   useEffect(() => {
     if (!showJumpToLatest) {
-      requestAnimationFrame(() => scrollMessagesToLatest("smooth"))
+      // Streaming updates can arrive for every token. Repeated smooth scrolls
+      // queue animations faster than the browser can finish them and may leave
+      // the last lines underneath the composer. Use an immediate correction
+      // while a run is active and wait one more frame for markdown layout.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollMessagesToLatest(isStreamActive || isActiveRunRunning ? "auto" : "smooth")
+        })
+      })
     }
-  }, [latestMessageSignal, showJumpToLatest])
+  }, [latestMessageSignal, showJumpToLatest, isStreamActive, isActiveRunRunning])
 
   useEffect(() => {
     const textarea = composerTextareaRef.current
@@ -1521,7 +1545,7 @@ export default function Chat() {
     }
     textarea.style.height = "32px"
     textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 32), 160)}px`
-  }, [prompt, currentSession?.id, currentSession?.messages.length, isAdvanced])
+  }, [currentSession?.id, currentSession?.messages.length, isAdvanced])
 
   // The composer floats over the message list, so the list needs bottom padding
   // matching the composer's real height or the newest messages hide behind it.
@@ -1539,13 +1563,15 @@ export default function Chat() {
     const observer = new ResizeObserver(measure)
     observer.observe(overlay)
     return () => observer.disconnect()
-  }, [isAdvanced, currentSession?.id, prompt, attachments.length, pendingConnectorApprovals.length, taskChangeSummary.files.length])
+  }, [isAdvanced, currentSession?.id, attachments.length, pendingConnectorApprovals.length, taskChangeSummary.files.length])
 
   useEffect(() => {
     if (!isAdvanced || composerOverlayHeight <= 0 || showJumpToLatest) {
       return
     }
-    scrollMessagesToLatest("auto")
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollMessagesToLatest("auto"))
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerOverlayHeight])
 
@@ -2430,11 +2456,25 @@ export default function Chat() {
 
   const handleComposerPromptChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const value = event.currentTarget.value
-    setPrompt(value)
+    const previousValue = promptRef.current
+    promptRef.current = value
     const match = /^\/([^\s]*)$/.exec(value)
-    setSlashMenuOpen(Boolean(match))
-    setMentionMenuOpen(/(?:^|\s)@[^\s]*$/.test(value))
-    setSlashMenuIndex(0)
+    const nextSlashMenuOpen = Boolean(match)
+    const nextMentionMenuOpen = /(?:^|\s)@[^\s]*$/.test(value)
+    const promptNeedsPageUpdate = Boolean(match)
+      || nextMentionMenuOpen
+      || previousValue.startsWith("/")
+      || /(?:^|\s)@[^\s]*$/.test(previousValue)
+      || Boolean(previousValue.trim()) !== Boolean(value.trim())
+    if (promptNeedsPageUpdate) {
+      setPromptState(value)
+      setSlashMenuOpen(nextSlashMenuOpen)
+      setMentionMenuOpen(nextMentionMenuOpen)
+      setSlashMenuIndex(0)
+    }
+    const textarea = event.currentTarget
+    textarea.style.height = "32px"
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 32), 160)}px`
   }
 
   const handleComposerPromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -2510,7 +2550,7 @@ export default function Chat() {
   // rawText comes from interactive cards (e.g. ask_user answers); it bypasses
   // the composer draft and leaves staged attachments untouched.
   const sendMessageWithContent = async (rawText: string | null, baseMessages?: ChatMessage[], compactSession = false) => {
-    const content = (rawText ?? prompt).trim()
+    const content = (rawText ?? promptRef.current).trim()
     const activeAttachments = rawText == null ? attachments : []
     const session = currentSession
     const resolvedModel = activeModelName.trim()
@@ -2827,7 +2867,8 @@ export default function Chat() {
               }
               upsertAssistantMessage((message) => ({ ...message, tool_calls: mergeToolCalls(message.tool_calls || [], nextToolCalls) }))
             } else if (event.type === "done") {
-              const finalContent = typeof event.payload.message?.content === "string" ? event.payload.message.content : accumulatedText
+              const reportedContent = typeof event.payload.message?.content === "string" ? event.payload.message.content : ""
+              const finalContent = preferCompleteText(accumulatedText, reportedContent)
               const finalParts = normalizeContentParts(event.payload.message?.content_parts, finalContent)
               const finalToolCalls = normalizeToolCalls(event.payload.tool_call_details)
               upsertAssistantMessage((message) => ({
@@ -2855,6 +2896,10 @@ export default function Chat() {
               handleStreamEvent(parseSSEEvent(part))
             }
           }
+          // TextDecoder keeps an incomplete UTF-8 sequence between reads.
+          // Flush it before parsing the final SSE frame so the last characters
+          // cannot disappear when the upstream closes the stream.
+          buffer += decoder.decode()
           if (buffer.trim()) {
             handleStreamEvent(parseSSEEvent(buffer))
           }
@@ -3534,7 +3579,7 @@ export default function Chat() {
             ref={composerTextareaRef}
             className="h-8 max-h-40 min-h-8 w-full resize-none overflow-y-auto rounded-md border-0 bg-transparent px-3 py-1 text-sm leading-5 outline-none focus:ring-0"
             rows={1}
-            value={prompt}
+            defaultValue={prompt}
             placeholder={activeRunMode === "assistant" ? copy.assistantPromptPlaceholder : activeRunMode === "agent_group" ? agentGroupCopy.promptPlaceholder : copy.promptPlaceholder}
             onChange={handleComposerPromptChange}
             onKeyDown={handleComposerPromptKeyDown}
@@ -3778,15 +3823,6 @@ export default function Chat() {
             <div className={cn(isAdvanced ? (isActiveRunRunning && activeRun ? "shrink-0 pb-2" : "sr-only") : "flex flex-col space-y-1.5 p-6")}>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className={cn(isAdvanced && "sr-only")}>{copy.conversation}</CardTitle>
-                {isAdvanced && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {isActiveRunRunning && activeRun && (
-                      <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary">
-                        {runStatusText(activeRun, copy)}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
             <div className={cn(isAdvanced ? "relative flex min-h-0 flex-1 flex-col gap-3" : "space-y-4 p-6 pt-0")}>
@@ -3795,7 +3831,7 @@ export default function Chat() {
                   <div ref={messagesViewportRef} className={cn(isAdvanced ? "min-h-0 flex-1 overflow-y-auto overscroll-contain" : "min-h-[360px] space-y-3 rounded-md border p-3")} onContextMenu={handleMessageSelectionContextMenu}>
                 <div
                   className={cn(isAdvanced ? "mx-auto w-full max-w-3xl space-y-4 px-2 py-5 pb-36 sm:px-4" : "contents")}
-                  style={isAdvanced && composerOverlayHeight > 0 ? { paddingBottom: Math.max(144, composerOverlayHeight + 28) } : undefined}
+                  style={isAdvanced ? { paddingBottom: Math.max(144, composerOverlayHeight + 40) } : undefined}
                 >
                 {!currentSession || currentSession.messages.length === 0 ? (
                   <div className="flex min-h-0 flex-1 flex-col items-center justify-center py-20 text-center">
@@ -6009,14 +6045,7 @@ function renderMarkdownBlock(block: MarkdownBlock, index: number) {
         </ol>
       )
     case "code":
-      return (
-        <div key={index} className="overflow-hidden rounded-md border bg-muted/50">
-          {block.language && <div className="border-b px-3 py-1 text-[11px] uppercase text-muted-foreground">{block.language}</div>}
-          <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
-            <code>{block.text}</code>
-          </pre>
-        </div>
-      )
+      return <MarkdownCodeBlock key={index} language={block.language} code={block.text} />
     case "table":
       return (
         <div key={index} className="max-w-full overflow-x-auto rounded-md border">
@@ -6058,6 +6087,51 @@ function renderMarkdownBlock(block: MarkdownBlock, index: number) {
         </p>
       )
   }
+}
+
+function MarkdownCodeBlock({ language, code }: { language: string; code: string }) {
+  const [copied, setCopied] = useState(false)
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      const textarea = document.createElement("textarea")
+      textarea.value = code
+      textarea.setAttribute("readonly", "")
+      textarea.style.position = "fixed"
+      textarea.style.opacity = "0"
+      document.body.appendChild(textarea)
+      textarea.select()
+      const succeeded = document.execCommand("copy")
+      textarea.remove()
+      if (succeeded) {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1500)
+      }
+    }
+  }
+
+  return (
+    <div className="overflow-hidden rounded-md border bg-muted/50">
+      <div className="flex min-h-8 items-center justify-between border-b px-3 py-1">
+        <span className="text-[11px] uppercase text-muted-foreground">{language}</span>
+        <button
+          type="button"
+          className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => void copyCode()}
+          title={copied ? "Copied" : "Copy code"}
+          aria-label={copied ? "Copied" : "Copy code"}
+        >
+          {copied ? <Check size={14} /> : <Clipboard size={14} />}
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
+        <code>{code}</code>
+      </pre>
+    </div>
+  )
 }
 
 function parseMarkdownTableRow(line: string) {
@@ -7429,11 +7503,33 @@ function messageDisplayContent(message: ChatMessage, run: ChatRun | undefined, c
 
 function messageContentParts(message: ChatMessage, run: ChatRun | undefined, copy: ChatCopy) {
   const parts = normalizeContentParts(message.content_parts, "")
-  if (parts.length > 0) {
+  const content = messageDisplayContent(message, run, copy)
+  if (parts.length === 0) {
+    return content.trim() ? [{ round: 1, content }] : []
+  }
+  const partsText = parts.map((part) => part.content).join("")
+  if (partsText === content || partsText.startsWith(content)) {
     return parts
   }
-  const content = messageDisplayContent(message, run, copy)
-  return content.trim() ? [{ round: 1, content }] : []
+  if (content.startsWith(partsText)) {
+    const suffix = content.slice(partsText.length)
+    const lastIndex = parts.length - 1
+    return lastIndex < 0
+      ? [{ round: 1, content }]
+      : parts.map((part, index) => index === lastIndex ? { ...part, content: part.content + suffix } : part)
+  }
+  // Older or partially persisted content_parts can disagree with content.
+  // Prefer the longer complete representation so the renderer never silently
+  // drops a message tail because one database field was stale.
+  return [{ round: 1, content: preferCompleteText(partsText, content) }]
+}
+
+function preferCompleteText(streamed: string, reported: string) {
+  if (!streamed) return reported
+  if (!reported) return streamed
+  if (reported.startsWith(streamed)) return reported
+  if (streamed.startsWith(reported)) return streamed
+  return streamed.length >= reported.length ? streamed : reported
 }
 
 function groupToolCallsByRound(toolCalls: ChatToolCall[]) {
