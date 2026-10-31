@@ -340,6 +340,7 @@ export interface SessionInput {
   title?: string;
   modelName?: string;
   userChannelId?: number;
+  workspaceId?: string;
 }
 
 /**
@@ -359,6 +360,7 @@ export interface SessionSnapshotInput {
   knowledgeBaseIds?: unknown[];
   connectorDeviceId?: string;
   connectorWorkspacePath?: string;
+  workspaceId?: string;
   connectorAutoApprove?: boolean;
   connectorApprovalMode?: string;
   connectorCommandPrefixes?: unknown[];
@@ -781,6 +783,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         id: newID("acs"),
         user_id: userId,
         folder_id: "",
+        workspace_id: String(input.workspaceId ?? ""),
         visible: input.visible !== false,
          title: input.title?.trim() ?? "",
         run_mode: "assistant",
@@ -869,6 +872,9 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           ...(input.folderId !== undefined
             ? { folder_id: input.folderId }
             : {}),
+          ...(input.workspaceId !== undefined
+            ? { workspace_id: String(input.workspaceId ?? "") }
+            : {}),
           updated_at: new Date().toISOString(),
         },
       );
@@ -902,6 +908,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         knowledge_base_ids: JSON.stringify(input.knowledgeBaseIds ?? []),
         connector_device_id: String(input.connectorDeviceId ?? ""),
         connector_workspace_path: String(input.connectorWorkspacePath ?? ""),
+        workspace_id: String(input.workspaceId ?? ""),
         connector_auto_approve: input.connectorAutoApprove === true,
         connector_approval_mode: String(input.connectorApprovalMode ?? "manual"),
         connector_command_prefixes: JSON.stringify(
@@ -929,6 +936,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           id,
           user_id: userId,
           folder_id: "",
+          workspace_id: String(input.workspaceId ?? ""),
           ...fields,
           created_at: now,
         });

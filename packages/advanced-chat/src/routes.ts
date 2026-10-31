@@ -600,6 +600,8 @@ export function registerAdvancedChatRoutes(
           typeof input.connector_workspace_path === "string"
             ? input.connector_workspace_path
             : undefined,
+        workspaceId:
+          typeof input.workspace_id === "string" ? input.workspace_id : undefined,
         connectorAutoApprove: input.connector_auto_approve === true,
         connectorApprovalMode:
           typeof input.connector_approval_mode === "string"
@@ -642,6 +644,32 @@ export function registerAdvancedChatRoutes(
           }),
           "json",
         );
+    });
+  ctx
+    .route("/api/user/advanced-chat/sessions/:id/workspace")
+    .methods("PUT")
+    .action(async (session, _params, id) => {
+      const current = await user(session);
+      if (current?.id === undefined) return;
+      const workspaceId = String((await body(session)).workspace_id ?? "").trim();
+      const workspace = workspaceId
+        ? await db.selectOne("advanced_chat_workspaces", { id: workspaceId, user_id: current.id })
+        : undefined;
+      if (workspaceId && !workspace) {
+        session.status = 404;
+        session.respond({ error: "Workspace not found" }, "json");
+        return;
+      }
+      const updated = await service.updateSession(current.id, id, {
+        workspaceId,
+      });
+      if (updated && workspace) {
+        await db.update("advanced_chat_sessions", { id, user_id: current.id }, {
+          connector_device_id: String((workspace as any).device_id || ""),
+          connector_workspace_path: String((workspace as any).path || ""),
+        });
+      }
+      session.respond(updated ? await service.getSession(current.id, id) : updated, "json");
     });
   ctx
     .route("/api/user/advanced-chat/sessions/:id/title/regenerate")

@@ -28,8 +28,37 @@ export async function apply(ctx: Context) {
   await ensureTables(db);
   const connector = ctx.component.connector;
   const files = ctx.component.file;
+  const migrateLegacySessions = async (userId: number) => {
+    const sessions = await db.select("advanced_chat_sessions", { user_id: userId });
+    const workspaces = await db.select("advanced_chat_workspaces", { user_id: userId });
+    const byLocation = new Map<string, any>();
+    for (const workspace of workspaces as any[]) {
+      const key = `${workspace.device_id || ""}\0${workspace.path || ""}`;
+      if (!byLocation.has(key)) byLocation.set(key, workspace);
+    }
+    for (const session of sessions as any[]) {
+      const deviceId = String(session.connector_device_id || "");
+      const path = String(session.connector_workspace_path || "");
+      if (!deviceId || !path) continue;
+      const key = `${deviceId}\0${path}`;
+      let workspace = byLocation.get(key);
+      if (!workspace) {
+        const name = path.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).at(-1) || "Workspace";
+        workspace = await db.create("advanced_chat_workspaces", {
+          id: randomUUID(), user_id: userId, name, location: "device",
+          device_id: deviceId, path, model: "", agent: "",
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        } as any);
+        byLocation.set(key, workspace);
+      }
+      if (String(session.workspace_id || "") !== String(workspace.id)) {
+        await db.update("advanced_chat_sessions", { id: session.id, user_id: userId }, { workspace_id: workspace.id });
+      }
+    }
+  };
   const service: WorkspaceService = {
     list: async (userId) => {
+      await migrateLegacySessions(userId);
       const workspaces = await db.select("advanced_chat_workspaces", {
         user_id: userId,
       });

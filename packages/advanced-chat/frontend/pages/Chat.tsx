@@ -6,7 +6,7 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, FolderPlus, GitBranch, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, Upload, User, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, GitBranch, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, Upload, User, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
 import { useI18n, type TranslationKey } from "@/lib/i18n"
@@ -230,6 +230,7 @@ interface ChatMessage {
 interface ChatSession {
   id: string
   folder_id?: string
+  workspace_id?: string
   title: string
   messages: ChatMessage[]
   run_mode: ChatRunMode
@@ -254,6 +255,32 @@ interface ChatSession {
   disabled_tool_groups: ChatToolGroupKey[]
   created_at: string
   updated_at: string
+}
+
+interface ChatWorkspace {
+  id: string
+  name: string
+  device_id: string
+  path: string
+  location?: string
+}
+
+function normalizeChatWorkspace(value: unknown): ChatWorkspace | null {
+  if (!isRecord(value)) return null
+  const id = stringFromUnknown(value.id)
+  const name = stringFromUnknown(value.name).trim()
+  if (!id || !name) return null
+  return {
+    id,
+    name,
+    device_id: stringFromUnknown(value.device_id),
+    path: stringFromUnknown(value.path),
+    location: stringFromUnknown(value.location),
+  }
+}
+
+function workspaceFolderName(path: string) {
+  return path.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).at(-1) || "Workspace"
 }
 
 interface CloudSandboxOption {
@@ -433,11 +460,6 @@ interface TaskChangeSummary {
   deletions: number
 }
 
-interface SessionFolder {
-  id: string
-  name: string
-}
-
 interface WorkspaceSkill {
   id: string
   name: string
@@ -529,7 +551,7 @@ type ConnectorApprovalMode = "manual" | "full_access" | "assistant"
 type SessionConfigTab = "basic" | "advanced" | "agent" | "agent_group" | "skills" | "knowledge" | "mcp" | "device"
 type SessionCapabilityPicker = "skills" | "knowledge" | "mcp" | null
 type AttachmentTarget = "composer" | "editor"
-type WorkspacePickerTarget = "session" | "pending"
+type WorkspacePickerTarget = "session" | "pending" | "new_workspace"
 type SessionGroupMode = "time" | "workspace"
 
 interface ChatStoreKeys {
@@ -546,14 +568,12 @@ interface ParsedSSEEvent {
 
 const selectedAgentStoreKey = "windypear.advanced_chat.selected_agent.v1"
 const recentAgentStoreKey = "windypear.advanced_chat.recent_agents.v1"
-const sessionFoldersStorageKey = "windypear.chat.session_folders.v1"
-const sessionFolderAssignmentsStorageKey = "windypear.chat.session_folder_assignments.v1"
 const sessionGroupModeStorageKey = "windypear.chat.session_group_mode.v1"
 const defaultAgentID = "default"
 const agentsQueryKey = ["advanced-chat-agents"] as const
 const skillsQueryKey = ["advanced-chat-skills"] as const
 const advancedSessionsQueryKey = ["advanced-chat-sessions"] as const
-const advancedSessionFoldersQueryKey = ["advanced-chat-session-folders"] as const
+const advancedWorkspacesQueryKey = ["advanced-chat-workspaces"] as const
 const advancedFilesQueryKey = ["advanced-chat-files"] as const
 const connectorDevicesQueryKey = ["advanced-chat-connector-devices"] as const
 const connectorTypesQueryKey = ["advanced-chat-connector-types"] as const
@@ -637,10 +657,10 @@ export default function Chat() {
   const [desktopSessionsSidebarHost, setDesktopSessionsSidebarHost] = useState<HTMLElement | null>(null)
   const [visibleSessionCount, setVisibleSessionCount] = useState(20)
   const [sessionGroupMode, setSessionGroupMode] = useState<SessionGroupMode>(readSessionGroupMode)
-  const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>(readSessionFolders)
-  const [sessionFolderAssignments, setSessionFolderAssignments] = useState<Record<string, string>>(readSessionFolderAssignments)
-  const [isSessionFolderDialogOpen, setIsSessionFolderDialogOpen] = useState(false)
-  const [newSessionFolderName, setNewSessionFolderName] = useState("")
+  const [newWorkspaceDialogOpen, setNewWorkspaceDialogOpen] = useState(false)
+  const [newWorkspaceName, setNewWorkspaceName] = useState("")
+  const [newWorkspaceDeviceID, setNewWorkspaceDeviceID] = useState("")
+  const [newWorkspacePath, setNewWorkspacePath] = useState("")
   const [configTab, setConfigTab] = useState<SessionConfigTab>("basic")
   const [pendingAgentID, setPendingAgentID] = useState("")
   const [sessionCapabilityPicker, setSessionCapabilityPicker] = useState<SessionCapabilityPicker>(null)
@@ -708,6 +728,10 @@ export default function Chat() {
   const [sharedSessionID, setSharedSessionID] = useState("")
   const [sharedSessionPoolID, setSharedSessionPoolID] = useState("")
   const [loadedSharedSession, setLoadedSharedSession] = useState<ChatSession | null>(null)
+  const [workspaceSelectionOpen, setWorkspaceSelectionOpen] = useState(false)
+  const [workspaceMoveSessionID, setWorkspaceMoveSessionID] = useState("")
+  const [workspaceRenameTarget, setWorkspaceRenameTarget] = useState<ChatWorkspace | null>(null)
+  const [workspaceRenameDraft, setWorkspaceRenameDraft] = useState("")
 
   const setPrompt = (next: string | ((current: string) => string)) => {
     const value = typeof next === "function" ? next(promptRef.current) : next
@@ -818,15 +842,12 @@ export default function Chat() {
     },
   })
 
-  const {
-    data: serverSessionFolders,
-    refetch: refetchSessionFolders,
-  } = useQuery<SessionFolder[]>({
-    queryKey: advancedSessionFoldersQueryKey,
+  const { data: workspaces = [], refetch: refetchWorkspaces } = useQuery<ChatWorkspace[]>({
+    queryKey: advancedWorkspacesQueryKey,
     enabled: isAdvanced,
     queryFn: async () => {
-      const res = await api.get("/user/advanced-chat/sessions/folders")
-      return Array.isArray(res.data) ? res.data.map(normalizeSessionFolder).filter((folder): folder is SessionFolder => Boolean(folder)) : []
+      const res = await api.get("/user/advanced-chat/workspaces")
+      return Array.isArray(res.data) ? res.data.map(normalizeChatWorkspace).filter((item): item is ChatWorkspace => Boolean(item)) : []
     },
   })
 
@@ -896,9 +917,9 @@ export default function Chat() {
 
     searchedSessions.slice(0, visibleSessionCount).forEach((session) => {
       if (sessionGroupMode === "workspace") {
-        const workspacePath = session.connector_workspace_path?.trim() || ""
-        const key = workspacePath || "__no_workspace__"
-        const label = workspacePath || (language === "zh" ? "未选择工作区" : "No workspace")
+        const workspace = workspaces.find((item) => item.id === session.workspace_id)
+        const key = session.workspace_id || "__no_workspace__"
+        const label = workspace?.name || (language === "zh" ? "未选择工作区" : "No workspace")
         const group = groups.get(key)
         if (group) {
           group.sessions.push(session)
@@ -934,7 +955,7 @@ export default function Chat() {
       }
     })
     return Array.from(groups.values())
-  }, [language, searchedSessions, sessionGroupMode, visibleSessionCount])
+  }, [language, searchedSessions, sessionGroupMode, visibleSessionCount, workspaces])
   const currentSessionRaw = activeSession || (isAdvanced && routeSessionID ? undefined : draftSession)
   const currentSession = currentSessionRaw ? normalizeRuntimeSession(currentSessionRaw) : undefined
   const isSharedSession = Boolean(currentSession?.id && currentSession.id === sharedSessionID && sharedSessionPoolID)
@@ -1319,29 +1340,6 @@ export default function Chat() {
   }, [activeRunMode, configTab])
 
   useEffect(() => {
-    // Adopt the server list only once it exists. Defaulting the query data to a
-    // fresh `[]` would give this dependency a new identity on every render and
-    // set state forever ("Maximum update depth exceeded").
-    if (isAdvanced && serverSessionFolders) {
-      setSessionFolders(serverSessionFolders)
-    }
-  }, [isAdvanced, serverSessionFolders])
-
-  useEffect(() => {
-    if (isAdvanced || typeof window === "undefined") {
-      return
-    }
-    localStorage.setItem(sessionFoldersStorageKey, JSON.stringify(sessionFolders))
-  }, [isAdvanced, sessionFolders])
-
-  useEffect(() => {
-    if (isAdvanced || typeof window === "undefined") {
-      return
-    }
-    localStorage.setItem(sessionFolderAssignmentsStorageKey, JSON.stringify(sessionFolderAssignments))
-  }, [isAdvanced, sessionFolderAssignments])
-
-  useEffect(() => {
     localStorage.setItem(sessionGroupModeStorageKey, sessionGroupMode)
   }, [sessionGroupMode])
 
@@ -1701,7 +1699,63 @@ export default function Chat() {
     }
   }, [selectableConnectorDevices, connectorDevices, pendingConnectorDeviceID])
 
-  const createNewSession = async (context: { folderID?: string; poolID?: string } = {}) => {
+  const createSessionInWorkspace = (workspace: ChatWorkspace) => {
+    const defaultAgent = agents.find((agent) => agent.id === defaultAgentID) || agents[0]
+    const session = createSession({
+      agentID: defaultAgent?.id,
+      modelName: modelName || defaultAgent?.default_model || modelOptions[0] || "",
+    })
+    const nextSession = {
+      ...session,
+      workspace_id: workspace.id,
+      connector_device_id: workspace.device_id || undefined,
+      connector_workspace_path: workspace.path || undefined,
+    }
+    setDraftSession(nextSession)
+    setActiveSessionID("")
+    setIsSessionsSidebarOpen(false)
+    setPrompt("")
+    setAttachments([])
+    setWorkspaceSelectionOpen(false)
+    cancelEdit()
+    if (location.pathname !== "/chat") navigate("/chat")
+  }
+
+  const selectWorkspace = (workspace: ChatWorkspace) => {
+    if (workspaceMoveSessionID) {
+      void moveSessionToWorkspace(workspaceMoveSessionID, workspace.id)
+      return
+    }
+    createSessionInWorkspace(workspace)
+  }
+
+  const createWorkspace = async () => {
+    const name = newWorkspaceName.trim()
+    if (!name || !newWorkspaceDeviceID || !newWorkspacePath) return
+    try {
+      const res = await api.post("/user/advanced-chat/workspaces", {
+        name,
+        location: "device",
+        device_id: newWorkspaceDeviceID,
+        path: newWorkspacePath,
+      })
+      const workspace = normalizeChatWorkspace(res.data)
+      if (!workspace) throw new Error("Invalid workspace response")
+      await refetchWorkspaces()
+      setNewWorkspaceDialogOpen(false)
+      setNewWorkspaceName("")
+      setNewWorkspacePath("")
+      if (workspaceMoveSessionID) {
+        await moveSessionToWorkspace(workspaceMoveSessionID, workspace.id)
+      } else {
+        createSessionInWorkspace(workspace)
+      }
+    } catch (err) {
+      error(apiErrorMessage(err, language === "zh" ? "创建工作区失败" : "Failed to create workspace"))
+    }
+  }
+
+  const createNewSession = async (context: { poolID?: string } = {}) => {
     setSharedSessionID("")
     setSharedSessionPoolID(context.poolID || "")
     setSelectedSharedPoolID(context.poolID || "")
@@ -1738,19 +1792,8 @@ export default function Chat() {
       }
       return
     }
-    const session = { ...createSession({
-      agentID: defaultAgent?.id,
-      modelName: isAdvanced ? modelName || defaultAgent?.default_model || modelOptions[0] || "" : undefined,
-    }), folder_id: context.folderID }
-    setDraftSession(session)
-    setActiveSessionID("")
-    setIsSessionsSidebarOpen(false)
-    setPrompt("")
-    setAttachments([])
-    cancelEdit()
-    if (isAdvanced && location.pathname !== "/chat") {
-      navigate("/chat")
-    }
+    setWorkspaceMoveSessionID("")
+    setWorkspaceSelectionOpen(true)
   }
 
   useEffect(() => {
@@ -1832,14 +1875,6 @@ export default function Chat() {
       void api.delete(`/user/advanced-chat/sessions/${encodeURIComponent(sessionID)}`).then(() => refetchAdvancedSessions()).catch(() => undefined)
     }
     const nextSessions = sessions.filter((session) => session.id !== sessionID)
-    setSessionFolderAssignments((current) => {
-      if (!current[sessionID]) {
-        return current
-      }
-      const next = { ...current }
-      delete next[sessionID]
-      return next
-    })
     setSessions(nextSessions)
     if (isAdvanced) {
       if (routeSessionID === sessionID) {
@@ -1852,49 +1887,27 @@ export default function Chat() {
     cancelEdit()
   }
 
-  const createSessionFolder = async () => {
-    const name = newSessionFolderName.trim().slice(0, 80)
-    if (!name) {
-      return
-    }
+  const moveSessionToWorkspace = async (sessionID: string, workspaceID: string) => {
     try {
-      if (isAdvanced) {
-        const res = await api.post("/user/advanced-chat/sessions/folders", { name })
-        const folder = normalizeSessionFolder(res.data)
-        if (!folder) {
-          throw new Error("Invalid session folder")
-        }
-        setSessionFolders((current) => [...current, folder])
-        void refetchSessionFolders()
-      } else {
-        setSessionFolders((current) => [...current, { id: createID(), name }])
-      }
-      setNewSessionFolderName("")
-      setIsSessionFolderDialogOpen(false)
+      await api.put(`/user/advanced-chat/sessions/${encodeURIComponent(sessionID)}/workspace`, { workspace_id: workspaceID })
+      const workspace = workspaces.find((item) => item.id === workspaceID)
+      setSessions((current) => current.map((session) => session.id === sessionID ? { ...session, workspace_id: workspaceID, connector_device_id: workspace?.device_id, connector_workspace_path: workspace?.path } : session))
+      void refetchAdvancedSessions()
+      setWorkspaceSelectionOpen(false)
+      setWorkspaceMoveSessionID("")
     } catch (err) {
-      error(apiErrorMessage(err, sessionSidebarCopy.createFolderFailed))
+      error(apiErrorMessage(err, language === "zh" ? "移动到工作区失败" : "Failed to move session to workspace"))
     }
   }
 
-  const moveSessionToFolder = async (sessionID: string, folderID = "") => {
+  const renameWorkspace = async () => {
+    if (!workspaceRenameTarget || !workspaceRenameDraft.trim()) return
     try {
-      if (isAdvanced) {
-        await api.put(`/user/advanced-chat/sessions/${encodeURIComponent(sessionID)}/folder`, { folder_id: folderID })
-        setSessions((current) => current.map((session) => session.id === sessionID ? { ...session, folder_id: folderID || undefined } : session))
-        void refetchAdvancedSessions()
-      } else {
-        setSessionFolderAssignments((current) => {
-          const next = { ...current }
-          if (folderID) {
-            next[sessionID] = folderID
-          } else {
-            delete next[sessionID]
-          }
-          return next
-        })
-      }
+      await api.put(`/user/advanced-chat/workspaces/${encodeURIComponent(workspaceRenameTarget.id)}`, { name: workspaceRenameDraft.trim() })
+      await refetchWorkspaces()
+      setWorkspaceRenameTarget(null)
     } catch (err) {
-      error(apiErrorMessage(err, sessionSidebarCopy.moveFailed))
+      error(apiErrorMessage(err, language === "zh" ? "重命名工作区失败" : "Failed to rename workspace"))
     }
   }
 
@@ -2296,15 +2309,17 @@ export default function Chat() {
   }
 
   const openWorkspacePicker = async (target: WorkspacePickerTarget = "session") => {
-    const deviceID = target === "session" ? currentSession?.connector_device_id || "" : pendingConnectorDeviceID
+    const deviceID = target === "new_workspace"
+      ? newWorkspaceDeviceID
+      : target === "session" ? currentSession?.connector_device_id || "" : pendingConnectorDeviceID
     const device = connectorDevices.find((item) => item.id === deviceID)
     if (!deviceID || !device) {
       error(copy.noDeviceSelected)
       return
     }
-    const currentPath = target === "session"
-      ? currentSession?.connector_workspace_path || ""
-      : pendingConnectorWorkspace.trim()
+    const currentPath = target === "new_workspace"
+      ? newWorkspacePath
+      : target === "session" ? currentSession?.connector_workspace_path || "" : pendingConnectorWorkspace.trim()
     const isCurrentDesktopDevice = isDesktop && device.kind === "desktop" && Boolean(desktopInstanceID) && device.desktop_instance_id === desktopInstanceID
     if (isCurrentDesktopDevice && window.veloceDesktop?.chooseDesktopFolder) {
       try {
@@ -2314,6 +2329,9 @@ export default function Chat() {
         }
         if (target === "pending") {
           setPendingConnectorWorkspace(selectedPath)
+        } else if (target === "new_workspace") {
+          setNewWorkspacePath(selectedPath)
+          if (!newWorkspaceName.trim()) setNewWorkspaceName(workspaceFolderName(selectedPath))
         } else {
           setSessionWorkspacePath(selectedPath)
         }
@@ -2334,6 +2352,9 @@ export default function Chat() {
     }
     if (workspacePickerTarget === "pending") {
       setPendingConnectorWorkspace(workspacePickerPath)
+    } else if (workspacePickerTarget === "new_workspace") {
+      setNewWorkspacePath(workspacePickerPath)
+      if (!newWorkspaceName.trim()) setNewWorkspaceName(workspaceFolderName(workspacePickerPath))
     } else {
       setSessionWorkspacePath(workspacePickerPath)
     }
@@ -3472,11 +3493,7 @@ export default function Chat() {
             {regeneratingTitleSessionID === session.id ? copy.regeneratingTitle : copy.regenerateTitle}
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuLabel>{sessionSidebarCopy.moveToFolder}</ContextMenuLabel>
-          <ContextMenuItem onSelect={() => void moveSessionToFolder(session.id)}><Folder size={14} />{sessionSidebarCopy.uncategorized}</ContextMenuItem>
-          {sessionFolders.map((folder) => (
-            <ContextMenuItem key={folder.id} onSelect={() => void moveSessionToFolder(session.id, folder.id)}><Folder size={14} className="text-primary" /><span className="truncate">{folder.name}</span></ContextMenuItem>
-          ))}
+          <ContextMenuItem onSelect={() => { setWorkspaceMoveSessionID(session.id); setWorkspaceSelectionOpen(true) }}><FolderOpen size={14} />{language === "zh" ? "移动到工作区" : "Move to workspace"}</ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
     )
@@ -3655,16 +3672,6 @@ export default function Chat() {
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setIsSessionFolderDialogOpen(true)}
-            aria-label={sessionSidebarCopy.newFolder}
-            title={sessionSidebarCopy.newFolder}
-          >
-            <FolderPlus size={16} />
-          </Button>
         </div>
       </div>
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain p-2">
@@ -3705,9 +3712,7 @@ export default function Chat() {
       </div>
         </aside>
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-44">
-        <ContextMenuItem onSelect={() => setIsSessionFolderDialogOpen(true)}><FolderPlus size={15} />{sessionSidebarCopy.newFolder}</ContextMenuItem>
-      </ContextMenuContent>
+      <ContextMenuContent className="w-44" />
     </ContextMenu>
   )
   const desktopSessionsSidebarPortal = desktopSessionsSidebarHost
@@ -4133,35 +4138,67 @@ export default function Chat() {
           copy={taskChangeCopy}
         />
       )}
-      <Dialog
-        open={isSessionFolderDialogOpen}
-        onOpenChange={(open) => {
-          setIsSessionFolderDialogOpen(open)
-          if (!open) {
-            setNewSessionFolderName("")
-          }
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{sessionSidebarCopy.newFolder}</DialogTitle>
+      <Dialog open={workspaceSelectionOpen} onOpenChange={(open) => { setWorkspaceSelectionOpen(open); if (!open) setWorkspaceMoveSessionID("") }}>
+        <DialogContent className="max-h-[80vh] max-w-lg overflow-hidden p-0">
+          <DialogHeader className="border-b px-5 py-4 pr-12">
+            <DialogTitle>{workspaceMoveSessionID ? (language === "zh" ? "移动到工作区" : "Move to workspace") : (language === "zh" ? "选择工作区" : "Select workspace")}</DialogTitle>
           </DialogHeader>
-          <Input
-            autoFocus
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
-            value={newSessionFolderName}
-            onChange={(event) => setNewSessionFolderName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault()
-                void createSessionFolder()
-              }
-            }}
-            placeholder={sessionSidebarCopy.folderName}
-          />
+          <div className="max-h-[55vh] overflow-y-auto p-2">
+            {workspaces.length === 0 ? (
+              <div className="px-3 py-10 text-center text-sm text-muted-foreground">{language === "zh" ? "还没有工作区" : "No workspaces yet"}</div>
+            ) : workspaces.map((workspace) => (
+              <div key={workspace.id} className="flex items-center gap-1">
+                <button type="button" className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-3 text-left text-sm hover:bg-muted" onClick={() => selectWorkspace(workspace)}>
+                  <FolderOpen size={16} className="shrink-0 text-primary" />
+                  <span className="min-w-0 flex-1 truncate font-medium">{workspace.name}</span>
+                  <span className="max-w-48 truncate font-mono text-xs text-muted-foreground">{workspace.path}</span>
+                </button>
+                <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0" onClick={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }} title={language === "zh" ? "重命名工作区" : "Rename workspace"} aria-label={language === "zh" ? "重命名工作区" : "Rename workspace"}><Pencil size={14} /></Button>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="border-t px-5 py-4">
+            <Button type="button" variant="outline" onClick={() => { setWorkspaceSelectionOpen(false); setNewWorkspaceName(""); setNewWorkspacePath(""); setNewWorkspaceDeviceID(connectorDevices[0]?.id || ""); setNewWorkspaceDialogOpen(true) }}><Plus size={15} />{language === "zh" ? "创建工作区" : "Create workspace"}</Button>
+            <Button type="button" variant="ghost" onClick={() => setWorkspaceSelectionOpen(false)}>{language === "zh" ? "取消" : "Cancel"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={newWorkspaceDialogOpen} onOpenChange={setNewWorkspaceDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>{language === "zh" ? "创建工作区" : "Create workspace"}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <label className="block space-y-1.5 text-sm">
+              <span className="font-medium">{language === "zh" ? "名称" : "Name"}</span>
+              <Input autoFocus value={newWorkspaceName} onChange={(event) => setNewWorkspaceName(event.target.value)} placeholder={language === "zh" ? "工作区名称" : "Workspace name"} />
+            </label>
+            <label className="block space-y-1.5 text-sm">
+              <span className="font-medium">{language === "zh" ? "设备" : "Device"}</span>
+              <Select value={newWorkspaceDeviceID} onValueChange={setNewWorkspaceDeviceID}>
+                <SelectTrigger><SelectValue placeholder={language === "zh" ? "选择设备" : "Select device"} /></SelectTrigger>
+                <SelectContent>{selectableConnectorDevices.map((device) => <SelectItem key={device.id} value={device.id}>{device.name}{device.online ? "" : ` (${copy.deviceOffline})`}</SelectItem>)}</SelectContent>
+              </Select>
+            </label>
+            <div className="space-y-1.5 text-sm">
+              <span className="font-medium">{language === "zh" ? "文件夹" : "Folder"}</span>
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1 truncate rounded-md border bg-muted/30 px-3 py-2 font-mono text-xs">{newWorkspacePath || (language === "zh" ? "未选择" : "Not selected")}</div>
+                <Button type="button" variant="outline" disabled={!newWorkspaceDeviceID} onClick={() => void openWorkspacePicker("new_workspace")}><FolderOpen size={15} />{language === "zh" ? "选择" : "Browse"}</Button>
+              </div>
+            </div>
+          </div>
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setIsSessionFolderDialogOpen(false)}>{sessionSidebarCopy.cancel}</Button>
-            <Button type="button" disabled={!newSessionFolderName.trim()} onClick={() => void createSessionFolder()}>{sessionSidebarCopy.create}</Button>
+            <Button type="button" variant="ghost" onClick={() => setNewWorkspaceDialogOpen(false)}>{language === "zh" ? "取消" : "Cancel"}</Button>
+            <Button type="button" disabled={!newWorkspaceName.trim() || !newWorkspaceDeviceID || !newWorkspacePath} onClick={() => void createWorkspace()}>{language === "zh" ? "创建并新建会话" : "Create and start chat"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(workspaceRenameTarget)} onOpenChange={(open) => { if (!open) setWorkspaceRenameTarget(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>{language === "zh" ? "重命名工作区" : "Rename workspace"}</DialogTitle></DialogHeader>
+          <Input autoFocus value={workspaceRenameDraft} onChange={(event) => setWorkspaceRenameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void renameWorkspace() }} />
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setWorkspaceRenameTarget(null)}>{language === "zh" ? "取消" : "Cancel"}</Button>
+            <Button type="button" disabled={!workspaceRenameDraft.trim()} onClick={() => void renameWorkspace()}>{language === "zh" ? "保存" : "Save"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -6316,35 +6353,6 @@ function readRecentAgentIDs() {
   }
 }
 
-function readSessionFolders(): SessionFolder[] {
-  if (typeof window === "undefined") {
-    return []
-  }
-  try {
-    const value = JSON.parse(localStorage.getItem(sessionFoldersStorageKey) || "[]")
-    return Array.isArray(value) ? value.map(normalizeSessionFolder).filter((folder): folder is SessionFolder => Boolean(folder)) : []
-  } catch {
-    return []
-  }
-}
-
-function readSessionFolderAssignments(): Record<string, string> {
-  if (typeof window === "undefined") {
-    return {}
-  }
-  try {
-    const value = JSON.parse(localStorage.getItem(sessionFolderAssignmentsStorageKey) || "{}")
-    if (!isRecord(value)) {
-      return {}
-    }
-    return Object.fromEntries(
-      Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string" && Boolean(entry[0]) && Boolean(entry[1]))
-    )
-  } catch {
-    return {}
-  }
-}
-
 function readSessionGroupMode(): SessionGroupMode {
   if (typeof window === "undefined") {
     return "time"
@@ -6386,6 +6394,7 @@ async function saveAdvancedSessionSnapshot(session: ChatSession): Promise<ChatSe
 		knowledge_base_ids: safeSession.knowledge_base_ids,
     connector_device_id: safeSession.cloud_sandbox_id ? "" : safeSession.connector_device_id || "",
     connector_workspace_path: safeSession.cloud_sandbox_id ? "" : safeSession.connector_workspace_path || "",
+    workspace_id: safeSession.workspace_id || "",
     cloud_sandbox_id: isChat ? "" : safeSession.cloud_sandbox_id || "",
     connector_auto_approve: safeSession.connector_auto_approve,
     connector_approval_mode: connectorApprovalModeFor(safeSession),
@@ -6875,6 +6884,7 @@ function normalizeSession(value: unknown): ChatSession | null {
   return {
     id: typeof value.id === "string" && value.id ? value.id : createID(),
     folder_id: stringFromUnknown(value.folder_id) || undefined,
+    workspace_id: stringFromUnknown(value.workspace_id) || undefined,
     title: typeof value.title === "string" ? value.title : "",
     messages,
     run_mode: runMode,
@@ -6900,18 +6910,6 @@ function normalizeSession(value: unknown): ChatSession | null {
     created_at: typeof value.created_at === "string" ? value.created_at : new Date().toISOString(),
     updated_at: typeof value.updated_at === "string" ? value.updated_at : new Date().toISOString(),
   }
-}
-
-function normalizeSessionFolder(value: unknown): SessionFolder | null {
-  if (!isRecord(value)) {
-    return null
-  }
-  const id = stringFromUnknown(value.id)
-  const name = (stringFromUnknown(value.name) || "").trim()
-  if (!id || !name) {
-    return null
-  }
-  return { id, name }
 }
 
 function normalizeRuntimeSession(session: ChatSession): ChatSession {
@@ -8616,15 +8614,7 @@ const enTaskChangeCopy: typeof zhTaskChangeCopy = {
 
 const zhSessionSidebarCopy = {
   search: "搜索会话",
-  newFolder: "新建文件夹",
-  folderName: "文件夹名称",
-  create: "创建",
-  cancel: "取消",
-  uncategorized: "未分类",
-  moveToFolder: "移动到文件夹",
   noSessions: "没有匹配的会话",
-  createFolderFailed: "创建会话文件夹失败",
-  moveFailed: "移动会话失败",
   groupMode: "会话分组方式",
   groupByTime: "按时间分组",
   groupByWorkspace: "按工作区分组",
@@ -8632,15 +8622,7 @@ const zhSessionSidebarCopy = {
 
 const enSessionSidebarCopy: typeof zhSessionSidebarCopy = {
   search: "Search sessions",
-  newFolder: "New folder",
-  folderName: "Folder name",
-  create: "Create",
-  cancel: "Cancel",
-  uncategorized: "Uncategorized",
-  moveToFolder: "Move to folder",
   noSessions: "No matching sessions",
-  createFolderFailed: "Failed to create session folder",
-  moveFailed: "Failed to move session",
   groupMode: "Session grouping",
   groupByTime: "Group by time",
   groupByWorkspace: "Group by workspace",
