@@ -4134,7 +4134,7 @@ export default function Chat() {
                       </span>
                     </button>
                   )}
-                  {composerEnvironmentControls()}
+                  {!activeSession && !routeSessionID && composerEnvironmentControls()}
                   {advancedComposer()}
                   <ChatRunSummary session={currentSession} run={activeRun} language={language} />
                 </div>
