@@ -6,7 +6,7 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Copy, FileDiff, FileText, Folder, FolderOpen, GitBranch, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, Upload, User, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Copy, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, Upload, User, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
 import { useI18n, type TranslationKey } from "@/lib/i18n"
@@ -1911,6 +1911,20 @@ export default function Chat() {
     }
   }
 
+  const openWorkspaceInFileManager = async (workspace: ChatWorkspace) => {
+    try {
+      await api.post("/explorer/open", {
+        action: "open_file_manager",
+        device_id: workspace.device_id,
+        workspace_path: workspace.path,
+        path: workspace.path,
+      })
+      success(language === "zh" ? "已在文件管理器中打开" : "Opened in file manager")
+    } catch (err) {
+      error(apiErrorMessage(err, language === "zh" ? "无法打开工作区" : "Could not open workspace"))
+    }
+  }
+
   const renameSessionTitle = (session: ChatSession) => {
     setRenamingSession(session)
     setRenamedTitle(session.title || copy.untitledSession)
@@ -3675,6 +3689,33 @@ export default function Chat() {
         </div>
       </div>
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain p-2">
+        <section className="mb-3">
+            <div className="flex h-7 items-center justify-between px-2">
+              <span className="text-xs font-medium text-muted-foreground">{language === "zh" ? "工作区" : "Workspaces"}</span>
+              <Button type="button" variant="ghost" size="icon" className="size-6" onClick={() => { setNewWorkspaceName(""); setNewWorkspacePath(""); setNewWorkspaceDeviceID(connectorDevices[0]?.id || ""); setWorkspaceMoveSessionID(""); setNewWorkspaceDialogOpen(true) }} title={language === "zh" ? "新建工作区" : "New workspace"} aria-label={language === "zh" ? "新建工作区" : "New workspace"}><Plus size={14} /></Button>
+            </div>
+            <div className="space-y-0.5">
+              {workspaces.length === 0 && <div className="px-2 py-2 text-xs text-muted-foreground">{language === "zh" ? "还没有工作区" : "No workspaces yet"}</div>}
+              {workspaces.map((workspace) => (
+                <div key={workspace.id} className="group/workspace flex h-9 items-center gap-1 rounded-md px-1 hover:bg-muted">
+                  <button type="button" className="flex min-w-0 flex-1 items-center gap-2 px-1 text-left text-sm" onClick={() => createSessionInWorkspace(workspace)} title={`${workspace.name}\n${workspace.path}`}>
+                    <FolderOpen size={16} className="shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 opacity-0 group-hover/workspace:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100" title={language === "zh" ? "工作区操作" : "Workspace actions"} aria-label={language === "zh" ? "工作区操作" : "Workspace actions"}><Ellipsis size={16} /></Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onSelect={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }}><Pencil size={15} />{language === "zh" ? "重命名" : "Rename"}</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => void openWorkspaceInFileManager(workspace)}><FolderOpen size={15} />{language === "zh" ? "在文件管理器中打开" : "Open in file manager"}</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 opacity-0 group-hover/workspace:opacity-100 focus-visible:opacity-100" onClick={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }} title={language === "zh" ? "重命名工作区" : "Rename workspace"} aria-label={language === "zh" ? "重命名工作区" : "Rename workspace"}><Pencil size={14} /></Button>
+                </div>
+              ))}
+            </div>
+        </section>
         {isAdvanced && enterpriseMode && sharedPools.length > 0 && (
           <div className="pb-3">
             <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">{language === "zh" ? "任务与部门会话" : "Task and department sessions"}</div>
