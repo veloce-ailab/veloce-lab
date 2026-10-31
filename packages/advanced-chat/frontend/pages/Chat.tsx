@@ -732,6 +732,7 @@ export default function Chat() {
   const [workspaceMoveSessionID, setWorkspaceMoveSessionID] = useState("")
   const [workspaceRenameTarget, setWorkspaceRenameTarget] = useState<ChatWorkspace | null>(null)
   const [workspaceRenameDraft, setWorkspaceRenameDraft] = useState("")
+  const [workspaceCreateForSessionID, setWorkspaceCreateForSessionID] = useState("")
 
   const setPrompt = (next: string | ((current: string) => string)) => {
     const value = typeof next === "function" ? next(promptRef.current) : next
@@ -1729,6 +1730,20 @@ export default function Chat() {
     createSessionInWorkspace(workspace)
   }
 
+  const assignWorkspaceToCurrentSession = (workspace: ChatWorkspace) => {
+    if (!currentSession) return
+    updateSession(currentSession.id, (session) => ({
+      ...session,
+      workspace_id: workspace.id,
+      connector_device_id: workspace.device_id || undefined,
+      connector_workspace_path: workspace.path || undefined,
+      cloud_sandbox_id: undefined,
+    }), { persist: true })
+    setPendingConnectorDeviceID(workspace.device_id)
+    setPendingConnectorWorkspace(workspace.path)
+    setPendingCloudSandboxID("")
+  }
+
   const createWorkspace = async () => {
     const name = newWorkspaceName.trim()
     if (!name || !newWorkspaceDeviceID || !newWorkspacePath) return
@@ -1745,7 +1760,13 @@ export default function Chat() {
       setNewWorkspaceDialogOpen(false)
       setNewWorkspaceName("")
       setNewWorkspacePath("")
-      if (workspaceMoveSessionID) {
+      if (workspaceCreateForSessionID) {
+        const targetSession = sessions.find((session) => session.id === workspaceCreateForSessionID) || (currentSession?.id === workspaceCreateForSessionID ? currentSession : undefined)
+        if (targetSession) {
+          updateSession(targetSession.id, (session) => ({ ...session, workspace_id: workspace.id, connector_device_id: workspace.device_id || undefined, connector_workspace_path: workspace.path || undefined }), { persist: true })
+        }
+        setWorkspaceCreateForSessionID("")
+      } else if (workspaceMoveSessionID) {
         await moveSessionToWorkspace(workspaceMoveSessionID, workspace.id)
       } else {
         createSessionInWorkspace(workspace)
@@ -1792,8 +1813,18 @@ export default function Chat() {
       }
       return
     }
+    const session = createSession({
+      agentID: defaultAgent?.id,
+      modelName: modelName || defaultAgent?.default_model || modelOptions[0] || "",
+    })
+    setDraftSession(session)
+    setActiveSessionID("")
+    setIsSessionsSidebarOpen(false)
+    setPrompt("")
+    setAttachments([])
     setWorkspaceMoveSessionID("")
-    setWorkspaceSelectionOpen(true)
+    cancelEdit()
+    if (location.pathname !== "/chat") navigate("/chat")
   }
 
   useEffect(() => {
@@ -3514,53 +3545,34 @@ export default function Chat() {
   }
 
   const composerEnvironmentControls = () => {
-    const deviceLabel = currentConnectorDevice?.name || (language === "zh" ? "选择设备" : "Select device")
-    const workspaceLabel = currentSession?.connector_workspace_path || (language === "zh" ? "选择工作区" : "Select workspace")
+    const selectedWorkspace = workspaces.find((workspace) => workspace.id === currentSession?.workspace_id)
+    const workspaceLabel = selectedWorkspace?.name || (language === "zh" ? "选择工作区" : "Select workspace")
     return (
       <div className="flex flex-wrap items-center gap-2 px-1">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button type="button" variant="outline" className="h-8 max-w-52 justify-start gap-1.5 rounded-lg px-2 text-xs" title={deviceLabel}>
-              <Monitor size={14} className="shrink-0 text-muted-foreground" />
-              <span className="truncate">{deviceLabel}</span>
-              <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="start" className="max-h-64 w-64 overflow-y-auto">
-            <DropdownMenuItem onSelect={() => setSessionConnectorDevice("")} className="min-h-9 justify-between">
-              <span>{language === "zh" ? "不使用设备" : "No device"}</span>
-              {!currentConnectorDeviceID && <Check size={14} />}
-            </DropdownMenuItem>
-            {selectableConnectorDevices.length === 0 ? (
-              <div className="px-2 py-3 text-center text-xs text-muted-foreground">{copy.noDevices}</div>
-            ) : selectableConnectorDevices.map((device) => (
-              <DropdownMenuItem key={device.id} onSelect={() => setSessionConnectorDevice(device.id)} className="min-h-10 justify-between gap-2">
-                <span className="min-w-0 truncate">{device.name}</span>
-                {device.id === currentConnectorDeviceID ? <Check size={14} className="shrink-0" /> : <span className={cn("shrink-0 text-[11px]", device.online ? "text-primary" : "text-muted-foreground")}>{device.online ? copy.deviceOnline : copy.deviceOffline}</span>}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="outline" disabled={!currentConnectorDeviceID} className="h-8 max-w-72 justify-start gap-1.5 rounded-lg px-2 text-xs" title={workspaceLabel}>
+            <Button type="button" variant="outline" className="h-8 max-w-72 justify-start gap-1.5 rounded-lg px-2 text-xs" title={selectedWorkspace ? `${selectedWorkspace.name} · ${selectedWorkspace.path}` : workspaceLabel}>
               <Folder size={14} className="shrink-0 text-muted-foreground" />
-              <span className="truncate font-mono">{workspaceLabel}</span>
+              <span className="truncate">{workspaceLabel}</span>
               <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="start" className="max-h-64 w-72 overflow-y-auto">
-            {recentWorkspacePaths.length === 0 ? (
-              <div className="px-2 py-3 text-center text-xs text-muted-foreground">{copy.noWorkspaces}</div>
-            ) : recentWorkspacePaths.map((workspacePath) => (
-              <DropdownMenuItem key={workspacePath} onSelect={() => setSessionWorkspacePath(workspacePath)} className="min-h-9 justify-between gap-2">
-                <span className="min-w-0 truncate font-mono text-xs">{workspacePath}</span>
-                {workspacePath === currentSession?.connector_workspace_path && <Check size={14} className="shrink-0" />}
+          <DropdownMenuContent side="top" align="start" className="max-h-72 w-80 overflow-y-auto">
+            {workspaces.map((workspace) => (
+              <DropdownMenuItem key={workspace.id} onSelect={() => assignWorkspaceToCurrentSession(workspace)} className="min-h-9 justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-2"><FolderOpen size={14} className="shrink-0 text-muted-foreground" /><span className="truncate">{workspace.name}</span><span className="truncate font-mono text-[11px] text-muted-foreground">{workspace.path}</span></span>
+                {workspace.id === currentSession?.workspace_id && <Check size={14} className="shrink-0 text-primary" />}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuItem onSelect={() => openWorkspacePicker("session")} className="mt-1 min-h-9 border-t border-border pt-2">
-              <Folder size={14} />
-              {copy.selectWorkspace}
+            <DropdownMenuItem onSelect={() => {
+              setWorkspaceCreateForSessionID(currentSession?.id || "")
+              setWorkspaceMoveSessionID("")
+              setNewWorkspaceName("")
+              setNewWorkspacePath("")
+              setNewWorkspaceDeviceID(connectorDevices[0]?.id || "")
+              setNewWorkspaceDialogOpen(true)
+            }} className="mt-1 min-h-9 border-t border-border pt-2">
+              <Plus size={14} />{language === "zh" ? "新建工作区" : "Create workspace"}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -3689,33 +3701,6 @@ export default function Chat() {
         </div>
       </div>
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain p-2">
-        <section className="mb-3">
-            <div className="flex h-7 items-center justify-between px-2">
-              <span className="text-xs font-medium text-muted-foreground">{language === "zh" ? "工作区" : "Workspaces"}</span>
-              <Button type="button" variant="ghost" size="icon" className="size-6" onClick={() => { setNewWorkspaceName(""); setNewWorkspacePath(""); setNewWorkspaceDeviceID(connectorDevices[0]?.id || ""); setWorkspaceMoveSessionID(""); setNewWorkspaceDialogOpen(true) }} title={language === "zh" ? "新建工作区" : "New workspace"} aria-label={language === "zh" ? "新建工作区" : "New workspace"}><Plus size={14} /></Button>
-            </div>
-            <div className="space-y-0.5">
-              {workspaces.length === 0 && <div className="px-2 py-2 text-xs text-muted-foreground">{language === "zh" ? "还没有工作区" : "No workspaces yet"}</div>}
-              {workspaces.map((workspace) => (
-                <div key={workspace.id} className="group/workspace flex h-9 items-center gap-1 rounded-md px-1 hover:bg-muted">
-                  <button type="button" className="flex min-w-0 flex-1 items-center gap-2 px-1 text-left text-sm" onClick={() => createSessionInWorkspace(workspace)} title={`${workspace.name}\n${workspace.path}`}>
-                    <FolderOpen size={16} className="shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                  </button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 opacity-0 group-hover/workspace:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100" title={language === "zh" ? "工作区操作" : "Workspace actions"} aria-label={language === "zh" ? "工作区操作" : "Workspace actions"}><Ellipsis size={16} /></Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
-                      <DropdownMenuItem onSelect={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }}><Pencil size={15} />{language === "zh" ? "重命名" : "Rename"}</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => void openWorkspaceInFileManager(workspace)}><FolderOpen size={15} />{language === "zh" ? "在文件管理器中打开" : "Open in file manager"}</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 opacity-0 group-hover/workspace:opacity-100 focus-visible:opacity-100" onClick={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }} title={language === "zh" ? "重命名工作区" : "Rename workspace"} aria-label={language === "zh" ? "重命名工作区" : "Rename workspace"}><Pencil size={14} /></Button>
-                </div>
-              ))}
-            </div>
-        </section>
         {isAdvanced && enterpriseMode && sharedPools.length > 0 && (
           <div className="pb-3">
             <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">{language === "zh" ? "任务与部门会话" : "Task and department sessions"}</div>
@@ -3735,7 +3720,25 @@ export default function Chat() {
         )}
         {visibleSessionGroups.map((group) => (
           <div key={group.label} className="pb-2">
-            <div className={cn("px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground", sessionGroupMode === "workspace" && group.label !== (language === "zh" ? "未选择工作区" : "No workspace") && "truncate font-mono")} title={sessionGroupMode === "workspace" ? group.label : undefined}>{group.label}</div>
+            {sessionGroupMode === "workspace" ? (() => {
+              const workspace = workspaces.find((item) => item.id === group.sessions[0]?.workspace_id)
+              return <div className="group/workspace flex h-9 items-center gap-1 rounded-md px-2 py-1 hover:bg-muted">
+                <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm" onClick={() => workspace && createSessionInWorkspace(workspace)}>
+                  <FolderOpen size={17} className="shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 truncate font-medium">{group.label}</span>
+                </button>
+                {workspace && <>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" className="size-7 opacity-0 group-hover/workspace:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100" title={language === "zh" ? "工作区操作" : "Workspace actions"} aria-label={language === "zh" ? "工作区操作" : "Workspace actions"}><Ellipsis size={16} /></Button></DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onSelect={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }}><Pencil size={15} />{language === "zh" ? "重命名" : "Rename"}</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => void openWorkspaceInFileManager(workspace)}><FolderOpen size={15} />{language === "zh" ? "在文件管理器中打开" : "Open in file manager"}</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button type="button" variant="ghost" size="icon" className="size-7 opacity-0 group-hover/workspace:opacity-100 focus-visible:opacity-100" onClick={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }} title={language === "zh" ? "重命名工作区" : "Rename workspace"} aria-label={language === "zh" ? "重命名工作区" : "Rename workspace"}><Pencil size={14} /></Button>
+                </>}
+              </div>
+            })() : <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">{group.label}</div>}
             {group.sessions.map(sessionSidebarItem)}
           </div>
         ))}
@@ -6398,7 +6401,7 @@ function readSessionGroupMode(): SessionGroupMode {
   if (typeof window === "undefined") {
     return "time"
   }
-  return localStorage.getItem(sessionGroupModeStorageKey) === "workspace" ? "workspace" : "time"
+  return localStorage.getItem(sessionGroupModeStorageKey) === "time" ? "time" : "workspace"
 }
 
 async function responseErrorMessage(response: Response) {
