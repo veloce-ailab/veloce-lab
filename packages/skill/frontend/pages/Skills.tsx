@@ -69,7 +69,7 @@ function SkillListPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [uploading, setUploading] = useState(false)
 
-  const { data: skills = [] } = useQuery<Skill[]>({
+  const { data: skills = [], isLoading, isError, refetch } = useQuery<Skill[]>({
     queryKey: skillsQueryKey,
     queryFn: async () => {
       const res = await api.get("/user/advanced-chat/skills")
@@ -113,7 +113,7 @@ function SkillListPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold">{t("nav.skills")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">上传后会自动拆成一个个独立 Skill，运行时按需读取 SKILL.md 和资源文件。</p>
+          <p className="mt-2 text-sm text-muted-foreground">上传后会自动拆成一个个独立 Skill，运行时按需读取 SKILL.md 和资源文件。</p>
         </div>
         <div>
           <Input
@@ -137,11 +137,15 @@ function SkillListPage() {
           <CardTitle>{t("advancedChat.skills.list")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {skills.length === 0 ? (
-            <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">{t("advancedChat.skills.empty")}</div>
+          {isLoading ? (
+            <div role="status" className="py-8 text-center text-sm text-muted-foreground">{t("common.loading")}</div>
+          ) : isError ? (
+            <div role="alert" className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 p-6 text-center text-sm"><p className="text-destructive">Skill 列表加载失败，请重试。</p><Button variant="outline" size="sm" onClick={() => void refetch()}>重试</Button></div>
+          ) : skills.length === 0 ? (
+            <div className="rounded-lg border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">{t("advancedChat.skills.empty")}</div>
           ) : (
             skills.map((skill) => (
-              <Link key={skill.id} to={`/chat/skills/${encodeURIComponent(skill.id)}`} className="block rounded-md border p-3 transition-colors hover:bg-muted/30">
+              <Link key={skill.id} to={`/chat/skills/${encodeURIComponent(skill.id)}`} className="block rounded-lg border p-4 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 <div className="flex min-w-0 items-center gap-2">
                   <Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <span className="truncate text-sm font-medium">{skill.name}</span>
@@ -236,7 +240,7 @@ function SkillDetailPage({ skillID }: { skillID: string }) {
             </div>
             <div className="max-h-[32rem] overflow-auto pr-1">
               {tree.children.length === 0 ? (
-                <div className="rounded-md border border-dashed px-3 py-8 text-center text-xs text-muted-foreground">暂无文件</div>
+                <div className="rounded-lg border border-dashed px-4 py-10 text-center text-xs text-muted-foreground">暂无文件</div>
               ) : (
                 <FileTree nodes={tree.children} selectedPath={selectedFilePath} onSelect={(path) => {
                   setSelectedFilePath(path)

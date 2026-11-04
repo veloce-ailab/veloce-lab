@@ -1070,7 +1070,7 @@ function BrowserSyncFallbackDialog({
 function StatusBadge({ enabled }: { enabled: boolean }) {
   const { t } = useI18n()
   return (
-    <span className={cn("px-2 py-1 rounded-full text-xs font-medium", enabled ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+    <span className={cn("px-2 py-1 rounded-full text-xs font-medium", enabled ? "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300" : "bg-destructive/10 text-destructive")}>
       {enabled ? t("common.enabled") : t("common.disabled")}
     </span>
   )
