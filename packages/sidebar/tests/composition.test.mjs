@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -23,15 +24,19 @@ async function harness() {
     Button: props => { buttons.push(props); return React.createElement("button", { "aria-label": props["aria-label"] }, props.children) },
     ResizableSidebar: props => React.createElement("div", { className: props.className, "data-sidebar": true }, props.children),
     useI18n: () => ({ language: "en" }),
+    isDesktopTarget: () => false,
+    useTheme: () => ({ resolvedTheme: "light" }),
     useToast: () => ({ error() {} }),
     cn: (...values) => values.filter(Boolean).join(" "),
     api: { get: async (url, config) => { requests.push({ url, config }); return { data: {} } } },
   }
-  for (const name of ["Input", "Select", "SelectContent", "SelectItem", "SelectTrigger", "SelectValue", "Popover", "PopoverContent", "PopoverTrigger"]) ui[name] = primitive
+  for (const name of ["Input", "Select", "SelectContent", "SelectItem", "SelectTrigger", "SelectValue", "Popover", "PopoverContent", "PopoverTrigger", "Dialog", "DialogContent", "DialogDescription", "DialogHeader", "DialogTitle"]) ui[name] = primitive
   const stubs = new Map([
     ["react", React], ["react/jsx-runtime", jsx],
     ["react-router-dom", { Navigate: primitive, Route: primitive, Routes: primitive }],
     ["@tanstack/react-query", { useQuery: options => { queries.push(options); return { isLoading: false, isFetching: false, isError: false, refetch: async () => {} } } }],
+    ["@monaco-editor/react", { DiffEditor: primitive, loader: { config() {} } }],
+    ["monaco-editor", {}],
     ["lucide-react", Object.fromEntries(["Check", "ChevronRight", "Folder", "Monitor", "FileText", "TerminalSquare", "PanelRightClose", "PanelRightOpen", "FileDiff", "GitBranch", "GitCompareArrows", "RefreshCw", "RotateCcw", "Upload", "X", "FileCode2", "FileMinus2", "FilePenLine", "FilePlus2", "FileQuestion"].map(name => [name, () => React.createElement("i")]))],
     ["@/lib/utils", { cn: ui.cn }],
     ["terminal-window", { ConnectorTerminalWindow: primitive }],
@@ -57,7 +62,10 @@ async function harness() {
       if (specifier === "@/lib/slots") return slots
       if (specifier === "./ConnectorTerminalWindow") return synthetic("terminal-window", stubs.get("terminal-window"))
       const target = path.resolve(path.dirname(owner.identifier), specifier)
-      return load(target + (path.extname(target) ? "" : ".tsx"))
+      if (path.extname(target)) return load(target)
+      const source = [".tsx", ".ts"].map(extension => target + extension).find(existsSync)
+      if (!source) throw Error(`Cannot resolve source module: ${specifier}`)
+      return load(source)
     })
     await module.evaluate()
     return module
@@ -101,23 +109,30 @@ test("panels load in any order and unload independently through DashboardContext
   assert.equal(panelIDs().length, 0)
 })
 
-test("sidebar forwards live host data to unknown panels and keeps them mounted when folded", async () => {
+test("tools inspector starts closed, overlays narrow views, and preserves panels while closed", async () => {
   const h = await harness()
   await h.install("sidebar")
   const seen = []
   const ctx = new h.Context()
   ctx.slot("chat.sidebar.panels", props => { seen.push(props); return React.createElement("span", null, props.session.id) }, "third-party.panel", 100, "/chat")
   const current = data()
-  const open = renderSlot(h, "frame.right-sidebar", current)
-  assert.match(open, /lg:flex/)
+  const closed = renderSlot(h, "frame.right-sidebar", current)
+  assert.match(closed, /hidden h-full min-h-0/)
+  assert.match(closed, /session-a/)
   assert.equal(seen.at(-1).messages, current.messages)
   assert.equal(seen.at(-1).setDevice, current.setDevice)
   renderSlot(h, "chat.toolbar.sidebar", current)
-  h.buttons.find(button => button["aria-controls"] === "chat-right-sidebar").onClick()
-  const closed = renderSlot(h, "frame.right-sidebar", current)
-  assert.doesNotMatch(closed, /lg:flex/)
-  assert.match(closed, /session-a/)
+  const toggle = h.buttons.find(button => button["aria-controls"] === "chat-right-sidebar")
+  assert.equal(toggle["aria-expanded"], false)
+  toggle.onClick()
+  const open = renderSlot(h, "frame.right-sidebar", current)
+  assert.match(open, /min-\[1280px\]:relative/)
+  assert.match(open, /min-\[1280px\]:hidden/)
+  assert.match(open, /session-a/)
   const next = { ...current, session: { ...current.session, id: "session-b" } }
+  assert.match(renderSlot(h, "frame.right-sidebar", next), /session-b/)
+  toggle.onClick()
+  assert.match(renderSlot(h, "frame.right-sidebar", next), /hidden h-full min-h-0/)
   assert.match(renderSlot(h, "frame.right-sidebar", next), /session-b/)
   await ctx.dispose()
   assert.doesNotMatch(renderSlot(h, "frame.right-sidebar", next), /session-b/)

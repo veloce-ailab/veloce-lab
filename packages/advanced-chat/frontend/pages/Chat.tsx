@@ -726,8 +726,7 @@ export default function Chat() {
   const messagesViewportRef = useRef<HTMLDivElement | null>(null)
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composerFileInputRef = useRef<HTMLInputElement | null>(null)
-  const composerOverlayRef = useRef<HTMLDivElement | null>(null)
-  const [composerOverlayHeight, setComposerOverlayHeight] = useState(0)
+  const [chatHeaderActionsHost, setChatHeaderActionsHost] = useState<HTMLElement | null>(null)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [sessionTasks, setSessionTasks] = useState<SessionTask[]>([])
   const [isTaskPlanOpen, setIsTaskPlanOpen] = useState(true)
@@ -1552,6 +1551,11 @@ export default function Chat() {
   }, [latestMessageSignal, showJumpToLatest, isStreamActive, isActiveRunRunning])
 
   useEffect(() => {
+    if (!isAdvanced) return
+    setChatHeaderActionsHost(document.getElementById("chat-header-actions-slot"))
+  }, [isAdvanced])
+
+  useEffect(() => {
     const textarea = composerTextareaRef.current
     if (!isAdvanced || !textarea) {
       return
@@ -1559,34 +1563,6 @@ export default function Chat() {
     textarea.style.height = "32px"
     textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 32), 160)}px`
   }, [currentSession?.id, currentSession?.messages.length, isAdvanced])
-
-  // The composer floats over the message list, so the list needs bottom padding
-  // matching the composer's real height or the newest messages hide behind it.
-  // Runs after the textarea autosize effect so it measures the resized state.
-  useEffect(() => {
-    if (!isAdvanced) {
-      return
-    }
-    const measure = () => setComposerOverlayHeight(composerOverlayRef.current?.offsetHeight ?? 0)
-    measure()
-    const overlay = composerOverlayRef.current
-    if (!overlay || typeof ResizeObserver === "undefined") {
-      return
-    }
-    const observer = new ResizeObserver(measure)
-    observer.observe(overlay)
-    return () => observer.disconnect()
-  }, [isAdvanced, currentSession?.id, attachments.length, pendingConnectorApprovals.length, taskChangeSummary.files.length])
-
-  useEffect(() => {
-    if (!isAdvanced || composerOverlayHeight <= 0 || showJumpToLatest) {
-      return
-    }
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => scrollMessagesToLatest("auto"))
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [composerOverlayHeight])
 
   useEffect(() => {
     if (modelName) {
@@ -3887,6 +3863,35 @@ export default function Chat() {
     openWorkspacePicker: () => openWorkspacePicker("session"),
     addFileToPrompt: (path) => setPrompt((current) => `${current}${current ? "\n" : ""}[文件: ${path}] `),
   }
+  const isEmptyAdvancedChat = isAdvanced && (!currentSession || currentSession.messages.length === 0)
+  const chatHeaderToolbar = (
+    <div className="flex items-center gap-1">
+      {isAdvanced && <ChatSetupGuide />}
+      {isAdvanced && subagentTasks.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={language === "zh" ? `子代理 ${subagentTasks.length}` : `Sub-agents ${subagentTasks.length}`} title={language === "zh" ? `子代理 ${subagentTasks.length}` : `Sub-agents ${subagentTasks.length}`}>
+              <Bot size={16} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-h-80 w-72 overflow-y-auto">
+            {subagentTasks.map((task) => <DropdownMenuItem key={task.id} onSelect={() => setSubagentDialogTask(task)} className="flex flex-col items-start gap-1 py-2">
+              <span className="w-full truncate font-medium">{task.title}</span>
+              <span className="text-xs text-muted-foreground">{task.status}</span>
+            </DropdownMenuItem>)}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      {isAdvanced && canOpenWorkspaceInVSCode && (
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => void openCurrentWorkspaceInVSCode()} aria-label={workspaceEditorCopy.openInVSCode} title={workspaceEditorCopy.openInVSCode}>
+          <VSCodeIcon size={17} />
+        </Button>
+      )}
+      {isAdvanced && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openAdvancedConfig()} aria-label={copy.config} title={copy.config}><Settings size={16} /></Button>}
+      <DashboardSlot name="chat.toolbar.sidebar" scope="/chat" data={chatSlotData} />
+    </div>
+  )
+  const chatHeaderToolbarPortal = chatHeaderActionsHost ? createPortal(chatHeaderToolbar, chatHeaderActionsHost) : null
 
   return (
     <div className={cn("flex min-w-0", isAdvanced && "h-full min-h-0 overflow-hidden")}>
@@ -3931,47 +3936,9 @@ export default function Chat() {
       </Dialog>
       <div className={cn(
         "min-w-0 flex-1 transition-[filter] duration-200",
-        isAdvanced ? "flex min-h-0 flex-col overflow-hidden bg-background p-4 sm:p-6 xl:relative xl:z-10 xl:p-0" : "space-y-5"
+        isAdvanced ? "flex min-h-0 flex-col overflow-hidden bg-background px-4 py-3 sm:px-6 sm:py-4 xl:relative xl:z-10 xl:px-8" : "space-y-5"
       )}>
-      <div className="sticky top-0 z-30 -mx-4 flex min-h-10 justify-end bg-transparent px-4 py-0 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:mx-0">
-        <div className="relative flex items-center gap-2">
-          {isAdvanced && <ChatSetupGuide />}
-           {isAdvanced && subagentTasks.length > 0 && (
-             <DropdownMenu>
-               <DropdownMenuTrigger asChild>
-                 <Button variant="outline" size="sm" className="h-9 gap-2 border-border bg-background" title={language === "zh" ? "子代理" : "Sub-agents"}>
-                   <Bot size={16} />
-                   <span>{language === "zh" ? `子代理 ${subagentTasks.length}` : `Sub-agents ${subagentTasks.length}`}</span>
-                 </Button>
-               </DropdownMenuTrigger>
-               <DropdownMenuContent align="end" className="max-h-80 w-72 overflow-y-auto">
-                 {subagentTasks.map((task) => <DropdownMenuItem key={task.id} onSelect={() => setSubagentDialogTask(task)} className="flex flex-col items-start gap-1 py-2">
-                   <span className="w-full truncate font-medium">{task.title}</span>
-                   <span className="text-xs text-muted-foreground">{task.status}</span>
-                 </DropdownMenuItem>)}
-               </DropdownMenuContent>
-             </DropdownMenu>
-           )}
-          {isAdvanced && canOpenWorkspaceInVSCode && (
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 border-border bg-background"
-              onClick={() => void openCurrentWorkspaceInVSCode()}
-              aria-label={workspaceEditorCopy.openInVSCode}
-              title={workspaceEditorCopy.openInVSCode}
-            >
-              <VSCodeIcon size={18} />
-            </Button>
-          )}
-          {isAdvanced && (
-            <Button variant="outline" size="icon" className="h-9 w-9 border-border bg-background" onClick={() => openAdvancedConfig()} aria-label={copy.config} title={copy.config}>
-              <Settings size={16} />
-            </Button>
-          )}
-          <DashboardSlot name="chat.toolbar.sidebar" scope="/chat" data={chatSlotData} />
-        </div>
-      </div>
+      {chatHeaderToolbarPortal}
 
       <PageTitleSlot />
       <div className={cn(isAdvanced ? "flex min-h-0 flex-1 flex-col" : "space-y-4")}>
@@ -3984,13 +3951,12 @@ export default function Chat() {
             <div className={cn(isAdvanced ? "relative flex min-h-0 flex-1 flex-col gap-3" : "space-y-4 p-6 pt-0")}>
               <ContextMenu open={Boolean(messageSelectionMenu)} onOpenChange={(open) => { if (!open) setMessageSelectionMenu(null) }}>
                 <ContextMenuTrigger asChild>
-                  <div ref={messagesViewportRef} className={cn(isAdvanced ? "min-h-0 flex-1 overflow-y-auto overscroll-contain" : "min-h-[360px] space-y-3 rounded-md border p-3")} onContextMenu={handleMessageSelectionContextMenu}>
+                  <div ref={messagesViewportRef} className={cn(isAdvanced ? (isEmptyAdvancedChat ? "hidden" : "min-h-0 flex-1 overflow-y-auto overscroll-contain") : "min-h-[360px] space-y-3 rounded-md border p-3")} onContextMenu={handleMessageSelectionContextMenu}>
                 <div
-                  className={cn(isAdvanced ? "mx-auto w-full max-w-3xl space-y-4 px-2 py-5 pb-36 sm:px-4" : "contents")}
-                  style={isAdvanced ? { paddingBottom: Math.max(144, composerOverlayHeight + 40) } : undefined}
+                  className={cn(isAdvanced ? "mx-auto flex min-h-full w-full max-w-3xl flex-col gap-4 px-2 py-5 sm:px-4" : "contents")}
                 >
-                {!currentSession || currentSession.messages.length === 0 ? (
-                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center py-20 text-center">
+                {isEmptyAdvancedChat ? null : !currentSession || currentSession.messages.length === 0 ? (
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center py-10 text-center">
                     <Sparkles className="mb-3 h-7 w-7 text-primary" />
                     <div className="text-lg font-semibold text-foreground">{newSessionGreeting}</div>
                     <div className="mt-1 text-sm text-muted-foreground">{language === "zh" ? "输入消息开始对话" : "Send a message to begin"}</div>
@@ -4180,7 +4146,29 @@ export default function Chat() {
               )}
 
               {isAdvanced ? (
-                <div ref={composerOverlayRef} className="absolute inset-x-0 bottom-3 z-20 mx-auto w-full max-w-3xl space-y-2 px-2 sm:px-4">
+                <div className={cn("relative z-20 mx-auto w-full max-w-3xl space-y-2 px-2 sm:px-4", isEmptyAdvancedChat ? "flex flex-1 flex-col justify-center py-5" : "shrink-0 pb-2")}>
+                  {isEmptyAdvancedChat && (
+                    <div className="flex flex-col items-center gap-5 pb-2 text-center">
+                      <div className="space-y-2">
+                        <Sparkles className="mx-auto size-6 text-primary" />
+                        <h1 className="text-xl font-semibold text-foreground">{newSessionGreeting}</h1>
+                        <p className="text-sm text-muted-foreground">{language === "zh" ? "今天想完成什么？" : language === "ja" ? "今日は何を進めますか？" : "What would you like to work on?"}</p>
+                      </div>
+                      {recentAgents.length > 1 && (
+                        <div className="flex max-w-full flex-wrap justify-center gap-1">
+                          {recentAgents.slice(0, 4).map((agent) => {
+                            const selected = agent.id === (currentSession?.agent_id || defaultAgentID)
+                            return (
+                              <Button key={agent.id} type="button" variant="ghost" className={cn("h-8 gap-2 px-2.5 text-xs", selected && "bg-muted text-foreground")} aria-pressed={selected} onClick={() => setSessionAgent(agent.id)}>
+                                <Bot size={14} className="text-primary" />
+                                <span className="max-w-32 truncate">{agentDisplayName(agent)}</span>
+                              </Button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {showJumpToLatest && (
                     <Button
                       type="button"
@@ -4241,6 +4229,14 @@ export default function Chat() {
                   )}
                   {!activeSession && !routeSessionID && composerEnvironmentControls()}
                   {advancedComposer()}
+                  {isEmptyAdvancedChat && (
+                    <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 pt-1">
+                      {welcomeSuggestions.slice(0, 3).map((suggestion, index) => {
+                        const Icon = [Folder, Search, FileText][index]
+                        return <button key={suggestion.title} type="button" className="inline-flex min-h-9 items-center gap-2 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => chooseWelcomeSuggestion(suggestion.prompt)}><Icon size={15} /><span>{suggestion.title}</span></button>
+                      })}
+                    </div>
+                  )}
                   <ChatRunSummary session={currentSession} run={activeRun} language={language} />
                 </div>
               ) : (

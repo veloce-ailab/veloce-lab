@@ -1,4 +1,4 @@
-import { Bot, ChevronRight, Home, Search, Settings as SettingsIcon } from "lucide-react"
+import { Bot, ChevronRight, Home, MoreHorizontal, Search, Settings as SettingsIcon } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
@@ -125,6 +125,7 @@ export default function ChatWorkspace() {
             <>
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsGlobalSearchOpen(true)} aria-label={language === "zh" ? "搜索会话" : "Search sessions"} title={language === "zh" ? "搜索会话" : "Search sessions"}><Search size={17} /></Button>
               <DashboardSlot name="topbar.actions" className="flex items-center gap-3" />
+              <div id="chat-header-actions-slot" className="flex items-center gap-1" />
             </>
           ),
         }}
@@ -209,6 +210,7 @@ function ChatSidebar({
   const flatItems = sections.filter((section) => section.id === "direct").flatMap((section) => section.items)
   const submenus = sections.filter((section) => section.id !== "direct" && section.items.length > 0)
   const [selectedSectionID, setSelectedSectionID] = useState("")
+  const [moreOpen, setMoreOpen] = useState(false)
   const routeSection = submenus.find((section) => section.items.some((item) => item.active))
   const activeSection = submenus.find((section) => section.id === selectedSectionID) || routeSection
   const showingSection = Boolean(activeSection)
@@ -249,38 +251,56 @@ function ChatSidebar({
   return (
     <div className={cn("flex h-full min-h-0 w-full flex-col overflow-hidden bg-sidebar", className)}>
       <SidebarHeader className="shrink-0 px-3 py-3">
-        {renderSidebarLink(homeItem)}
+        <Link
+          to={homeItem.href}
+          onClick={handleNavigation}
+          className="flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        >
+          <span className="flex size-5 items-center justify-center"><Home size={15} /></span>
+          <span className="flex-1 truncate">{language === "zh" ? "新建对话" : language === "ja" ? "新しい会話" : "New chat"}</span>
+        </Link>
       </SidebarHeader>
       <SidebarContent className="relative min-h-0 flex-1 overflow-hidden p-0">
       <nav className="relative flex h-full min-h-0 flex-1">
         <div className={cn("w-full min-h-0 transition-transform duration-200 ease-out", homeItem.active && "flex h-full min-h-0 flex-1 flex-col", showingSection && "-translate-x-full")}>
-          <div className="flex flex-col gap-1 px-3 pb-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-1 px-3 pb-2">
             <DashboardSlot name="sidebar.navigation.before" scope="/chat" />
-            {flatItems.map((item) => renderSidebarLink(item))}
-            <div className="my-1.5" />
-            {submenus.map((section) => {
-              const firstItem = section.items[0]
-              return (
-                <Link
-                  key={section.id}
-                  to={firstItem.href}
-                  onClick={() => { setSelectedSectionID(section.id); handleNavigation() }}
-                  className={cn(
-                    "flex h-9 min-w-0 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-                    section.id === routeSection?.id ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                  )}
-                >
-                  <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
-                    <firstItem.icon size={15} />
-                  </span>
-                  <span className="flex-1 truncate">{section.label}</span>
-                  <ChevronRight size={15} className="text-muted-foreground" />
-                </Link>
-              )
-            })}
-            <DashboardSlot name="sidebar.navigation.after" scope="/chat" />
+            {homeItem.active && <div id={sessionSlotID} className="min-h-0 flex-1 overflow-hidden" />}
+            <div className="mt-auto shrink-0 border-t border-sidebar-border pt-2">
+              <button
+                type="button"
+                aria-expanded={moreOpen}
+                onClick={() => setMoreOpen((open) => !open)}
+                className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+              >
+                <MoreHorizontal size={16} className="shrink-0" />
+                <span className="flex-1 text-left">{language === "zh" ? "更多功能" : language === "ja" ? "その他" : "More"}</span>
+                <ChevronRight size={15} className={cn("text-muted-foreground transition-transform", moreOpen && "rotate-90")} />
+              </button>
+              {moreOpen && <div className="flex flex-col gap-1 pt-1">
+                {flatItems.map((item) => renderSidebarLink(item))}
+                {submenus.map((section) => {
+                  const firstItem = section.items[0]
+                  return (
+                    <Link
+                      key={section.id}
+                      to={firstItem.href}
+                      onClick={() => { setSelectedSectionID(section.id); handleNavigation() }}
+                      className={cn(
+                        "flex h-9 min-w-0 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+                        section.id === routeSection?.id ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      )}
+                    >
+                      <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground"><firstItem.icon size={15} /></span>
+                      <span className="flex-1 truncate">{section.label}</span>
+                      <ChevronRight size={15} className="text-muted-foreground" />
+                    </Link>
+                  )
+                })}
+                <DashboardSlot name="sidebar.navigation.after" scope="/chat" />
+              </div>}
+            </div>
           </div>
-          {homeItem.active && <div id={sessionSlotID} className="min-h-0 flex-1 overflow-hidden border-t border-border" />}
         </div>
         <div className={cn("absolute inset-x-0 top-0 px-3 py-3 transition-transform duration-200 ease-out", showingSection ? "translate-x-0" : "translate-x-full")}>
           {activeSection && (
