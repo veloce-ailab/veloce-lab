@@ -24,18 +24,37 @@ async function npmMetadata(cfg: UpdateCheckerConfig, name: string) { const respo
 function sortVersions(values: string[]) { return [...new Set(values)].sort((left, right) => right.localeCompare(left, undefined, { numeric: true, sensitivity: "base" })) }
 export async function apply(ctx: Context, cfg: UpdateCheckerConfig) {
   const db = ctx.component.database as Database;
-  (ctx.component.message as import("@velocelab/message").MessageService).registerType(ctx, { id: "update-checker:plugin-update", plugin: "update-checker", label: "插件更新" });
+  const message = ctx.component.message as import("@velocelab/message").MessageService;
+  // In-flight checks can resume after an unload. Mark them inactive before the
+  // message registration's cleanup removes their type from the registry.
+  let disposed = false;
+  ctx.affect(() => { disposed = true; });
+  message.registerType(ctx, { id: "update-checker:plugin-update", plugin: "update-checker", label: "插件更新" });
   await db.extend("user_plugin_version_pins", { id: { type: "integer", autoIncrement: true }, user_id: { type: "integer", nullable: false }, plugin_name: { type: "string", nullable: false }, version: { type: "string", nullable: false }, updated_at: "timestamp" }, { unique: [["user_id", "plugin_name"]] });
+  if (disposed) return;
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/update-checker.js", import.meta.url).pathname, plugin: "update-checker" });
   const checkConfiguredPlugins = async () => {
+    if (disposed) return;
     const loader = (ctx.getCore() as unknown as { loader?: { config?: { plugins?: Record<string, unknown> } } }).loader;
     const names = Object.keys(loader?.config?.plugins ?? {}).map((name) => name.replace(/^~/, "")).filter(validPackageName);
     const updates = await Promise.all(names.map(async (name) => { const currentVersion = await installedVersion(name); if (!currentVersion) return null; try { const metadata = await npmMetadata(cfg, name); const availableVersion = String(metadata?.["dist-tags"]?.latest ?? ""); return availableVersion && availableVersion !== currentVersion ? { name, currentVersion, availableVersion } : null; } catch { return null; } }));
+    if (disposed) return;
     const users = await (db as any).select("users", {}) as Array<{ id?: number }>;
-    for (const update of updates.filter(Boolean) as Array<{ name:string; currentVersion:string; availableVersion:string }>) for (const account of users) if (account.id) await ctx.component.message.send({ userId: account.id, type: "update-checker:plugin-update", dedupeKey: `plugin-update:${update.name}`, icon: "bell", title: `${update.name} ${update.availableVersion} is available`, subtitle: `Current version ${update.currentVersion}`, action: { href: "/settings/plugin-updates" } });
+    if (disposed) return;
+    for (const update of updates.filter(Boolean) as Array<{ name:string; currentVersion:string; availableVersion:string }>) {
+      for (const account of users) {
+        if (disposed) return;
+        if (account.id) await message.send({ userId: account.id, type: "update-checker:plugin-update", dedupeKey: `plugin-update:${update.name}`, icon: "bell", title: `${update.name} ${update.availableVersion} is available`, subtitle: `Current version ${update.currentVersion}`, action: { href: "/settings/plugin-updates" } });
+      }
+    }
   };
   const interval = Math.max(0, Number(cfg.checkIntervalMinutes) || 0);
-  if (interval > 0) { void checkConfiguredPlugins(); setInterval(() => void checkConfiguredPlugins(), interval * 60 * 1000); }
+  if (interval > 0) {
+    // Context timers are cancelled on unload and observe the returned Promise,
+    // including failures in the first check, without an unhandled rejection.
+    ctx.setTimeout(checkConfiguredPlugins, 0);
+    ctx.setInterval(checkConfiguredPlugins, interval * 60 * 1000);
+  }
   ctx.route("/api/user/update-checker/check").methods("POST").action(async (session: Session) => { const userId = user(session); if (userId === undefined) return; const body = await session.parseRequestBody() as any; const rawNames = (Array.isArray(body?.names) ? body.names : []).map((value: unknown) => String(value)).filter(validPackageName) as string[]; const names = [...new Set(rawNames)].slice(0, 200); const pins: any[] = await db.select("user_plugin_version_pins", { user_id: userId }); const pinMap = new Map(pins.map((pin) => [pin.plugin_name, pin.version])); const maxVersions = Math.max(2, Number(cfg.maxVersionsPerPlugin) || 100); const plugins = await Promise.all(names.map(async (name) => { const currentVersion = await installedVersion(name); try { const metadata = await npmMetadata(cfg, name); if (!metadata) return { name, currentVersion, availableVersion: "", versions: currentVersion ? [currentVersion] : [], fixedVersion: pinMap.get(name) || null, registryAvailable: true, packageFound: false }; const all = sortVersions(Object.keys(metadata.versions ?? {})); const availableVersion = String(metadata["dist-tags"]?.latest ?? all[0] ?? ""); const versions = sortVersions([availableVersion, currentVersion, ...all]).slice(0, maxVersions); return { name, currentVersion, availableVersion, versions, fixedVersion: pinMap.get(name) || null, registryAvailable: true, packageFound: true }; } catch { return { name, currentVersion, availableVersion: "", versions: currentVersion ? [currentVersion] : [], fixedVersion: pinMap.get(name) || null, registryAvailable: false, packageFound: false }; } })); session.respond({ plugins }, "json"); });
   ctx.route("/api/user/update-checker/pins").methods("POST").action(async (session: Session) => { const userId = user(session); if (userId === undefined) return; const body = await session.parseRequestBody() as any; const pins = body?.pins && typeof body.pins === "object" ? body.pins : {}; for (const [pluginName, version] of Object.entries(pins)) { const name = String(pluginName); const selected = String(version).slice(0, 100); if (!validPackageName(name) || !selected) continue; const existing = await db.selectOne("user_plugin_version_pins", { user_id: userId, plugin_name: name }); if (existing) await db.update("user_plugin_version_pins", { user_id: userId, plugin_name: name }, { version: selected, updated_at: new Date().toISOString() }); else await db.create("user_plugin_version_pins", { user_id: userId, plugin_name: name, version: selected, updated_at: new Date().toISOString() } as any); } session.respond({ ok: true }, "json"); });
 }
