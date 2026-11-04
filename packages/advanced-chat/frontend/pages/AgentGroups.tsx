@@ -227,7 +227,7 @@ export default function AgentGroups() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold">{copy.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{copy.subtitle}</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Select value={String((selectedDeviceID) || "__shadcn_empty__")} onValueChange={(value) => setSelectedDeviceID((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="h-10 min-w-60 rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>

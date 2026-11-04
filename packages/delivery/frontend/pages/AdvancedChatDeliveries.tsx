@@ -197,7 +197,7 @@ export default function AdvancedChatDeliveries() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold">{copy.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{copy.subtitle}</p>
         </div>
         <Button className="gap-2" onClick={openCreate} disabled={!settings.message_delivery_enabled}>
           <Plus size={16} />

@@ -465,7 +465,7 @@ export default function ChatGroups() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold">{zh ? "聊天群组" : "Chat groups"}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{zh ? "把多个助理放入独立群聊，让他们按空闲状态协作处理消息。" : "Bring assistants into independent group chats where they collaborate when available."}</p>
+            <p className="mt-2 text-sm text-muted-foreground">{zh ? "把多个助理放入独立群聊，让他们按空闲状态协作处理消息。" : "Bring assistants into independent group chats where they collaborate when available."}</p>
           </div>
           <Button className="gap-2" onClick={() => setIsCreateOpen(true)}><Plus size={16} />{zh ? "新建群组" : "New group"}</Button>
         </div>

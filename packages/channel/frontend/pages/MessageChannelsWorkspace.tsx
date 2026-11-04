@@ -272,7 +272,7 @@ function ChannelList({ copy }: { copy: CopyText }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold">{copy.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{copy.subtitle}</p>
         </div>
         <Button asChild className="gap-2">
           <Link to="/settings/message-channel/new">

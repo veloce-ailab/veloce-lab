@@ -138,7 +138,7 @@ function AgentGroupList({ data }: { data: AgentGroupsData }) {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold">{copy.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{copy.subtitle}</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button variant="outline" className="gap-2" disabled={isFetchingGroups} onClick={refetchGroups}>
@@ -325,7 +325,7 @@ function AgentGroupEditor({ data, mode }: { data: AgentGroupsData; mode: "new" |
             </Link>
           </Button>
           <h1 className="text-3xl font-bold">{mode === "new" ? copy.newGroup : copy.editGroup}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{copy.editSubtitle}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{copy.editSubtitle}</p>
         </div>
         <Button className="gap-2" disabled={isSaving} onClick={saveGroup}>
           <Save size={16} />
