@@ -3,17 +3,28 @@ import { useEffect, useState } from "react"
 import type { DashboardContext } from "@velocelab/dashboard/frontend"
 import { api, Button, Sheet, SheetContent, SheetHeader, SheetTitle } from "@velocelab/dashboard/frontend"
 import MessageSettings from "./page"
-import { sendWebNotification } from "@velocelab/dashboard/frontend"
 import { useI18n } from "@/lib/i18n"
 
 type Message = { id:number; icon?:string; title:string; subtitle?:string; source:string; read:boolean; action?:{href?:string; method?:string; body?:Record<string,unknown>} }
+
+function targetsCurrentPath(href?: string) {
+  if (!href || typeof window === "undefined") return false
+  try {
+    const target = new URL(href, window.location.origin)
+    const current = new URL(window.location.href)
+    const normalize = (pathname: string) => pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname
+    return target.origin === current.origin && normalize(target.pathname) === normalize(current.pathname)
+  } catch {
+    return false
+  }
+}
+
 export function MessageButton() {
   const { t } = useI18n()
   const [open,setOpen]=useState(false); const [messages,setMessages]=useState<Message[]>([])
-  const [seen,setSeen]=useState("")
-  const load=async()=>{try{const response=await api.get("/user/messages"); const next=response.data.messages||[]; const newest=next.find((message:Message)=>!message.read); if (newest && newest.id !== Number(seen)) { setSeen(String(newest.id)); void sendWebNotification({ title: newest.title, body: newest.subtitle || newest.source, tag: `message-${newest.id}`, url: newest.action?.href || "/" }) } setMessages(next)}catch{setMessages([])}}
-  useEffect(() => { const timer = window.setInterval(() => void load(), 60000); return () => window.clearInterval(timer) }, [])
-  const activate=async(message:Message)=>{await api.post("/user/messages/read",{id:message.id}); setOpen(false); if(message.action?.href) window.location.assign(message.action.href)}
+  const load=async()=>{try{const response=await api.get("/user/messages"); const next=(response.data.messages||[]) as Message[]; const reached=next.filter((message) => targetsCurrentPath(message.action?.href)); if (reached.length) await Promise.allSettled(reached.map((message) => api.post("/user/messages/delete",{id:message.id}))); setMessages(next.filter((message) => !targetsCurrentPath(message.action?.href)))}catch{setMessages([])}}
+  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 10000); return () => window.clearInterval(timer) }, [])
+  const activate=async(message:Message)=>{if (message.action?.href) await api.post("/user/messages/delete",{id:message.id}); else await api.post("/user/messages/read",{id:message.id}); setMessages((current) => current.filter((item) => item.id !== message.id)); setOpen(false); if(message.action?.href) window.location.assign(message.action.href)}
   const remove=async(id:number)=>{await api.post("/user/messages/delete",{id}); await load()}
   const icon=(_message:Message)=><Bell size={16}/>
   return <>
