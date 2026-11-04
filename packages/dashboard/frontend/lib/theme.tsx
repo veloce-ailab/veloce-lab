@@ -195,6 +195,9 @@ function applyUserThemePalette(palette: UserThemePalette | null, resolvedTheme: 
   const colors = palette[resolvedTheme]
   const mutedSurface = mixHexColor(colors.surface, colors.foreground, 0.06)
   const accentSurface = mixHexColor(colors.surface, colors.foreground, 0.1)
+  const mutedForeground = mixHexColor(colors.surface, colors.foreground, 0.76)
+  const borderColor = mixHexColor(colors.surface, colors.foreground, 0.16)
+  const inputBorder = mixHexColor(colors.surface, colors.foreground, 0.25)
   const values: Record<string, string> = {
     background: colors.background,
     foreground: colors.foreground,
@@ -209,9 +212,9 @@ function applyUserThemePalette(palette: UserThemePalette | null, resolvedTheme: 
     accent: accentSurface,
     "accent-foreground": colors.foreground,
     muted: mutedSurface,
-    "muted-foreground": colors.foreground,
-    border: colors.surface,
-    input: colors.surface,
+    "muted-foreground": mutedForeground,
+    border: borderColor,
+    input: inputBorder,
     ring: colors.primary,
     sidebar: colors.surface,
     "sidebar-foreground": colors.foreground,
@@ -219,7 +222,7 @@ function applyUserThemePalette(palette: UserThemePalette | null, resolvedTheme: 
     "sidebar-primary-foreground": readableForeground(colors.primary),
     "sidebar-accent": accentSurface,
     "sidebar-accent-foreground": colors.foreground,
-    "sidebar-border": colors.surface,
+    "sidebar-border": borderColor,
     "sidebar-ring": colors.primary,
   }
   for (const [name, value] of Object.entries(values)) root.style.setProperty(`--${name}`, normalizeHexColor(value))
