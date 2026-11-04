@@ -165,6 +165,7 @@ export async function ensureTables(db: Database): Promise<void> {
       data: "string",
       storage_path: { type: "string", initial: "" },
       text_extract: { type: "string", initial: "" },
+      text_available: { type: "boolean", initial: false },
       hash: { type: "string", nullable: false },
       source: { type: "string", nullable: false },
       source_key: { type: "string", nullable: false },

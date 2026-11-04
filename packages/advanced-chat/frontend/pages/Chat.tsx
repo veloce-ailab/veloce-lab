@@ -3229,9 +3229,13 @@ export default function Chat() {
           error(validationError)
           continue
         }
-        const formData = new FormData()
-        formData.append("file", file)
-        const res = await api.post("/user/advanced-chat/files", formData)
+        const data = await fileAsDataURL(file)
+        const res = await api.post("/user/advanced-chat/files", {
+          name: file.name,
+          mime_type: file.type || "application/octet-stream",
+          data,
+          source: "upload",
+        })
         const storedFile = normalizeStoredFile(res.data?.file)
         if (!storedFile) {
           continue
@@ -6942,6 +6946,15 @@ function normalizeStoredFile(value: unknown): StoredFile | null {
     created_at: typeof item.created_at === "string" ? item.created_at : "",
     updated_at: typeof item.updated_at === "string" ? item.updated_at : "",
   }
+}
+
+function fileAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read file"))
+    reader.onerror = () => reject(reader.error || new Error("Could not read file"))
+    reader.readAsDataURL(file)
+  })
 }
 
 function normalizeStoredFileContent(value: unknown): StoredFileContent {
