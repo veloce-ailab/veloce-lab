@@ -11,6 +11,7 @@ export interface AgentModelStep {
 
 export interface AgentToolCallResult {
   id: string;
+  round?: number;
   name: string;
   status: "ok" | "error";
   arguments: unknown;
@@ -44,7 +45,7 @@ export interface AgentTurnInput {
     calls: AgentToolCallResult[],
   ) => void | Promise<void>;
   onNextModelRequest?: (round: number) => void | Promise<void>;
-  onAssistantContent?: (content: string, round: number) => void;
+  onAssistantContent?: (content: string, round: number) => void | Promise<void>;
 }
 
 export interface AgentTurnResult {
@@ -94,7 +95,7 @@ export function apply(ctx: Context) {
         for (const rawCall of step.toolCalls) {
           const call = rawCall as Record<string, any>;
           const name = String(call.function?.name ?? call.name ?? "");
-          const id = String(call.id ?? "");
+          const id = String(call.id || `call-${round}-${calls.length + 1}`);
           let args: unknown = {};
           try {
             const rawArguments = call.function?.arguments ?? call.arguments ?? call.input ?? "{}";
@@ -106,6 +107,7 @@ export function apply(ctx: Context) {
           if (!tool?.execute) {
             const result: AgentToolCallResult = {
               id,
+              round,
               name,
               status: "error",
               arguments: args,
@@ -116,11 +118,12 @@ export function apply(ctx: Context) {
             continue;
           }
 
-          await input.onToolCall?.({ id, name, status: "ok", arguments: args }, "running", round);
+          await input.onToolCall?.({ id, round, name, status: "ok", arguments: args }, "running", round);
           try {
             const value = await input.executeTool(tool, args);
             const result: AgentToolCallResult = {
               id,
+              round,
               name,
               status: "ok",
               arguments: args,
@@ -131,6 +134,7 @@ export function apply(ctx: Context) {
           } catch (error) {
             const result: AgentToolCallResult = {
               id,
+              round,
               name,
               status: "error",
               arguments: args,
@@ -149,7 +153,7 @@ export function apply(ctx: Context) {
           toolCalls: step.toolCalls.map((rawCall) => {
             const call = rawCall as Record<string, any>;
             return {
-              id: String(call.id ?? ""),
+                id: String(call.id || `call-${round}-${step.toolCalls.indexOf(rawCall) + 1}`),
               name: String(call.function?.name ?? call.name ?? ""),
               arguments: typeof (call.function?.arguments ?? call.arguments ?? call.input ?? "{}") === "string"
                 ? String(call.function?.arguments ?? call.arguments ?? call.input ?? "{}")
@@ -178,7 +182,7 @@ export function apply(ctx: Context) {
         inputTokens += step.inputTokens;
         outputTokens += step.outputTokens;
         cachedInputTokens += step.cachedInputTokens;
-        input.onAssistantContent?.(step.content, rounds);
+        await input.onAssistantContent?.(step.content, rounds);
       }
 
       return {

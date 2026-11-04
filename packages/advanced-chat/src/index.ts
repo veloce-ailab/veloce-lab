@@ -13,6 +13,8 @@ import { registerAdvancedChatRoutes } from "./routes.js";
 import { registerStudioTools } from "./studio.js";
 import { registerAskUserTool } from "./ask-user.js";
 import { filterToolsByDisabledGroups } from "./tool-groups.js";
+import { uniqueToolsByName } from "./tool-registry.js";
+import { conversationRecords, mergeConversationTools, readConversationRecords, type ConversationToolCall } from "./conversation-records.js";
 import { attachImageFiles, registerChatFileRoutes } from "./files.js";
 import { fetchCompletionWithRetry } from "./completion-runtime.js";
 import type { ChatStreamEvent } from "./stream.js";
@@ -202,6 +204,7 @@ export interface ChatToolDefinition {
       userId: number;
       sessionId?: string;
       runId?: string;
+      toolCallId?: string;
       agentId?: string;
       /** Selections the run resolved, so tools can scope themselves to them. */
       skillIds?: string[];
@@ -246,6 +249,8 @@ export interface ChatInput {
   messages: Array<{
     role: string;
     content: string;
+    display_content?: string;
+    records?: unknown[];
     tool_calls?: unknown[];
     tool_call_id?: string;
   }>;
@@ -502,6 +507,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   const db = ctx.component.database;
   await ensureTables(db);
   const sendMessage = registerChatMessages(ctx);
+  const liveToolUpdates = new Map<string, (task: { id: string }, payload: Record<string, unknown>, status: string) => Promise<void>>();
   ctx.on("connector.approval-required", async (task: { id: string; user_id: number; run_id: string; device_id: string; action: string; workspace_path?: string; payload?: unknown }) => {
     if (!task.run_id) return;
     const run = await db.selectOne("advanced_chat_runs", { id: task.run_id, user_id: task.user_id });
@@ -516,6 +522,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       payload = task.payload as Record<string, unknown>;
     }
     const command = typeof payload.command === "string" ? payload.command : "";
+    await liveToolUpdates.get(task.run_id)?.(task, payload, "approval_required");
     await sendMessage({
       userId: task.user_id,
       type: "approval",
@@ -523,6 +530,11 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       subtitle: [task.action, command, task.workspace_path].filter(Boolean).join(" · "),
       href: `/chat/session/${encodeURIComponent(String(run.session_id))}`,
     });
+  });
+  ctx.on("connector.task-decided", async (task: { id: string; run_id: string; payload?: unknown; status: string }) => {
+    let payload: Record<string, unknown> = {};
+    try { payload = typeof task.payload === "string" ? JSON.parse(task.payload) : (task.payload || {}) as Record<string, unknown>; } catch { /* keep empty */ }
+    await liveToolUpdates.get(task.run_id)?.(task, payload, task.status === "rejected" ? "error" : "running");
   });
   registerChatFileRoutes(
     ctx,
@@ -595,8 +607,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         if (i >= 0) tools.splice(i, 1);
       };
     },
-    tools: () => tools.filter((tool) => !disabledTools.has(tool.name)).slice(),
-    registeredTools: () => tools.slice(),
+    tools: () => uniqueToolsByName(tools).filter((tool) => !disabledTools.has(tool.name)),
+    registeredTools: () => uniqueToolsByName(tools),
     setToolEnabled(name, enabled) {
       const trimmed = String(name ?? "").trim();
       if (!trimmed) return;
@@ -843,6 +855,11 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             ...message,
             content_parts: decodeList(message.content_parts),
             tool_calls: decodeList(message.tool_calls),
+            records: readConversationRecords(message.records).length
+              ? readConversationRecords(message.records)
+              : message.role === "user"
+                ? conversationRecords([{ round: 1, content: String(message.content ?? "") }], [])
+                : conversationRecords(decodeList(message.content_parts) as Array<{ round?: number; content: string }>, decodeList(message.tool_calls) as ConversationToolCall[]),
           })),
         latest_run: latestRun
           ? {
@@ -1444,8 +1461,11 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         session_id: sessionId,
         user_id: userId,
         role: "user",
-        content: input.messages[input.messages.length - 1].content,
+        content: input.messages[input.messages.length - 1].display_content ?? input.messages[input.messages.length - 1].content,
         content_parts: "[]",
+        records: JSON.stringify(readConversationRecords(input.messages[input.messages.length - 1].records).length
+          ? readConversationRecords(input.messages[input.messages.length - 1].records)
+          : conversationRecords([{ round: 1, content: input.messages[input.messages.length - 1].display_content ?? input.messages[input.messages.length - 1].content }], [])),
         tool_calls: "[]",
         input_tokens: 0,
         output_tokens: 0,
@@ -1455,12 +1475,19 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       });
       void userMessage;
       const runId = newID("acr");
+      const assistantMessageId = newID("acm");
+      await db.create("advanced_chat_messages", {
+        id: assistantMessageId, session_id: sessionId, user_id: userId, role: "assistant",
+        content: "", content_parts: "[]", tool_calls: "[]", records: "[]",
+        input_tokens: 0, output_tokens: 0, cached_input_tokens: 0,
+        sort_order: prior.length + 1, created_at: now, updated_at: now,
+      });
       await db.create("advanced_chat_runs", {
         id: runId,
         session_id: sessionId,
         user_id: userId,
         status: "running",
-        assistant_message_id: "",
+        assistant_message_id: assistantMessageId,
         mode,
         status_message: "",
         current_round: 0,
@@ -1484,6 +1511,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         else hooks.signal.addEventListener("abort", abortRun, { once: true });
       }
       inFlightRuns.set(runId, runController);
+      emit("status", { message: "assistant_started", run_id: runId, assistant_message_id: assistantMessageId });
       const cancelled = async () => {
         const row = await db.selectOne("advanced_chat_runs", {
           id: runId,
@@ -1533,6 +1561,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         if (!result.cancelled && session.visible !== false && Number(session.visible) !== 0) {
           const details = result.message.tool_calls as Array<{ name?: string; status?: string; result?: string }>;
           const awaitingUser = details.some((call) => {
+            if (call.status === "approval_required") return true;
             if (call.status !== "ok") return false;
             if (call.name === "ask_user") return true;
             try { return JSON.parse(call.result || "null")?.status === "pending_approval"; }
@@ -1554,6 +1583,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         throw error;
       } finally {
         inFlightRuns.delete(runId);
+        liveToolUpdates.delete(runId);
         hooks?.signal?.removeEventListener("abort", abortRun);
       }
 
@@ -1861,9 +1891,33 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           firstTokenCount = 1;
         }
         const contentParts: Array<{ round: number; content: string }> =
-          streamedContent.trim()
-            ? [{ round: 1, content: streamedContent }]
+          content.trim()
+            ? [{ round: 1, content }]
             : [];
+        let liveCalls: ConversationToolCall[] = [];
+        let activeToolCallId = "";
+        const persistProgress = async () => {
+          const updatedAt = new Date().toISOString();
+          await db.update("advanced_chat_messages", { id: assistantMessageId, user_id: userId }, {
+            content: contentParts.map((part) => part.content).join(""),
+            content_parts: JSON.stringify(contentParts), tool_calls: JSON.stringify(liveCalls),
+            records: JSON.stringify(conversationRecords(contentParts, liveCalls)), updated_at: updatedAt,
+          });
+          await db.update("advanced_chat_runs", { id: runId, user_id: userId }, {
+            tool_calls: liveCalls.length, tool_call_details: JSON.stringify(liveCalls), updated_at: updatedAt,
+          });
+        };
+        liveToolUpdates.set(runId, async (task, payload, status) => {
+          const callId = String(payload.preview_tool_call_id || activeToolCallId);
+          const current = liveCalls.find((call) => call.id === callId);
+          if (!current) return;
+          const next = { ...current, status, arguments: { ...current.arguments, connector_task_id: task.id } };
+          liveCalls = mergeConversationTools(liveCalls, [next]);
+          await persistProgress();
+          emit("tool_call", next);
+        });
+        await persistProgress();
+        if (!streamedContent && content) emit("text", { delta: content, round: 1 });
         let runEventSeq = 0;
         const maxToolRounds =
           mode === "assistant" || mode === "agent_group" ? 20 : 8;
@@ -1886,6 +1940,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
               userId,
               sessionId,
               runId,
+              toolCallId: activeToolCallId,
               agentId: agentKey,
               skillIds,
               knowledgeBaseIds,
@@ -1900,22 +1955,32 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             return value;
           },
           onToolCall: async (call, phase, round) => {
+            activeToolCallId = call.id;
+            let status: string = phase === "running" ? "running" : call.status;
+            if (phase !== "running" && call.result) {
+              try {
+                const result = JSON.parse(call.result);
+                if (result?.status === "pending_approval") status = "approval_required";
+                else if (["failed", "rejected"].includes(result?.status)) status = "error";
+                else if (["running", "queued", "approved"].includes(result?.status)) status = "running";
+              } catch { /* plain text results */ }
+            }
+            const next = {
+              id: call.id, name: call.name, status, round,
+              arguments: call.arguments && typeof call.arguments === "object" ? call.arguments as Record<string, unknown> : undefined,
+              ...(phase === "running" ? {} : { result: call.result ?? JSON.stringify({ error: call.error }) }),
+            };
+            liveCalls = mergeConversationTools(liveCalls, [next]);
+            await persistProgress();
             if (phase === "running") {
-              emit("tool_call", { id: call.id, name: call.name, status: "running", arguments: call.arguments, round });
+              emit("tool_call", next);
             } else {
               if (call.name === "ask_user" && call.status === "ok") {
                 let question = "";
                 try { question = String((JSON.parse(call.result ?? "{}") as any).question ?? ""); } catch { /* keep empty */ }
                 await sendMessage({ userId, type: "question", key: `${runId}:${call.id}`, subtitle: question, href: `/chat/session/${encodeURIComponent(sessionId)}` });
               }
-              emit("tool_call", {
-                id: call.id,
-                name: call.name,
-                status: call.status,
-                arguments: call.arguments,
-                result: call.result ?? JSON.stringify({ error: call.error }),
-                round,
-              });
+              emit("tool_call", { ...liveCalls.find((item) => item.id === call.id)! });
             }
           },
           onToolRound: async (round, calls) => {
@@ -1936,8 +2001,10 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
               updated_at: new Date().toISOString(),
             });
           },
-          onAssistantContent: (roundContent, round) => {
+          onAssistantContent: async (roundContent, round) => {
             if (roundContent) contentParts.push({ round, content: roundContent });
+            await persistProgress();
+            if (roundContent) emit("text", { delta: roundContent, round });
           },
           requestNext: async (conversation) => {
             const followup = adapters.build({
@@ -1992,7 +2059,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         });
         content = turn.content;
         finishReason = turn.finishReason;
-        const toolCallDetails: Array<Record<string, unknown>> = turn.toolCallDetails.map((call) => ({ ...call }));
+        const toolCallDetails = liveCalls;
         inputTokens = turn.inputTokens;
         outputTokens = turn.outputTokens;
         cachedInputTokens = turn.cachedInputTokens;
@@ -2004,14 +2071,14 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           return cancelledResult();
         }
         const finishedAt = new Date().toISOString();
-        const assistant = await db.create("advanced_chat_messages", {
-          id: newID("acm"),
+        await db.update("advanced_chat_messages", { id: assistantMessageId, user_id: userId }, {
           session_id: sessionId,
           user_id: userId,
           role: "assistant",
           content,
           content_parts: JSON.stringify(contentParts),
           tool_calls: JSON.stringify(toolCallDetails),
+          records: JSON.stringify(conversationRecords(contentParts, toolCallDetails)),
           input_tokens: inputTokens,
           output_tokens: outputTokens,
           cached_input_tokens: cachedInputTokens,
@@ -2041,7 +2108,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             current_round: round,
             status: "completed",
             status_message: "",
-            assistant_message_id: String(assistant.id),
+            assistant_message_id: assistantMessageId,
             tool_call_details: JSON.stringify(toolCallDetails),
             first_token_ms: firstTokenMS,
             first_token_count: firstTokenCount,
@@ -2062,7 +2129,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           metadata: { sessionId, runId, channelId: Number(selected.channel.id), modelConfigId: Number(selected.config.id) },
         }).catch(() => undefined);
         emit("done", {
-          message: { content, content_parts: contentParts },
+          message: { id: assistantMessageId, content, content_parts: contentParts, records: conversationRecords(contentParts, toolCallDetails) },
           tool_call_details: toolCallDetails,
           input_tokens: inputTokens,
           output_tokens: outputTokens,
@@ -2072,7 +2139,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           sessionId,
           runId,
           message: {
-            id: String(assistant.id),
+            id: assistantMessageId,
             role: "assistant",
             content,
             tool_calls: toolCallDetails,

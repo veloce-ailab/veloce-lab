@@ -66,6 +66,7 @@ export async function ensureTables(db: Database): Promise<void> {
       role: { type: "string", nullable: false },
       content: { type: "string", initial: "" },
       content_parts: { type: "string", initial: "[]" },
+      records: { type: "string", initial: "[]" },
       tool_calls: { type: "string", initial: "[]" },
       input_tokens: { type: "integer", initial: 0 },
       output_tokens: { type: "integer", initial: 0 },

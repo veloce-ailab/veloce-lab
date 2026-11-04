@@ -41,6 +41,7 @@ export * from "./lib/i18n"
 export * from "./lib/passkey"
 export * from "./lib/public-settings"
 export * from "./lib/slots"
+export * from "./lib/composer-commands"
 export * from "./lib/theme"
 export * from "./lib/utils"
 // The top bar is no longer exported: it is a contribution rendered through the

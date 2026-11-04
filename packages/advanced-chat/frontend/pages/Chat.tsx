@@ -1,13 +1,17 @@
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { channelIDForModel, groupModelsByChannel } from "../lib/model-groups"
 import { workspacePickerCanGoUp, workspacePickerIsDriveRoot, workspacePickerIsWindows, workspacePickerParentPath } from "../lib/workspace-picker"
+import { conversationRecords, mergeConversationTools, readConversationRecords, type ConversationComposerBlock, type ConversationRecord } from "../../src/conversation-records"
+import { ToolCallPreview } from "../components/chat/ToolCallPreview"
+import { toolActivityKind, toolActivitySummary } from "../lib/tool-activity"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Copy, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, Upload, User, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Copy, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
+import { composerCommands, subscribeComposerCommands, type DashboardComposerCommand } from "@velocelab/dashboard/frontend"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
 import { useI18n, type TranslationKey } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
@@ -66,20 +70,24 @@ const ASK_USER_TOOL_NAME = "ask_user"
 
 const CHAT_TOOL_GROUP_KEYS = ["workspace", "web", "tasks", "ask_user", "memory"] as const
 type ChatToolGroupKey = typeof CHAT_TOOL_GROUP_KEYS[number]
-type SlashCommand = { id: "compact" | "file" | "stored-file"; label: string; name: string; hint: string; icon: typeof Paperclip }
+type SlashCommand = { id: string; label: string; name: string; hint: string; icon: typeof Paperclip; kind: "action" | "block"; contributed?: DashboardComposerCommand }
 
-function slashCommands(language: string): SlashCommand[] {
-  return language === "zh"
+function slashCommands(language: string, contributed: DashboardComposerCommand[] = []): SlashCommand[] {
+  const builtins: SlashCommand[] = language === "zh"
     ? [
-        { id: "file", label: "文件", name: "file", hint: "上传文件到当前消息", icon: Paperclip },
-        { id: "stored-file", label: "选择附件", name: "files", hint: "从文件库选择已上传附件", icon: FileText },
-        { id: "compact", label: "压缩会话", name: "compact", hint: "压缩以上对话内容", icon: Sparkles },
+        { id: "file", label: "文件", name: "file", hint: "上传文件到当前消息", icon: Paperclip, kind: "block" },
+        { id: "stored-file", label: "选择附件", name: "files", hint: "从文件库选择已上传附件", icon: FileText, kind: "block" },
+        { id: "compact", label: "压缩会话", name: "compact", hint: "压缩以上对话内容", icon: Sparkles, kind: "action" },
       ]
     : [
-        { id: "file", label: "File", name: "file", hint: "Upload a file to this message", icon: Paperclip },
-        { id: "stored-file", label: "Choose attachment", name: "files", hint: "Choose an uploaded attachment", icon: FileText },
-        { id: "compact", label: "Compact session", name: "compact", hint: "Compact the conversation above", icon: Sparkles },
+        { id: "file", label: "File", name: "file", hint: "Upload a file to this message", icon: Paperclip, kind: "block" },
+        { id: "stored-file", label: "Choose attachment", name: "files", hint: "Choose an uploaded attachment", icon: FileText, kind: "block" },
+        { id: "compact", label: "Compact session", name: "compact", hint: "Compact the conversation above", icon: Sparkles, kind: "action" },
       ]
+  return [...builtins, ...contributed.map((command): SlashCommand => ({
+    id: command.id, name: command.name, label: command.label, hint: command.hint || "",
+    icon: command.icon as typeof Paperclip || Wrench, kind: command.kind, contributed: command,
+  }))]
 }
 
 function chatToolGroupItems(copy: ChatCopy): { key: ChatToolGroupKey; label: string; hint: string }[] {
@@ -218,6 +226,7 @@ interface ChatMessage {
   role: "user" | "assistant"
   content: string
   content_parts?: ChatContentPart[]
+  records?: ConversationRecord[]
   created_at: string
   updated_at?: string
   processing_duration_ms?: number
@@ -225,6 +234,7 @@ interface ChatMessage {
   output_tokens?: number
   cached_input_tokens?: number
   tool_calls?: ChatToolCall[]
+  composer_blocks?: ConversationComposerBlock[]
 }
 
 interface ChatSession {
@@ -684,6 +694,8 @@ export default function Chat() {
   const [decidingConnectorTaskID, setDecidingConnectorTaskID] = useState("")
   const [prompt, setPromptState] = useState("")
   const promptRef = useRef("")
+  const [composerBlocks, setComposerBlocks] = useState<ConversationComposerBlock[]>([])
+  const [registeredComposerCommands, setRegisteredComposerCommands] = useState(() => composerCommands())
   const [slashMenuOpen, setSlashMenuOpen] = useState(false)
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
   const [mentionMenuOpen, setMentionMenuOpen] = useState(false)
@@ -733,6 +745,8 @@ export default function Chat() {
   const [workspaceRenameTarget, setWorkspaceRenameTarget] = useState<ChatWorkspace | null>(null)
   const [workspaceRenameDraft, setWorkspaceRenameDraft] = useState("")
   const [workspaceCreateForSessionID, setWorkspaceCreateForSessionID] = useState("")
+
+  useEffect(() => subscribeComposerCommands(() => setRegisteredComposerCommands(composerCommands())), [])
 
   const setPrompt = (next: string | ((current: string) => string)) => {
     const value = typeof next === "function" ? next(promptRef.current) : next
@@ -2545,7 +2559,7 @@ export default function Chat() {
 
   const handleComposerPromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     const query = prompt.startsWith("/") ? prompt.slice(1).toLowerCase() : ""
-    const commands = slashCommands(language).filter((command) => command.name.startsWith(query))
+    const commands = slashCommands(language, registeredComposerCommands).filter((command) => command.name.toLowerCase().startsWith(query))
     if (slashMenuOpen && commands.length > 0 && event.key === "ArrowDown") {
       event.preventDefault()
       setSlashMenuIndex((current) => (current + 1) % commands.length)
@@ -2558,7 +2572,17 @@ export default function Chat() {
     }
     if (slashMenuOpen && commands.length > 0 && event.key === "Enter" && !event.shiftKey) {
       event.preventDefault()
-      selectSlashCommand(commands[slashMenuIndex]?.id)
+      void selectSlashCommand(commands[slashMenuIndex]?.id)
+      return
+    }
+    if (event.key === "Backspace" && composerBlocks.length > 0 && event.currentTarget.selectionStart === 0 && event.currentTarget.selectionEnd === 0) {
+      event.preventDefault()
+      setComposerBlocks((current) => current.slice(0, -1))
+      return
+    }
+    if (event.key === "Backspace" && !promptRef.current && attachments.length > 0) {
+      event.preventDefault()
+      setAttachments((current) => current.slice(0, -1))
       return
     }
     if (event.key === "Escape" && slashMenuOpen) {
@@ -2578,8 +2602,24 @@ export default function Chat() {
     }
   }
 
-  const selectSlashCommand = (id?: string) => {
+  const selectSlashCommand = async (id?: string) => {
     setSlashMenuOpen(false)
+    const command = slashCommands(language, registeredComposerCommands).find((item) => item.id === id)
+    if (command?.contributed) {
+      const context = { language }
+      try {
+        if (command.kind === "action") {
+          await command.contributed.onSelect?.(context)
+          setPrompt("")
+        } else if (command.contributed.createBlock) {
+          setComposerBlocks((current) => [...current, command.contributed!.createBlock!(context)])
+          setPrompt("")
+        }
+      } catch (cause) {
+        error(apiErrorMessage(cause, language === "zh" ? "指令执行失败" : "Command failed"))
+      }
+      return
+    }
     if (id === "file") {
       setPrompt("")
       composerFileInputRef.current?.click()
@@ -2606,7 +2646,13 @@ export default function Chat() {
       return
     }
     const relative = `${mentionDirectory}${entry.name}`
-    setPrompt((current) => current.replace(/@[^\s]*$/, `[文件: ${relative}] `))
+    const root = currentSession?.connector_workspace_path || ""
+    setComposerBlocks((current) => [...current, {
+      id: createID(), commandId: "builtin.workspace-file", kind: "file", label: relative,
+      value: { path: relative },
+      context: language === "zh" ? `工作区文件：${root ? `${root.replace(/[\\/]+$/, "")}/${relative}` : relative}` : `Workspace file: ${root ? `${root.replace(/[\\/]+$/, "")}/${relative}` : relative}`,
+    }])
+    setPrompt((current) => current.replace(/@[^\s]*$/, "").trimEnd())
     setMentionMenuOpen(false)
     window.setTimeout(() => composerTextareaRef.current?.focus(), 0)
   }
@@ -2618,13 +2664,14 @@ export default function Chat() {
   const sendMessageWithContent = async (rawText: string | null, baseMessages?: ChatMessage[], compactSession = false) => {
     const content = (rawText ?? promptRef.current).trim()
     const activeAttachments = rawText == null ? attachments : []
+    const activeComposerBlocks = rawText == null ? [...composerBlocks] : []
     const session = currentSession
     const resolvedModel = activeModelName.trim()
     if (!session) {
       return
     }
     if (isSharedSession) {
-      if (!content && activeAttachments.length === 0) {
+      if (!content && activeAttachments.length === 0 && activeComposerBlocks.length === 0) {
         return
       }
       const messageContent = messageContentWithAttachments(content, activeAttachments)
@@ -2632,7 +2679,7 @@ export default function Chat() {
       setIsSending(true)
       try {
         const res = await api.post(`/user/enterprise/shared-pools/${encodeURIComponent(sharedSessionPoolID)}/sessions/${encodeURIComponent(session.id)}/messages`, {
-          content: messageContent,
+          content: contextContentFromBlocks(messageContent, activeComposerBlocks),
           title: nextTitle,
         })
         const payload = isRecord(res.data) ? res.data : {}
@@ -2688,13 +2735,30 @@ export default function Chat() {
         return
       }
     }
-    if (!content && activeAttachments.length === 0) {
+    if (!content && activeAttachments.length === 0 && activeComposerBlocks.length === 0) {
       return
+    }
+
+    const composerContext = { language }
+    const effectiveBlocks: ConversationComposerBlock[] = []
+    for (const block of activeComposerBlocks) {
+      const command = registeredComposerCommands.find((item) => item.id === block.commandId)
+      if (command?.kind === "block" && command.submit === "execute" && command.onSubmit) {
+        try {
+          const contextText = await command.onSubmit(block, composerContext)
+          effectiveBlocks.push(typeof contextText === "string" ? { ...block, context: contextText } : block)
+        } catch (cause) {
+          error(apiErrorMessage(cause, language === "zh" ? `${block.label}执行失败` : `${block.label} failed`))
+          return
+        }
+      } else effectiveBlocks.push(block)
     }
 
     const processingStartedAt = Date.now()
     const messageContent = messageContentWithAttachments(content, activeAttachments)
     const userMessage = createMessage("user", messageContent)
+    userMessage.composer_blocks = effectiveBlocks
+    userMessage.records = conversationRecords(messageContent.trim() ? [{ round: 1, content: messageContent }] : [], [], effectiveBlocks)
     const nextMessages = [...(baseMessages ?? session.messages), userMessage]
     const nextTitle = session.title || titleFromMessage(content || activeAttachments[0]?.name || copy.attachmentMessageTitle, copy)
     updateSession(session.id, (current) => ({
@@ -2707,6 +2771,7 @@ export default function Chat() {
     if (rawText == null) {
       setPrompt("")
       setAttachments([])
+      setComposerBlocks([])
     }
     setIsSending(true)
     setProcessingSessionID(session.id)
@@ -2843,14 +2908,19 @@ export default function Chat() {
           return
         }
         const assistantMessage = createMessage("assistant", "", [])
-        const assistantMessageID = assistantMessage.id
+        let assistantMessageID = assistantMessage.id
         const controller = new AbortController()
         abortControllerRef.current = controller
         setIsStreamActive(true)
         const upsertAssistantMessage = (updater: (message: ChatMessage) => ChatMessage) => {
           updateSession(session.id, (current) => {
             const existing = current.messages.find((message) => message.id === assistantMessageID)
-            const nextMessage = updater(existing || assistantMessage)
+            const updatedMessage = updater(existing || { ...assistantMessage, id: assistantMessageID })
+            const nextMessage = {
+              ...updatedMessage,
+              records: conversationRecords(updatedMessage.content_parts || [], updatedMessage.tool_calls || []),
+              updated_at: new Date().toISOString(),
+            }
             return {
               ...current,
               messages: existing
@@ -2920,6 +2990,25 @@ export default function Chat() {
               accumulatedText += delta
               upsertAssistantMessage((message) => ({ ...message, content: accumulatedText, content_parts: appendContentPart(message.content_parts || [], round, delta) }))
             } else if (event.type === "status") {
+              const serverMessageID = stringFromUnknown(event.payload.assistant_message_id)
+              if (serverMessageID && serverMessageID !== assistantMessageID) {
+                const previousID = assistantMessageID
+                assistantMessageID = serverMessageID
+                updateSession(session.id, (current) => ({
+                  ...current,
+                  messages: current.messages.some((message) => message.id === previousID)
+                    ? current.messages.filter((message) => message.id !== serverMessageID).map((message) => message.id === previousID ? { ...message, id: serverMessageID } : message)
+                    : current.messages,
+                }))
+              }
+              const runID = stringFromUnknown(event.payload.run_id)
+              if (runID) updateSession(session.id, (current) => ({
+                ...current,
+                latest_run: {
+                  id: runID, session_id: session.id, assistant_message_id: assistantMessageID,
+                  mode: activeRunMode, status: "running", current_round: 0, tool_call_details: [],
+                },
+              }))
               const statusText = streamStatusText(event.payload, copy)
               if (!statusText || accumulatedText) {
                 return
@@ -2949,6 +3038,9 @@ export default function Chat() {
                 output_tokens: tokenCountFromPayload(event.payload.output_tokens),
                 cached_input_tokens: tokenCountFromPayload(event.payload.cached_input_tokens),
               }))
+              updateSession(session.id, (current) => current.latest_run?.assistant_message_id === assistantMessageID
+                ? { ...current, latest_run: { ...current.latest_run, status: "completed", finished_at: new Date().toISOString() } }
+                : current)
             } else if (event.type === "error") {
               throw new Error(typeof event.payload.error === "string" ? event.payload.error : copy.sendFailed)
             }
@@ -3089,10 +3181,12 @@ export default function Chat() {
     if (!messageSelectionMenu) {
       return
     }
-    const quoted = language === "zh"
-      ? `对于你所说的“${messageSelectionMenu.text}”，`
-      : `Regarding what you know about ${messageSelectionMenu.text}, `
-    setPrompt(quoted)
+    const text = messageSelectionMenu.text
+    setComposerBlocks((current) => [...current, {
+      id: createID(), commandId: "builtin.quote", kind: "quote",
+      label: language === "zh" ? "引用" : "Quote", value: { text },
+      context: language === "zh" ? `引用内容：\n${text}` : `Quoted text:\n${text}`,
+    }])
     setMessageSelectionMenu(null)
     window.setTimeout(() => composerTextareaRef.current?.focus(), 0)
   }
@@ -3598,12 +3692,12 @@ export default function Chat() {
           })()}
           {slashMenuOpen && prompt.startsWith("/") && (() => {
             const query = prompt.slice(1).toLowerCase()
-            const commands = slashCommands(language).filter((command) => command.name.startsWith(query))
+            const commands = slashCommands(language, registeredComposerCommands).filter((command) => command.name.toLowerCase().startsWith(query))
             const filteredIndex = Math.min(slashMenuIndex, Math.max(0, commands.length - 1))
             if (commands.length === 0) return null
             return <div className="absolute bottom-full left-0 z-50 mb-2 max-h-[min(24rem,50vh)] w-full overflow-y-auto rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl" role="listbox" aria-label={language === "zh" ? "斜杠指令" : "Slash commands"}>
               <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">{language === "zh" ? "添加" : "Add"}</div>
-              {commands.filter((command) => command.id === "file" || command.id === "stored-file").map((command) => {
+              {commands.filter((command) => command.kind === "block").map((command) => {
                 const index = commands.indexOf(command)
                 const Icon = command.icon
                 return <button key={command.id} type="button" role="option" aria-selected={filteredIndex === index} className={cn("flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-muted", filteredIndex === index && "bg-muted")} onMouseDown={(event) => event.preventDefault()} onClick={() => selectSlashCommand(command.id)}>
@@ -3611,7 +3705,7 @@ export default function Chat() {
                 </button>
               })}
               <div className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">{language === "zh" ? "指令" : "Commands"}</div>
-              {commands.filter((command) => command.id === "compact").map((command) => {
+              {commands.filter((command) => command.kind === "action").map((command) => {
                 const index = commands.indexOf(command)
                 const Icon = command.icon
                 return <button key={command.id} type="button" role="option" aria-selected={filteredIndex === index} className={cn("flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-muted", filteredIndex === index && "bg-muted")} onMouseDown={(event) => event.preventDefault()} onClick={() => selectSlashCommand(command.id)}>
@@ -3630,6 +3724,12 @@ export default function Chat() {
             onChange={handleComposerPromptChange}
             onKeyDown={handleComposerPromptKeyDown}
           />
+          {composerBlocks.length > 0 && <div className="flex flex-wrap gap-1.5 px-2 pb-2">
+            {composerBlocks.map((block) => <span key={block.id} className="inline-flex max-w-full items-center gap-1 rounded border border-border bg-muted/60 px-2 py-1 text-xs">
+              <span className="truncate">{block.label}</span>
+              <button type="button" className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={language === "zh" ? `移除${block.label}` : `Remove ${block.label}`} onClick={() => setComposerBlocks((current) => current.filter((item) => item.id !== block.id))}><X size={13} /></button>
+            </span>)}
+          </div>}
         </div>
         {isSharedSession && <div className="px-3 pb-2 text-xs text-muted-foreground">{language === "zh" ? "共享会话：参与者可追加任务消息；运行仅可使用本池分配的企业设备。" : "Shared session: participants can add task messages; runs may only use enterprise devices assigned to this pool."}</div>}
         <div className="flex items-center justify-between gap-2">
@@ -3964,15 +4064,13 @@ export default function Chat() {
                               isAdvanced
                                 ? message.role === "user"
                                   ? "rounded-lg border border-border bg-muted shadow-sm"
-                                  : "rounded-lg border border-border bg-background shadow-sm"
-                                : "rounded-md border bg-background"
+                                  : "py-2"
+                                : message.role === "user" ? "rounded-md border bg-background" : "py-2"
                             )}>
                               <div className="flex items-start gap-2">
                                 {message.role === "user" ? (
                                   <User className="mt-0.5 h-4 w-4 shrink-0" />
-                                ) : (
-                                  <Bot className="mt-0.5 h-4 w-4 shrink-0" />
-                                )}
+                                ) : null}
                                 <div className="min-w-0 flex-1">
                                   {editingMessageID === message.id ? (
                                     <div className="space-y-2">
@@ -5046,7 +5144,7 @@ function MarkdownContent({ content }: { content: string }) {
   )
 }
 
-function UserMessageContent({ content }: { content: string }) {
+function UserMessageContent({ content, blocks = [] }: { content: string; blocks?: ConversationComposerBlock[] }) {
   const parsed = parseMessageAttachments(content)
   return (
     <div className="space-y-2">
@@ -5070,6 +5168,12 @@ function UserMessageContent({ content }: { content: string }) {
           ))}
         </div>
       )}
+      {blocks.length > 0 && <div className="flex flex-wrap gap-2">
+        {blocks.map((block) => <div key={block.id} className="flex max-w-full items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-xs">
+          {block.kind === "file" ? <FileText size={14} className="shrink-0 text-muted-foreground" /> : <Quote size={14} className="shrink-0 text-muted-foreground" />}
+          <span className="truncate">{block.label}</span>
+        </div>)}
+      </div>}
     </div>
   )
 }
@@ -5125,8 +5229,9 @@ function AssistantMessageSequence({
   controlsHidden: boolean
 }) {
   const parts = messageContentParts(message, activeRun, copy)
-  const toolCallsByRound = groupToolCallsByRound(message.tool_calls || [])
-  const blocks = messageRoundBlocks(parts, toolCallsByRound)
+  const callIsRunning = Boolean(activeRun && activeRun.assistant_message_id === message.id && isRunActive(activeRun))
+  const records = message.records?.length ? message.records : conversationRecords(parts, message.tool_calls || [])
+  const blocks = messageRoundBlocks(records)
   if (blocks.length === 0) {
     return null
   }
@@ -5137,13 +5242,8 @@ function AssistantMessageSequence({
           {block.parts.map((part, index) => (
               <div key={`${block.id}-part-${index}`} className="group space-y-1.5">
                 <div className="flex justify-start">
-                  <div className="w-fit max-w-full rounded-lg border border-border bg-background p-3 text-sm shadow-sm">
-                    <div className="flex items-start gap-2">
-                      <Bot className="mt-0.5 h-4 w-4 shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <MarkdownContent content={part.content} />
-                      </div>
-                    </div>
+                  <div className="min-w-0 w-full py-2 text-sm leading-7 text-foreground">
+                    <MarkdownContent content={part.content} />
                   </div>
                 </div>
                 <div
@@ -5162,9 +5262,10 @@ function AssistantMessageSequence({
         </div>
       ) : (
         <div key={block.id} className="flex justify-start">
-          <div className="w-full max-w-3xl pl-1">
+          <div className="min-w-0 w-full">
             <ToolCallRounds
               toolCalls={block.toolCalls}
+              expanded={callIsRunning}
               copy={copy}
               approvalTasks={block.toolCalls.some((toolCall) => toolCall.status === "approval_required") ? approvalTasks : []}
               decidingTaskID={decidingTaskID}
@@ -5197,10 +5298,11 @@ function MessageContent({
   hideToolCalls?: boolean
 }) {
   if (message.role !== "assistant") {
-    return <UserMessageContent content={messageDisplayContent(message, activeRun, copy)} />
+    return <UserMessageContent content={messageDisplayContent(message, activeRun, copy)} blocks={composerBlocksFromMessage(message)} />
   }
 
   const parts = messageContentParts(message, activeRun, copy)
+  const callIsRunning = Boolean(activeRun && activeRun.assistant_message_id === message.id && isRunActive(activeRun))
   if (hideToolCalls) {
     if (parts.length === 0) {
       return <MarkdownContent content={messageDisplayContent(message, activeRun, copy)} />
@@ -5213,8 +5315,8 @@ function MessageContent({
       </div>
     )
   }
-  const toolCallsByRound = groupToolCallsByRound(message.tool_calls || [])
-  const blocks = messageRoundBlocks(parts, toolCallsByRound)
+  const records = message.records?.length ? message.records : conversationRecords(parts, message.tool_calls || [])
+  const blocks = messageRoundBlocks(records)
   if (blocks.length === 0) {
     return <MarkdownContent content={messageDisplayContent(message, activeRun, copy)} />
   }
@@ -5231,6 +5333,7 @@ function MessageContent({
         <ToolCallRounds
           key={block.id}
           toolCalls={block.toolCalls}
+          expanded={callIsRunning}
           copy={copy}
           approvalTasks={isAdvanced && block.toolCalls.some((toolCall) => toolCall.status === "approval_required") ? approvalTasks : []}
           decidingTaskID={decidingTaskID}
@@ -5242,54 +5345,57 @@ function MessageContent({
 }
 
 function ToolCallRounds({
-  toolCalls,
-  copy,
-  approvalTasks = [],
-  decidingTaskID = "",
-  onDecide,
+  toolCalls, copy, approvalTasks = [], decidingTaskID = "", onDecide, expanded = false,
 }: {
   toolCalls: ChatToolCall[]
   copy: ChatCopy
   approvalTasks?: ConnectorApprovalTask[]
   decidingTaskID?: string
   onDecide?: (taskID: string, approved: boolean) => void
+  expanded?: boolean
 }) {
-  const [open, setOpen] = useState(false)
-
-  if (toolCalls.length === 0) {
-    return null
-  }
-
+  const [open, setOpen] = useState(expanded)
+  useEffect(() => setOpen(expanded), [expanded])
+  const { language } = useI18n()
+  if (toolCalls.length === 0) return null
+  const busy = toolCalls.some((call) => ["running", "approval_required", "pending_approval", "queued"].includes(call.status))
+  const firstKind = builtinToolKind(toolCalls[0])
+  const Icon = busy ? Loader2 : toolActivityIcon(firstKind)
   return (
-    <details className="mb-2 rounded-md bg-muted/40 px-2 py-1.5" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-xs text-muted-foreground [&::-webkit-details-marker]:hidden">
-        <span className="font-medium text-foreground">{copy.toolRound}</span>
-        <span className="min-w-0 flex-1" />
-        <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-90")} />
-      </summary>
-      <div className={cn("mt-2 space-y-2", toolCalls.length > 6 && "max-h-[30rem] overflow-y-auto overscroll-contain pr-1")}>
-        {toolCalls.map((toolCall) => (
-          <ToolCallDetails
-            key={toolCall.id}
-            toolCall={toolCall}
-            copy={copy}
-            approvalTask={findConnectorApprovalTask(toolCall, approvalTasks)}
-            decidingTaskID={decidingTaskID}
-            onDecide={onDecide}
-          />
-        ))}
-      </div>
-    </details>
+    <div className="my-1 min-w-0 text-muted-foreground">
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
+        className="flex max-w-full items-center gap-2 rounded py-1.5 text-left text-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <Icon size={17} className={cn("shrink-0", busy && "animate-spin")} />
+        <span className="min-w-0 truncate">{toolActivitySummary(toolCalls, language)}</span>
+        <ChevronDown size={15} className={cn("shrink-0 transition-transform", !open && "-rotate-90")} />
+      </button>
+      {open && <div className={cn("mt-1 space-y-0.5", toolCalls.length > 6 && "max-h-80 overflow-y-auto overscroll-contain pr-2")}>
+        {toolCalls.map((toolCall) => <ToolCallDetails key={toolCall.id} toolCall={toolCall} copy={copy}
+          approvalTask={findConnectorApprovalTask(toolCall, approvalTasks)} decidingTaskID={decidingTaskID} onDecide={onDecide} />)}
+      </div>}
+      {!open && approvalTasks.filter((task) => toolCalls.some((call) => connectorApprovalTaskMatchesToolCall(call, task))).map((task) => (
+        <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
+          <span>{copy.toolStatusApprovalRequired}</span>
+          <ConnectorApprovalControls task={task} copy={copy} decidingTaskID={decidingTaskID} onDecide={onDecide} />
+        </div>
+      ))}
+    </div>
   )
 }
 
-function ToolCallDetails({
-  toolCall,
-  copy,
-  approvalTask,
-  decidingTaskID = "",
-  onDecide,
-}: {
+function toolActivityIcon(kind: ReturnType<typeof builtinToolKind>) {
+  switch (kind) {
+    case "read": return BookOpen
+    case "list": return FolderOpen
+    case "write": case "replace": return FileDiff
+    case "command": return TerminalSquare
+    case "search": return Search
+    case "fetch": return Globe
+    default: return Wrench
+  }
+}
+
+function ToolCallDetails({ toolCall, copy, approvalTask, decidingTaskID = "", onDecide }: {
   toolCall: ChatToolCall
   copy: ChatCopy
   approvalTask?: ConnectorApprovalTask
@@ -5297,60 +5403,33 @@ function ToolCallDetails({
   onDecide?: (taskID: string, approved: boolean) => void
 }) {
   const [open, setOpen] = useState(false)
-  const builtinKind = builtinToolKind(toolCall)
+  const { language } = useI18n()
+  const kind = builtinToolKind(toolCall)
   const path = stringArgument(toolCall.arguments, "path")
-  const content = stringArgument(toolCall.arguments, "content")
-  const command = stringArgument(toolCall.arguments, "command")
-  const query = stringArgument(toolCall.arguments, "query")
-  const url = stringArgument(toolCall.arguments, "url")
-  const replacements = replacementEntriesFromArguments(toolCall.arguments)
-  const toolTarget = builtinKind === "search" ? query : builtinKind === "fetch" ? url : command
-  const title = builtinKind
-    ? builtinToolTitle(builtinKind, path, toolTarget, copy, booleanArgument(toolCall.arguments, "preview_old_content_available"))
-    : toolLabel(toolCall)
-
+  const target = kind === "search" ? stringArgument(toolCall.arguments, "query") : kind === "fetch" ? stringArgument(toolCall.arguments, "url") : stringArgument(toolCall.arguments, "command")
+  const title = kind ? builtinToolTitle(kind, path, target, copy, booleanArgument(toolCall.arguments, "preview_old_content_available")) : toolLabel(toolCall)
+  const busy = ["running", "queued"].includes(toolCall.status)
+  const approval = Boolean(approvalTask) || ["approval_required", "pending_approval"].includes(toolCall.status)
+  const failed = ["error", "missing", "invalid_arguments", "cancelled"].includes(toolCall.status)
+  const Icon = busy ? Loader2 : toolActivityIcon(kind)
+  const filePreview = kind === "read" || kind === "write" || kind === "replace"
   return (
-    <details
-      className="group rounded-md px-1 py-1 text-muted-foreground"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-xs [&::-webkit-details-marker]:hidden">
-        <span className="min-w-0 flex-1 truncate">{title}</span>
-        <span className={cn("rounded px-1.5 py-0.5 text-[11px]", toolStatusClassName(toolCall.status))}>
-          {toolStatusLabel(toolCall.status, copy)}
-        </span>
-        <ArrowDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")} />
-      </summary>
-      <ConnectorApprovalControls
-        task={approvalTask}
-        copy={copy}
-        decidingTaskID={decidingTaskID}
-        onDecide={onDecide}
-        className="mt-2"
-      />
-      {builtinKind === "command" && command && (
-        <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted/40 p-2 font-mono text-xs">{command}</pre>
-      )}
-      {builtinKind === "write" ? (
-        <div className="mt-2 overflow-hidden rounded-md bg-muted/40">
-          <LineDiff oldText={stringArgument(toolCall.arguments, "preview_old_content")} newText={content} />
-        </div>
-      ) : builtinKind === "replace" ? (
-        <ReplacementDiffList entries={replacements} copy={copy} />
-      ) : builtinKind === "read" || builtinKind === "list" ? (
+    <div className="min-w-0">
+      <button type="button" onClick={() => setOpen(!open)} title={title}
+        aria-expanded={filePreview ? undefined : open} aria-haspopup={filePreview ? "dialog" : undefined}
+        className="group flex min-h-8 w-full min-w-0 items-center gap-2 rounded py-1 text-left text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <Icon size={17} className={cn("shrink-0", busy && "animate-spin", failed && "text-destructive")} />
+        <span className={cn("min-w-0 flex-1 truncate", filePreview && "decoration-muted-foreground/40 underline-offset-4 group-hover:underline")}>{title}</span>
+        {(busy || approval || failed) && <span className={cn("shrink-0 text-[11px]", failed ? "text-destructive" : "text-muted-foreground")}>{toolStatusLabel(approval ? "approval_required" : toolCall.status, copy)}</span>}
+      </button>
+      <ConnectorApprovalControls task={approvalTask} copy={copy} decidingTaskID={decidingTaskID} onDecide={onDecide} className="my-1 ml-6" />
+      {kind === "command" || filePreview ? (
+        <ToolCallPreview toolCall={toolCall} kind={kind as "command" | "read" | "write" | "replace"} language={language} open={open} onOpenChange={setOpen} />
+      ) : open ? <div className="mb-2 ml-6">
+        {!kind && <><div className="mt-2 text-[11px] font-medium">{copy.toolArguments}</div><pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-xs">{formatToolArguments(toolCall.arguments)}</pre></>}
         <ToolResultBlock result={toolCall.result} copy={copy} />
-      ) : builtinKind === "command" || builtinKind === "search" || builtinKind === "fetch" ? (
-        <ToolResultBlock result={toolCall.result} copy={copy} />
-      ) : (
-        <>
-          <div className="mt-2 text-[11px] font-medium text-muted-foreground">{copy.toolArguments}</div>
-          <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-xs">
-            {formatToolArguments(toolCall.arguments)}
-          </pre>
-        </>
-      )}
-    </details>
+      </div> : null}
+    </div>
   )
 }
 
@@ -6459,6 +6538,7 @@ async function saveAdvancedSessionSnapshot(session: ChatSession): Promise<ChatSe
       content: message.content,
       content_parts: message.content_parts || [],
       tool_calls: message.tool_calls || [],
+      records: message.records || [],
     })),
   })
   return normalizeSession(res.data)
@@ -6468,10 +6548,20 @@ function advancedMessagePayload(messages: ChatMessage[]) {
   return messages.map((message) => ({
     id: message.id,
     role: message.role,
-    content: message.content,
+    content: message.role === "user" ? contextContentFromBlocks(message.content, composerBlocksFromMessage(message)) : message.content,
+    display_content: message.content,
     content_parts: message.content_parts || [],
     tool_calls: message.tool_calls || [],
+    records: message.records || [],
   }))
+}
+
+function composerBlocksFromMessage(message: ChatMessage) {
+  return message.composer_blocks || (message.records || []).flatMap((record) => record.kind === "composer_block" ? [record.block] : [])
+}
+
+function contextContentFromBlocks(content: string, blocks: ConversationComposerBlock[]) {
+  return [content, ...blocks.map((block) => block.context?.trim() || "").filter(Boolean)].filter(Boolean).join("\n\n")
 }
 
 function parseSSEEvent(raw: string): ParsedSSEEvent | null {
@@ -6962,7 +7052,10 @@ function normalizeSession(value: unknown): ChatSession | null {
 function normalizeRuntimeSession(session: ChatSession): ChatSession {
   return {
     ...session,
-    messages: Array.isArray(session.messages) ? session.messages : [],
+    messages: Array.isArray(session.messages) ? session.messages.map((message) => {
+      const records = readConversationRecords(message.records)
+      return { ...message, records: records.length ? records : conversationRecords(message.content_parts || (message.content ? [{ round: 1, content: message.content }] : []), message.tool_calls || [], message.composer_blocks || []) }
+    }) : [],
     skill_ids: Array.isArray(session.skill_ids) ? session.skill_ids.filter((id): id is string => typeof id === "string") : [],
     mcp_server_ids: Array.isArray(session.mcp_server_ids) ? session.mcp_server_ids.filter((id): id is string => typeof id === "string") : [],
 		knowledge_base_ids: Array.isArray(session.knowledge_base_ids) ? session.knowledge_base_ids.filter((id): id is string => typeof id === "string") : [],
@@ -7103,19 +7196,23 @@ function normalizeMessage(value: unknown): ChatMessage | null {
   if (typeof value.content !== "string") {
     return null
   }
+  const records = readConversationRecords(value.records)
+  const parts = records.length ? records.flatMap((record) => record.kind === "text" ? [{ round: record.round, content: record.content }] : []) : normalizeContentParts(value.content_parts, value.content)
+  const calls = records.length ? records.flatMap((record) => record.kind === "tool_call" ? [record.tool_call] : []) : normalizeToolCalls(value.tool_calls)
   return {
     id: typeof value.id === "string" && value.id ? value.id : createID(),
     user_id: Number(value.user_id || 0) || undefined,
     role: value.role,
     content: value.content,
-    content_parts: normalizeContentParts(value.content_parts, value.content),
+    content_parts: parts,
+    records: records.length ? records : conversationRecords(parts, calls),
     created_at: typeof value.created_at === "string" ? value.created_at : new Date().toISOString(),
     updated_at: typeof value.updated_at === "string" ? value.updated_at : undefined,
     processing_duration_ms: typeof value.processing_duration_ms === "number" && Number.isFinite(value.processing_duration_ms) && value.processing_duration_ms >= 0 ? value.processing_duration_ms : undefined,
     input_tokens: tokenCountFromPayload(value.input_tokens),
     output_tokens: tokenCountFromPayload(value.output_tokens),
     cached_input_tokens: tokenCountFromPayload(value.cached_input_tokens),
-    tool_calls: normalizeToolCalls(value.tool_calls),
+    tool_calls: calls,
   }
 }
 
@@ -7188,23 +7285,7 @@ function normalizeToolCalls(value: unknown): ChatToolCall[] {
 }
 
 function mergeToolCalls(current: ChatToolCall[], incoming: ChatToolCall[]) {
-  const merged = [...current]
-  for (const next of incoming) {
-    const index = merged.findIndex(
-      (item) => item.id === next.id
-    )
-    if (index >= 0) {
-      const currentItem = merged[index]
-      merged[index] = {
-        ...currentItem,
-        ...next,
-        result: typeof next.result === "string" && next.result.trim() ? next.result : currentItem.result,
-      }
-    } else {
-      merged.push(next)
-    }
-  }
-  return merged
+  return mergeConversationTools(current, incoming)
 }
 
 function normalizeAgent(value: unknown): ChatAgent | null {
@@ -7548,6 +7629,7 @@ function messageDisplayContent(message: ChatMessage, run: ChatRun | undefined, c
 
 function messageContentParts(message: ChatMessage, run: ChatRun | undefined, copy: ChatCopy) {
   const parts = normalizeContentParts(message.content_parts, "")
+  if (!message.content.trim() && parts.length === 0 && (message.tool_calls || []).length > 0 && run?.status !== "failed") return []
   const content = messageDisplayContent(message, run, copy)
   if (parts.length === 0) {
     return content.trim() ? [{ round: 1, content }] : []
@@ -7577,43 +7659,19 @@ function preferCompleteText(streamed: string, reported: string) {
   return streamed.length >= reported.length ? streamed : reported
 }
 
-function groupToolCallsByRound(toolCalls: ChatToolCall[]) {
-  const groups = new Map<number, ChatToolCall[]>()
-  for (const toolCall of toolCalls) {
-    const round = normalizedRound(toolCall.round)
-    groups.set(round, [...(groups.get(round) || []), toolCall])
-  }
-  return groups
-}
-
-function orderedMessageRounds(parts: ChatContentPart[], toolCallsByRound: Map<number, ChatToolCall[]>) {
-  const rounds = new Set<number>()
-  parts.forEach((part) => rounds.add(normalizedRound(part.round)))
-  toolCallsByRound.forEach((_items, round) => rounds.add(round))
-  return Array.from(rounds).sort((a, b) => a - b)
-}
-
 type MessageRoundBlock =
   | { kind: "text"; id: string; parts: ChatContentPart[] }
   | { kind: "tools"; id: string; toolCalls: ChatToolCall[] }
 
-function messageRoundBlocks(parts: ChatContentPart[], toolCallsByRound: Map<number, ChatToolCall[]>): MessageRoundBlock[] {
+function messageRoundBlocks(records: ConversationRecord[]): MessageRoundBlock[] {
   const blocks: MessageRoundBlock[] = []
-  for (const round of orderedMessageRounds(parts, toolCallsByRound)) {
-    const roundParts = parts.filter((part) => normalizedRound(part.round) === round)
-    const roundToolCalls = toolCallsByRound.get(round) || []
-    if (roundParts.length > 0) {
-      blocks.push({ kind: "text", id: `text-${round}`, parts: roundParts })
-    }
-    if (roundToolCalls.length === 0) {
-      continue
-    }
+  for (const record of records) {
     const previous = blocks.at(-1)
-    if (previous?.kind === "tools" && roundParts.length === 0) {
-      previous.toolCalls.push(...roundToolCalls)
-      continue
-    }
-    blocks.push({ kind: "tools", id: `tools-${round}`, toolCalls: [...roundToolCalls] })
+    if (record.kind === "text") {
+      if (previous?.kind === "text") previous.parts.push({ round: record.round, content: record.content })
+      else blocks.push({ kind: "text", id: record.id, parts: [{ round: record.round, content: record.content }] })
+    } else if (previous?.kind === "tools") previous.toolCalls.push(record.tool_call)
+    else blocks.push({ kind: "tools", id: record.id, toolCalls: [record.tool_call] })
   }
   return blocks
 }
@@ -8148,33 +8206,8 @@ function connectorActionForToolCall(toolCall: ChatToolCall) {
   }
 }
 
-function builtinToolKind(toolCall: ChatToolCall): "list" | "read" | "write" | "replace" | "command" | "search" | "fetch" | "" {
-  const name = toolCall.name.toLowerCase()
-  if (!name.startsWith("workspace_") && !name.startsWith("connector_")) {
-    return ""
-  }
-  if (name.includes("workspace_list_files")) {
-    return "list"
-  }
-  if (name.includes("workspace_read_file")) {
-    return "read"
-  }
-  if (name.includes("workspace_write_file")) {
-    return "write"
-  }
-  if (name.includes("workspace_replace_text")) {
-    return "replace"
-  }
-  if (name.includes("workspace_run_command") || name === "connector_run_command") {
-    return "command"
-  }
-  if (name.includes("workspace_web_search")) {
-    return "search"
-  }
-  if (name.includes("workspace_web_fetch")) {
-    return "fetch"
-  }
-  return ""
+function builtinToolKind(toolCall: ChatToolCall) {
+  return toolActivityKind(toolCall)
 }
 
 function builtinToolTitle(

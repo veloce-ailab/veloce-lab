@@ -1,10 +1,11 @@
 import { createElement, useSyncExternalStore, type ComponentType } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
 import { dashboardSlots, type DashboardSlotName } from "@/lib/slots"
-import type { DashboardContext as DashboardContextType, DashboardPlugin, DashboardRoute, DashboardFrame, DashboardPage, DashboardNavItem, DashboardNavGroup, DashboardNavSection } from "./runtime"
+import type { DashboardContext as DashboardContextType, DashboardPlugin, DashboardRoute, DashboardFrame, DashboardPage, DashboardNavItem, DashboardNavGroup, DashboardNavSection, DashboardComposerCommand } from "./runtime"
+import { registerComposerCommand } from "./lib/composer-commands"
 
 export type { DashboardRoute, DashboardFrame, DashboardPage, DashboardNavItem, DashboardNavGroup, DashboardNavSection }
-export interface DashboardExtensionApi { route(route: DashboardRoute): () => void; frame(frame: DashboardFrame): () => void; page(page: DashboardPage): () => void; nav(item: DashboardNavItem): () => void; slot(name: DashboardSlotName, component: ComponentType<Record<string, unknown>>, id: string, order?: number, scope?: string): () => void }
+export interface DashboardExtensionApi { route(route: DashboardRoute): () => void; frame(frame: DashboardFrame): () => void; page(page: DashboardPage): () => void; nav(item: DashboardNavItem): () => void; slot(name: DashboardSlotName, component: ComponentType<Record<string, unknown>>, id: string, order?: number, scope?: string): () => void; composerCommand(command: DashboardComposerCommand): () => void }
 
 interface DashboardExtensionStore {
   routes: DashboardRoute[]
@@ -46,6 +47,7 @@ export const dashboardExtension: DashboardExtensionApi = {
   },
   nav(item) { store.navItems.push(item); notifyExtensions(); return () => { const i = store.navItems.indexOf(item); if (i >= 0) store.navItems.splice(i, 1); notifyExtensions() } },
   slot(name, component, id, order = 0, scope) { return dashboardSlots.register({ id, slot: name, component, order, scope }) },
+  composerCommand(command) { return registerComposerCommand(command) },
 }
 export class DashboardContext implements DashboardContextType {
   private readonly effects: Array<() => void | Promise<void>> = []
@@ -56,6 +58,7 @@ export class DashboardContext implements DashboardContextType {
   page(page: DashboardPage) { this.track(this.api.page(page)) }
   nav(item: DashboardNavItem) { this.track(this.api.nav(item)) }
   slot(name: DashboardSlotName, component: ComponentType<Record<string, unknown>>, id: string, order = 0, scope?: string) { this.track(this.api.slot(name, component, id, order, scope)) }
+  composerCommand(command: DashboardComposerCommand) { this.track(this.api.composerCommand(command)) }
   affect(effect: () => void | Promise<void>) { if (this.disposed) { void effect(); return } this.effects.push(effect) }
   async plugin(plugin: DashboardPlugin) { if (!this.disposed) await plugin(this) }
   async dispose() { if (this.disposed) return; this.disposed = true; for (const effect of this.effects.splice(0).reverse()) await effect() }

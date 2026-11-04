@@ -62,6 +62,47 @@ async function setup(t, responses = [{ content: "Finished" }], { visible = true,
   return { ctx, db, sent, registered, translations, complete };
 }
 
+test("duplicate tool registrations share one schema and executor across model rounds", async t => {
+  const f = await setup(t, [
+    { content: "", toolCalls: [{ id: "call-1", function: { name: "duplicate_tool", arguments: "{}" } }] },
+    { content: "Finished" },
+  ]);
+  const chat = f.ctx.component["advanced-chat"];
+  const executed = [];
+  chat.registerTool({ name: "duplicate_tool", description: "first", parameters: {}, execute: async () => { executed.push("first"); return "ok"; } });
+  chat.registerTool({ name: "duplicate_tool", description: "second", parameters: {}, execute: async () => { executed.push("second"); return "wrong"; } });
+  chat.registerTool({ name: "ask_user", description: "duplicate built-in", parameters: {} });
+  const requests = [];
+  t.mock.method(f.ctx.component.adapters, "build", input => { requests.push(input); return { urlPath: "/chat", headers: {}, body: {} }; });
+  await f.complete();
+  assert.equal(requests.length, 2);
+  for (const request of requests) {
+    const names = request.tools.map(tool => tool.name);
+    assert.equal(names.length, new Set(names).size);
+    assert.equal(request.tools.find(tool => tool.name === "duplicate_tool").description, "first");
+    assert.notEqual(request.tools.find(tool => tool.name === "ask_user").description, "duplicate built-in");
+  }
+  assert.deepEqual(executed, ["first"]);
+});
+
+test("duplicate registration disposal and enablement preserve a unique active tool", async t => {
+  const f = await setup(t);
+  const chat = f.ctx.component["advanced-chat"];
+  const first = { name: "duplicate_tool", description: "first", parameters: {} };
+  const second = { name: "duplicate_tool", description: "second", parameters: {} };
+  const removeFirst = chat.registerTool(first);
+  const removeSecond = chat.registerTool(second);
+  assert.equal(chat.registeredTools().filter(tool => tool.name === first.name).length, 1);
+  assert.equal(chat.tools().find(tool => tool.name === first.name), first);
+  chat.setToolEnabled(first.name, false);
+  assert.equal(chat.tools().some(tool => tool.name === first.name), false);
+  chat.setToolEnabled(first.name, true);
+  removeFirst();
+  assert.equal(chat.tools().find(tool => tool.name === first.name), second);
+  removeSecond();
+  assert.equal(chat.tools().some(tool => tool.name === first.name), false);
+});
+
 test("registers four message types with all three languages and sends completion", async t => {
   const f = await setup(t);
   assert.deepEqual(f.registered.map(type => type.id), ["completed", "failed", "approval", "question"].map(name => `advanced-chat:${name}`));
@@ -130,6 +171,33 @@ test("pending approval tool results suppress completion messages", async t => {
   f.ctx.component["advanced-chat"].registerTool({ name: "pending_tool", execute: async () => ({ status: "pending_approval" }) });
   await f.complete();
   assert.equal(f.sent.length, 0);
+});
+
+test("persists the unified tool record before an approval prompt is returned", async t => {
+  const f = await setup(t, [
+    { content: "", toolCalls: [{ id: "call-approval", function: { name: "pending_tool", arguments: JSON.stringify({ command: "echo review" }) } }] },
+    { content: "Waiting for approval" },
+  ]);
+  f.ctx.component["advanced-chat"].registerTool({
+    name: "pending_tool",
+    execute: async (input, context) => {
+      const task = await f.ctx.component.connector.createTask(7, {
+        device_id: "device-1", action: "run_command", run_id: context.runId,
+        workspace_path: "/project", payload: { ...input, preview_tool_call_id: context.toolCallId }, requiresApproval: true,
+      });
+      return { task_id: task.id, status: "pending_approval" };
+    },
+  });
+  await f.complete();
+  const message = (await f.db.select("advanced_chat_messages", { role: "assistant" }))[0];
+  const call = JSON.parse(message.tool_calls)[0];
+  const records = JSON.parse(message.records);
+  assert.equal(call.id, "call-approval");
+  assert.equal(call.status, "approval_required");
+  assert.ok(call.arguments.connector_task_id);
+  assert.deepEqual(records.map(record => record.kind), ["tool_call", "text"]);
+  assert.equal(records[0].tool_call.id, call.id);
+  assert.equal(f.sent.at(-1).type, "advanced-chat:approval");
 });
 
 test("cancelled runs and hidden sessions do not send completion", async t => {

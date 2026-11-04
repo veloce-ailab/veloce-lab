@@ -4,6 +4,27 @@ export interface DashboardRoute { path: string; component: ComponentType; shell?
 export interface DashboardFrame { id: string; path: string; component: ComponentType }
 /** Icon components contributed by plugins: lucide icons and plain components both fit. */
 export type DashboardIconComponent = ComponentType<{ size?: number | string; className?: string }>
+export interface DashboardComposerBlock {
+  id: string
+  commandId: string
+  kind: string
+  label: string
+  value: Record<string, unknown>
+  context?: string
+}
+export interface DashboardComposerCommandContext { language: string }
+export interface DashboardComposerCommand {
+  id: string
+  name: string
+  label: string
+  hint?: string
+  icon?: DashboardIconComponent
+  kind: "action" | "block"
+  submit?: "execute" | "context"
+  createBlock?: (context: DashboardComposerCommandContext) => DashboardComposerBlock
+  onSelect?: (context: DashboardComposerCommandContext) => void | Promise<void>
+  onSubmit?: (block: DashboardComposerBlock, context: DashboardComposerCommandContext) => void | string | Promise<void | string>
+}
 /** Page body layout hint the owning frame may honor. */
 export type DashboardPageLayout = "default" | "full"
 export interface DashboardPage extends DashboardRoute {
@@ -61,6 +82,7 @@ export interface DashboardExtensionApi {
   page(page: DashboardPage): () => void
   nav(item: DashboardNavItem): () => void
   slot(name: DashboardSlotName, component: ComponentType<Record<string, unknown>>, id: string, order?: number, scope?: string): () => void
+  composerCommand(command: DashboardComposerCommand): () => void
 }
 export interface DashboardContext extends DashboardExtensionApi {
   readonly data: Record<string, unknown>

@@ -840,6 +840,8 @@ export function registerAdvancedChatRoutes(
         ? input.messages.map((item: any) => ({
             role: String(item.role ?? "user"),
             content: String(item.content ?? ""),
+            display_content: typeof item.display_content === "string" ? item.display_content : undefined,
+            records: Array.isArray(item.records) ? item.records : undefined,
             tool_calls: item.tool_calls,
             tool_call_id: item.tool_call_id,
           }))

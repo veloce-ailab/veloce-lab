@@ -958,6 +958,7 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
       // A local connector runs inside this process. Dispatch the approved task
       // immediately so the request that is waiting for approval receives its
       // result instead of timing out and asking the user again.
+      await ctx.emit("connector.task-decided", { ...task, status: approved ? "approved" : "rejected" }).catch(() => undefined);
       if (approved) await service.executeTask(id, taskId).catch(() => false);
       s.respond(
         await db.selectOne("advanced_chat_connector_tasks", {
