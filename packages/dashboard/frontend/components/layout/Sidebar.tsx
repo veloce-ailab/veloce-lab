@@ -12,12 +12,12 @@ export function Sidebar({ className, onNavigate }: { className?: string; onNavig
   useEffect(() => subscribeExtensions(() => refresh((value) => value + 1)), [])
   const extensionItems = nav()
   return (
-    <aside className={cn("flex h-full w-60 flex-col border-r bg-card p-3", className)}>
-      <nav className="space-y-1">
+    <aside className={cn("flex h-full min-w-0 flex-col border-r border-sidebar-border bg-sidebar px-3 py-4 text-sidebar-foreground", className)}>
+      <nav className="min-w-0 space-y-1">
         <DashboardSlot name="sidebar.navigation.before" />
         {extensionItems.map((item) => (
-          <NavLink key={item.id} to={item.path} onClick={onNavigate} className={({ isActive }) => cn("flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors", isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
-            {item.icon ? <item.icon size={16} /> : null}<span>{navItemLabel(item, t)}</span>
+          <NavLink key={item.id} to={item.path} onClick={onNavigate} className={({ isActive }) => cn("flex h-9 min-w-0 items-center gap-2 rounded-md px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring", isActive ? "relative bg-sidebar-accent font-semibold text-sidebar-accent-foreground after:absolute after:inset-y-2 after:left-0 after:w-[3px] after:rounded-r-full after:bg-primary" : "font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground")}>
+            {item.icon ? <item.icon size={16} className="shrink-0" /> : null}<span className="min-w-0 truncate">{navItemLabel(item, t)}</span>
           </NavLink>
         ))}
         <DashboardSlot name="sidebar.navigation.after" />

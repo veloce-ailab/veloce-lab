@@ -6,9 +6,10 @@
  * utilities. Plugins must not ship their own theme tokens or import their own
  * copy of this file — they consume what the dashboard provides.
  *
- * Preset: shadcn `b27GcrRo` — base radix, style rhea, theme neutral, font
- * Inter, icons lucide, default radius, subtle menu accent.
- * Re-apply after a shadcn upgrade with:
+ * Preset foundation: shadcn `b27GcrRo` — base radix, style rhea, font
+ * Inter, icons lucide. The workspace palette and compact radius scale below
+ * are local design choices; preserve them when updating generated components.
+ * To inspect the original preset after a shadcn upgrade:
  *   yarn dlx shadcn@latest apply --preset b27GcrRo -c packages/dashboard
  */
 @import "tailwindcss";
@@ -23,83 +24,79 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Token values follow the legacy `web/` frontend (its stylesheet lives in git
- * history at 71a8e50^:web/src/index.css) so colours and light/dark contrast stay
- * familiar. Two deliberate deviations, both measured with the WCAG ratio:
- *   - light `--muted-foreground` is 0.52 instead of 0.556, lifting muted text on
- *     a muted panel from 4.34:1 to 4.9:1 (AA for body text)
- *   - `--destructive-foreground` is light in light mode and dark in dark mode;
- *     the legacy dark value (light text on #ff6467) was only 2.77:1
+/* A cool, quiet workspace with mineral blue reserved for actions and selection.
+ * Muted text retains at least 4.5:1 contrast on the muted surface in both modes.
+ * Public theme settings continue to override these semantic tokens at runtime.
  */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.52 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --radius: 0.5rem;
+  --background: #f5f8fa;
+  --foreground: #263747;
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --primary: #285f8f;
+  --primary-foreground: #ffffff;
+  --secondary: #eaf0f4;
+  --secondary-foreground: var(--foreground);
+  --muted: #eaf0f4;
+  --muted-foreground: #5a6d7c;
+  --accent: #e2ecf3;
+  --accent-foreground: #224e72;
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: #d7e1e8;
+  --input: #c6d3de;
+  --ring: var(--primary);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #eaf0f4;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: #dae6ee;
+  --sidebar-accent-foreground: #224e72;
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: #141d26;
+  --foreground: #e9f0f5;
+  --card: #1b2733;
+  --card-foreground: var(--foreground);
+  --popover: #1b2733;
+  --popover-foreground: var(--foreground);
+  --primary: #92bfe5;
+  --primary-foreground: #13283b;
+  --secondary: #202d3a;
+  --secondary-foreground: var(--foreground);
+  --muted: #202d3a;
+  --muted-foreground: #a4b4c2;
+  --accent: #283c4d;
+  --accent-foreground: #d5e8f7;
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.205 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --border: #314252;
+  --input: #43586a;
+  --ring: var(--primary);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: #101820;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: #283c4d;
+  --sidebar-accent-foreground: #d5e8f7;
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
 }
 
 /* Mapping the tokens into Tailwind is what makes `bg-background`,

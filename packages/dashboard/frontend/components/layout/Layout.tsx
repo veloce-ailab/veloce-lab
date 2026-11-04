@@ -25,13 +25,13 @@ export function Layout({ children }: { children?: ReactNode }) {
   });
   const publicSettings = withPublicSettingsDefaults(settings);
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
+    <div className="flex h-dvh flex-col overflow-hidden bg-background">
       <DashboardSlot name="header.before" />
       {/* The top bar belongs to its own package and is rendered from the slot;
           the console only supplies the control that drives its own sidebar. */}
       <DashboardSlot
         name="frame.topbar"
-        className="shrink-0"
+        className="z-30 shrink-0"
         data={{
           frame: "console",
           leading: (
@@ -97,7 +97,7 @@ export function Layout({ children }: { children?: ReactNode }) {
 
         <main
           className={cn(
-            "flex min-h-0 flex-1 flex-col overflow-y-auto transition-[filter] duration-200",
+            "flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-muted/20 transition-[filter] duration-200",
             isSidebarOpen && "max-lg:blur-sm",
           )}
         >

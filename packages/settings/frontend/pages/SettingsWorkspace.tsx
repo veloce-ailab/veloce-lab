@@ -96,7 +96,7 @@ export default function SettingsWorkspace() {
   }
 
   return (
-    <div className={cn("flex flex-col overflow-hidden", isDesktop ? "desktop-acrylic-window h-full min-h-0" : "h-screen bg-background")}>
+    <div className={cn("flex flex-col overflow-hidden", isDesktop ? "desktop-acrylic-window h-full min-h-0" : "h-dvh bg-background")}>
       {!isDesktop && (
         <DashboardSlot
           name="frame.topbar"
@@ -126,9 +126,9 @@ export default function SettingsWorkspace() {
         </ResizableSidebar>
         <div className={cn("fixed inset-0 z-40 transition-opacity duration-200 lg:hidden", isDesktop ? "top-0" : "top-16", isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden={!isSidebarOpen}>
           <button type="button" className="absolute inset-0 bg-black/35 backdrop-blur-sm transition-opacity duration-200" aria-label={t("settings.closeMenu")} onClick={() => setIsSidebarOpen(false)} />
-          <SettingsSidebar className={cn("relative z-50 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")} homePath={homePath} chatPath={chatPath} user={user} onLogout={logout} onNavigate={() => setIsSidebarOpen(false)} />
+          <SettingsSidebar className={cn("relative z-50 w-72 max-w-[85vw] transition-transform duration-200 ease-out", isSidebarOpen ? "translate-x-0" : "-translate-x-full")} homePath={homePath} chatPath={chatPath} user={user} onLogout={logout} onNavigate={() => setIsSidebarOpen(false)} />
         </div>
-        <main className={cn("flex min-h-0 flex-1 flex-col transition-[filter] duration-200", fullHeight ? "overflow-hidden" : "overflow-y-auto", isSidebarOpen && "max-lg:blur-sm")}>
+        <main className={cn("flex min-h-0 min-w-0 flex-1 flex-col transition-[filter] duration-200", fullHeight ? "overflow-hidden" : "overflow-y-auto bg-muted/20", isSidebarOpen && "max-lg:blur-sm")}>
           <DashboardSlot name="content.before" />
           {pageForbidden ? <Navigate to={accessibleHome} replace /> : fullHeight ? (
             <PageTransition transitionKey={location.pathname} className="page-shell-transition h-full min-h-0">
@@ -170,7 +170,7 @@ function SettingsSidebar({ homePath, chatPath, user, onLogout, className, onNavi
   const accountPath = homePath ?? chatPath ?? "/"
 
   return (
-    <aside className={cn("flex h-full min-h-0 w-full shrink-0 flex-col border-r bg-card", className)}>
+    <aside className={cn("flex h-full min-h-0 min-w-0 w-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar", className)}>
       <div className="shrink-0 border-b px-4 pb-3 pt-4">
         <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
           {chatPath ? <Link to={chatPath} onClick={onNavigate} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted" title={t("nav.chat")} aria-label={t("nav.chat")}><Home size={15} /></Link> : <span className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground"><Home size={15} /></span>}
@@ -196,7 +196,7 @@ function SettingsSidebar({ homePath, chatPath, user, onLogout, className, onNavi
               </button>
               {!collapsed && <div className="mt-1 space-y-0.5">{group.items.map((item) => {
                 const Icon = item.icon
-                return <NavLink key={item.href} to={item.href} onClick={onNavigate} className={({ isActive }) => cn("flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors", isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}><Icon size={16} /><span className="truncate">{item.label}</span></NavLink>
+                return <NavLink key={item.href} to={item.href} onClick={onNavigate} className={({ isActive }) => cn("relative flex h-9 min-w-0 items-center gap-3 rounded-md px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring", isActive ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground after:absolute after:inset-y-2 after:left-0 after:w-[3px] after:rounded-r-full after:bg-primary" : "font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground")}><Icon size={16} className="shrink-0" /><span className="min-w-0 truncate">{item.label}</span></NavLink>
               })}</div>}
             </section>
           )

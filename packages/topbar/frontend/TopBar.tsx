@@ -70,7 +70,7 @@ export default function TopBar({ leading, actions }: TopBarProps) {
   return (
     <header
       className={cn(
-        "pwa-titlebar z-30 flex shrink-0 items-center justify-between border-b bg-background/95 px-4 backdrop-blur sm:px-6",
+        "pwa-titlebar z-30 flex shrink-0 items-center justify-between border-b border-border/80 bg-background px-3 sm:px-5",
         isDesktopTarget() ? "h-12" : "h-16",
       )}
     >
@@ -81,7 +81,7 @@ export default function TopBar({ leading, actions }: TopBarProps) {
           <span className="truncate text-sm font-semibold">{publicSettings.site_name || "Veloce"}</span>
         </Link>
       </div>
-      <div className="pwa-titlebar-actions flex min-w-0 items-center gap-3">
+      <div className="pwa-titlebar-actions flex min-w-0 items-center gap-1.5 sm:gap-2">
         <DashboardSlot name="header.nav" />
         {publicSettings.top_nav_enabled && topNavItems.length > 0 && (
           <div className="hidden min-w-0 items-center gap-4 text-sm text-muted-foreground lg:flex">

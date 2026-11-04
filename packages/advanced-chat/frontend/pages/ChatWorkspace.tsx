@@ -87,7 +87,7 @@ export default function ChatWorkspace() {
   // Pages that need the whole viewport declare `layout: "full"` when they register.
   const fullHeight = pageForPath("chat", location.pathname)?.layout === "full"
   const transitionKey = isHome ? chatHomePath : location.pathname
-  const viewportHeightClass = isDesktopTarget() ? "h-full" : "h-screen"
+  const viewportHeightClass = isDesktopTarget() ? "h-full" : "h-dvh"
 
   useEffect(() => {
     if (!isDesktopTarget()) {
@@ -108,8 +108,8 @@ export default function ChatWorkspace() {
 
   return (
     <SidebarProvider className={cn("overflow-hidden", isDesktop ? "desktop-acrylic-window" : "bg-background", viewportHeightClass)}>
-      <Sidebar collapsible="offcanvas" className={cn(fullHeight && "bg-background")}>
-        <ChatSidebar className={cn("w-full", fullHeight && "bg-background")} sessionSlotID="chat-sessions-sidebar-slot" />
+      <Sidebar collapsible="offcanvas">
+        <ChatSidebar className="w-full" sessionSlotID="chat-sessions-sidebar-slot" />
         <SidebarRail />
       </Sidebar>
       <SidebarInset className="min-w-0 overflow-hidden">
@@ -131,7 +131,7 @@ export default function ChatWorkspace() {
       />
 
       <div className={cn("flex min-h-0 flex-1", fullHeight && "bg-background")}>
-        <main className={cn("flex min-h-0 flex-1 flex-col", fullHeight ? "overflow-hidden" : "overflow-y-auto")}>
+        <main className={cn("flex min-h-0 min-w-0 flex-1 flex-col", fullHeight ? "overflow-hidden" : "overflow-y-auto bg-muted/20")}>
           <div className={cn("w-full flex-1", fullHeight ? "min-h-0" : "mx-auto max-w-6xl p-4 sm:p-6 lg:p-8")}>
             <PageTransition transitionKey={transitionKey} className={cn("page-shell-transition", fullHeight && "h-full min-h-0")}>
               <div className={cn(fullHeight ? "h-full" : "space-y-6")}>
@@ -234,11 +234,11 @@ function ChatSidebar({
         to={item.href}
         onClick={handleNavigation}
         className={cn(
-          "flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors",
-          item.active ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-muted"
+          "relative flex h-9 min-w-0 items-center gap-2 rounded-md px-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+          item.active ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground after:absolute after:inset-y-2 after:left-0 after:w-[3px] after:rounded-r-full after:bg-primary" : "font-medium text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         )}
       >
-        <span className={cn("flex size-6 shrink-0 items-center justify-center rounded", item.active ? "bg-primary-foreground/15 text-primary-foreground" : "bg-muted text-muted-foreground")}>
+        <span className={cn("flex size-6 shrink-0 items-center justify-center", item.active ? "text-primary" : "text-muted-foreground")}>
           <item.icon size={15} />
         </span>
         <span className="flex-1 truncate">{item.label}</span>
@@ -266,11 +266,11 @@ function ChatSidebar({
                   to={firstItem.href}
                   onClick={() => { setSelectedSectionID(section.id); handleNavigation() }}
                   className={cn(
-                    "flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors",
-                    section.id === routeSection?.id ? "bg-muted text-foreground" : "hover:bg-muted"
+                    "flex h-9 min-w-0 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+                    section.id === routeSection?.id ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                   )}
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+                  <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
                     <firstItem.icon size={15} />
                   </span>
                   <span className="flex-1 truncate">{section.label}</span>
