@@ -237,6 +237,9 @@ interface ChatMessage {
   composer_blocks?: ConversationComposerBlock[]
 }
 
+const EMPTY_CHAT_MESSAGES: ChatMessage[] = []
+const EMPTY_CHAT_LIST: never[] = []
+
 interface ChatSession {
   id: string
   folder_id?: string
@@ -773,7 +776,7 @@ export default function Chat() {
     observer.observe(document.body, { childList: true, subtree: true })
     return () => observer.disconnect()
   }, [])
-  const { data: catalog = [] } = useQuery<UpstreamChannelCatalog[]>({
+  const { data: catalog = EMPTY_CHAT_LIST } = useQuery<UpstreamChannelCatalog[]>({
     queryKey: ["catalog"],
     queryFn: async () => {
       const res = await api.get("/user/catalog")
@@ -781,7 +784,7 @@ export default function Chat() {
     },
   })
 
-  const { data: agents = [], isFetched: agentsFetched } = useQuery<ChatAgent[]>({
+  const { data: agents = EMPTY_CHAT_LIST, isFetched: agentsFetched } = useQuery<ChatAgent[]>({
     queryKey: agentsQueryKey,
     // This used to be disabled, so the picker stayed empty unless some other
     // page happened to load the list first — "选择代理" showed nothing, and the
@@ -795,7 +798,7 @@ export default function Chat() {
     },
   })
 
-  const { data: skills = [] } = useQuery<ChatSkill[]>({
+  const { data: skills = EMPTY_CHAT_LIST } = useQuery<ChatSkill[]>({
     queryKey: skillsQueryKey,
     enabled: isAdvanced,
     queryFn: async () => {
@@ -815,13 +818,13 @@ export default function Chat() {
     },
   })
 
-  const { data: knowledgeBases = [] } = useQuery<ChatKnowledgeBase[]>({
+  const { data: knowledgeBases = EMPTY_CHAT_LIST } = useQuery<ChatKnowledgeBase[]>({
     queryKey: ["knowledge-bases"],
     enabled: isAdvanced,
     queryFn: async () => normalizeKnowledgeBases((await api.get("/user/advanced-chat/knowledge-bases")).data).filter((base) => base.vectorized),
   })
 
-  const { data: sharedPools = [] } = useQuery<EnterpriseSharedPool[]>({
+  const { data: sharedPools = EMPTY_CHAT_LIST } = useQuery<EnterpriseSharedPool[]>({
     queryKey: ["enterprise-shared-pools", "chat"],
     enabled: isAdvanced && enterpriseMode,
     queryFn: async () => {
@@ -836,7 +839,7 @@ export default function Chat() {
     [selectedSharedPoolID, sharedPools]
   )
 
-  const { data: sharedPoolSessions = [] } = useQuery<ChatSession[]>({
+  const { data: sharedPoolSessions = EMPTY_CHAT_LIST } = useQuery<ChatSession[]>({
     queryKey: ["enterprise-shared-pool-sessions", selectedSharedPoolID],
     enabled: isAdvanced && enterpriseMode && Boolean(selectedSharedPoolID),
     queryFn: async () => {
@@ -847,7 +850,7 @@ export default function Chat() {
   })
 
   const {
-    data: serverSessions = [],
+    data: serverSessions = EMPTY_CHAT_LIST,
     isFetched: serverSessionsFetched,
     refetch: refetchAdvancedSessions,
   } = useQuery<ChatSession[]>({
@@ -860,7 +863,7 @@ export default function Chat() {
     },
   })
 
-  const { data: workspaces = [], refetch: refetchWorkspaces } = useQuery<ChatWorkspace[]>({
+  const { data: workspaces = EMPTY_CHAT_LIST, refetch: refetchWorkspaces } = useQuery<ChatWorkspace[]>({
     queryKey: advancedWorkspacesQueryKey,
     enabled: isAdvanced,
     queryFn: async () => {
@@ -869,7 +872,7 @@ export default function Chat() {
     },
   })
 
-  const { data: connectorDevices = [] } = useQuery<ConnectorDevice[]>({
+  const { data: connectorDevices = EMPTY_CHAT_LIST } = useQuery<ConnectorDevice[]>({
     queryKey: connectorDevicesQueryKey,
     enabled: isAdvanced,
     refetchInterval: 5000,
@@ -879,7 +882,7 @@ export default function Chat() {
     },
   })
 
-  const { data: connectorTypes = [] } = useQuery<ConnectorTypeInfo[]>({
+  const { data: connectorTypes = EMPTY_CHAT_LIST } = useQuery<ConnectorTypeInfo[]>({
     queryKey: connectorTypesQueryKey,
     enabled: isAdvanced,
     staleTime: 5 * 60 * 1000,
@@ -889,7 +892,7 @@ export default function Chat() {
     },
   })
 
-  const { data: cloudSandboxes = [] } = useQuery<CloudSandboxOption[]>({
+  const { data: cloudSandboxes = EMPTY_CHAT_LIST } = useQuery<CloudSandboxOption[]>({
     queryKey: ["chat-cloud-sandboxes"],
     enabled: false,
     queryFn: async () => {
@@ -975,9 +978,12 @@ export default function Chat() {
     return Array.from(groups.values())
   }, [language, searchedSessions, sessionGroupMode, visibleSessionCount, workspaces])
   const currentSessionRaw = activeSession || (isAdvanced && routeSessionID ? undefined : draftSession)
-  const currentSession = currentSessionRaw ? normalizeRuntimeSession(currentSessionRaw) : undefined
+  const currentSession = useMemo(
+    () => currentSessionRaw ? normalizeRuntimeSession(currentSessionRaw) : undefined,
+    [currentSessionRaw]
+  )
   const isSharedSession = Boolean(currentSession?.id && currentSession.id === sharedSessionID && sharedSessionPoolID)
-  const currentMessages = currentSession?.messages || []
+  const currentMessages = currentSession?.messages || EMPTY_CHAT_MESSAGES
   const latestMessage = currentMessages[currentMessages.length - 1]
   const welcomeSuggestions = useMemo(
     () => welcomeSuggestionsFor(language, currentSession?.id || draftSession.id),
@@ -1034,7 +1040,7 @@ export default function Chat() {
     },
   })
   const storedFiles = Array.isArray(storedFilesResponse) ? storedFilesResponse : storedFilesResponse?.files || []
-  const { data: sharedPoolFiles = [] } = useQuery<StoredFile[]>({
+  const { data: sharedPoolFiles = EMPTY_CHAT_LIST } = useQuery<StoredFile[]>({
     queryKey: ["enterprise-shared-pool-files", selectedSharedPoolID],
     enabled: isAdvanced && enterpriseMode && Boolean(selectedSharedPoolID),
     queryFn: async () => {
@@ -1043,7 +1049,7 @@ export default function Chat() {
       return items.map(normalizeStoredFile).filter((file): file is StoredFile => Boolean(file))
     },
   })
-  const { data: sharedPoolDevices = [], isFetched: sharedPoolDevicesFetched } = useQuery<EnterprisePoolDevice[]>({
+  const { data: sharedPoolDevices = EMPTY_CHAT_LIST, isFetched: sharedPoolDevicesFetched } = useQuery<EnterprisePoolDevice[]>({
     queryKey: ["enterprise-shared-pool-devices", sharedSessionPoolID],
     enabled: isAdvanced && enterpriseMode && Boolean(sharedSessionPoolID),
     queryFn: async () => {
@@ -1159,7 +1165,7 @@ export default function Chat() {
     },
   })
   const {
-    data: pendingConnectorApprovals = [],
+    data: pendingConnectorApprovals = EMPTY_CHAT_LIST,
     refetch: refetchConnectorApprovals,
   } = useQuery<ConnectorApprovalTask[]>({
     queryKey: connectorApprovalsQueryKey(activeRunID),
@@ -1241,9 +1247,12 @@ export default function Chat() {
     [currentSession?.cloud_sandbox_id, cloudSandboxes]
   )
   const sharedPoolDeviceIDs = useMemo(() => new Set(sharedPoolDevices.map((device) => device.external_device_id)), [sharedPoolDevices])
-  const selectableConnectorDevices = assistantConnectorToolsEnabled
-    ? (isSharedSession ? connectorDevices.filter((device) => sharedPoolDeviceIDs.has(device.id)) : connectorDevices)
-    : []
+  const selectableConnectorDevices = useMemo(
+    () => assistantConnectorToolsEnabled
+      ? (isSharedSession ? connectorDevices.filter((device) => sharedPoolDeviceIDs.has(device.id)) : connectorDevices)
+      : EMPTY_CHAT_LIST,
+    [assistantConnectorToolsEnabled, connectorDevices, isSharedSession, sharedPoolDeviceIDs]
+  )
   const currentConnectorDeviceID = currentSession?.connector_device_id || ""
   const currentConnectorDevice = connectorDevices.find((device) => device.id === currentConnectorDeviceID)
   const localDesktopConnectorDevice = useMemo(
@@ -1315,7 +1324,7 @@ export default function Chat() {
       return { path: String(res.data?.path || ""), entries: Array.isArray(res.data?.entries) ? res.data.entries : [] }
     },
   })
-  const { data: agentGroups = [], isFetching: isFetchingAgentGroups } = useQuery<ChatAgentGroup[]>({
+  const { data: agentGroups = EMPTY_CHAT_LIST, isFetching: isFetchingAgentGroups } = useQuery<ChatAgentGroup[]>({
     queryKey: agentGroupsQueryKey,
     enabled: isAdvanced,
     refetchInterval: 5000,
@@ -2007,7 +2016,8 @@ export default function Chat() {
 
   const updateSession = (sessionID: string, updater: (session: ChatSession) => ChatSession, options: { persist?: boolean; materialize?: boolean } = {}) => {
     const existingSession = sessions.find((session) => session.id === sessionID)
-    const baseSession = existingSession || (draftSession.id === sessionID ? draftSession : undefined)
+    const sharedSession = loadedSharedSession?.id === sessionID ? loadedSharedSession : undefined
+    const baseSession = existingSession || sharedSession || (draftSession.id === sessionID ? draftSession : undefined)
     const persistedSession = baseSession ? normalizeRuntimeSession({ ...updater(normalizeRuntimeSession(baseSession)), updated_at: new Date().toISOString() }) : undefined
     setSessions((current) => {
       const index = current.findIndex((session) => session.id === sessionID)
@@ -2019,8 +2029,13 @@ export default function Chat() {
       if (options.materialize && persistedSession) {
         return [persistedSession, ...current]
       }
-      return current.map(normalizeRuntimeSession)
+      return current
     })
+    if (sharedSession) {
+      setLoadedSharedSession((current) => current?.id === sessionID
+        ? normalizeRuntimeSession({ ...updater(normalizeRuntimeSession(current)), updated_at: new Date().toISOString() })
+        : current)
+    }
     if (draftSession.id === sessionID) {
       setDraftSession((current) => current.id === sessionID ? normalizeRuntimeSession({ ...updater(normalizeRuntimeSession(current)), updated_at: new Date().toISOString() }) : normalizeRuntimeSession(current))
     }
@@ -2034,6 +2049,9 @@ export default function Chat() {
       persistAdvancedSession(persistedSession)
     }
   }
+
+  const updateSessionRef = useRef(updateSession)
+  updateSessionRef.current = updateSession
 
   const openCustomReasoningDialog = () => {
     setCustomReasoningDraft(currentSession?.reasoning_effort || "")
@@ -2314,10 +2332,10 @@ export default function Chat() {
     if (!isSharedSession || !sharedPoolDevicesFetched || !currentSession?.connector_device_id || sharedPoolDeviceIDs.has(currentSession.connector_device_id)) {
       return
     }
-    updateSession(currentSession.id, (session) => ({ ...session, connector_device_id: undefined, connector_workspace_path: undefined }), { persist: true })
+    updateSessionRef.current(currentSession.id, (session) => ({ ...session, connector_device_id: undefined, connector_workspace_path: undefined }), { persist: true })
     setPendingConnectorDeviceID("")
     setPendingConnectorWorkspace("")
-  }, [currentSession?.connector_device_id, currentSession?.id, isSharedSession, sharedPoolDeviceIDs, sharedPoolDevicesFetched, updateSession])
+  }, [currentSession?.connector_device_id, currentSession?.id, isSharedSession, sharedPoolDeviceIDs, sharedPoolDevicesFetched])
 
   const setSessionAgentGroup = (groupID: string) => {
     if (!currentSession) {

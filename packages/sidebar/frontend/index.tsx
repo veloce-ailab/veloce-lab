@@ -74,7 +74,7 @@ function Sidebar(data: Record<string, unknown>) {
   const active = tabs.find((tab) => tab.id === activeTab)
   const tabData = { ...data, activeTab, tabs, activeTabState: active?.state ?? {}, onSelectTab: selectTab, onCreateTab: createTab, onUpdateTab: updateTab, onCloseTab: closeTab }
   const panel = <>
-    <ResizableSidebar storageKey="chat-workspace" side="right" defaultWidth={320} minWidth={288} maxWidth={400} className={`fixed ${topOffset} bottom-2 right-2 z-50 flex ${panelHeight} max-w-[calc(100vw-1rem)] rounded-2xl shadow-xl transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${visible ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-3 opacity-0"}`}>
+    <ResizableSidebar storageKey="chat-workspace" side="right" defaultWidth={320} minWidth={288} maxWidth={400} className={`fixed ${topOffset} bottom-2 right-2 z-50 flex ${panelHeight} max-w-[calc(100vw-1rem)] rounded-2xl shadow-[0_16px_40px_color-mix(in_srgb,var(--foreground)_20%,transparent)] transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${visible ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-3 opacity-0"}`}>
     <aside id="chat-right-sidebar" aria-label={zh ? "工具" : "Tools"} aria-hidden={!visible} inert={!visible || undefined} className="flex h-full min-h-0 w-full flex-col overflow-y-auto overscroll-contain rounded-2xl border border-border bg-background p-3">
       <div className="mb-3 flex shrink-0 items-center justify-between border-b border-border pb-2">
         <span className="text-sm font-semibold">{zh ? "工具" : "Tools"}</span>

@@ -42,6 +42,7 @@ interface ChatSidebarItem {
 type Translate = (key: string) => string
 
 const chatHomePath = "/chat"
+const EMPTY_GLOBAL_SESSIONS: GlobalChatSession[] = []
 
 /**
  * The chat frame. It owns the chrome around every `/chat/*` page and nothing
@@ -59,7 +60,7 @@ export default function ChatWorkspace() {
   const { language, t } = useI18n()
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false)
   const [globalSearch, setGlobalSearch] = useState("")
-  const { data: globalSessions = [] } = useQuery<GlobalChatSession[]>({
+  const { data: globalSessions = EMPTY_GLOBAL_SESSIONS } = useQuery<GlobalChatSession[]>({
     queryKey: ["advanced-chat-global-session-search"],
     enabled: isGlobalSearchOpen,
     queryFn: async () => {

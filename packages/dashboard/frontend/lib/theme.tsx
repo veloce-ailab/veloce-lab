@@ -193,6 +193,8 @@ function applyUserThemePalette(palette: UserThemePalette | null, resolvedTheme: 
     return
   }
   const colors = palette[resolvedTheme]
+  const mutedSurface = mixHexColor(colors.surface, colors.foreground, 0.06)
+  const accentSurface = mixHexColor(colors.surface, colors.foreground, 0.1)
   const values: Record<string, string> = {
     background: colors.background,
     foreground: colors.foreground,
@@ -202,11 +204,11 @@ function applyUserThemePalette(palette: UserThemePalette | null, resolvedTheme: 
     "popover-foreground": colors.foreground,
     primary: colors.primary,
     "primary-foreground": readableForeground(colors.primary),
-    secondary: colors.surface,
+    secondary: mutedSurface,
     "secondary-foreground": colors.foreground,
-    accent: colors.surface,
+    accent: accentSurface,
     "accent-foreground": colors.foreground,
-    muted: colors.surface,
+    muted: mutedSurface,
     "muted-foreground": colors.foreground,
     border: colors.surface,
     input: colors.surface,
@@ -215,7 +217,7 @@ function applyUserThemePalette(palette: UserThemePalette | null, resolvedTheme: 
     "sidebar-foreground": colors.foreground,
     "sidebar-primary": colors.primary,
     "sidebar-primary-foreground": readableForeground(colors.primary),
-    "sidebar-accent": colors.surface,
+    "sidebar-accent": accentSurface,
     "sidebar-accent-foreground": colors.foreground,
     "sidebar-border": colors.surface,
     "sidebar-ring": colors.primary,
@@ -228,6 +230,17 @@ function applyUserThemePalette(palette: UserThemePalette | null, resolvedTheme: 
     document.head.appendChild(meta)
   }
   meta.content = colors.background
+}
+
+function mixHexColor(background: string, foreground: string, amount: number) {
+  const backgroundColor = normalizeHexColor(background).slice(1)
+  const foregroundColor = normalizeHexColor(foreground).slice(1)
+  const channels = [0, 2, 4].map((offset) => {
+    const base = Number.parseInt(backgroundColor.slice(offset, offset + 2), 16)
+    const overlay = Number.parseInt(foregroundColor.slice(offset, offset + 2), 16)
+    return Math.round(base + (overlay - base) * amount).toString(16).padStart(2, "0")
+  })
+  return `#${channels.join("")}`
 }
 
 function readableForeground(hex: string) {
