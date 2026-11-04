@@ -1,6 +1,6 @@
 {
   "name": "@velocelab/explorer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "main": "dist/index.js",
   "dev": "src/index.ts",
@@ -11,10 +11,10 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
-    "@velocelab/advanced-chat": "^0.1.1",
-    "@velocelab/connector": "^0.1.1",
-    "@velocelab/dashboard": "^0.1.4",
-    "@velocelab/sidebar": "^0.1.1",
+    "@velocelab/advanced-chat": "^0.1.2",
+    "@velocelab/connector": "^0.1.2",
+    "@velocelab/dashboard": "^0.1.5",
+    "@velocelab/sidebar": "^0.1.2",
     "monaco-editor": "^0.52.2"
   },
   "peerDependencies": {

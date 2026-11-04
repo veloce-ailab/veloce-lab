@@ -2814,7 +2814,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/adapter-claude@workspace:packages/adapter-claude"
   dependencies:
-    "@velocelab/adapters": "npm:^0.1.1"
+    "@velocelab/adapters": "npm:^0.1.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2834,7 +2834,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/adapter-deepseek-account@workspace:packages/adapter-deepseek-account"
   dependencies:
-    "@velocelab/adapters": "npm:^0.1.1"
+    "@velocelab/adapters": "npm:^0.1.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2844,7 +2844,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/adapter-deepseek@workspace:packages/adapter-deepseek"
   dependencies:
-    "@velocelab/adapters": "npm:^0.1.1"
+    "@velocelab/adapters": "npm:^0.1.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -2960,7 +2960,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/adapters@npm:^0.1.1, @velocelab/adapters@workspace:packages/adapters":
+"@velocelab/adapters@npm:^0.1.1, @velocelab/adapters@npm:^0.1.2, @velocelab/adapters@workspace:packages/adapters":
   version: 0.0.0-use.local
   resolution: "@velocelab/adapters@workspace:packages/adapters"
   peerDependencies:
@@ -2968,16 +2968,16 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/advanced-chat@npm:^0.1.1, @velocelab/advanced-chat@workspace:packages/advanced-chat":
+"@velocelab/advanced-chat@npm:^0.1.1, @velocelab/advanced-chat@npm:^0.1.2, @velocelab/advanced-chat@workspace:packages/advanced-chat":
   version: 0.0.0-use.local
   resolution: "@velocelab/advanced-chat@workspace:packages/advanced-chat"
   dependencies:
     "@tanstack/react-query": "npm:^5.100.14"
-    "@velocelab/adapters": "npm:^0.1.1"
-    "@velocelab/agent-runtime": "npm:^0.1.1"
-    "@velocelab/file": "npm:^0.1.1"
-    "@velocelab/message": "npm:^0.1.1"
-    "@velocelab/user": "npm:^0.1.1"
+    "@velocelab/adapters": "npm:^0.1.2"
+    "@velocelab/agent-runtime": "npm:^0.1.2"
+    "@velocelab/file": "npm:^0.1.2"
+    "@velocelab/message": "npm:^0.1.2"
+    "@velocelab/user": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
     axios: "npm:^1.16.1"
     lucide-react: "npm:^1.16.0"
@@ -2990,7 +2990,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/agent-runtime@npm:^0.1.1, @velocelab/agent-runtime@workspace:packages/agent-runtime":
+"@velocelab/agent-runtime@npm:^0.1.2, @velocelab/agent-runtime@workspace:packages/agent-runtime":
   version: 0.0.0-use.local
   resolution: "@velocelab/agent-runtime@workspace:packages/agent-runtime"
   peerDependencies:
@@ -3032,9 +3032,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/auth@workspace:packages/auth"
   dependencies:
-    "@velocelab/dashboard": "npm:^0.1.1"
+    "@velocelab/dashboard": "npm:^0.1.5"
     "@velocelab/database-core": "npm:^0.1.1"
-    "@velocelab/user": "npm:^0.1.1"
+    "@velocelab/user": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
     bcryptjs: "npm:^3.0.2"
     react: "npm:^19.2.6"
@@ -3090,8 +3090,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/browser@workspace:packages/browser"
   dependencies:
-    "@velocelab/dashboard": "npm:^0.1.4"
-    "@velocelab/sidebar": "npm:^0.1.1"
+    "@velocelab/dashboard": "npm:^0.1.5"
+    "@velocelab/sidebar": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
     lucide-react: "npm:^1.16.0"
     react: "npm:^19.2.6"
@@ -3114,7 +3114,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/channel-admin@workspace:packages/channel-admin"
   dependencies:
-    "@velocelab/adapters": "npm:^0.1.1"
+    "@velocelab/adapters": "npm:^0.1.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -3132,9 +3132,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/chat-environment@workspace:packages/chat-environment"
   dependencies:
-    "@velocelab/advanced-chat": "npm:^0.1.1"
-    "@velocelab/dashboard": "npm:^0.1.4"
-    "@velocelab/sidebar": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
+    "@velocelab/dashboard": "npm:^0.1.5"
+    "@velocelab/sidebar": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
     lucide-react: "npm:^1.16.0"
     react: "npm:^19.2.6"
@@ -3149,9 +3149,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/chat-files@workspace:packages/chat-files"
   dependencies:
-    "@velocelab/advanced-chat": "npm:^0.1.1"
-    "@velocelab/dashboard": "npm:^0.1.4"
-    "@velocelab/sidebar": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
+    "@velocelab/dashboard": "npm:^0.1.5"
+    "@velocelab/sidebar": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
     lucide-react: "npm:^1.16.0"
     react: "npm:^19.2.6"
@@ -3177,10 +3177,10 @@ __metadata:
   dependencies:
     "@monaco-editor/react": "npm:^4.7.0"
     "@tanstack/react-query": "npm:^5.100.14"
-    "@velocelab/advanced-chat": "npm:^0.1.1"
-    "@velocelab/dashboard": "npm:^0.1.4"
-    "@velocelab/sidebar": "npm:^0.1.1"
-    "@velocelab/workspace": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
+    "@velocelab/dashboard": "npm:^0.1.5"
+    "@velocelab/sidebar": "npm:^0.1.2"
+    "@velocelab/workspace": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
     lucide-react: "npm:^1.16.0"
     monaco-editor: "npm:^0.52.2"
@@ -3205,9 +3205,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/chat-terminal@workspace:packages/chat-terminal"
   dependencies:
-    "@velocelab/advanced-chat": "npm:^0.1.1"
-    "@velocelab/dashboard": "npm:^0.1.4"
-    "@velocelab/sidebar": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
+    "@velocelab/dashboard": "npm:^0.1.5"
+    "@velocelab/sidebar": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
     "@xterm/addon-fit": "npm:^0.10.0"
     "@xterm/xterm": "npm:^5.3.0"
@@ -3236,8 +3236,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/companion@workspace:packages/companion"
   dependencies:
-    "@velocelab/advanced-chat": "npm:^0.1.1"
-    "@velocelab/file": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
+    "@velocelab/file": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
     lucide-react: "npm:^1.16.0"
     react: "npm:^19.2.6"
@@ -3249,17 +3249,17 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/connector@npm:^0.1.1, @velocelab/connector@workspace:packages/connector":
+"@velocelab/connector@npm:^0.1.1, @velocelab/connector@npm:^0.1.2, @velocelab/connector@workspace:packages/connector":
   version: 0.0.0-use.local
   resolution: "@velocelab/connector@workspace:packages/connector"
   dependencies:
-    "@velocelab/advanced-chat": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
   linkType: soft
 
-"@velocelab/dashboard@npm:^0.1.1, @velocelab/dashboard@npm:^0.1.4, @velocelab/dashboard@workspace:packages/dashboard":
+"@velocelab/dashboard@npm:^0.1.1, @velocelab/dashboard@npm:^0.1.5, @velocelab/dashboard@workspace:packages/dashboard":
   version: 0.0.0-use.local
   resolution: "@velocelab/dashboard@workspace:packages/dashboard"
   dependencies:
@@ -3299,7 +3299,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/device-local@workspace:packages/device-local"
   dependencies:
-    "@velocelab/connector": "npm:^0.1.1"
+    "@velocelab/connector": "npm:^0.1.2"
     node-pty: "npm:^1.1.0"
   peerDependencies:
     yumeri: ^3.0.0
@@ -3311,10 +3311,10 @@ __metadata:
   resolution: "@velocelab/explorer@workspace:packages/explorer"
   dependencies:
     "@monaco-editor/react": "npm:^4.7.0"
-    "@velocelab/advanced-chat": "npm:^0.1.1"
-    "@velocelab/connector": "npm:^0.1.1"
-    "@velocelab/dashboard": "npm:^0.1.4"
-    "@velocelab/sidebar": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
+    "@velocelab/connector": "npm:^0.1.2"
+    "@velocelab/dashboard": "npm:^0.1.5"
+    "@velocelab/sidebar": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
     lucide-react: "npm:^1.16.0"
     monaco-editor: "npm:^0.52.2"
@@ -3326,7 +3326,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/file@npm:^0.1.1, @velocelab/file@workspace:packages/file":
+"@velocelab/file@npm:^0.1.2, @velocelab/file@workspace:packages/file":
   version: 0.0.0-use.local
   resolution: "@velocelab/file@workspace:packages/file"
   peerDependencies:
@@ -3375,7 +3375,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/knowledge@workspace:packages/knowledge"
   dependencies:
-    "@velocelab/advanced-chat": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -3395,7 +3395,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/memory@workspace:packages/memory"
   dependencies:
-    "@velocelab/advanced-chat": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
     react: "npm:^19.2.6"
     vite: "npm:^8.0.12"
@@ -3404,13 +3404,13 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/message@npm:^0.1.1, @velocelab/message@workspace:packages/message":
+"@velocelab/message@npm:^0.1.2, @velocelab/message@workspace:packages/message":
   version: 0.0.0-use.local
   resolution: "@velocelab/message@workspace:packages/message"
   dependencies:
-    "@velocelab/dashboard": "npm:^0.1.1"
+    "@velocelab/dashboard": "npm:^0.1.5"
     "@velocelab/database-core": "npm:^0.1.1"
-    "@velocelab/notification": "npm:^0.1.1"
+    "@velocelab/notification": "npm:^0.1.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -3439,11 +3439,11 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/notification@npm:^0.1.1, @velocelab/notification@workspace:packages/notification":
+"@velocelab/notification@npm:^0.1.2, @velocelab/notification@workspace:packages/notification":
   version: 0.0.0-use.local
   resolution: "@velocelab/notification@workspace:packages/notification"
   dependencies:
-    "@velocelab/dashboard": "npm:^0.1.1"
+    "@velocelab/dashboard": "npm:^0.1.5"
     "@velocelab/pwa": "npm:^0.1.1"
   peerDependencies:
     yumeri: ^3.0.0
@@ -3497,8 +3497,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/settings@workspace:packages/settings"
   dependencies:
-    "@velocelab/dashboard": "npm:^0.1.1"
-    "@velocelab/user": "npm:^0.1.1"
+    "@velocelab/dashboard": "npm:^0.1.5"
+    "@velocelab/user": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
     react: "npm:^19.2.6"
     vite: "npm:^8.0.12"
@@ -3507,11 +3507,11 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/sidebar@npm:^0.1.1, @velocelab/sidebar@workspace:packages/sidebar":
+"@velocelab/sidebar@npm:^0.1.2, @velocelab/sidebar@workspace:packages/sidebar":
   version: 0.0.0-use.local
   resolution: "@velocelab/sidebar@workspace:packages/sidebar"
   dependencies:
-    "@velocelab/dashboard": "npm:^0.1.4"
+    "@velocelab/dashboard": "npm:^0.1.5"
     "@velocelab/database-core": "npm:^0.1.1"
     "@vitejs/plugin-react": "npm:^6.0.1"
     lucide-react: "npm:^1.16.0"
@@ -3528,7 +3528,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/skill@workspace:packages/skill"
   dependencies:
-    "@velocelab/advanced-chat": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -3550,8 +3550,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/tools@workspace:packages/tools"
   dependencies:
-    "@velocelab/advanced-chat": "npm:^0.1.1"
-    "@velocelab/dashboard": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
+    "@velocelab/dashboard": "npm:^0.1.5"
     "@vitejs/plugin-react": "npm:^6.0.1"
     react: "npm:^19.2.6"
     vite: "npm:^8.0.12"
@@ -3564,7 +3564,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/topbar@workspace:packages/topbar"
   dependencies:
-    "@velocelab/dashboard": "npm:^0.1.1"
+    "@velocelab/dashboard": "npm:^0.1.5"
     "@vitejs/plugin-react": "npm:^6.0.1"
     react: "npm:^19.2.6"
     vite: "npm:^8.0.12"
@@ -3577,8 +3577,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/update-checker@workspace:packages/update-checker"
   dependencies:
-    "@velocelab/dashboard": "npm:^0.1.1"
-    "@velocelab/message": "npm:^0.1.1"
+    "@velocelab/dashboard": "npm:^0.1.5"
+    "@velocelab/message": "npm:^0.1.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -3594,11 +3594,11 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/user@npm:^0.1.1, @velocelab/user@workspace:packages/user":
+"@velocelab/user@npm:^0.1.2, @velocelab/user@workspace:packages/user":
   version: 0.0.0-use.local
   resolution: "@velocelab/user@workspace:packages/user"
   dependencies:
-    "@velocelab/dashboard": "npm:^0.1.1"
+    "@velocelab/dashboard": "npm:^0.1.5"
     "@velocelab/database-core": "npm:^0.1.1"
     "@vitejs/plugin-react": "npm:^6.0.1"
     react: "npm:^19.2.6"
@@ -3608,13 +3608,13 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/workspace@npm:^0.1.1, @velocelab/workspace@workspace:packages/workspace":
+"@velocelab/workspace@npm:^0.1.2, @velocelab/workspace@workspace:packages/workspace":
   version: 0.0.0-use.local
   resolution: "@velocelab/workspace@workspace:packages/workspace"
   dependencies:
-    "@velocelab/advanced-chat": "npm:^0.1.1"
-    "@velocelab/connector": "npm:^0.1.1"
-    "@velocelab/file": "npm:^0.1.1"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
+    "@velocelab/connector": "npm:^0.1.2"
+    "@velocelab/file": "npm:^0.1.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
