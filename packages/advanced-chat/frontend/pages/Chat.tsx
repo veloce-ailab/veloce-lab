@@ -2018,13 +2018,21 @@ export default function Chat() {
     const existingSession = sessions.find((session) => session.id === sessionID)
     const sharedSession = loadedSharedSession?.id === sessionID ? loadedSharedSession : undefined
     const baseSession = existingSession || sharedSession || (draftSession.id === sessionID ? draftSession : undefined)
-    const persistedSession = baseSession ? normalizeRuntimeSession({ ...updater(normalizeRuntimeSession(baseSession)), updated_at: new Date().toISOString() }) : undefined
+    // Only build the snapshot that can actually leave this function. The updater
+    // re-normalises every message in the session, so paying for it on each
+    // streaming token when nothing is persisted was most of the cost of a run.
+    const persistable = options.persist === true || options.materialize === true
+    const persistedSession = persistable && baseSession ? normalizeRuntimeSession({ ...updater(normalizeRuntimeSession(baseSession)), updated_at: new Date().toISOString() }) : undefined
     setSessions((current) => {
       const index = current.findIndex((session) => session.id === sessionID)
       if (index >= 0) {
-        return current.map((session) =>
-          session.id === sessionID ? normalizeRuntimeSession({ ...updater(normalizeRuntimeSession(session)), updated_at: new Date().toISOString() }) : normalizeRuntimeSession(session)
-        )
+        // Replace the target only. Re-normalising the untouched sessions handed
+        // every consumer a brand new object on every update, so nothing
+        // downstream could skip a render and the session list rebuilt itself on
+        // every streaming token.
+        const next = current.slice()
+        next[index] = normalizeRuntimeSession({ ...updater(normalizeRuntimeSession(current[index])), updated_at: new Date().toISOString() })
+        return next
       }
       if (options.materialize && persistedSession) {
         return [persistedSession, ...current]
@@ -2929,6 +2937,41 @@ export default function Chat() {
         }
 
         let accumulatedText = ""
+        // Text arrives one delta per token and every commit re-normalises the
+        // whole session, so applying a delta as it landed meant a full session
+        // rebuild per token. Text is the only high-frequency event: buffer it and
+        // commit at most once per frame. Status changes, tool calls and the final
+        // message still commit immediately so ordering is unchanged.
+        let pendingTextDeltas: Array<{ round: number; delta: string }> = []
+        let pendingFrame = 0
+        const flushAssistantText = () => {
+          if (pendingFrame) {
+            cancelAnimationFrame(pendingFrame)
+            pendingFrame = 0
+          }
+          if (!pendingTextDeltas.length) {
+            return
+          }
+          const deltas = pendingTextDeltas
+          pendingTextDeltas = []
+          // `accumulatedText` is the full text so far, so it is always ahead of
+          // whatever is buffered; reading it at flush time cannot drop a delta.
+          const text = accumulatedText
+          upsertAssistantMessage((message) => ({
+            ...message,
+            content: text,
+            content_parts: deltas.reduce((parts, item) => appendContentPart(parts, item.round, item.delta), message.content_parts || []),
+          }))
+        }
+        const scheduleAssistantText = () => {
+          if (pendingFrame) {
+            return
+          }
+          pendingFrame = requestAnimationFrame(() => {
+            pendingFrame = 0
+            flushAssistantText()
+          })
+        }
         try {
           const token = getAuthToken()
           const response = await fetch(apiURL("/api/user/advanced-chat/completions"), {
@@ -2986,8 +3029,10 @@ export default function Chat() {
               }
               const round = typeof event.payload.round === "number" && Number.isFinite(event.payload.round) ? event.payload.round : 1
               accumulatedText += delta
-              upsertAssistantMessage((message) => ({ ...message, content: accumulatedText, content_parts: appendContentPart(message.content_parts || [], round, delta) }))
+              pendingTextDeltas.push({ round, delta })
+              scheduleAssistantText()
             } else if (event.type === "status") {
+              flushAssistantText()
               const serverMessageID = stringFromUnknown(event.payload.assistant_message_id)
               if (serverMessageID && serverMessageID !== assistantMessageID) {
                 const previousID = assistantMessageID
@@ -3013,6 +3058,7 @@ export default function Chat() {
               }
               upsertAssistantMessage((message) => ({ ...message, content: statusText }))
             } else if (event.type === "tool_call") {
+              flushAssistantText()
               const streamedTasks = sessionTasksFromToolCall(event.payload.name, event.payload.status, event.payload.result)
               if (streamedTasks) {
                 setSessionTasks(streamedTasks)
@@ -3023,6 +3069,13 @@ export default function Chat() {
               }
               upsertAssistantMessage((message) => ({ ...message, tool_calls: mergeToolCalls(message.tool_calls || [], nextToolCalls) }))
             } else if (event.type === "done") {
+              // The final message carries the complete text and parts, so a
+              // buffered delta would only add a redundant commit.
+              if (pendingFrame) {
+                cancelAnimationFrame(pendingFrame)
+                pendingFrame = 0
+              }
+              pendingTextDeltas = []
               const reportedContent = typeof event.payload.message?.content === "string" ? event.payload.message.content : ""
               const finalContent = preferCompleteText(accumulatedText, reportedContent)
               const finalParts = normalizeContentParts(event.payload.message?.content_parts, finalContent)
@@ -3070,6 +3123,9 @@ export default function Chat() {
             })
           }
         } catch (err) {
+          // Commit anything still buffered: the abort and error paths below
+          // inspect message.content, which would otherwise look empty mid-frame.
+          flushAssistantText()
           if (err instanceof DOMException && err.name === "AbortError") {
             updateSession(session.id, (current) => ({
               ...current,
@@ -3085,6 +3141,13 @@ export default function Chat() {
             error(apiErrorMessage(err, err instanceof Error ? err.message : copy.sendFailed))
           }
         } finally {
+          // A frame outliving the stream would commit into a session that has
+          // already been finalised.
+          if (pendingFrame) {
+            cancelAnimationFrame(pendingFrame)
+            pendingFrame = 0
+          }
+          pendingTextDeltas = []
           abortControllerRef.current = null
           setIsStreamActive(false)
           setIsStopping(false)
