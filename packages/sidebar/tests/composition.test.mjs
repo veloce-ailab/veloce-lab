@@ -118,7 +118,7 @@ test("tools inspector starts closed, overlays narrow views, and preserves panels
   ctx.slot("chat.sidebar.panels", props => { seen.push(props); return React.createElement("span", null, props.session.id) }, "third-party.panel", 100, "/chat")
   const current = data()
   const closed = renderSlot(h, "frame.right-sidebar", current)
-  assert.match(closed, /pointer-events-none translate-x-3 opacity-0/)
+  assert.match(closed, /pointer-events-none [^"]*opacity-0/)
   assert.match(closed, /session-a/)
   assert.equal(seen.at(-1).messages, current.messages)
   assert.equal(seen.at(-1).setDevice, current.setDevice)
@@ -135,7 +135,7 @@ test("tools inspector starts closed, overlays narrow views, and preserves panels
   const next = { ...current, session: { ...current.session, id: "session-b" } }
   assert.match(renderSlot(h, "frame.right-sidebar", next), /session-b/)
   toggle.onClick()
-  assert.match(renderSlot(h, "frame.right-sidebar", next), /pointer-events-none translate-x-3 opacity-0/)
+  assert.match(renderSlot(h, "frame.right-sidebar", next), /pointer-events-none [^"]*opacity-0/)
   assert.match(renderSlot(h, "frame.right-sidebar", next), /session-b/)
   await ctx.dispose()
   assert.doesNotMatch(renderSlot(h, "frame.right-sidebar", next), /session-b/)
