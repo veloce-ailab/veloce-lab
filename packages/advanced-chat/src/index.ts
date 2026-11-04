@@ -53,6 +53,7 @@ declare module "@yumerijs/types" {
     advanced_chat_connector_credential_bindings: ModelTypes.AdvancedChatConnectorCredentialBinding;
     advanced_chat_skill_packages: ModelTypes.AdvancedChatSkillPackage;
     advanced_chat_packaged_skills: ModelTypes.AdvancedChatPackagedSkill;
+    advanced_chat_skill_package_files: ModelTypes.AdvancedChatSkillPackageFile;
     advanced_chat_knowledge_chunks: ModelTypes.AdvancedChatKnowledgeChunk;
     advanced_chat_run_events: ModelTypes.AdvancedChatRunEvent;
     advanced_chat_chat_groups: ModelTypes.AdvancedChatChatGroup;

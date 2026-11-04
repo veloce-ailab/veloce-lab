@@ -86,12 +86,12 @@ function SkillListPage() {
       error("请上传 zip、tar.gz 或 tgz 格式的 Skill 包")
       return
     }
-    const form = new FormData()
-    form.append("file", file)
     setUploading(true)
     try {
-      await api.post("/user/advanced-chat/skill-packages", form, {
-        headers: { "Content-Type": "multipart/form-data" },
+      const data = Buffer.from(await file.arrayBuffer()).toString("base64")
+      await api.post("/user/advanced-chat/skill-packages", {
+        name: file.name,
+        data,
       })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: skillsQueryKey }),

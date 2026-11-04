@@ -44,4 +44,15 @@ export async function ensureTables(db: Database): Promise<void> {
       updated_at: "timestamp",
     },
   );
+  await db.extend(
+    "advanced_chat_skill_package_files",
+    {
+      id: { type: "string", nullable: false },
+      package_id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      path: { type: "string", nullable: false },
+      size: { type: "bigint", nullable: false },
+      hash: { type: "string", nullable: false },
+    },
+  );
 }
