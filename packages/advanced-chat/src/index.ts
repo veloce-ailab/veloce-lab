@@ -262,6 +262,14 @@ export interface ChatInput {
   temperature?: number;
   reasoningEffort?: string;
   disabledToolGroups?: string[];
+  /**
+   * A bare utility call (title generation): no tools, no system prompt and no
+   * skill/memory/MCP context, so the model answers one self-contained question.
+   * `disabledToolGroups` cannot stand in for this: it only knows the groups in
+   * `tool-groups.ts` and leaves ungrouped tools (`report_generated_file`,
+   * `query_sub_agent_status`, …) in the payload.
+   */
+  noTools?: boolean;
   mode?: string;
   agentId?: string;
   agentGroupId?: string;
@@ -1703,31 +1711,39 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           ctx.component.file as import("@velocelab/file").FileService,
         );
         const optionalContext = "";
-        const injectedContext = (
-          await Promise.all(
-            contextProviders.map((provider) =>
-              provider.provide({
-                userId,
-                sessionId,
-                agentId: agentKey,
-                skillIds,
-                knowledgeBaseIds,
-                mcpServerIds,
-                mode,
-              }),
-            ),
-          )
-        )
-          .filter(Boolean)
-          .join("\n\n");
-        const availableTools = filterToolsByDisabledGroups(
-          service.tools(),
-          disabledToolGroups,
-        );
+        // A no-tools run is a utility call about someone else's conversation, so
+        // nothing describing this session (memory, skills, MCP servers, agent
+        // prompt) belongs in its prompt.
+        const injectedContext =
+          input.noTools === true
+            ? ""
+            : (
+                await Promise.all(
+                  contextProviders.map((provider) =>
+                    provider.provide({
+                      userId,
+                      sessionId,
+                      agentId: agentKey,
+                      skillIds,
+                      knowledgeBaseIds,
+                      mcpServerIds,
+                      mode,
+                    }),
+                  ),
+                )
+              )
+                .filter(Boolean)
+                .join("\n\n");
+        // Disabling every group is not enough: an ungrouped tool keeps group ""
+        // and survives that filter, so the opt-out short-circuits instead.
+        const availableTools =
+          input.noTools === true
+            ? []
+            : filterToolsByDisabledGroups(service.tools(), disabledToolGroups);
         emit("status", { message: "loading_tools" });
         const systemPrompt =
           [
-            String(agent?.prompt ?? "").trim(),
+            input.noTools === true ? "" : String(agent?.prompt ?? "").trim(),
             optionalContext,
             injectedContext,
           ]

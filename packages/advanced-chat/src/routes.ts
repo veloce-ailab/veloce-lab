@@ -683,18 +683,56 @@ export function registerAdvancedChatRoutes(
         request.respond({ error: "Session not found" }, "json");
         return;
       }
-      const messages = Array.isArray((currentSession as any).messages)
-        ? (currentSession as any).messages.slice(-8)
+      const conversationMessages = Array.isArray((currentSession as any).messages)
+        ? (currentSession as any).messages
         : [];
+      // The settings panel offers a dedicated model, channel and scope for
+      // titles; honour them here, otherwise those controls silently do nothing.
+      const titleSettings = await service.getUserSettings(current.id);
+      const messages =
+        titleSettings.title_generation_scope === "all"
+          ? conversationMessages
+          : conversationMessages.slice(-8);
+      // The transcript is embedded in a single user message, so the context
+      // compactor cannot trim it afterwards. "all" can be an unbounded history,
+      // so keep a generous character budget and prefer the most recent turns.
+      const transcript = (() => {
+        const budget = 60000;
+        const lines: string[] = [];
+        let used = 0;
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+          const line = `${messages[index].role}: ${messages[index].content}`;
+          if (used + line.length > budget) break;
+          used += line.length;
+          lines.unshift(line);
+        }
+        return lines.join("\n");
+      })();
+      const sessionModel = String((currentSession as any).model_name ?? "").trim();
+      const titleModel = String(titleSettings.title_model_name ?? "").trim() || sessionModel;
+      const titleChannelId = Number(titleSettings.title_user_channel_id) || 0;
+      // A title is a side effect of the conversation, never part of it: the
+      // completion runs in a throwaway hidden session of its own, so neither
+      // the prompt nor the answer it writes lands in the user's messages. The
+      // id is fixed here so the row can still be removed if the call throws
+      // before `complete` returns.
+      const titleSessionId = randomUUID();
       let title = "New conversation";
       try {
         const result = await service.complete(current.id, {
-          sessionId: id,
-          model: String((currentSession as any).model_name ?? ""),
+          sessionId: titleSessionId,
+          visible: false,
+          title: "Title generation",
+          // No agent, prompt or tool of the chat's own: the default agent
+          // answers, and `complete` falls back to the session's model when that
+          // agent carries no `default_model`.
+          noTools: true,
+          model: titleModel,
+          ...(titleChannelId ? { userChannelId: titleChannelId } : {}),
           messages: [
             {
               role: "user",
-              content: `Create a concise title of at most 60 characters for this conversation. Return title only.\n${messages.map((item: any) => `${item.role}: ${item.content}`).join("\n")}`,
+              content: `Create a concise title of at most 60 characters for this conversation. Return title only.\n${transcript}`,
             },
           ],
           stream: false,
@@ -704,7 +742,14 @@ export function registerAdvancedChatRoutes(
             .trim()
             .replace(/^['"`]+|['"`]+$/g, "")
             .slice(0, 60) || title;
-      } catch {}
+      } catch {
+        // A failed title is not worth failing the request over; the fallback
+        // above stands.
+      } finally {
+        // Messages, run rows and the session itself are scaffolding here: one
+        // dead session per regeneration would otherwise pile up in the database.
+        await service.deleteSession(current.id, titleSessionId).catch(() => {});
+      }
       const value = await service.updateSession(current.id, id, { title });
       if (!value) {
         request.status = 404;
