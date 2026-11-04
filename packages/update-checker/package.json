@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@velocelab/dashboard": "^0.1.5",
-    "@velocelab/message": "^0.1.2"
+    "@velocelab/message": "^0.1.3"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"
