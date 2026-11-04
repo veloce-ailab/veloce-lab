@@ -8,14 +8,23 @@ import { withPublicSettingsDefaults } from "@/lib/public-settings"
 export type ThemeMode = "light" | "dark" | "system"
 export type ResolvedTheme = "light" | "dark"
 
+export interface UserThemePalette {
+  light: { background: string; foreground: string; surface: string; primary: string }
+  dark: { background: string; foreground: string; surface: string; primary: string }
+}
+
 const themeStorageKey = "theme-mode"
 const themeStyleElementID = "windypear-theme-vars"
 const themeCustomizationStyleElementID = "windypear-theme-customizations"
+const userThemePaletteStorageKey = "veloce.user-theme-palette.v1"
+const userThemePaletteVariables = ["background", "foreground", "card", "card-foreground", "popover", "popover-foreground", "primary", "primary-foreground", "secondary", "secondary-foreground", "accent", "accent-foreground", "muted", "muted-foreground", "border", "input", "ring", "sidebar", "sidebar-foreground", "sidebar-primary", "sidebar-primary-foreground", "sidebar-accent", "sidebar-accent-foreground", "sidebar-border", "sidebar-ring"]
 
 type ThemeContextValue = {
   mode: ThemeMode
   resolvedTheme: ResolvedTheme
   setMode: (mode: ThemeMode) => void
+  palette: UserThemePalette | null
+  setPalette: (palette: UserThemePalette | null) => void
 }
 
 type ThemeColorSettingKey = Extract<keyof PublicSettings, `theme_${string}`>
@@ -55,6 +64,7 @@ const ThemeContext = globalObject.__VELOCE_DASHBOARD_THEME_CONTEXT__ ??= createC
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(getStoredThemeMode)
+  const [palette, setPaletteState] = useState<UserThemePalette | null>(getStoredThemePalette)
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() => getSystemTheme())
   const { data: settings } = useQuery<PublicSettings>({
     queryKey: ["public-settings"],
@@ -84,9 +94,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     applyThemeVariables(publicSettings, resolvedTheme)
   }, [publicSettings, resolvedTheme])
 
+  useEffect(() => {
+    applyUserThemePalette(palette, resolvedTheme, publicSettings)
+  }, [palette, publicSettings, resolvedTheme])
+
   const value = useMemo<ThemeContextValue>(() => ({
     mode,
     resolvedTheme,
+    palette,
     setMode: (nextMode) => {
       try {
         localStorage.setItem(themeStorageKey, nextMode)
@@ -95,7 +110,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
       setModeState(nextMode)
     },
-  }), [mode, resolvedTheme])
+    setPalette: (nextPalette) => {
+      setPaletteState(nextPalette)
+      try {
+        if (nextPalette) localStorage.setItem(userThemePaletteStorageKey, JSON.stringify(nextPalette))
+        else localStorage.removeItem(userThemePaletteStorageKey)
+      } catch {
+        // Keep the selected palette for this session when storage is unavailable.
+      }
+    },
+  }), [mode, palette, resolvedTheme])
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
@@ -142,6 +166,75 @@ function getSystemTheme(): ResolvedTheme {
     return "light"
   }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+}
+
+function getStoredThemePalette(): UserThemePalette | null {
+  if (typeof window === "undefined") return null
+  try {
+    const stored = localStorage.getItem(userThemePaletteStorageKey)
+    if (!stored) return null
+    const value = JSON.parse(stored) as UserThemePalette
+    for (const mode of ["light", "dark"] as const) {
+      for (const color of Object.values(value[mode])) {
+        if (!normalizeHexColor(color)) return null
+      }
+    }
+    return value
+  } catch {
+    return null
+  }
+}
+
+function applyUserThemePalette(palette: UserThemePalette | null, resolvedTheme: ResolvedTheme, settings: PublicSettings) {
+  const root = document.documentElement
+  if (!palette) {
+    for (const variable of userThemePaletteVariables) root.style.removeProperty(`--${variable}`)
+    updateThemeColorMeta(settings, resolvedTheme)
+    return
+  }
+  const colors = palette[resolvedTheme]
+  const values: Record<string, string> = {
+    background: colors.background,
+    foreground: colors.foreground,
+    card: colors.surface,
+    "card-foreground": colors.foreground,
+    popover: colors.surface,
+    "popover-foreground": colors.foreground,
+    primary: colors.primary,
+    "primary-foreground": readableForeground(colors.primary),
+    secondary: colors.surface,
+    "secondary-foreground": colors.foreground,
+    accent: colors.surface,
+    "accent-foreground": colors.foreground,
+    muted: colors.surface,
+    "muted-foreground": colors.foreground,
+    border: colors.surface,
+    input: colors.surface,
+    ring: colors.primary,
+    sidebar: colors.surface,
+    "sidebar-foreground": colors.foreground,
+    "sidebar-primary": colors.primary,
+    "sidebar-primary-foreground": readableForeground(colors.primary),
+    "sidebar-accent": colors.surface,
+    "sidebar-accent-foreground": colors.foreground,
+    "sidebar-border": colors.surface,
+    "sidebar-ring": colors.primary,
+  }
+  for (const [name, value] of Object.entries(values)) root.style.setProperty(`--${name}`, normalizeHexColor(value))
+  let meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null
+  if (!meta) {
+    meta = document.createElement("meta")
+    meta.name = "theme-color"
+    document.head.appendChild(meta)
+  }
+  meta.content = colors.background
+}
+
+function readableForeground(hex: string) {
+  const color = normalizeHexColor(hex).slice(1)
+  const channels = [0, 2, 4].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16) / 255)
+  const luminance = channels.map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0)
+  return luminance > 0.42 ? "#17212b" : "#ffffff"
 }
 
 function applyThemeVariables(settings: PublicSettings, resolvedTheme: ResolvedTheme) {

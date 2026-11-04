@@ -45,7 +45,7 @@ export default function apply(ctx: DashboardContext) {
     frame: "settings",
     path: "/settings/theme",
     component: ThemeSettings,
-    nav: { id: "settings-theme", labelKey: "settings.theme", icon: Palette, order: 90, minimumPermissionLevel: 100, ...SCOPE },
+    nav: { id: "settings-theme", labelKey: "settings.theme", icon: Palette, order: 5, minimumPermissionLevel: 10, ...GENERAL },
   });
   ctx.page({
     frame: "settings",

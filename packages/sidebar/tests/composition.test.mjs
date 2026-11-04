@@ -7,6 +7,7 @@ import { test } from "node:test"
 import vm from "node:vm"
 import ts from "typescript"
 import * as React from "react"
+import * as ReactDOM from "react-dom"
 import * as jsx from "react/jsx-runtime"
 import { renderToStaticMarkup } from "react-dom/server"
 
@@ -32,7 +33,7 @@ async function harness() {
   }
   for (const name of ["Input", "Select", "SelectContent", "SelectItem", "SelectTrigger", "SelectValue", "Popover", "PopoverContent", "PopoverTrigger", "Dialog", "DialogContent", "DialogDescription", "DialogHeader", "DialogTitle"]) ui[name] = primitive
   const stubs = new Map([
-    ["react", React], ["react/jsx-runtime", jsx],
+    ["react", React], ["react-dom", ReactDOM], ["react/jsx-runtime", jsx],
     ["react-router-dom", { Navigate: primitive, Route: primitive, Routes: primitive }],
     ["@tanstack/react-query", { useQuery: options => { queries.push(options); return { isLoading: false, isFetching: false, isError: false, refetch: async () => {} } } }],
     ["@monaco-editor/react", { DiffEditor: primitive, loader: { config() {} } }],
@@ -117,7 +118,7 @@ test("tools inspector starts closed, overlays narrow views, and preserves panels
   ctx.slot("chat.sidebar.panels", props => { seen.push(props); return React.createElement("span", null, props.session.id) }, "third-party.panel", 100, "/chat")
   const current = data()
   const closed = renderSlot(h, "frame.right-sidebar", current)
-  assert.match(closed, /hidden h-full min-h-0/)
+  assert.match(closed, /pointer-events-none translate-x-3 opacity-0/)
   assert.match(closed, /session-a/)
   assert.equal(seen.at(-1).messages, current.messages)
   assert.equal(seen.at(-1).setDevice, current.setDevice)
@@ -126,13 +127,15 @@ test("tools inspector starts closed, overlays narrow views, and preserves panels
   assert.equal(toggle["aria-expanded"], false)
   toggle.onClick()
   const open = renderSlot(h, "frame.right-sidebar", current)
-  assert.match(open, /min-\[1280px\]:relative/)
-  assert.match(open, /min-\[1280px\]:hidden/)
+  assert.match(open, /fixed/)
+  assert.match(open, /rounded-2xl/)
+  assert.doesNotMatch(open, /min-\[1280px\]:relative/)
+  assert.match(open, /aria-hidden="false"/)
   assert.match(open, /session-a/)
   const next = { ...current, session: { ...current.session, id: "session-b" } }
   assert.match(renderSlot(h, "frame.right-sidebar", next), /session-b/)
   toggle.onClick()
-  assert.match(renderSlot(h, "frame.right-sidebar", next), /hidden h-full min-h-0/)
+  assert.match(renderSlot(h, "frame.right-sidebar", next), /pointer-events-none translate-x-3 opacity-0/)
   assert.match(renderSlot(h, "frame.right-sidebar", next), /session-b/)
   await ctx.dispose()
   assert.doesNotMatch(renderSlot(h, "frame.right-sidebar", next), /session-b/)

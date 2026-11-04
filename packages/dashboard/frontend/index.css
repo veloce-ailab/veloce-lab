@@ -17,6 +17,48 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground) 38%, transparent) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground) 38%, transparent);
+  background-clip: content-box;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  * {
+    scrollbar-color: transparent transparent;
+  }
+
+  *:hover,
+  *:focus-within {
+    scrollbar-color: color-mix(in srgb, var(--muted-foreground) 48%, transparent) transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+
+  *:hover::-webkit-scrollbar-thumb,
+  *:focus-within::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--muted-foreground) 48%, transparent);
+  }
+}
+
 /* Plugin pages are rendered by this stylesheet, so their sources are scanned
  * here: one build owns the design tokens and every plugin keeps using them. */
 @source "../../*/frontend/**/*.tsx";

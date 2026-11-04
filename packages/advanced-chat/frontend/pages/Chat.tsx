@@ -632,6 +632,10 @@ export default function Chat() {
   const requestedAgentID = isAdvanced ? new URLSearchParams(location.search).get("agent_id") || "" : ""
   const newSessionRequest = isAdvanced ? new URLSearchParams(location.search).get("new_session") || "" : ""
   const { language, t } = useI18n()
+  const { data: currentUser } = useQuery<{ username?: string; email?: string }>({
+    queryKey: ["me"],
+    queryFn: async () => (await api.get("/user/me")).data,
+  })
   const { data: publicSettingsData } = useQuery<PublicSettings>({ queryKey: ["public-settings"], queryFn: async () => (await api.get("/public/settings")).data })
   const enterpriseMode = String(withPublicSettingsDefaults(publicSettingsData).system_mode).toLowerCase() === "enterprise"
   const copy = useMemo(() => buildChatCopy(t), [t])
@@ -639,7 +643,7 @@ export default function Chat() {
   const fileCopy = useMemo(() => (language === "zh" ? zhFileAttachmentCopy : enFileAttachmentCopy), [language])
   const agentGroupCopy = useMemo(() => (language === "zh" ? zhAgentGroupCopy : enAgentGroupCopy), [language])
   const approvalModeCopy = useMemo(() => (language === "zh" ? zhConnectorApprovalModeCopy : enConnectorApprovalModeCopy), [language])
-  const newSessionGreeting = greetingForHour(language)
+  const newSessionGreeting = `${greetingForHour(language)}${currentUser?.username ? `${language === "zh" ? "，" : language === "ja" ? "、" : ", "}${currentUser.username}` : ""}`
   const recentAgentsLabel = language === "zh" ? "最近助理" : language === "ja" ? "最近のアシスタント" : "Recent assistants"
   const workspaceEditorCopy = language === "zh" ? { openInVSCode: "在 VS Code 中打开", openVSCodeFailed: "无法在 VS Code 中打开工作区" } : { openInVSCode: "Open in VS Code", openVSCodeFailed: "Failed to open the workspace in VS Code" }
   const workspacePickerCopy = useMemo(() => (language === "zh" ? zhWorkspacePickerCopy : enWorkspacePickerCopy), [language])
@@ -3764,7 +3768,7 @@ export default function Chat() {
   const sessionsSidebar = (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <aside className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden bg-card text-foreground">
+        <aside className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden bg-transparent text-foreground">
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/80 px-3">
         <div className="truncate text-xs font-semibold uppercase text-muted-foreground">{copy.sessions}</div>
         <div className="flex items-center gap-1">
@@ -3953,7 +3957,7 @@ export default function Chat() {
                 <ContextMenuTrigger asChild>
                   <div ref={messagesViewportRef} className={cn(isAdvanced ? (isEmptyAdvancedChat ? "hidden" : "min-h-0 flex-1 overflow-y-auto overscroll-contain") : "min-h-[360px] space-y-3 rounded-md border p-3")} onContextMenu={handleMessageSelectionContextMenu}>
                 <div
-                  className={cn(isAdvanced ? "mx-auto flex min-h-full w-full max-w-3xl flex-col gap-4 px-2 py-5 sm:px-4" : "contents")}
+                  className={cn(isAdvanced ? "mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4 px-2 py-5 sm:px-4" : "contents")}
                 >
                 {isEmptyAdvancedChat ? null : !currentSession || currentSession.messages.length === 0 ? (
                   <div className="flex min-h-0 flex-1 flex-col items-center justify-center py-10 text-center">
@@ -4146,7 +4150,7 @@ export default function Chat() {
               )}
 
               {isAdvanced ? (
-                <div className={cn("relative z-20 mx-auto w-full max-w-3xl space-y-2 px-2 sm:px-4", isEmptyAdvancedChat ? "flex flex-1 flex-col justify-center py-5" : "shrink-0 pb-2")}>
+                <div className={cn("relative z-20 mx-auto w-full max-w-4xl space-y-2 px-2 sm:px-4", isEmptyAdvancedChat ? "flex flex-1 flex-col justify-center py-5" : "shrink-0 pb-2")}>
                   {isEmptyAdvancedChat && (
                     <div className="flex flex-col items-center gap-5 pb-2 text-center">
                       <div className="space-y-2">

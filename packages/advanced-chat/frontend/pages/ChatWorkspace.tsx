@@ -1,4 +1,4 @@
-import { Bot, ChevronRight, Home, MoreHorizontal, Search, Settings as SettingsIcon } from "lucide-react"
+import { Bot, ChevronRight, Home, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { PageTransition } from "@/components/layout/PageTransition"
-import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
 import { api, isDesktopTarget } from "@/lib/api"
 import { useI18n } from "@/lib/i18n"
 import { withPublicSettingsDefaults, type PublicSettings } from "@/lib/public-settings"
@@ -108,10 +108,7 @@ export default function ChatWorkspace() {
 
   return (
     <SidebarProvider className={cn("overflow-hidden", isDesktop ? "desktop-acrylic-window" : "bg-background", viewportHeightClass)}>
-      <Sidebar collapsible="offcanvas">
-        <ChatSidebar className="w-full" sessionSlotID="chat-sessions-sidebar-slot" />
-        <SidebarRail />
-      </Sidebar>
+      <ChatWorkspaceSidebar />
       <SidebarInset className="min-w-0 overflow-hidden">
       {/* The top bar is a contribution, not part of this frame: the frame hands
           over the control that drives its own sidebar and keeps the search. */}
@@ -120,7 +117,7 @@ export default function ChatWorkspace() {
         className="shrink-0"
         data={{
           frame: "chat",
-          leading: <SidebarTrigger className="h-8 w-8" aria-label={t("advancedChat.openMenu")} />,
+          leading: <SidebarTrigger className="h-8 w-8 md:hidden" aria-label={t("advancedChat.openMenu")} />,
           actions: (
             <>
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsGlobalSearchOpen(true)} aria-label={language === "zh" ? "搜索会话" : "Search sessions"} title={language === "zh" ? "搜索会话" : "Search sessions"}><Search size={17} /></Button>
@@ -133,7 +130,7 @@ export default function ChatWorkspace() {
 
       <div className={cn("flex min-h-0 flex-1", fullHeight && "bg-background")}>
         <main className={cn("flex min-h-0 min-w-0 flex-1 flex-col", fullHeight ? "overflow-hidden" : "overflow-y-auto bg-muted/20")}>
-          <div className={cn("w-full flex-1", fullHeight ? "min-h-0" : "mx-auto max-w-6xl p-4 sm:p-6 lg:p-8")}>
+          <div className={cn("w-full flex-1", fullHeight ? "min-h-0" : "min-h-full p-4 sm:p-6 lg:p-8")}>
             <PageTransition transitionKey={transitionKey} className={cn("page-shell-transition", fullHeight && "h-full min-h-0")}>
               <div className={cn(fullHeight ? "h-full" : "space-y-6")}>
                 <DashboardFrameOutlet frame="chat" fallback={chatHomePath} />
@@ -183,17 +180,38 @@ export default function ChatWorkspace() {
   )
 }
 
+function ChatWorkspaceSidebar() {
+  const { isMobile, open } = useSidebar()
+  const [hovered, setHovered] = useState(false)
+  const preview = !isMobile && !open && hovered
+
+  return (
+    <Sidebar
+      variant="floating"
+      collapsible={isMobile ? "offcanvas" : "icon"}
+      style={{ width: preview ? "var(--sidebar-width)" : undefined }}
+      className={cn("motion-reduce:transition-none [&>[data-slot=sidebar-inner]]:overflow-hidden", preview && "z-40 [&>[data-slot=sidebar-inner]]:shadow-lg")}
+      onPointerEnter={(event) => { if (event.pointerType === "mouse") setHovered(true) }}
+      onPointerLeave={() => setHovered(false)}
+    >
+      <ChatSidebar compact={!isMobile && !open && !preview} sessionSlotID="chat-sessions-sidebar-slot" />
+    </Sidebar>
+  )
+}
+
 function ChatSidebar({
   className,
   onNavigate,
   sessionSlotID,
+  compact = false,
 }: {
   className?: string
   onNavigate?: () => void
   sessionSlotID?: string
+  compact?: boolean
 }) {
   const location = useLocation()
-  const { isMobile, setOpenMobile } = useSidebar()
+  const { isMobile, open, setOpen, setOpenMobile } = useSidebar()
   const { language, t } = useI18n()
   const [, refreshNavigation] = useState(0)
   // The settings frame decides its own landing page, so the entry point is
@@ -249,7 +267,31 @@ function ChatSidebar({
   )
 
   return (
-    <div className={cn("flex h-full min-h-0 w-full flex-col overflow-hidden bg-sidebar", className)}>
+    <div className={cn("relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-sidebar", className)}>
+      {!isMobile && (
+        <div className="flex h-12 shrink-0 items-center px-1.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9 shrink-0"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            aria-label={language === "zh" ? (open ? "收起侧边栏" : "固定展开侧边栏") : language === "ja" ? (open ? "サイドバーを閉じる" : "サイドバーを固定") : (open ? "Collapse sidebar" : "Pin sidebar open")}
+            title={language === "zh" ? (open ? "收起侧边栏" : "固定展开侧边栏") : language === "ja" ? (open ? "サイドバーを閉じる" : "サイドバーを固定") : (open ? "Collapse sidebar" : "Pin sidebar open")}
+          >
+            {open ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
+          </Button>
+        </div>
+      )}
+      {compact && (
+        <div className="absolute inset-x-0 bottom-0 top-12 flex flex-col items-center gap-1 px-1.5 pb-3">
+          <Link to={homeItem.href} onClick={handleNavigation} className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring" aria-label={language === "zh" ? "新建对话" : language === "ja" ? "新しい会話" : "New chat"} title={language === "zh" ? "新建对话" : language === "ja" ? "新しい会話" : "New chat"}><Home size={16} /></Link>
+          {flatItems.map((item) => <Link key={item.href} to={item.href} onClick={handleNavigation} title={item.label} aria-label={item.label} className="flex size-9 items-center justify-center rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"><item.icon size={16} /></Link>)}
+          {submenus.map((section) => { const item = section.items[0]; return <Link key={section.id} to={item.href} onClick={() => { setSelectedSectionID(section.id); handleNavigation() }} title={section.label} aria-label={section.label} className="flex size-9 items-center justify-center rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"><item.icon size={16} /></Link> })}
+          {settingsPath && <Link to={settingsPath} onClick={handleNavigation} aria-label={language === "zh" ? "设置" : language === "ja" ? "設定" : "Settings"} title={language === "zh" ? "设置" : language === "ja" ? "設定" : "Settings"} className="mt-auto flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"><SettingsIcon size={16} /></Link>}
+        </div>
+      )}
+      <div inert={compact || undefined} className={cn("flex min-h-0 w-[calc(var(--sidebar-width)-1rem)] flex-1 flex-col transition-opacity duration-150 motion-reduce:transition-none", isMobile && "w-full", compact ? "invisible pointer-events-none opacity-0" : "visible opacity-100")}>
       <SidebarHeader className="shrink-0 px-3 py-3">
         <Link
           to={homeItem.href}
@@ -338,6 +380,7 @@ function ChatSidebar({
         </Link>
         )}
       </SidebarFooter>
+      </div>
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore, useState } from "react"
+import { createPortal } from "react-dom"
 import { PanelRightClose, PanelRightOpen, X } from "lucide-react"
 import { api, Button, DashboardSlot, isDesktopTarget, ResizableSidebar, useI18n, type DashboardContext } from "@velocelab/dashboard/frontend"
 
@@ -25,8 +26,8 @@ function Sidebar(data: Record<string, unknown>) {
   const { language } = useI18n()
   const zh = language === "zh"
   const desktop = isDesktopTarget()
-  const topOffset = desktop ? "top-12" : "top-16"
-  const panelHeight = desktop ? "h-[calc(100dvh-3rem)] max-h-[calc(100dvh-3rem)]" : "h-[calc(100dvh-4rem)] max-h-[calc(100dvh-4rem)]"
+  const topOffset = desktop ? "top-14" : "top-[4.5rem]"
+  const panelHeight = desktop ? "h-[calc(100dvh-4rem)]" : "h-[calc(100dvh-5rem)]"
   useEffect(() => {
     if (!visible) return
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -72,11 +73,10 @@ function Sidebar(data: Record<string, unknown>) {
   if (!sessionID) return null
   const active = tabs.find((tab) => tab.id === activeTab)
   const tabData = { ...data, activeTab, tabs, activeTabState: active?.state ?? {}, onSelectTab: selectTab, onCreateTab: createTab, onUpdateTab: updateTab, onCloseTab: closeTab }
-  return <>
-    {visible && <button type="button" className={`fixed inset-x-0 bottom-0 ${topOffset} z-40 cursor-default bg-foreground/15 backdrop-blur-[1px] min-[1280px]:hidden`} aria-label={zh ? "关闭工具" : "Close tools"} onClick={() => { open = false; listeners.forEach((listener) => listener()) }} />}
-    <ResizableSidebar storageKey="chat-workspace" side="right" defaultWidth={320} minWidth={288} maxWidth={400} className={visible ? `fixed ${topOffset} bottom-0 right-0 z-50 flex ${panelHeight} max-w-[min(88vw,24rem)] shadow-xl min-[1280px]:relative min-[1280px]:inset-auto min-[1280px]:z-auto min-[1280px]:h-full min-[1280px]:max-h-none min-[1280px]:max-w-none min-[1280px]:shadow-none` : "hidden h-full min-h-0"}>
-    <aside id="chat-right-sidebar" className="flex h-full min-h-0 w-full flex-col overflow-y-auto overscroll-contain border-l border-border bg-background p-3">
-      <div className="mb-3 flex shrink-0 items-center justify-between border-b border-border pb-2 min-[1280px]:hidden">
+  const panel = <>
+    <ResizableSidebar storageKey="chat-workspace" side="right" defaultWidth={320} minWidth={288} maxWidth={400} className={`fixed ${topOffset} bottom-2 right-2 z-50 flex ${panelHeight} max-w-[calc(100vw-1rem)] rounded-2xl shadow-xl transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${visible ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-3 opacity-0"}`}>
+    <aside id="chat-right-sidebar" aria-label={zh ? "工具" : "Tools"} aria-hidden={!visible} inert={!visible || undefined} className="flex h-full min-h-0 w-full flex-col overflow-y-auto overscroll-contain rounded-2xl border border-border bg-background p-3">
+      <div className="mb-3 flex shrink-0 items-center justify-between border-b border-border pb-2">
         <span className="text-sm font-semibold">{zh ? "工具" : "Tools"}</span>
         <Button type="button" variant="ghost" size="icon" className="size-8" aria-label={zh ? "关闭工具" : "Close tools"} onClick={() => { open = false; listeners.forEach((listener) => listener()) }}><X size={16} /></Button>
       </div>
@@ -91,6 +91,7 @@ function Sidebar(data: Record<string, unknown>) {
     </aside>
     </ResizableSidebar>
   </>
+  return typeof document === "undefined" ? panel : createPortal(panel, document.body)
 }
 
 export default function apply(ctx: DashboardContext) {
