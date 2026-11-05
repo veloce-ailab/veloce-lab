@@ -10,7 +10,7 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Coins, Copy, Eraser, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Upload, User, Users, Wrench, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Coins, Copy, Eraser, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { composerCommands, subscribeComposerCommands, type DashboardComposerCommand } from "@velocelab/dashboard/frontend"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
@@ -563,7 +563,7 @@ interface EnterprisePoolDevice {
 
 type ChatRunMode = "chat" | "assistant" | "agent_group"
 type ConnectorApprovalMode = "manual" | "full_access" | "assistant"
-type SessionConfigTab = "basic" | "advanced" | "agent_group" | "skills" | "knowledge" | "mcp" | "device"
+type SessionConfigTab = "basic" | "advanced" | "skills" | "knowledge" | "mcp" | "device"
 type SessionCapabilityPicker = "skills" | "knowledge" | "mcp" | null
 type AttachmentTarget = "composer" | "editor"
 type WorkspacePickerTarget = "session" | "pending" | "new_workspace"
@@ -4857,11 +4857,13 @@ export default function Chat() {
             </DialogHeader>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {/* Wraps instead of using a fixed column count: the tab set varies
+                  with the session's run mode, and an even grid only looks even for
+                  one particular number of tabs. */}
+              <div className="flex flex-wrap gap-2">
                 {([
                   ["basic", copy.basicSettings, Settings],
                   ["advanced", copy.advancedModelSettings, SlidersHorizontal],
-                  ["agent_group", agentGroupCopy.agentGroups, Users],
                   ["skills", copy.skills, Sparkles],
                   ["knowledge", knowledgeCopy.label, FolderOpen],
                   ...(currentAdvancedSettings.assistant_mcp_tools_enabled ? ([["mcp", copy.mcpServers, Server]] as const) : []),
@@ -4930,6 +4932,26 @@ export default function Chat() {
                       ))}
                     </SelectContent></Select>
                   </label>
+                  {activeRunMode === "agent_group" && (
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">{agentGroupCopy.agentGroups}</span>
+                      <Select
+                        value={String((currentSession?.agent_group_id || "") || "__shadcn_empty__")}
+                        disabled={isFetchingAgentGroups}
+                        onValueChange={(value) => setSessionAgentGroup(value === "__shadcn_empty__" ? "" : value)}
+                      >
+                        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__shadcn_empty__">{agentGroups.length ? agentGroupCopy.selectGroup : agentGroupCopy.noGroups}</SelectItem>
+                          {agentGroups.map((group) => (
+                            <SelectItem key={group.id} value={String(group.id)}>
+                              {group.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </label>
+                  )}
                   {activeRunMode !== "agent_group" && (
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">{copy.agent}</span>
@@ -5163,49 +5185,6 @@ export default function Chat() {
                 </div>
               )}
 
-              {configTab === "agent_group" && (
-                <div className="space-y-4 rounded-md border p-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="text-sm font-medium">{agentGroupCopy.agentGroups}</div>
-                    <Button asChild variant="outline" size="sm">
-                      <Link to="/chat/agent-groups">{agentGroupCopy.manageGroups}</Link>
-                    </Button>
-                  </div>
-                  {currentAgentGroup ? (
-                    <div className="rounded-md border p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium">{currentAgentGroup.name}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">{agentGroupCopy.chiefCount.replace("{count}", String(agentGroupChiefCount(currentAgentGroup)))}</div>
-                        </div>
-                        <Button variant="ghost" size="sm" onClick={() => setSessionAgentGroup("")} title={copy.remove}>
-                          <X size={15} />
-                        </Button>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-1">
-                        {currentAgentGroup.agents.map((agent) => (
-                          <span key={agent.id} className="rounded-md border bg-muted/40 px-2 py-1 text-xs">
-                            @{agent.name || agent.id} · {agent.type}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">{agentGroupCopy.noGroupSelected}</div>
-                  )}
-                  <label className="space-y-1 text-sm">
-                    <span className="font-medium">{agentGroupCopy.selectGroup}</span>
-                    <Select value={String((currentSession?.agent_group_id || "") || "__shadcn_empty__")} disabled={isFetchingAgentGroups} onValueChange={(value) => setSessionAgentGroup((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
-                      <SelectItem value="__shadcn_empty__">{agentGroups.length ? agentGroupCopy.selectGroup : agentGroupCopy.noGroups}</SelectItem>
-                      {agentGroups.map((group) => (
-                        <SelectItem key={group.id} value={String(group.id)}>
-                          {group.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent></Select>
-                  </label>
-                </div>
-              )}
 
               {configTab === "device" && (
                 <div className="space-y-4 rounded-md border p-3">
