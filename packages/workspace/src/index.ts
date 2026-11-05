@@ -240,6 +240,25 @@ export async function apply(ctx: Context) {
     .action(async (s, _p, workspaceId) => {
       const id = user(s);
       if (id !== undefined) {
+        // Sessions that live in this workspace go with it. Leaving them behind would
+        // strand them under a workspace id that no longer resolves to anything, so
+        // they would neither show in a group nor be deletable through one.
+        const scoped = db as any;
+        const sessions = await scoped.select("advanced_chat_sessions", {
+          workspace_id: workspaceId,
+          user_id: id,
+        }) as Array<{ id: string }>;
+        for (const session of sessions) {
+          const runs = await scoped.select("advanced_chat_runs", {
+            session_id: session.id,
+            user_id: id,
+          }) as Array<{ id: string }>;
+          for (const run of runs)
+            await scoped.remove("advanced_chat_run_events", { run_id: run.id, user_id: id });
+          await scoped.remove("advanced_chat_runs", { session_id: session.id, user_id: id });
+          await scoped.remove("advanced_chat_messages", { session_id: session.id, user_id: id });
+          await scoped.remove("advanced_chat_sessions", { id: session.id, user_id: id });
+        }
         await db.remove("advanced_chat_workspace_files", {
           workspace_id: workspaceId,
           user_id: id,
@@ -248,7 +267,7 @@ export async function apply(ctx: Context) {
           id: workspaceId,
           user_id: id,
         });
-        s.respond({ success: true }, "json");
+        s.respond({ success: true, deleted_sessions: sessions.length }, "json");
       }
     });
   ctx

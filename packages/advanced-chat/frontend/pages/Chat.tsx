@@ -18,7 +18,7 @@ import { useI18n, type TranslationKey } from "@/lib/i18n"
 import type { PublicSettings } from "@/lib/public-settings"
 import { withPublicSettingsDefaults } from "@/lib/public-settings"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -814,6 +814,7 @@ export default function Chat() {
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
   const [sessionPendingDeletion, setSessionPendingDeletion] = useState<ChatSession | null>(null)
+  const [workspacePendingDeletion, setWorkspacePendingDeletion] = useState<ChatWorkspace | null>(null)
   const [chatForkEnabled, setChatForkEnabled] = useState(false)
   const [subagentDialogTask, setSubagentDialogTask] = useState<SubagentTask | null>(null)
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
@@ -1053,7 +1054,7 @@ export default function Chat() {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
     const yesterdayStart = todayStart - 24 * 60 * 60 * 1000
     const sevenDaysStart = todayStart - 7 * 24 * 60 * 60 * 1000
-    const groups = new Map<string, { label: string; sessions: ChatSession[] }>()
+    const groups = new Map<string, { label: string; sessions: ChatSession[]; workspaceId?: string }>()
 
     searchedSessions.slice(0, visibleSessionCount).forEach((session) => {
       if (sessionGroupMode === "workspace") {
@@ -1064,7 +1065,7 @@ export default function Chat() {
         if (group) {
           group.sessions.push(session)
         } else {
-          groups.set(key, { label, sessions: [session] })
+          groups.set(key, { label, sessions: [session], workspaceId: session.workspace_id })
         }
         return
       }
@@ -1094,6 +1095,15 @@ export default function Chat() {
         groups.set(key, { label, sessions: [session] })
       }
     })
+    if (sessionGroupMode === "workspace") {
+      // An empty workspace still belongs in the list. Deriving the groups from sessions
+      // alone hid a newly created workspace until something was started in it, which
+      // also left no row to rename or delete it from.
+      for (const workspace of workspaces) {
+        if (groups.has(workspace.id)) continue
+        groups.set(workspace.id, { label: workspace.name, sessions: [], workspaceId: workspace.id })
+      }
+    }
     return Array.from(groups.values())
   }, [language, searchedSessions, sessionGroupMode, visibleSessionCount, workspaces])
   const currentSessionRaw = activeSession || (isAdvanced && routeSessionID ? undefined : draftSession)
@@ -2023,6 +2033,16 @@ export default function Chat() {
     }
   }
 
+  const deleteWorkspace = async (workspace: ChatWorkspace) => {
+    // The server removes the sessions in it, so drop them here too rather than leaving
+    // rows pointing at a workspace that no longer exists.
+    const removed = sessions.filter((session) => session.workspace_id === workspace.id)
+    await api.delete(`/user/advanced-chat/workspaces/${encodeURIComponent(workspace.id)}`).catch(() => undefined)
+    setSessions((current) => current.filter((session) => session.workspace_id !== workspace.id))
+    void refetchAdvancedSessions()
+    void refetchWorkspaces()
+    if (removed.some((session) => session.id === routeSessionID)) navigate("/chat")
+  }
   const deleteSession = (sessionID: string) => {
     if (isAdvanced) {
       void api.delete(`/user/advanced-chat/sessions/${encodeURIComponent(sessionID)}`).then(() => refetchAdvancedSessions()).catch(() => undefined)
@@ -4016,9 +4036,9 @@ export default function Chat() {
           </div>
         )}
         {visibleSessionGroups.map((group) => (
-          <div key={group.label} className="pb-2">
+          <div key={group.workspaceId ?? group.label} className="pb-2">
             {sessionGroupMode === "workspace" ? (() => {
-              const workspace = workspaces.find((item) => item.id === group.sessions[0]?.workspace_id)
+              const workspace = workspaces.find((item) => item.id === (group.workspaceId ?? group.sessions[0]?.workspace_id))
               const header = <div className="group/workspace flex h-9 items-center gap-1 rounded-md px-2 py-1 hover:bg-muted">
                 <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm" onClick={() => workspace && createSessionInWorkspace(workspace)}>
                   <FolderOpen size={17} className="shrink-0 text-muted-foreground" />
@@ -4030,6 +4050,8 @@ export default function Chat() {
                     <DropdownMenuContent align="end" className="w-52">
                       <DropdownMenuItem onSelect={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }}><Pencil size={15} />{language === "zh" ? "重命名" : "Rename"}</DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => void openWorkspaceInFileManager(workspace)}><FolderOpen size={15} />{language === "zh" ? "在文件管理器中打开" : "Open in file manager"}</DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setWorkspacePendingDeletion(workspace)}><Trash2 size={15} />{language === "zh" ? "删除工作区" : "Delete workspace"}</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                   <Button type="button" variant="ghost" size="icon" className="size-7 opacity-0 group-hover/workspace:opacity-100 focus-visible:opacity-100" onClick={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }} title={language === "zh" ? "重命名工作区" : "Rename workspace"} aria-label={language === "zh" ? "重命名工作区" : "Rename workspace"}><Pencil size={14} /></Button>
@@ -4045,10 +4067,15 @@ export default function Chat() {
                     <ContextMenuSeparator />
                     <ContextMenuItem onSelect={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }}><Pencil size={15} />{language === "zh" ? "重命名" : "Rename"}</ContextMenuItem>
                     <ContextMenuItem onSelect={() => void openWorkspaceInFileManager(workspace)}><FolderOpen size={15} />{language === "zh" ? "在文件管理器中打开" : "Open in file manager"}</ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem className="text-destructive focus:text-destructive" onSelect={() => setWorkspacePendingDeletion(workspace)}><Trash2 size={15} />{language === "zh" ? "删除工作区" : "Delete workspace"}</ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>
               ) : header
             })() : <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">{group.label}</div>}
+            {group.sessions.length === 0 && (
+              <div className="px-3 pb-1 pl-9 text-xs text-muted-foreground">{language === "zh" ? "没有会话" : "No sessions"}</div>
+            )}
             {group.sessions.map((session) => (
               <SessionSidebarRow
                 key={session.id}
@@ -4074,7 +4101,9 @@ export default function Chat() {
             {language === "zh" ? "继续加载" : "Load more"}
           </Button>
         )}
-        {searchedSessions.length === 0 && <div className="px-3 py-10 text-center text-sm text-muted-foreground">{sessionSidebarCopy.noSessions}</div>}
+        {/* Only when there is nothing at all: a workspace with no sessions already says
+            so under its own header. */}
+        {visibleSessionGroups.length === 0 && <div className="px-3 py-10 text-center text-sm text-muted-foreground">{sessionSidebarCopy.noSessions}</div>}
       </div>
     </aside>
   )
@@ -4744,6 +4773,25 @@ export default function Chat() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setSessionPendingDeletion(null)}>{language === "zh" ? "取消" : "Cancel"}</Button>
             <Button variant="destructive" onClick={() => { if (sessionPendingDeletion) deleteSession(sessionPendingDeletion.id); setSessionPendingDeletion(null) }}>
+              <Trash2 size={15} />
+              {language === "zh" ? "删除" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(workspacePendingDeletion)} onOpenChange={(open) => { if (!open) setWorkspacePendingDeletion(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{language === "zh" ? "删除工作区？" : "Delete workspace?"}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {language === "zh"
+              ? `“${workspacePendingDeletion?.name || ""}”以及它下面的全部会话和消息都会被永久删除，无法恢复。磁盘上的文件不会被删除。`
+              : `“${workspacePendingDeletion?.name || ""}” and every session and message in it will be permanently deleted. Files on disk are left alone.`}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWorkspacePendingDeletion(null)}>{language === "zh" ? "取消" : "Cancel"}</Button>
+            <Button variant="destructive" onClick={() => { const target = workspacePendingDeletion; setWorkspacePendingDeletion(null); if (target) void deleteWorkspace(target) }}>
               <Trash2 size={15} />
               {language === "zh" ? "删除" : "Delete"}
             </Button>
