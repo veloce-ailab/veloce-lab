@@ -625,6 +625,76 @@ const chatStoreKeys: ChatStoreKeys = {
     userChannel: "windypear.advanced_chat.user_channel_id.v1",
 }
 
+type SessionRowActions = {
+  select: (sessionID: string) => void
+  requestDelete: (session: ChatSession) => void
+  rename: (session: ChatSession) => void
+  regenerate: (session: ChatSession) => void
+  moveToWorkspace: (sessionID: string) => void
+}
+
+/**
+ * Memoised because the sidebar re-renders whenever the page does, and a run
+ * commits around sixty times a second. Each row is a Radix context menu plus a
+ * delete button, so rebuilding twenty of them per frame was the most expensive
+ * part of the sidebar that has nothing to do with the streaming text. Every
+ * prop is a primitive, a stable reference, or the session itself, so only the
+ * row belonging to the session that actually changed re-renders.
+ */
+const SessionSidebarRow = memo(function SessionSidebarRow({
+  session,
+  isActive,
+  isSharedRow,
+  isAdvanced,
+  language,
+  copy,
+  regenerating,
+  actions,
+}: {
+  session: ChatSession
+  isActive: boolean
+  isSharedRow: boolean
+  isAdvanced: boolean
+  language: ReturnType<typeof useI18n>["language"]
+  copy: ChatCopy
+  regenerating: boolean
+  actions: SessionRowActions
+}) {
+  const item = <div
+    className={cn(
+      "group relative grid min-h-6 grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-transparent px-1.5 py-0.5 transition-colors",
+      isActive ? "border-primary/40 bg-primary/15 shadow-sm before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-r before:bg-primary" : "hover:bg-muted"
+    )}
+    onContextMenu={(event) => event.stopPropagation()}
+  >
+    <button type="button" className="min-w-0 text-left" onClick={() => actions.select(session.id)}>
+      <div className="flex min-w-0 items-center gap-1.5">
+        {isRunActive(session.latest_run) && <RefreshCw size={12} className="shrink-0 animate-spin text-primary" aria-label={language === "zh" ? "任务运行中" : "Task running"} />}
+        <div className={cn("truncate text-xs font-medium", isActive ? "text-primary" : "text-foreground")}>{session.title || copy.untitledSession}</div>
+      </div>
+    </button>
+    {!isSharedRow && <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100" onClick={() => actions.requestDelete(session)} title={copy.deleteSession}>
+      <Trash2 size={13} />
+    </Button>}
+  </div>
+  if (isSharedRow) {
+    return item
+  }
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{item}</ContextMenuTrigger>
+      <ContextMenuContent className="w-56">
+        <ContextMenuItem onSelect={() => actions.rename(session)}>{copy.customTitle}</ContextMenuItem>
+        <ContextMenuItem disabled={!isAdvanced || regenerating} onSelect={() => actions.regenerate(session)}>
+          {regenerating ? copy.regeneratingTitle : copy.regenerateTitle}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => actions.moveToWorkspace(session.id)}><FolderOpen size={14} />{language === "zh" ? "移动到工作区" : "Move to workspace"}</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+})
+
 /**
  * `Date.parse` on an ISO string is not free, and the session list sorts and
  * groups on every streaming commit. Parsing each distinct timestamp once keeps
@@ -3274,6 +3344,19 @@ export default function Chat() {
   const onForkMessage = useCallback((message: ChatMessage) => void chatActionsRef.current.forkMessage(message), [])
   const onDecideConnectorApproval = useCallback((taskID: string, approved: boolean) => void chatActionsRef.current.decideConnectorApproval(taskID, approved), [])
 
+  const sessionRowActionsRef = useRef({ selectSession, setSessionPendingDeletion, renameSessionTitle, regenerateSessionTitle, setWorkspaceMoveSessionID, setWorkspaceSelectionOpen })
+  sessionRowActionsRef.current = { selectSession, setSessionPendingDeletion, renameSessionTitle, regenerateSessionTitle, setWorkspaceMoveSessionID, setWorkspaceSelectionOpen }
+  const sessionRowActions = useMemo<SessionRowActions>(() => ({
+    select: (sessionID) => sessionRowActionsRef.current.selectSession(sessionID),
+    requestDelete: (session) => sessionRowActionsRef.current.setSessionPendingDeletion(session),
+    rename: (session) => sessionRowActionsRef.current.renameSessionTitle(session),
+    regenerate: (session) => void sessionRowActionsRef.current.regenerateSessionTitle(session),
+    moveToWorkspace: (sessionID) => {
+      sessionRowActionsRef.current.setWorkspaceMoveSessionID(sessionID)
+      sessionRowActionsRef.current.setWorkspaceSelectionOpen(true)
+    },
+  }), [])
+
   const handleMessageSelectionContextMenu = () => {
     const selection = window.getSelection()
     const rawText = selection?.toString().replace(/\s+/g, " ").trim() || ""
@@ -3728,44 +3811,6 @@ export default function Chat() {
     setFilePickerTarget("composer")
   }
 
-  const sessionSidebarItem = (session: ChatSession) => {
-    const activePersonalSession = session.id === activeSession?.id && !isSharedSession
-    const item = <div
-      key={session.id}
-      className={cn(
-        "group relative grid min-h-6 grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-transparent px-1.5 py-0.5 transition-colors",
-        activePersonalSession ? "border-primary/40 bg-primary/15 shadow-sm before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-r before:bg-primary" : "hover:bg-muted"
-      )}
-      onContextMenu={(event) => event.stopPropagation()}
-    >
-      <button type="button" className="min-w-0 text-left" onClick={() => selectSession(session.id)}>
-        <div className="flex min-w-0 items-center gap-1.5">
-          {isRunActive(session.latest_run) && <RefreshCw size={12} className="shrink-0 animate-spin text-primary" aria-label={language === "zh" ? "任务运行中" : "Task running"} />}
-          <div className={cn("truncate text-xs font-medium", activePersonalSession ? "text-primary" : "text-foreground")}>{session.title || copy.untitledSession}</div>
-        </div>
-      </button>
-      {session.id !== sharedSessionID && <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100" onClick={() => setSessionPendingDeletion(session)} title={copy.deleteSession}>
-        <Trash2 size={13} />
-      </Button>}
-    </div>
-    if (session.id === sharedSessionID) {
-      return item
-    }
-    return (
-      <ContextMenu key={session.id}>
-        <ContextMenuTrigger asChild>{item}</ContextMenuTrigger>
-        <ContextMenuContent className="w-56">
-          <ContextMenuItem onSelect={() => renameSessionTitle(session)}>{copy.customTitle}</ContextMenuItem>
-          <ContextMenuItem disabled={!isAdvanced || regeneratingTitleSessionID === session.id} onSelect={() => void regenerateSessionTitle(session)}>
-            {regeneratingTitleSessionID === session.id ? copy.regeneratingTitle : copy.regenerateTitle}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem onSelect={() => { setWorkspaceMoveSessionID(session.id); setWorkspaceSelectionOpen(true) }}><FolderOpen size={14} />{language === "zh" ? "移动到工作区" : "Move to workspace"}</ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-    )
-  }
-
   const composerEnvironmentControls = () => {
     const selectedWorkspace = workspaces.find((workspace) => workspace.id === currentSession?.workspace_id)
     const workspaceLabel = selectedWorkspace?.name || (language === "zh" ? "选择工作区" : "Select workspace")
@@ -3967,7 +4012,19 @@ export default function Chat() {
                 </>}
               </div>
             })() : <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">{group.label}</div>}
-            {group.sessions.map(sessionSidebarItem)}
+            {group.sessions.map((session) => (
+              <SessionSidebarRow
+                key={session.id}
+                session={session}
+                isActive={session.id === activeSession?.id && !isSharedSession}
+                isSharedRow={session.id === sharedSessionID}
+                isAdvanced={isAdvanced}
+                language={language}
+                copy={copy}
+                regenerating={regeneratingTitleSessionID === session.id}
+                actions={sessionRowActions}
+              />
+            ))}
           </div>
         ))}
         {visibleSessionCount < searchedSessions.length && (
