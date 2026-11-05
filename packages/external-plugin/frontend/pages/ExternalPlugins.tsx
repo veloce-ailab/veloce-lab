@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Boxes, Check, Download, ExternalLink, GitBranch, Info, Package, RefreshCw, Trash2 } from "lucide-react"
+import { Boxes, Check, ChevronLeft, ChevronRight, Download, ExternalLink, GitBranch, Info, Package, RefreshCw, Search, Trash2 } from "lucide-react"
 import { api, useI18n, useToast, Badge, Button, Card, CardContent, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Tabs, TabsContent, TabsList, TabsTrigger } from "@velocelab/dashboard/frontend"
 
 type Marketplace = {
@@ -46,6 +46,9 @@ const copy = {
     installed: "已安装",
     installedEmpty: "还没有安装任何插件。",
     installedEmptyHint: "切到下面的市场分页，选一个插件查看详情再安装。",
+    searchPlaceholder: "搜索插件、skill 或 MCP",
+    noMatches: "没有匹配的插件。",
+    pageOf: (page: number, total: number) => `第 ${page} / ${total} 页`,
     pluginsEmpty: "这个市场里没有可识别的插件。",
     detail: "查看详情",
     install: "安装",
@@ -90,6 +93,9 @@ const copy = {
     installed: "Installed",
     installedEmpty: "No plugins installed yet.",
     installedEmptyHint: "Open a marketplace tab, look through a plugin, and install the ones you want.",
+    searchPlaceholder: "Search plugins, skills or MCP servers",
+    noMatches: "Nothing matches that.",
+    pageOf: (page: number, total: number) => `Page ${page} of ${total}`,
     pluginsEmpty: "This marketplace has no plugins this server can read.",
     detail: "Details",
     install: "Install",
@@ -135,6 +141,8 @@ export default function ExternalPlugins() {
   const [url, setUrl] = useState("")
   const [detail, setDetail] = useState<Plugin | null>(null)
   const [pendingRemoval, setPendingRemoval] = useState<Marketplace | null>(null)
+  const [query, setQuery] = useState("")
+  const [pages, setPages] = useState<Record<string, number>>({})
 
   const marketplaces = useQuery<Marketplace[]>({
     queryKey: ["external-plugin-marketplaces"],
@@ -204,6 +212,26 @@ export default function ExternalPlugins() {
   const installed = all.filter((plugin) => plugin.installed)
   const markets = marketplaces.data || []
 
+  // A plugin is worth showing when anything a user can read about it matches.
+  const needle = query.trim().toLowerCase()
+  const matches = (plugin: Plugin) =>
+    !needle ||
+    [
+      plugin.name,
+      plugin.slug,
+      plugin.description,
+      plugin.author,
+      ...plugin.skills.map((skill) => skill.name),
+      ...plugin.mcpServers.map((server) => server.name),
+    ]
+      .join("\n")
+      .toLowerCase()
+      .includes(needle)
+
+  const pageOf = (key: string) => pages[key] ?? 0
+  const setPage = (key: string, page: number) =>
+    setPages((current) => ({ ...current, [key]: page }))
+
   const pluginRow = (plugin: Plugin, options: { installable: boolean }) => (
     <div key={plugin.id} className="flex items-start justify-between gap-3 rounded-md border p-3">
       <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setDetail(plugin)}>
@@ -272,6 +300,21 @@ export default function ExternalPlugins() {
         </Button>
       </div>
 
+      {all.length > 0 && (
+        <div className="relative max-w-sm">
+          <Search size={15} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            placeholder={t.searchPlaceholder}
+            className="pl-8"
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setPages({})
+            }}
+          />
+        </div>
+      )}
+
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="installed" className="gap-1.5">
@@ -296,7 +339,14 @@ export default function ExternalPlugins() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-2">{installed.map((plugin) => pluginRow(plugin, { installable: false }))}</div>
+            <Listing
+              items={installed.filter(matches)}
+              page={pageOf("installed")}
+              onPage={(page) => setPage("installed", page)}
+              empty={t.noMatches}
+              label={t.pageOf}
+              render={(plugin) => pluginRow(plugin, { installable: false })}
+            />
           )}
         </TabsContent>
 
@@ -335,11 +385,14 @@ export default function ExternalPlugins() {
                   </div>
                 </CardHeader>
               </Card>
-              {available.length === 0 ? (
-                <div className="rounded-md border py-8 text-center text-sm text-muted-foreground">{t.pluginsEmpty}</div>
-              ) : (
-                <div className="space-y-2">{available.map((plugin) => pluginRow(plugin, { installable: true }))}</div>
-              )}
+              <Listing
+                items={available.filter(matches)}
+                page={pageOf(marketplace.id)}
+                onPage={(page) => setPage(marketplace.id, page)}
+                empty={available.length === 0 ? t.pluginsEmpty : t.noMatches}
+                label={t.pageOf}
+                render={(plugin) => pluginRow(plugin, { installable: true })}
+              />
             </TabsContent>
           )
         })}
@@ -488,6 +541,49 @@ export default function ExternalPlugins() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+const PAGE_SIZE = 10
+
+function Listing({
+  items,
+  page,
+  onPage,
+  empty,
+  label,
+  render,
+}: {
+  items: Plugin[]
+  page: number
+  onPage: (page: number) => void
+  empty: string
+  label: (page: number, total: number) => string
+  render: (plugin: Plugin) => ReactNode
+}) {
+  if (items.length === 0) {
+    return <div className="rounded-md border py-8 text-center text-sm text-muted-foreground">{empty}</div>
+  }
+  const total = Math.ceil(items.length / PAGE_SIZE)
+  const current = Math.min(page, total - 1)
+  const visible = items.slice(current * PAGE_SIZE, current * PAGE_SIZE + PAGE_SIZE)
+  return (
+    <div className="space-y-2">
+      {visible.map(render)}
+      {total > 1 && (
+        <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
+          <span>{label(current + 1, total)}</span>
+          <div className="flex gap-1">
+            <Button variant="outline" size="sm" disabled={current === 0} onClick={() => onPage(current - 1)}>
+              <ChevronLeft size={15} />
+            </Button>
+            <Button variant="outline" size="sm" disabled={current >= total - 1} onClick={() => onPage(current + 1)}>
+              <ChevronRight size={15} />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
