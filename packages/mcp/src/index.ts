@@ -4,6 +4,7 @@ import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import "@velocelab/advanced-chat";
 import { McpClient } from "./client.js";
+export { McpClient } from "./client.js";
 import { ensureTables } from "./tables.js";
 export const depend = ["dashboard", "advanced-chat", "database"];
 export const provide = ["mcp"];

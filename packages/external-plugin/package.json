@@ -1,0 +1,19 @@
+{
+  "name": "@velocelab/external-plugin",
+  "version": "0.1.2",
+  "type": "module",
+  "main": "dist/index.js",
+  "dev": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json && ../../node_modules/.bin/vite build",
+    "test": "node --experimental-vm-modules --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@velocelab/advanced-chat": "^0.1.2",
+    "@velocelab/mcp": "^0.1.2"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  }
+}
