@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Boxes, GitBranch, Package, RefreshCw, Trash2 } from "lucide-react"
-import { api, useI18n, useToast, Badge, Button, Card, CardContent, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Switch, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@velocelab/dashboard/frontend"
+import { Boxes, Check, Download, ExternalLink, GitBranch, Info, Package, RefreshCw, Trash2 } from "lucide-react"
+import { api, useI18n, useToast, Badge, Button, Card, CardContent, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Tabs, TabsContent, TabsList, TabsTrigger } from "@velocelab/dashboard/frontend"
 
 type Marketplace = {
   id: string
@@ -13,91 +13,115 @@ type Marketplace = {
   pluginCount: number
 }
 
-type Skill = { id: string; name: string; description: string }
-type Server = { id: string; name: string; url: string }
+type Skill = { id: string; name: string; description: string; content: string }
+type Server = { id: string; name: string; url: string; description?: string }
 
 type Plugin = {
   id: string
+  marketplaceId: string
   slug: string
   name: string
   version: string
   description: string
   author: string
+  homepage: string
   license: string
-  category: string
+  manifestPath: string
   skills: Skill[]
   mcpServers: Server[]
   ignored: string[]
   unsupported: string[]
-  enabled: boolean
+  installed: boolean
 }
 
 const copy = {
   zh: {
     title: "外部插件",
-    subtitle: "添加插件市场后，可以从里面挑插件启用。启用的插件会把它带的 skill 和 MCP 提供给你自己的对话，其它用户看不到，也不受影响。",
-    marketplaces: "插件市场",
-    marketplacesEmpty: "还没有添加插件市场。",
+    subtitle: "添加插件市场只是登记来源，插件要自己挑。安装后它带来的 skill 和 MCP 才会提供给你自己的对话，其它用户看不到。",
     addMarketplace: "添加插件市场",
     addTitle: "添加插件市场",
-    addBody: "填一个 git 仓库地址，例如 https://github.com/openai/plugins.git。服务端只会克隆并读取其中的清单、skill 文本和 MCP 地址，不会运行仓库里的任何代码。",
+    addBody: "填一个 git 仓库地址，例如 https://github.com/openai/plugins.git。服务端只克隆并读取清单、skill 文本和 MCP 地址，不会运行仓库里的代码。",
     url: "仓库地址",
     urlPlaceholder: "https://github.com/openai/plugins.git",
+    installed: "已安装",
+    installedEmpty: "还没有安装任何插件。",
+    installedEmptyHint: "切到下面的市场分页，选一个插件查看详情再安装。",
+    pluginsEmpty: "这个市场里没有可识别的插件。",
+    detail: "查看详情",
+    install: "安装",
+    installedAlready: "已安装",
+    uninstall: "卸载",
     sync: "刷新",
-    syncing: "正在读取…",
     remove: "移除",
     removeTitle: "移除插件市场？",
-    removeBody: (name: string) => `会连同它带来的全部插件一起移除，“${name}”。已经启用的插件也会随之失效。`,
-    revision: "版本",
-    syncedAt: "上次读取",
+    removeBody: (name: string) => `会连同它带来的全部插件一起移除，“${name}”。已安装的插件也会随之卸载。`,
     never: "尚未读取",
-    pluginCount: (count: number) => `${count} 个插件`,
-    plugins: "可用插件",
-    pluginsEmpty: "还没有可用的插件。先添加一个插件市场。",
-    enable: "启用",
+    revision: "版本",
     skills: "Skill",
     mcp: "MCP",
-    none: "无",
-    unsupported: "这个插件还声明了本服务器无法提供的能力：",
-    ignoredFields: "未使用的字段",
+    skillsCount: (count: number) => `${count} 个 skill`,
+    mcpCount: (count: number) => `${count} 个 MCP`,
+    noSkills: "没有 skill",
+    noMcp: "没有 MCP",
+    unsupported: "这个插件还声明了本服务器提供不了的能力：",
+    manifest: "清单",
+    author: "作者",
+    license: "许可证",
+    category: "分类",
+    homepage: "主页",
+    installedToast: (name: string) => `已安装 ${name}`,
+    uninstalledToast: (name: string) => `已卸载 ${name}`,
     added: "插件市场已添加",
     synced: "已刷新",
     removed: "已移除",
-    enabledToast: (name: string, on: boolean) => (on ? `已启用 ${name}` : `已停用 ${name}`),
     failed: "操作失败",
+    cancel: "取消",
+    close: "关闭",
+    syncing: "正在读取…",
   },
   en: {
     title: "External plugins",
-    subtitle: "Add a plugin marketplace, then pick plugins from it. An enabled plugin offers its skills and MCP servers to your own chats; nobody else sees or is affected by it.",
-    marketplaces: "Marketplaces",
-    marketplacesEmpty: "No marketplaces added yet.",
+    subtitle: "Adding a marketplace only records where plugins come from; you choose the plugins yourself. Once installed, its skills and MCP servers are offered to your own chats and nobody else's.",
     addMarketplace: "Add marketplace",
     addTitle: "Add a marketplace",
-    addBody: "A git repository URL, for example https://github.com/openai/plugins.git. The server only clones and reads its manifest, skill text, and MCP endpoints — it never runs code from the repository.",
+    addBody: "A git repository URL, for example https://github.com/openai/plugins.git. The server only clones and reads its manifest, skill text and MCP endpoints — it never runs code from the repository.",
     url: "Repository URL",
     urlPlaceholder: "https://github.com/openai/plugins.git",
+    installed: "Installed",
+    installedEmpty: "No plugins installed yet.",
+    installedEmptyHint: "Open a marketplace tab, look through a plugin, and install the ones you want.",
+    pluginsEmpty: "This marketplace has no plugins this server can read.",
+    detail: "Details",
+    install: "Install",
+    installedAlready: "Installed",
+    uninstall: "Uninstall",
     sync: "Refresh",
-    syncing: "Reading…",
     remove: "Remove",
     removeTitle: "Remove marketplace?",
-    removeBody: (name: string) => `This removes “${name}” and every plugin it brought, including any you had enabled.`,
-    revision: "Revision",
-    syncedAt: "Last read",
+    removeBody: (name: string) => `This removes “${name}” and every plugin it brought, including the installed ones.`,
     never: "Never",
-    pluginCount: (count: number) => `${count} plugin${count === 1 ? "" : "s"}`,
-    plugins: "Available plugins",
-    pluginsEmpty: "No plugins yet. Add a marketplace first.",
-    enable: "Enabled",
+    revision: "Revision",
     skills: "Skills",
     mcp: "MCP",
-    none: "none",
+    skillsCount: (count: number) => `${count} skill${count === 1 ? "" : "s"}`,
+    mcpCount: (count: number) => `${count} MCP${count === 1 ? "" : "s"}`,
+    noSkills: "No skills",
+    noMcp: "No MCP servers",
     unsupported: "This plugin also declares surfaces this server cannot provide:",
-    ignoredFields: "Unused fields",
+    manifest: "Manifest",
+    author: "Author",
+    license: "License",
+    category: "Category",
+    homepage: "Homepage",
+    installedToast: (name: string) => `Installed ${name}`,
+    uninstalledToast: (name: string) => `Uninstalled ${name}`,
     added: "Marketplace added",
     synced: "Refreshed",
     removed: "Removed",
-    enabledToast: (name: string, on: boolean) => (on ? `Enabled ${name}` : `Disabled ${name}`),
     failed: "That did not work",
+    cancel: "Cancel",
+    close: "Close",
+    syncing: "Reading…",
   },
 }
 
@@ -106,8 +130,10 @@ export default function ExternalPlugins() {
   const t = language === "zh" ? copy.zh : copy.en
   const toast = useToast()
   const queryClient = useQueryClient()
+  const [tab, setTab] = useState("installed")
   const [addOpen, setAddOpen] = useState(false)
   const [url, setUrl] = useState("")
+  const [detail, setDetail] = useState<Plugin | null>(null)
   const [pendingRemoval, setPendingRemoval] = useState<Marketplace | null>(null)
 
   const marketplaces = useQuery<Marketplace[]>({
@@ -131,15 +157,14 @@ export default function ExternalPlugins() {
   }
 
   const addMarketplace = useMutation({
-    mutationFn: async (value: string) => {
-      const res = await api.post("/user/external-plugin/marketplaces", { url: value })
-      return res.data
-    },
-    onSuccess: () => {
+    mutationFn: async (value: string) => (await api.post("/user/external-plugin/marketplaces", { url: value })).data,
+    onSuccess: (data) => {
       setAddOpen(false)
       setUrl("")
       refresh()
       toast.success(t.added)
+      const id = data?.marketplace?.id
+      if (typeof id === "string") setTab(id)
     },
     onError: (cause) => toast.error(apiErrorMessage(cause, t.failed)),
   })
@@ -156,162 +181,267 @@ export default function ExternalPlugins() {
   const removeMarketplace = useMutation({
     mutationFn: async (id: string) => api.delete(`/user/external-plugin/marketplaces/${id}`),
     onSuccess: () => {
+      setTab("installed")
       refresh()
       toast.success(t.removed)
     },
     onError: (cause) => toast.error(apiErrorMessage(cause, t.failed)),
   })
 
-  const setEnabled = useMutation({
-    mutationFn: async (input: { id: string; enabled: boolean }) =>
-      api.post(`/user/external-plugin/plugins/${input.id}`, { enabled: input.enabled }),
+  const setInstalled = useMutation({
+    mutationFn: async (input: { id: string; installed: boolean }) =>
+      api.post(`/user/external-plugin/plugins/${input.id}`, { installed: input.installed }),
     onSuccess: (_data, input) => {
       refresh()
-      const plugin = plugins.data?.find((entry) => entry.id === input.id)
-      toast.success(t.enabledToast(plugin?.name || plugin?.slug || "", input.enabled))
+      const name = pluginName(plugins.data, input.id)
+      toast.success(input.installed ? t.installedToast(name) : t.uninstalledToast(name))
+      setDetail((current) => (current && current.id === input.id ? { ...current, installed: input.installed } : current))
     },
     onError: (cause) => toast.error(apiErrorMessage(cause, t.failed)),
   })
 
-  const rows = plugins.data || []
+  const all = plugins.data || []
+  const installed = all.filter((plugin) => plugin.installed)
+  const markets = marketplaces.data || []
+
+  const pluginRow = (plugin: Plugin, options: { installable: boolean }) => (
+    <div key={plugin.id} className="flex items-start justify-between gap-3 rounded-md border p-3">
+      <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setDetail(plugin)}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-medium">{plugin.name || plugin.slug}</span>
+          {plugin.version && <Badge variant="outline">{plugin.version}</Badge>}
+          {plugin.installed && (
+            <Badge variant="secondary" className="gap-1">
+              <Check size={11} />
+              {t.installedAlready}
+            </Badge>
+          )}
+        </div>
+        {plugin.description && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{plugin.description}</p>}
+        <div className="mt-1.5 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+          <span>{plugin.skills.length ? t.skillsCount(plugin.skills.length) : t.noSkills}</span>
+          <span>·</span>
+          <span>{plugin.mcpServers.length ? t.mcpCount(plugin.mcpServers.length) : t.noMcp}</span>
+          {plugin.unsupported.length > 0 && (
+            <>
+              <span>·</span>
+              <span className="text-amber-600 dark:text-amber-500">{plugin.unsupported.length} ⚠</span>
+            </>
+          )}
+        </div>
+      </button>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button variant="ghost" size="sm" onClick={() => setDetail(plugin)} title={t.detail}>
+          <Info size={15} />
+        </Button>
+        {options.installable ? (
+          <Button
+            size="sm"
+            variant={plugin.installed ? "outline" : "default"}
+            disabled={setInstalled.isPending}
+            onClick={() => setInstalled.mutate({ id: plugin.id, installed: !plugin.installed })}
+          >
+            {plugin.installed ? <Check size={15} /> : <Download size={15} />}
+            {plugin.installed ? t.installedAlready : t.install}
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={setInstalled.isPending}
+            onClick={() => setInstalled.mutate({ id: plugin.id, installed: false })}
+          >
+            <Trash2 size={15} />
+            {t.uninstall}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">{t.title}</h1>
-        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{t.subtitle}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">{t.title}</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{t.subtitle}</p>
+        </div>
+        <Button onClick={() => setAddOpen(true)}>
+          <GitBranch size={15} />
+          {t.addMarketplace}
+        </Button>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <GitBranch size={16} />
-            {t.marketplaces}
-          </CardTitle>
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            {t.addMarketplace}
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {marketplaces.isLoading ? (
-            <div className="py-6 text-center text-sm text-muted-foreground">{t.syncing}</div>
-          ) : (marketplaces.data || []).length === 0 ? (
-            <div className="py-6 text-center text-sm text-muted-foreground">{t.marketplacesEmpty}</div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t.url}</TableHead>
-                  <TableHead className="w-28">{t.revision}</TableHead>
-                  <TableHead className="w-40">{t.syncedAt}</TableHead>
-                  <TableHead className="w-28" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(marketplaces.data || []).map((marketplace) => (
-                  <TableRow key={marketplace.id}>
-                    <TableCell>
-                      <div className="font-medium">{marketplace.name || marketplace.url}</div>
-                      <div className="truncate text-xs text-muted-foreground">{marketplace.url}</div>
-                      <div className="mt-1 flex items-center gap-2">
-                        <Badge variant="secondary">{t.pluginCount(marketplace.pluginCount)}</Badge>
-                        {marketplace.error && <span className="text-xs text-destructive">{marketplace.error}</span>}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{marketplace.revision || "—"}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {marketplace.syncedAt ? new Date(marketplace.syncedAt).toLocaleString() : t.never}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={syncMarketplace.isPending}
-                          onClick={() => syncMarketplace.mutate(marketplace.id)}
-                          title={t.sync}
-                        >
-                          <RefreshCw size={15} className={syncMarketplace.isPending ? "animate-spin" : undefined} />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setPendingRemoval(marketplace)} title={t.remove}>
-                          <Trash2 size={15} />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList className="h-auto flex-wrap justify-start">
+          <TabsTrigger value="installed" className="gap-1.5">
+            <Boxes size={14} />
+            {t.installed}
+            {installed.length > 0 && <Badge variant="secondary">{installed.length}</Badge>}
+          </TabsTrigger>
+          {markets.map((marketplace) => (
+            <TabsTrigger key={marketplace.id} value={marketplace.id} className="gap-1.5">
+              <Package size={14} />
+              <span className="max-w-40 truncate">{marketplace.name || marketplace.url}</span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Boxes size={16} />
-            {t.plugins}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {rows.length === 0 ? (
-            <div className="py-6 text-center text-sm text-muted-foreground">{t.pluginsEmpty}</div>
+        <TabsContent value="installed" className="mt-4">
+          {installed.length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center">
+                <div className="text-sm font-medium">{t.installedEmpty}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{t.installedEmptyHint}</div>
+              </CardContent>
+            </Card>
           ) : (
-            <div className="space-y-2">
-              {rows.map((plugin) => (
-                <div key={plugin.id} className="rounded-md border p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="truncate text-sm font-medium">{plugin.name || plugin.slug}</span>
-                        {plugin.version && <Badge variant="outline">{plugin.version}</Badge>}
-                        {plugin.license && <span className="text-xs text-muted-foreground">{plugin.license}</span>}
-                      </div>
-                      {plugin.description && (
-                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{plugin.description}</p>
-                      )}
+            <div className="space-y-2">{installed.map((plugin) => pluginRow(plugin, { installable: false }))}</div>
+          )}
+        </TabsContent>
+
+        {markets.map((marketplace) => {
+          const available = all.filter((plugin) => plugin.marketplaceId === marketplace.id)
+          return (
+            <TabsContent key={marketplace.id} value={marketplace.id} className="mt-4 space-y-3">
+              <Card>
+                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <CardTitle className="truncate text-base">{marketplace.name || marketplace.url}</CardTitle>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span className="truncate font-mono">{marketplace.url}</span>
+                      <span>
+                        {t.revision}: {marketplace.revision || "—"}
+                      </span>
+                      <span>
+                        {marketplace.syncedAt ? new Date(marketplace.syncedAt).toLocaleString() : t.never}
+                      </span>
                     </div>
-                    <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                      <Package size={14} />
-                      {t.enable}
-                      <Switch
-                        checked={plugin.enabled}
-                        disabled={setEnabled.isPending}
-                        onCheckedChange={(checked) => setEnabled.mutate({ id: plugin.id, enabled: checked })}
-                      />
-                    </label>
+                    {marketplace.error && <div className="mt-1 text-xs text-destructive">{marketplace.error}</div>}
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {plugin.skills.map((skill) => (
-                      <Badge key={skill.id} variant="secondary" title={skill.description}>
-                        {t.skills}: {skill.name}
-                      </Badge>
-                    ))}
-                    {plugin.mcpServers.map((server) => (
-                      <Badge key={server.id} variant="outline" title={server.url}>
-                        {t.mcp}: {server.name}
-                      </Badge>
-                    ))}
-                    {plugin.skills.length === 0 && plugin.mcpServers.length === 0 && (
-                      <span className="text-xs text-muted-foreground">{t.none}</span>
-                    )}
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={syncMarketplace.isPending}
+                      onClick={() => syncMarketplace.mutate(marketplace.id)}
+                    >
+                      <RefreshCw size={15} className={syncMarketplace.isPending ? "animate-spin" : undefined} />
+                      {syncMarketplace.isPending ? t.syncing : t.sync}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setPendingRemoval(marketplace)} title={t.remove}>
+                      <Trash2 size={15} />
+                    </Button>
                   </div>
-                  {plugin.unsupported.length > 0 && (
-                    <div className="mt-2 rounded-md bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground">
-                      <div>{t.unsupported}</div>
-                      <ul className="mt-1 list-disc pl-4">
-                        {plugin.unsupported.map((entry) => (
-                          <li key={entry}>{entry}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                </CardHeader>
+              </Card>
+              {available.length === 0 ? (
+                <div className="rounded-md border py-8 text-center text-sm text-muted-foreground">{t.pluginsEmpty}</div>
+              ) : (
+                <div className="space-y-2">{available.map((plugin) => pluginRow(plugin, { installable: true }))}</div>
+              )}
+            </TabsContent>
+          )
+        })}
+      </Tabs>
+
+      <Dialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) setDetail(null) }}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              <span className="truncate">{detail?.name || detail?.slug}</span>
+              {detail?.version && <Badge variant="outline">{detail.version}</Badge>}
+              {detail?.installed && (
+                <Badge variant="secondary" className="gap-1">
+                  <Check size={11} />
+                  {t.installedAlready}
+                </Badge>
+              )}
+            </DialogTitle>
+            {detail?.description && <DialogDescription>{detail.description}</DialogDescription>}
+          </DialogHeader>
+
+          {detail && (
+            <div className="space-y-4 text-sm">
+              <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+                {detail.author && <Field label={t.author} value={detail.author} />}
+                {detail.license && <Field label={t.license} value={detail.license} />}
+                {detail.manifestPath && <Field label={t.manifest} value={detail.manifestPath} mono />}
+                {detail.homepage && (
+                  <div className="min-w-0">
+                    <dt className="text-muted-foreground">{t.homepage}</dt>
+                    <dd className="truncate">
+                      <a className="inline-flex items-center gap-1 text-primary hover:underline" href={detail.homepage} target="_blank" rel="noreferrer">
+                        <ExternalLink size={12} />
+                        {detail.homepage}
+                      </a>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+
+              <div>
+                <div className="mb-1 text-xs font-medium text-muted-foreground">{t.skills}</div>
+                {detail.skills.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">{t.noSkills}</div>
+                ) : (
+                  <ul className="space-y-1">
+                    {detail.skills.map((skill) => (
+                      <li key={skill.id} className="rounded-md border px-2 py-1.5">
+                        <div className="text-xs font-medium">{skill.name}</div>
+                        {skill.description && <div className="text-xs text-muted-foreground">{skill.description}</div>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div>
+                <div className="mb-1 text-xs font-medium text-muted-foreground">{t.mcp}</div>
+                {detail.mcpServers.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">{t.noMcp}</div>
+                ) : (
+                  <ul className="space-y-1">
+                    {detail.mcpServers.map((server) => (
+                      <li key={server.id} className="rounded-md border px-2 py-1.5">
+                        <div className="text-xs font-medium">{server.name}</div>
+                        <div className="truncate font-mono text-xs text-muted-foreground">{server.url}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {detail.unsupported.length > 0 && (
+                <div className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs">
+                  <div className="text-amber-700 dark:text-amber-500">{t.unsupported}</div>
+                  <ul className="mt-1 list-disc pl-4 text-muted-foreground">
+                    {detail.unsupported.map((entry) => (
+                      <li key={entry}>{entry}</li>
+                    ))}
+                  </ul>
                 </div>
-              ))}
+              )}
             </div>
           )}
-        </CardContent>
-      </Card>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetail(null)}>
+              {t.close}
+            </Button>
+            {detail && (
+              <Button
+                variant={detail.installed ? "outline" : "default"}
+                disabled={setInstalled.isPending}
+                onClick={() => setInstalled.mutate({ id: detail.id, installed: !detail.installed })}
+              >
+                {detail.installed ? <Trash2 size={15} /> : <Download size={15} />}
+                {detail.installed ? t.uninstall : t.install}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-md">
@@ -321,21 +451,13 @@ export default function ExternalPlugins() {
           </DialogHeader>
           <div className="space-y-1">
             <Label htmlFor="external-plugin-url">{t.url}</Label>
-            <Input
-              id="external-plugin-url"
-              value={url}
-              placeholder={t.urlPlaceholder}
-              onChange={(event) => setUrl(event.target.value)}
-            />
+            <Input id="external-plugin-url" value={url} placeholder={t.urlPlaceholder} onChange={(event) => setUrl(event.target.value)} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)}>
-              {language === "zh" ? "取消" : "Cancel"}
+              {t.cancel}
             </Button>
-            <Button
-              disabled={!url.trim() || addMarketplace.isPending}
-              onClick={() => addMarketplace.mutate(url.trim())}
-            >
+            <Button disabled={!url.trim() || addMarketplace.isPending} onClick={() => addMarketplace.mutate(url.trim())}>
               {addMarketplace.isPending ? t.syncing : t.addMarketplace}
             </Button>
           </DialogFooter>
@@ -347,12 +469,10 @@ export default function ExternalPlugins() {
           <DialogHeader>
             <DialogTitle>{t.removeTitle}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {t.removeBody(pendingRemoval?.name || pendingRemoval?.url || "")}
-          </p>
+          <p className="text-sm text-muted-foreground">{t.removeBody(pendingRemoval?.name || pendingRemoval?.url || "")}</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPendingRemoval(null)}>
-              {language === "zh" ? "取消" : "Cancel"}
+              {t.cancel}
             </Button>
             <Button
               variant="destructive"
@@ -370,6 +490,20 @@ export default function ExternalPlugins() {
       </Dialog>
     </div>
   )
+}
+
+function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={mono ? "truncate font-mono" : "truncate"}>{value}</dd>
+    </div>
+  )
+}
+
+function pluginName(plugins: Plugin[] | undefined, id: string): string {
+  const plugin = plugins?.find((entry) => entry.id === id)
+  return plugin?.name || plugin?.slug || ""
 }
 
 function apiErrorMessage(cause: unknown, fallback: string): string {

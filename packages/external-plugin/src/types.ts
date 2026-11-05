@@ -25,7 +25,8 @@ export interface ExternalPlugin {
   mcpServers: PluginMcpServer[];
   ignored: string[];
   unsupported: string[];
-  enabled: boolean;
+  /** Installed into this user's chats; a plugin that is merely available is not. */
+  installed: boolean;
 }
 
 export interface ExternalPluginService {
@@ -34,7 +35,7 @@ export interface ExternalPluginService {
   syncMarketplace(userId: number, id: string): Promise<Marketplace>;
   removeMarketplace(userId: number, id: string): Promise<boolean>;
   plugins(userId: number): Promise<ExternalPlugin[]>;
-  setEnabled(userId: number, id: string, enabled: boolean): Promise<boolean>;
+  setInstalled(userId: number, id: string, installed: boolean): Promise<boolean>;
 }
 
 declare module "yumeri" {

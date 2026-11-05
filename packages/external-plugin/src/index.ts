@@ -110,7 +110,7 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
     mcpServers: decode(row.mcp_servers, []),
     ignored: decode(row.ignored, []),
     unsupported: decode(row.unsupported, []),
-    enabled: Number(row.enabled) === 1,
+    installed: Number(row.enabled) === 1,
   });
 
   const pluginsOf = async (userId: number): Promise<ExternalPlugin[]> =>
@@ -119,7 +119,7 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
       .sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
 
   const enabledPlugins = async (userId: number) =>
-    (await pluginsOf(userId)).filter((plugin) => plugin.enabled);
+    (await pluginsOf(userId)).filter((plugin) => plugin.installed);
 
   const readMarketplace = async (userId: number, id: string) => {
     const row: any = await db.selectOne("external_plugin_marketplaces", {
@@ -272,13 +272,14 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
       return true;
     },
     plugins: pluginsOf,
-    async setEnabled(userId: number, id: string, enabled: boolean) {
+    async setInstalled(userId: number, id: string, installed: boolean) {
       const row: any = await db.selectOne("external_plugins", { id, user_id: userId });
       if (!row) return false;
+      // The column is still called `enabled`; it holds exactly this flag.
       await db.update(
         "external_plugins",
         { id, user_id: userId },
-        { enabled: enabled ? 1 : 0, updated_at: new Date().toISOString() },
+        { enabled: installed ? 1 : 0, updated_at: new Date().toISOString() },
       );
       return true;
     },
@@ -469,8 +470,8 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
       const id = user(session);
       if (id === undefined) return;
       const body = (await session.parseRequestBody()) as any;
-      const enabled = Boolean(body?.enabled);
-      const ok = await service.setEnabled(id, String(pluginId), enabled);
+      const installed = Boolean(body?.installed ?? body?.enabled);
+      const ok = await service.setInstalled(id, String(pluginId), installed);
       session.respond({ success: ok }, "json");
     });
 }
