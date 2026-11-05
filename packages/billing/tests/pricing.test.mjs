@@ -135,3 +135,18 @@ test("the recorded formula carries the prices it applied", () => {
   assert.equal(formula.channel_id, 7);
   assert.equal(formula.model_config_id, 9);
 });
+
+test("a relay whose prompt tokens exclude the cache is billed on the full input", () => {
+  // The caller declares inclusive semantics, but the numbers contradict it: a cache
+  // read of 238,336 cannot sit inside an input of 15,422.
+  const result = priceUsage(price(), {
+    inputTokens: 15422,
+    outputTokens: 4895,
+    cachedInputTokens: 238336,
+    inputIncludesCache: true,
+  });
+  assert.equal(result.nonCachedInput, 15422);
+  assert.equal(result.cacheReadTokens, 238336);
+  assert.equal(result.inputTokens, 253758);
+  close(result.baseCost, (15422 * 3 + 238336 * 0.3 + 4895 * 15) / 1_000_000);
+});

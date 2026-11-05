@@ -99,13 +99,19 @@ export function extractTokenUsage(body: unknown): TokenUsage {
   // Anthropic states cache reads and writes beside `input_tokens` rather than inside
   // it. Detect that shape rather than trusting a provider name, since relays pass the
   // upstream body through unchanged.
-  const inputIncludesCache = !(
+  const declaredExclusive = (
     "cache_read_input_tokens" in usage
     || "cache_creation_input_tokens" in usage
     || "cache_creation" in usage
   );
+  const promptTokens = number(usage.prompt_tokens, usage.input_tokens, usage.promptTokenCount, usage.inputTokenCount, usage.input);
+  // Field names alone do not settle this. An OpenAI-shaped relay can report
+  // `prompt_tokens_details.cached_tokens` while counting only the misses in
+  // `prompt_tokens`, which makes the cache read larger than the input. Inclusive
+  // semantics make that impossible, so the numbers get the final say.
+  const inputIncludesCache = !declaredExclusive && cachedInputTokens <= promptTokens;
   return {
-    inputTokens: number(usage.prompt_tokens, usage.input_tokens, usage.promptTokenCount, usage.inputTokenCount, usage.input),
+    inputTokens: promptTokens,
     outputTokens: number(usage.completion_tokens, usage.output_tokens, usage.candidatesTokenCount, usage.outputTokenCount, usage.output),
     cachedInputTokens,
     cacheWriteInputTokens,

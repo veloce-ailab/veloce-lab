@@ -50,7 +50,9 @@ export function priceUsage(price: ModelPrice, usage: PriceableUsage): PricedUsag
   const cacheReadReported = amount(usage.cachedInputTokens);
   const cacheWrite1hReported = amount(usage.cacheWrite1hInputTokens);
   const cacheWriteReported = Math.max(cacheWrite1hReported, amount(usage.cacheWriteInputTokens));
-  const inputIncludesCache = usage.inputIncludesCache !== false;
+  // Never trust the flag alone: a cache read larger than the reported input can only
+  // mean the input excludes the cache, whatever the caller declared.
+  const inputIncludesCache = usage.inputIncludesCache !== false && cacheReadReported <= reportedInput;
 
   const cacheReadTokens = inputIncludesCache ? Math.min(cacheReadReported, reportedInput) : cacheReadReported;
   const nonCachedInput = inputIncludesCache ? reportedInput - cacheReadTokens : reportedInput;

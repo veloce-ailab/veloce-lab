@@ -7738,15 +7738,24 @@ function SessionTokenUsage({ session, language }: { session?: ChatSession; langu
   const [open, setOpen] = useState(false)
   const usage = useMemo(() => {
     const messages = session?.messages || []
-    return messages.reduce((total, message) => ({
-      input: total.input + (message.input_tokens || 0),
-      output: total.output + (message.output_tokens || 0),
-      cached: total.cached + (message.cached_input_tokens || 0),
-    }), { input: 0, output: 0, cached: 0 })
+    // Normalised per message, because the two provider shapes can meet in one session.
+    // A cached count larger than the reported input is only possible when that input
+    // excluded the cache, so the rule is applied to each message on its own numbers
+    // rather than to the summed totals, where a mixed history would hide it.
+    return messages.reduce((total, message) => {
+      const input = message.input_tokens || 0
+      const cached = message.cached_input_tokens || 0
+      const inclusive = cached <= input
+      return {
+        input: total.input + (inclusive ? input : input + cached),
+        uncached: total.uncached + (inclusive ? Math.max(0, input - cached) : input),
+        cached: total.cached + cached,
+        output: total.output + (message.output_tokens || 0),
+      }
+    }, { input: 0, uncached: 0, cached: 0, output: 0 })
   }, [session?.messages])
   const total = usage.input + usage.output
-  // The cached share sits inside the reported input, so the uncached part is what is left.
-  const uncached = Math.max(0, usage.input - usage.cached)
+  const uncached = usage.uncached
   const cacheRate = usage.input > 0 ? usage.cached / usage.input : 0
   const isChinese = language === "zh"
   const isJapanese = language === "ja"
