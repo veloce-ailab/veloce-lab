@@ -1900,6 +1900,12 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         let inputTokens = Number(parsed?.inputTokens || usage.inputTokens || 0);
         let outputTokens = Number(parsed?.outputTokens || usage.outputTokens || 0);
         let cachedInputTokens = Number(parsed?.cachedInputTokens || usage.cachedInputTokens || 0);
+        let cacheWriteInputTokens = Number(usage.cacheWriteInputTokens || 0);
+        let cacheWrite1hInputTokens = Number(usage.cacheWrite1hInputTokens || 0);
+        // Pricing needs to know whether `inputTokens` already counts the cache, and
+        // only the provider body can say. Cache writes only exist for providers that
+        // report them, so their presence in the usage shape is the signal.
+        const inputIncludesCache = usage.inputIncludesCache;
         // Non-streaming upstreams have no delta callback; their first completed
         // response is the closest observable first-token boundary.
         if (!firstTokenMS && !streaming) {
@@ -1946,6 +1952,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             inputTokens,
             outputTokens,
             cachedInputTokens,
+            cacheWriteInputTokens,
+            cacheWrite1hInputTokens,
           },
           messages,
           tools: availableTools,
@@ -2070,6 +2078,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
               inputTokens: Number(next?.inputTokens || nextUsage.inputTokens || 0),
               outputTokens: Number(next?.outputTokens || nextUsage.outputTokens || 0),
               cachedInputTokens: Number(next?.cachedInputTokens || nextUsage.cachedInputTokens || 0),
+              cacheWriteInputTokens: Number(nextUsage.cacheWriteInputTokens || 0),
+              cacheWrite1hInputTokens: Number(nextUsage.cacheWrite1hInputTokens || 0),
             } satisfies AgentModelStep;
           },
         });
@@ -2079,6 +2089,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         inputTokens = turn.inputTokens;
         outputTokens = turn.outputTokens;
         cachedInputTokens = turn.cachedInputTokens;
+        cacheWriteInputTokens = turn.cacheWriteInputTokens;
+        cacheWrite1hInputTokens = turn.cacheWrite1hInputTokens;
         const round = turn.rounds;
         // A stop request may have landed while the last round was in flight; the
         // run must not come back to life as `completed` after that.
@@ -2142,6 +2154,10 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           modelName,
           inputTokens,
           outputTokens,
+          cachedInputTokens,
+          cacheWriteInputTokens,
+          cacheWrite1hInputTokens,
+          inputIncludesCache,
           metadata: { sessionId, runId, channelId: Number(selected.channel.id), modelConfigId: Number(selected.config.id) },
         }).catch(() => undefined);
         emit("done", {

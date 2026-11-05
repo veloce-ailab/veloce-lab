@@ -7,6 +7,10 @@ export interface AgentModelStep {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  /** Prompt-cache writes, which are billed above the input rate. */
+  cacheWriteInputTokens?: number;
+  /** The one-hour TTL subset of the above, billed at its own rate. */
+  cacheWrite1hInputTokens?: number;
 }
 
 export interface AgentToolCallResult {
@@ -55,6 +59,8 @@ export interface AgentTurnResult {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheWriteInputTokens: number;
+  cacheWrite1hInputTokens: number;
   rounds: number;
 }
 
@@ -82,6 +88,8 @@ export function apply(ctx: Context) {
       let inputTokens = step.inputTokens;
       let outputTokens = step.outputTokens;
       let cachedInputTokens = step.cachedInputTokens;
+      let cacheWriteInputTokens = step.cacheWriteInputTokens ?? 0;
+      let cacheWrite1hInputTokens = step.cacheWrite1hInputTokens ?? 0;
       let rounds = 1;
 
       for (
@@ -182,6 +190,8 @@ export function apply(ctx: Context) {
         inputTokens += step.inputTokens;
         outputTokens += step.outputTokens;
         cachedInputTokens += step.cachedInputTokens;
+        cacheWriteInputTokens += step.cacheWriteInputTokens ?? 0;
+        cacheWrite1hInputTokens += step.cacheWrite1hInputTokens ?? 0;
         await input.onAssistantContent?.(step.content, rounds);
       }
 
@@ -192,6 +202,8 @@ export function apply(ctx: Context) {
         inputTokens,
         outputTokens,
         cachedInputTokens,
+        cacheWriteInputTokens,
+        cacheWrite1hInputTokens,
         rounds,
       };
     },

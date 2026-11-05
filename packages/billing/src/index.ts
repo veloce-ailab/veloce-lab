@@ -1,5 +1,6 @@
 import { Context, Schema } from "yumeri";
 import type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask, ModelPrice } from "./types.js";
+import { applyMultipliers, priceUsage } from "./pricing.js";
 import "@velocelab/database-core";
 export type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask, ModelPrice } from "./types.js";
 
@@ -22,6 +23,16 @@ export interface TokenUsageRecord {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number;
+  /** Tokens written into the prompt cache, the one-hour TTL subset listed separately. */
+  cacheWriteInputTokens?: number;
+  cacheWrite1hInputTokens?: number;
+  /**
+   * Whether `inputTokens` already counts the cached portion. OpenAI says yes,
+   * Anthropic says no; without this the cached share is subtracted from an input
+   * that never contained it and the request is under-billed.
+   */
+  inputIncludesCache?: boolean;
+  /** Caller-supplied total. Honoured when present, but it bypasses pricing. */
   cost?: number;
   metadata?: Record<string, unknown>;
 }
@@ -83,6 +94,11 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
     input_price_tiers: "text", output_price_tiers: "text", cached_input_price_tiers: "text", cache_write_input_price_tiers: "text", cache_write_1h_input_price_tiers: "text", image_input_price_tiers: "text", image_output_price_tiers: "text", audio_input_price_tiers: "text", audio_output_price_tiers: "text", time_pricing: "text", video_billing_config: "text", created_at: "timestamp", updated_at: "timestamp",
   }, { unique: [["channel_id", "model_config_id"]] });
   const now = () => new Date().toISOString();
+  /** Mirrors `applyMultipliers`, so the stored factor matches the one actually charged. */
+  const multiplier = (value: unknown) => {
+    const parsed = Number(value ?? 1);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
+  };
   const user = (session: any) => session.properties.user as { id?: number; is_admin?: boolean } | undefined;
   const body = async (session: any) => await session.parseRequestBody() as Record<string, unknown>;
   const priceFields = ["input_price", "output_price", "cached_input_price", "cache_write_input_price", "cache_write_1h_input_price", "image_input_price", "image_output_price", "audio_input_price", "audio_output_price", "input_price_tiers", "output_price_tiers", "cached_input_price_tiers", "cache_write_input_price_tiers", "cache_write_1h_input_price_tiers", "image_input_price_tiers", "image_output_price_tiers", "audio_input_price_tiers", "audio_output_price_tiers", "time_pricing", "video_billing_config"] as const;
@@ -90,7 +106,42 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
   const prices = async () => await db.select("model_prices", {}) as ModelPrice[];
   const availablePrices = async () => { try { const data = db as any; const [configs, channels, models, configured] = await Promise.all([data.select("model_configs", {}), data.select("channels", {}), data.select("models", {}), prices()]); const channelById = new Map<number, any>(channels.map((item: any) => [Number(item.id), item])); const modelById = new Map<number, any>(models.map((item: any) => [Number(item.id), item])); const configuredByBinding = new Map(configured.map((item) => [`${item.channel_id}:${item.model_config_id}`, item])); return configs.map((item: any) => { const channel = channelById.get(Number(item.channel_id)); const model = modelById.get(Number(item.model_id)); const modelName = String(model?.model_name ?? item.upstream_model_name ?? ""); return { ...(configuredByBinding.get(`${item.channel_id}:${item.id}`) ?? defaultPrice(Number(item.channel_id), Number(item.id), modelName, Number(model?.quota_type ?? 0))), channel_name: String(channel?.name ?? "") }; }); } catch { return []; } };
   const findPrice = async (modelName: string, metadata: Record<string, unknown>) => { const channelId = Number(metadata.channelId ?? 0); const modelConfigId = Number(metadata.modelConfigId ?? 0); return channelId && modelConfigId ? ((await db.selectOne("model_prices", { channel_id: channelId, model_config_id: modelConfigId }) as ModelPrice | undefined) ?? defaultPrice(channelId, modelConfigId, modelName)) : defaultPrice(0, 0, modelName); };
-  const recordUsage = async (usage: TokenUsageRecord): Promise<TokenLog> => { const modelName = String(usage.modelName ?? "").trim(); const metadata = usage.metadata ?? {}; const price = await findPrice(modelName, metadata); const inputTokens = Math.max(0, Number(usage.inputTokens) || 0); const outputTokens = Math.max(0, Number(usage.outputTokens) || 0); const cachedInputTokens = Math.max(0, Math.min(inputTokens, Number(usage.cachedInputTokens) || 0)); const cost = usage.cost ?? (((inputTokens - cachedInputTokens) * Number(price.input_price || 0) + cachedInputTokens * Number(price.cached_input_price || price.input_price || 0) + outputTokens * Number(price.output_price || 0)) / 1_000_000); return await db.create("token_logs", { user_id: usage.userId ?? null, model_name: modelName, input_tokens: inputTokens, output_tokens: outputTokens, cached_input_tokens: cachedInputTokens, input_price: price.input_price, output_price: price.output_price, cached_input_price: price.cached_input_price, cache_write_input_price: price.cache_write_input_price, cache_write_1h_input_price: price.cache_write_1h_input_price, cost: String(cost), base_cost: String(cost), status: 0, pricing_formula: JSON.stringify({ unit: "per_million_tokens", currency: cfg.currency, channel_id: price.channel_id, model_config_id: price.model_config_id }), channel_id: Number(metadata.channelId ?? 0) || null, model_config_id: Number(metadata.modelConfigId ?? 0) || null, created_at: now() } as any) as TokenLog; };
+  const recordUsage = async (usage: TokenUsageRecord): Promise<TokenLog> => {
+    const modelName = String(usage.modelName ?? "").trim();
+    const metadata = usage.metadata ?? {};
+    const price = await findPrice(modelName, metadata);
+    const priced = priceUsage(price, usage);
+    const groupMultiplier = multiplier(metadata.groupMultiplier);
+    const channelMultiplier = multiplier(metadata.userChannelMultiplier);
+    // A caller-supplied total is taken as final; otherwise the price list plus the
+    // multipliers produce it, and `base_cost` keeps the pre-multiplier amount.
+    const cost = usage.cost ?? applyMultipliers(priced.baseCost, metadata.groupMultiplier, metadata.userChannelMultiplier);
+    return await db.create("token_logs", {
+      user_id: usage.userId ?? null,
+      model_name: modelName,
+      input_tokens: priced.inputTokens,
+      output_tokens: priced.outputTokens,
+      cached_input_tokens: priced.cacheReadTokens,
+      cache_write_input_tokens: priced.cacheWriteTokens,
+      cache_write_1h_input_tokens: priced.cacheWrite1hTokens,
+      input_price: String(price.input_price ?? 0),
+      output_price: String(price.output_price ?? 0),
+      cached_input_price: String(price.cached_input_price ?? 0),
+      cache_write_input_price: String(price.cache_write_input_price ?? 0),
+      cache_write_1h_input_price: String(price.cache_write_1h_input_price ?? 0),
+      group_multiplier: String(groupMultiplier),
+      user_channel_multiplier: String(channelMultiplier),
+      // `base_cost` is the price-list amount; `cost` carries the multipliers, so the
+      // two rows can always be reconciled against the price that produced them.
+      base_cost: String(priced.baseCost),
+      cost: String(cost),
+      status: 0,
+      pricing_formula: JSON.stringify({ ...priced.formula, currency: cfg.currency, group_multiplier: groupMultiplier, user_channel_multiplier: channelMultiplier }),
+      channel_id: Number(metadata.channelId ?? 0) || null,
+      model_config_id: Number(metadata.modelConfigId ?? 0) || null,
+      created_at: now(),
+    } as any) as TokenLog;
+  };
   const balances = new Map<number, number>();
   const service: BillingService = {
     countTokens: (_model, text) => estimate(text),
@@ -124,7 +175,10 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
   const statisticsProvider = {
     id: "billing",
     async get(userId: number, from: string, to: string) {
-      const rows = (await db.select("token_logs", {}) as TokenLog[]).filter((row) => row.user_id === userId && (!from || String(row.created_at).slice(0, 10) >= from) && (!to || String(row.created_at).slice(0, 10) <= to));
+      // Ask the database for this user's rows instead of reading the whole ledger.
+      // The date bounds stay in JS: `created_at` is a timestamp and the filters are
+      // day strings, so pushing them down would depend on the driver's coercion.
+      const rows = (await db.select("token_logs", { user_id: userId } as any) as TokenLog[]).filter((row) => (!from || String(row.created_at).slice(0, 10) >= from) && (!to || String(row.created_at).slice(0, 10) <= to));
       const input = rows.reduce((sum, row) => sum + Number(row.input_tokens || 0), 0);
       const output = rows.reduce((sum, row) => sum + Number(row.output_tokens || 0), 0);
       const daily = new Map<string, { date: string; request_count: number; input_tokens: number; output_tokens: number; total_tokens: number; total_cost: number }>();

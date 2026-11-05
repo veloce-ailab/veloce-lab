@@ -48,6 +48,19 @@ export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  /** Tokens written into the prompt cache. Anthropic bills these above the input rate. */
+  cacheWriteInputTokens: number;
+  /** The subset of the above written with the one-hour TTL, priced separately. */
+  cacheWrite1hInputTokens: number;
+  /**
+   * Whether `inputTokens` already counts `cachedInputTokens`.
+   *
+   * OpenAI reports `prompt_tokens` inclusive of `prompt_tokens_details.cached_tokens`,
+   * while Anthropic reports `input_tokens` with the cache reads and writes counted
+   * separately. Callers that price the two portions at different rates have to know
+   * which one they are looking at, or they subtract a cache count the input never had.
+   */
+  inputIncludesCache: boolean;
 }
 
 /** Normalise usage metadata from OpenAI-compatible, Anthropic, Gemini and relay responses. */
@@ -61,7 +74,11 @@ export function extractTokenUsage(body: unknown): TokenUsage {
     }
     return 0;
   };
-  const cachedInputTokens = [
+  const maximum = (...values: unknown[]): number => values.reduce<number>((best, item) => {
+    const parsed = Number(item);
+    return Number.isFinite(parsed) && parsed >= 0 ? Math.max(best, parsed) : best;
+  }, 0);
+  const cachedInputTokens = maximum(
     usage.cached_tokens,
     usage.cached_input_tokens,
     usage.cache_read_input_tokens,
@@ -69,14 +86,31 @@ export function extractTokenUsage(body: unknown): TokenUsage {
     usage.prompt_tokens_details?.cached_tokens,
     usage.input_tokens_details?.cached_tokens,
     usage.cachedContentTokenCount,
-  ].reduce((maximum, item) => {
-    const parsed = Number(item);
-    return Number.isFinite(parsed) && parsed >= 0 ? Math.max(maximum, parsed) : maximum;
-  }, 0);
+  );
+  const cacheWrite1hInputTokens = maximum(
+    usage.cache_creation?.ephemeral_1h_input_tokens,
+    usage.cacheWrite1hInputTokens,
+  );
+  const cacheWriteInputTokens = Math.max(cacheWrite1hInputTokens, maximum(
+    usage.cache_creation_input_tokens,
+    usage.cache_creation?.ephemeral_5m_input_tokens,
+    usage.cacheWriteInputTokens,
+  ));
+  // Anthropic states cache reads and writes beside `input_tokens` rather than inside
+  // it. Detect that shape rather than trusting a provider name, since relays pass the
+  // upstream body through unchanged.
+  const inputIncludesCache = !(
+    "cache_read_input_tokens" in usage
+    || "cache_creation_input_tokens" in usage
+    || "cache_creation" in usage
+  );
   return {
     inputTokens: number(usage.prompt_tokens, usage.input_tokens, usage.promptTokenCount, usage.inputTokenCount, usage.input),
     outputTokens: number(usage.completion_tokens, usage.output_tokens, usage.candidatesTokenCount, usage.outputTokenCount, usage.output),
     cachedInputTokens,
+    cacheWriteInputTokens,
+    cacheWrite1hInputTokens,
+    inputIncludesCache,
   };
 }
 
