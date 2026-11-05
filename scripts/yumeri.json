@@ -86,6 +86,7 @@
     "@velocelab/device-local": {},
     "@velocelab/skill": {},
     "@velocelab/mcp": {},
+    "@velocelab/external-plugin": {},
     "@velocelab/delivery": {},
     "@velocelab/uptime": {},
     "@velocelab/tools": {},

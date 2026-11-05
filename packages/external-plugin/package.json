@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@velocelab/advanced-chat": "^0.1.2",
-    "@velocelab/mcp": "^0.1.2"
+    "@velocelab/mcp": "^0.1.1"
   },
   "peerDependencies": {
     "yumeri": "^3.0.0"

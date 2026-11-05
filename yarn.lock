@@ -2972,6 +2972,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/advanced-chat@workspace:packages/advanced-chat"
   dependencies:
+    "@monaco-editor/react": "npm:^4.7.0"
     "@tanstack/react-query": "npm:^5.100.14"
     "@velocelab/adapters": "npm:^0.1.2"
     "@velocelab/agent-runtime": "npm:^0.1.2"
@@ -2979,8 +2980,11 @@ __metadata:
     "@velocelab/message": "npm:^0.1.3"
     "@velocelab/user": "npm:^0.1.2"
     "@vitejs/plugin-react": "npm:^6.0.1"
+    "@xterm/addon-fit": "npm:^0.10.0"
+    "@xterm/xterm": "npm:^5.3.0"
     axios: "npm:^1.16.1"
     lucide-react: "npm:^1.16.0"
+    monaco-editor: "npm:^0.52.2"
     react: "npm:^19.2.6"
     react-dom: "npm:^19.2.6"
     react-router-dom: "npm:^7.15.1"
@@ -3326,6 +3330,17 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@velocelab/external-plugin@workspace:packages/external-plugin":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/external-plugin@workspace:packages/external-plugin"
+  dependencies:
+    "@velocelab/advanced-chat": "npm:^0.1.2"
+    "@velocelab/mcp": "npm:^0.1.1"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
 "@velocelab/file@npm:^0.1.2, @velocelab/file@workspace:packages/file":
   version: 0.0.0-use.local
   resolution: "@velocelab/file@workspace:packages/file"
@@ -3381,7 +3396,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@velocelab/mcp@workspace:packages/mcp":
+"@velocelab/mcp@npm:^0.1.1, @velocelab/mcp@workspace:packages/mcp":
   version: 0.0.0-use.local
   resolution: "@velocelab/mcp@workspace:packages/mcp"
   dependencies:
