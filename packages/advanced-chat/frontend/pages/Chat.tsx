@@ -3978,9 +3978,7 @@ export default function Chat() {
         : null
 
   const sessionsSidebar = (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <aside className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden bg-transparent text-foreground">
+    <aside className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden bg-transparent text-foreground">
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/80 px-3">
         <div className="truncate text-xs font-semibold uppercase text-muted-foreground">{copy.sessions}</div>
         <div className="flex items-center gap-1">
@@ -4021,7 +4019,7 @@ export default function Chat() {
           <div key={group.label} className="pb-2">
             {sessionGroupMode === "workspace" ? (() => {
               const workspace = workspaces.find((item) => item.id === group.sessions[0]?.workspace_id)
-              return <div className="group/workspace flex h-9 items-center gap-1 rounded-md px-2 py-1 hover:bg-muted">
+              const header = <div className="group/workspace flex h-9 items-center gap-1 rounded-md px-2 py-1 hover:bg-muted">
                 <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm" onClick={() => workspace && createSessionInWorkspace(workspace)}>
                   <FolderOpen size={17} className="shrink-0 text-muted-foreground" />
                   <span className="min-w-0 truncate font-medium">{group.label}</span>
@@ -4037,6 +4035,19 @@ export default function Chat() {
                   <Button type="button" variant="ghost" size="icon" className="size-7 opacity-0 group-hover/workspace:opacity-100 focus-visible:opacity-100" onClick={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }} title={language === "zh" ? "重命名工作区" : "Rename workspace"} aria-label={language === "zh" ? "重命名工作区" : "Rename workspace"}><Pencil size={14} /></Button>
                 </>}
               </div>
+              // Without this the right click fell through to the menu wrapped around the
+              // whole sidebar, which had no items, so a workspace offered nothing.
+              return workspace ? (
+                <ContextMenu>
+                  <ContextMenuTrigger asChild>{header}</ContextMenuTrigger>
+                  <ContextMenuContent className="w-52">
+                    <ContextMenuItem onSelect={() => createSessionInWorkspace(workspace)}><MessageSquarePlus size={15} />{language === "zh" ? "在此工作区新建会话" : "New session here"}</ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem onSelect={() => { setWorkspaceRenameTarget(workspace); setWorkspaceRenameDraft(workspace.name) }}><Pencil size={15} />{language === "zh" ? "重命名" : "Rename"}</ContextMenuItem>
+                    <ContextMenuItem onSelect={() => void openWorkspaceInFileManager(workspace)}><FolderOpen size={15} />{language === "zh" ? "在文件管理器中打开" : "Open in file manager"}</ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              ) : header
             })() : <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">{group.label}</div>}
             {group.sessions.map((session) => (
               <SessionSidebarRow
@@ -4065,10 +4076,7 @@ export default function Chat() {
         )}
         {searchedSessions.length === 0 && <div className="px-3 py-10 text-center text-sm text-muted-foreground">{sessionSidebarCopy.noSessions}</div>}
       </div>
-        </aside>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="w-44" />
-    </ContextMenu>
+    </aside>
   )
   const desktopSessionsSidebarPortal = desktopSessionsSidebarHost
     ? createPortal(sessionsSidebar, desktopSessionsSidebarHost)
