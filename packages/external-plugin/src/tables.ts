@@ -5,7 +5,33 @@
 // answer and nothing has to be unwound afterwards.
 import type { Database } from "yumeri";
 
+/**
+ * Removes the per-column unique indexes an earlier build created.
+ *
+ * `unique` takes one entry per index, and a bare array of column names reads as
+ * three separate indexes rather than one composite. Those columns are not unique
+ * on their own — one marketplace holds many plugins — so every insert past the
+ * first failed. `IF NOT EXISTS` never replaces an index, so they have to go
+ * before the composite one is created.
+ */
+async function dropStaleIndexes(db: Database): Promise<void> {
+  const stale: Array<[string, string]> = [
+    ["external_plugin_marketplaces", "external_plugin_marketplaces_user_id_unique"],
+    ["external_plugin_marketplaces", "external_plugin_marketplaces_url_unique"],
+    ["external_plugins", "external_plugins_user_id_unique"],
+    ["external_plugins", "external_plugins_marketplace_id_unique"],
+    ["external_plugins", "external_plugins_slug_unique"],
+  ];
+  for (const [table, index] of stale) {
+    // SQLite and PostgreSQL, then MySQL, which spells it differently and has no
+    // IF EXISTS. Whichever the server understands runs; the other is a no-op.
+    await db.run(`DROP INDEX IF EXISTS "${index}"`).catch(() => undefined);
+    await db.run(`DROP INDEX "${index}" ON "${table}"`).catch(() => undefined);
+  }
+}
+
 export async function ensureTables(db: Database): Promise<void> {
+  await dropStaleIndexes(db);
   await db.extend(
     "external_plugin_marketplaces",
     {
@@ -21,7 +47,7 @@ export async function ensureTables(db: Database): Promise<void> {
       created_at: "timestamp",
       updated_at: "timestamp",
     },
-    { unique: ["user_id", "url"] },
+    { unique: [["user_id", "url"]] },
   );
   await db.extend(
     "external_plugins",
@@ -46,6 +72,6 @@ export async function ensureTables(db: Database): Promise<void> {
       created_at: "timestamp",
       updated_at: "timestamp",
     },
-    { unique: ["user_id", "marketplace_id", "slug"] },
+    { unique: [["user_id", "marketplace_id", "slug"]] },
   );
 }
