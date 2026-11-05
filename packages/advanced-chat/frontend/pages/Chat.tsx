@@ -10,7 +10,7 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Coins, Copy, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Coins, Copy, Eraser, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { composerCommands, subscribeComposerCommands, type DashboardComposerCommand } from "@velocelab/dashboard/frontend"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
@@ -632,6 +632,7 @@ type SessionRowActions = {
   rename: (session: ChatSession) => void
   regenerate: (session: ChatSession) => void
   moveToWorkspace: (sessionID: string) => void
+  clearMessages: (session: ChatSession) => void
 }
 
 /**
@@ -691,6 +692,7 @@ const SessionSidebarRow = memo(function SessionSidebarRow({
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => actions.moveToWorkspace(session.id)}><FolderOpen size={14} />{language === "zh" ? "移动到工作区" : "Move to workspace"}</ContextMenuItem>
+        <ContextMenuItem onSelect={() => actions.clearMessages(session)}><Eraser size={14} />{language === "zh" ? "清空消息" : "Clear messages"}</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   )
@@ -815,6 +817,7 @@ export default function Chat() {
   const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
   const [sessionPendingDeletion, setSessionPendingDeletion] = useState<ChatSession | null>(null)
   const [workspacePendingDeletion, setWorkspacePendingDeletion] = useState<ChatWorkspace | null>(null)
+  const [sessionPendingClear, setSessionPendingClear] = useState<ChatSession | null>(null)
   const [chatForkEnabled, setChatForkEnabled] = useState(false)
   const [subagentDialogTask, setSubagentDialogTask] = useState<SubagentTask | null>(null)
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
@@ -2033,6 +2036,16 @@ export default function Chat() {
     }
   }
 
+  const clearSessionMessages = (sessionID: string) => {
+    // The session stays, so only its contents are dropped locally; refetching keeps the
+    // server and the list in step if anything could not be deleted.
+    setSessions((current) => current.map((session) => session.id === sessionID
+      ? { ...session, messages: [], latest_run: undefined }
+      : session))
+    void api.delete(`/user/advanced-chat/sessions/${encodeURIComponent(sessionID)}/messages`)
+      .then(() => refetchAdvancedSessions())
+      .catch(() => undefined)
+  }
   const deleteWorkspace = async (workspace: ChatWorkspace) => {
     // The server removes the sessions in it, so drop them here too rather than leaving
     // rows pointing at a workspace that no longer exists.
@@ -3390,8 +3403,8 @@ export default function Chat() {
   const onForkMessage = useCallback((message: ChatMessage) => void chatActionsRef.current.forkMessage(message), [])
   const onDecideConnectorApproval = useCallback((taskID: string, approved: boolean) => void chatActionsRef.current.decideConnectorApproval(taskID, approved), [])
 
-  const sessionRowActionsRef = useRef({ selectSession, setSessionPendingDeletion, renameSessionTitle, regenerateSessionTitle, setWorkspaceMoveSessionID, setWorkspaceSelectionOpen })
-  sessionRowActionsRef.current = { selectSession, setSessionPendingDeletion, renameSessionTitle, regenerateSessionTitle, setWorkspaceMoveSessionID, setWorkspaceSelectionOpen }
+  const sessionRowActionsRef = useRef({ selectSession, setSessionPendingDeletion, setSessionPendingClear, renameSessionTitle, regenerateSessionTitle, setWorkspaceMoveSessionID, setWorkspaceSelectionOpen })
+  sessionRowActionsRef.current = { selectSession, setSessionPendingDeletion, setSessionPendingClear, renameSessionTitle, regenerateSessionTitle, setWorkspaceMoveSessionID, setWorkspaceSelectionOpen }
   const sessionRowActions = useMemo<SessionRowActions>(() => ({
     select: (sessionID) => sessionRowActionsRef.current.selectSession(sessionID),
     requestDelete: (session) => sessionRowActionsRef.current.setSessionPendingDeletion(session),
@@ -3401,6 +3414,7 @@ export default function Chat() {
       sessionRowActionsRef.current.setWorkspaceMoveSessionID(sessionID)
       sessionRowActionsRef.current.setWorkspaceSelectionOpen(true)
     },
+    clearMessages: (session) => sessionRowActionsRef.current.setSessionPendingClear(session),
   }), [])
 
   const handleMessageSelectionContextMenu = () => {
@@ -4152,6 +4166,11 @@ export default function Chat() {
           <VSCodeIcon size={17} />
         </Button>
       )}
+      {activeSession && currentMessages.length > 0 && (
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSessionPendingClear(activeSession)} aria-label={language === "zh" ? "清空消息" : "Clear messages"} title={language === "zh" ? "清空消息" : "Clear messages"}>
+          <Eraser size={16} />
+        </Button>
+      )}
       {isAdvanced && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openAdvancedConfig()} aria-label={copy.config} title={copy.config}><Settings size={16} /></Button>}
       <DashboardSlot name="chat.toolbar.sidebar" scope="/chat" data={chatSlotData} />
     </div>
@@ -4775,6 +4794,25 @@ export default function Chat() {
             <Button variant="destructive" onClick={() => { if (sessionPendingDeletion) deleteSession(sessionPendingDeletion.id); setSessionPendingDeletion(null) }}>
               <Trash2 size={15} />
               {language === "zh" ? "删除" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(sessionPendingClear)} onOpenChange={(open) => { if (!open) setSessionPendingClear(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{language === "zh" ? "清空消息？" : "Clear messages?"}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {language === "zh"
+              ? `“${sessionPendingClear?.title || copy.untitledSession}”里的全部消息会被删除，会话本身保留。此操作无法恢复。`
+              : `Every message in “${sessionPendingClear?.title || copy.untitledSession}” will be deleted and the session kept. This cannot be undone.`}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSessionPendingClear(null)}>{language === "zh" ? "取消" : "Cancel"}</Button>
+            <Button variant="destructive" onClick={() => { const target = sessionPendingClear; setSessionPendingClear(null); if (target) clearSessionMessages(target.id) }}>
+              <Eraser size={15} />
+              {language === "zh" ? "清空" : "Clear"}
             </Button>
           </DialogFooter>
         </DialogContent>

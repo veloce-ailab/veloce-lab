@@ -507,6 +507,17 @@ export function registerAdvancedChatRoutes(
         );
     });
   ctx
+    .route("/api/user/advanced-chat/sessions/:id/messages")
+    .methods("DELETE")
+    .action(async (session, _params, id) => {
+      const current = await user(session);
+      if (current?.id === undefined) return;
+      session.respond(
+        { success: await service.clearSessionMessages(current.id, id) },
+        "json",
+      );
+    });
+  ctx
     .route("/api/user/advanced-chat/sessions/:id/usage")
     .methods("GET")
     .action(async (session, _params, id) => {

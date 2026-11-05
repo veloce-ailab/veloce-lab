@@ -129,6 +129,8 @@ export interface AdvancedChatService {
     input: SessionSnapshotInput,
   ): Promise<Record<string, unknown> | undefined>;
   deleteSession(userId: number, sessionId: string): Promise<boolean>;
+  /** Deletes every message and run in a session but keeps the session itself. */
+  clearSessionMessages(userId: number, sessionId: string): Promise<boolean>;
   getRun(
     userId: number,
     runId: string,
@@ -975,6 +977,36 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           created_at: now,
         });
       return service.getSession(userId, id);
+    },
+    /**
+     * Empties a session without removing it, so its title, model and workspace stay.
+     *
+     * The runs go too: they name the messages they produced, and keeping them would
+     * leave a history pointing at rows that no longer exist.
+     */
+    async clearSessionMessages(userId, sessionId) {
+      const runs = await db.select("advanced_chat_runs", {
+        session_id: sessionId,
+        user_id: userId,
+      });
+      for (const run of runs)
+        await db.remove("advanced_chat_run_events", {
+          run_id: run.id,
+          user_id: userId,
+        });
+      await db.remove("advanced_chat_runs", {
+        session_id: sessionId,
+        user_id: userId,
+      });
+      await db.remove("advanced_chat_messages", {
+        session_id: sessionId,
+        user_id: userId,
+      });
+      const updatedAt = new Date().toISOString();
+      await db.update("advanced_chat_sessions", { id: sessionId, user_id: userId }, {
+        updated_at: updatedAt,
+      });
+      return true;
     },
     async deleteSession(userId, sessionId) {
       const runs = await db.select("advanced_chat_runs", {
