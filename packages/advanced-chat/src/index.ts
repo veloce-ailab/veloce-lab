@@ -416,7 +416,7 @@ export const config: Schema<AdvancedChatConfig> = Schema.object({
   connectorOnlineWindowSeconds: Schema.string(
     "Connector online window seconds",
   ).key("advanced-chat.config.connectorOnlineWindowSeconds").default("60"),
-  retryAttempts: Schema.number("Chat retry attempts").key("advanced-chat.config.retryAttempts").default(3),
+  retryAttempts: Schema.number("Chat retry attempts").key("advanced-chat.config.retryAttempts").default(5),
   assistantRetryAttempts: Schema.number("Assistant retry attempts").key("advanced-chat.config.assistantRetryAttempts").default(10),
   retryDelayMs: Schema.number("Chat retry delay milliseconds").key("advanced-chat.config.retryDelayMs").default(500),
   retryMaxDelayMs: Schema.number(
@@ -1801,7 +1801,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             { method: "POST", headers, body: JSON.stringify(request.body) },
             mode,
             {
-              retryAttempts: Math.max(1, Number(pluginConfig.retryAttempts) || 3),
+              retryAttempts: Math.max(1, Number(pluginConfig.retryAttempts) || 5),
               assistantRetryAttempts: Math.max(
                 1,
                 Number(pluginConfig.assistantRetryAttempts) || 10,
@@ -2052,7 +2052,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
                 { method: "POST", headers: followup.headers, body: JSON.stringify(followup.body) },
                 mode,
                 {
-                  retryAttempts: Math.max(1, Number(pluginConfig.retryAttempts) || 3),
+                  retryAttempts: Math.max(1, Number(pluginConfig.retryAttempts) || 5),
                   assistantRetryAttempts: Math.max(1, Number(pluginConfig.assistantRetryAttempts) || 10),
                   retryDelayMs: Math.max(50, Number(pluginConfig.retryDelayMs) || 500),
                   retryMaxDelayMs: Math.max(100, Number(pluginConfig.retryMaxDelayMs) || 30000),
@@ -2067,7 +2067,15 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
               }
               throw error;
             }
-            if (!followupResponse.ok) return undefined;
+            if (!followupResponse.ok) {
+              // Report the count that actually applied: assistant runs get their own.
+              const attempts = mode === "assistant" || mode === "agent_group"
+                ? Math.max(1, Number(pluginConfig.assistantRetryAttempts) || 10)
+                : Math.max(1, Number(pluginConfig.retryAttempts) || 5);
+              throw new Error(
+                `upstream request failed (${followupResponse.status}) after ${attempts} attempts`,
+              );
+            }
             const followupData = await followupResponse.json().catch(() => ({}));
             const next = adapters.parse(channel.type, followupData);
             const nextUsage = extractTokenUsage(followupData);

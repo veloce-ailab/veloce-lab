@@ -39,6 +39,26 @@ function attemptSignal(signal: AbortSignal | undefined, timeoutMs: number) {
   };
 }
 
+/**
+ * Statuses worth another attempt.
+ *
+ * Only 5xx used to qualify, so a 429 — by far the most common transient failure,
+ * since it is how a provider says "slow down" — was returned to the caller on the
+ * first try and ended the run. 408 and 425 are the same kind of answer.
+ */
+const RETRYABLE_STATUS = new Set([408, 425, 429]);
+const retryableStatus = (status: number) => status >= 500 || RETRYABLE_STATUS.has(status);
+
+/** A provider that tells us how long to wait knows better than our backoff does. */
+function retryAfterMs(response: Response): number | undefined {
+  const header = response.headers.get("retry-after");
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const at = Date.parse(header);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
+}
+
 export async function fetchCompletionWithRetry(
   ctx: Context,
   url: string,
@@ -53,6 +73,7 @@ export async function fetchCompletionWithRetry(
       : options.retryAttempts,
   );
   let lastError: unknown;
+  let retryAfter: number | undefined;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (options.signal?.aborted)
       throw lastError instanceof Error
@@ -67,9 +88,13 @@ export async function fetchCompletionWithRetry(
         ...init,
         signal: attemptAbort.signal,
       });
-      if (response.ok || response.status < 500 || attempt === maxAttempts - 1)
+      if (response.ok || !retryableStatus(response.status) || attempt === maxAttempts - 1)
         return response;
       lastError = new Error(`upstream request failed (${response.status})`);
+      // Release the body of an attempt we are about to repeat, so a provider that
+      // streams an error page does not leave the connection open behind us.
+      await response.body?.cancel().catch(() => undefined);
+      retryAfter = retryAfterMs(response);
     } catch (error) {
       lastError = error;
       // A cancelled request must not be retried, and neither must the caller's
@@ -81,12 +106,12 @@ export async function fetchCompletionWithRetry(
     options.onRetry?.(attempt + 1, maxAttempts);
     // The wait between attempts belongs to the plugin's context, so unloading
     // the plugin takes it with it instead of leaving a stray timer behind.
-    await new Promise((resolve) =>
-      ctx.setTimeout(
-        resolve,
-        Math.min(options.retryMaxDelayMs, options.retryDelayMs * 2 ** attempt),
-      ),
-    );
+    // Exponential backoff, never shorter than the provider asked for and never
+    // longer than the cap the operator set.
+    const backoff = Math.min(options.retryMaxDelayMs, options.retryDelayMs * 2 ** attempt);
+    const delay = Math.min(options.retryMaxDelayMs, Math.max(backoff, retryAfter ?? 0));
+    retryAfter = undefined;
+    await new Promise((resolve) => ctx.setTimeout(resolve, delay));
   }
   throw lastError instanceof Error
     ? lastError
