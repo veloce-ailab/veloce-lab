@@ -625,6 +625,29 @@ const chatStoreKeys: ChatStoreKeys = {
     userChannel: "windypear.advanced_chat.user_channel_id.v1",
 }
 
+/**
+ * `Date.parse` on an ISO string is not free, and the session list sorts and
+ * groups on every streaming commit. Parsing each distinct timestamp once keeps
+ * that work out of the frame budget.
+ */
+const sessionTimeCache = new Map<string, number>()
+function sessionTimestamp(session: ChatSession): number {
+  const raw = session.updated_at || session.created_at
+  if (!raw) {
+    return NaN
+  }
+  const cached = sessionTimeCache.get(raw)
+  if (cached !== undefined) {
+    return cached
+  }
+  const parsed = Date.parse(raw)
+  if (sessionTimeCache.size > 4096) {
+    sessionTimeCache.clear()
+  }
+  sessionTimeCache.set(raw, parsed)
+  return parsed
+}
+
 export default function Chat() {
   const isAdvanced = true
   const isDesktop = isDesktopTarget()
@@ -939,8 +962,9 @@ export default function Chat() {
     [sessions]
   )
   const searchedSessions = useMemo(
-    () => displaySessions
-      .sort((a, b) => Date.parse(b.updated_at || b.created_at) - Date.parse(a.updated_at || a.created_at)),
+    // Copies before sorting: `sort` mutates, and `displaySessions` is memoised.
+    () => [...displaySessions]
+      .sort((a, b) => sessionTimestamp(b) - sessionTimestamp(a)),
     [displaySessions]
   )
   const visibleSessionGroups = useMemo(() => {
@@ -963,7 +987,7 @@ export default function Chat() {
         }
         return
       }
-      const timestamp = Date.parse(session.updated_at || session.created_at)
+      const timestamp = sessionTimestamp(session)
       const date = Number.isFinite(timestamp) ? new Date(timestamp) : new Date(0)
       let key: string
       let label: string
@@ -2045,7 +2069,19 @@ export default function Chat() {
         // downstream could skip a render and the session list rebuilt itself on
         // every streaming token.
         const next = current.slice()
-        next[index] = normalizeRuntimeSession({ ...updater(normalizeRuntimeSession(current[index])), updated_at: new Date().toISOString() })
+        const base = current[index]
+        const updated = updater(normalizeRuntimeSession(base))
+        // A streaming run commits around sixty times a second. Stamping a fresh
+        // `updated_at` on every one of those invalidated the ordering every
+        // downstream consumer sorts on, so the session list re-sorted and
+        // rebuilt itself on each frame. One stamp a second still keeps the row at
+        // the top; a persisted update stamps immediately.
+        const previousStamp = Date.parse(base.updated_at || base.created_at || "")
+        const stampNow = persistable || !Number.isFinite(previousStamp) || Date.now() - previousStamp >= 1000
+        next[index] = normalizeRuntimeSession({
+          ...updated,
+          updated_at: stampNow ? new Date().toISOString() : base.updated_at,
+        })
         return next
       }
       if (options.materialize && persistedSession) {
