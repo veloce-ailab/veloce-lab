@@ -134,9 +134,18 @@ export async function apply(ctx: Context) {
   });
   chat.registerTool({
     name: "skill_list",
-    description: "List enabled skills",
+    description: "List the skills available to this session",
     parameters: { type: "object", properties: {} },
-    execute: (_input, context) => service.list(context.userId),
+    // Scoped the same way as the prompt above. Handing back every enabled skill
+    // made the session's selection meaningless: the model could enumerate and
+    // then read the skills that were deliberately left out.
+    execute: async (_input, context) => {
+      const enabled = await service.list(context.userId);
+      const skillIds = context.skillIds;
+      return skillIds?.length
+        ? enabled.filter((skill) => skillIds.includes(String(skill.id)))
+        : enabled;
+    },
   });
   const user = (s: Session) => (s.properties.user as { id?: number } | undefined)?.id;
   ctx
