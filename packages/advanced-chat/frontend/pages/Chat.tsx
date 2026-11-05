@@ -72,6 +72,11 @@ const ASK_USER_TOOL_NAME = "ask_user"
 
 const CHAT_TOOL_GROUP_KEYS = ["workspace", "web", "tasks", "ask_user", "memory"] as const
 type ChatToolGroupKey = typeof CHAT_TOOL_GROUP_KEYS[number]
+/** A mention starts a word, and Chinese sentences are written without spaces. */
+const mentionPattern = /(?:^|[^\w@\/])@([^\s]*)$/
+/** A slash command begins a word anywhere in the message. */
+const slashPattern = /(?:^|\s)\/([^\s]*)$/
+
 type SlashCommand = { id: string; label: string; name: string; hint: string; icon: typeof Paperclip; kind: "action" | "block"; contributed?: DashboardComposerCommand }
 
 function slashCommands(language: string, contributed: DashboardComposerCommand[] = []): SlashCommand[] {
@@ -1443,7 +1448,12 @@ export default function Chat() {
       return normalizeWorkspaceDirectories(res.data)
     },
   })
-  const mentionMatch = /(?:^|\s)@([^\s]*)$/.exec(prompt)
+  // A slash command begins a word, wherever that word happens to be. Anchoring it
+  // to the first character meant the menu went dead the moment anything was typed
+  // before it.
+  const slashCommandMatch = slashPattern.exec(prompt)
+  const slashCommandQuery = slashCommandMatch?.[1] ?? ""
+  const mentionMatch = mentionPattern.exec(prompt)
   const mentionToken = mentionMatch?.[1] || ""
   const mentionSlash = mentionToken.lastIndexOf("/")
   const mentionDirectory = mentionSlash >= 0 ? mentionToken.slice(0, mentionSlash + 1) : ""
@@ -2708,13 +2718,15 @@ export default function Chat() {
     const value = event.currentTarget.value
     const previousValue = promptRef.current
     promptRef.current = value
-    const match = /^\/([^\s]*)$/.exec(value)
+    const match = slashPattern.exec(value)
     const nextSlashMenuOpen = Boolean(match)
-    const nextMentionMenuOpen = /(?:^|\s)@[^\s]*$/.test(value)
+    // Same rule as the token above: a mention may follow punctuation or a CJK
+    // character, because sentences in Chinese are written without spaces.
+    const nextMentionMenuOpen = mentionPattern.test(value)
     const promptNeedsPageUpdate = Boolean(match)
       || nextMentionMenuOpen
-      || previousValue.startsWith("/")
-      || /(?:^|\s)@[^\s]*$/.test(previousValue)
+      || slashPattern.test(previousValue)
+      || mentionPattern.test(previousValue)
       || Boolean(previousValue.trim()) !== Boolean(value.trim())
     if (promptNeedsPageUpdate) {
       setPromptState(value)
@@ -2728,7 +2740,7 @@ export default function Chat() {
   }
 
   const handleComposerPromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    const query = prompt.startsWith("/") ? prompt.slice(1).toLowerCase() : ""
+    const query = slashCommandQuery.toLowerCase()
     const commands = slashCommands(language, registeredComposerCommands).filter((command) => command.name.toLowerCase().startsWith(query))
     if (slashMenuOpen && commands.length > 0 && event.key === "ArrowDown") {
       event.preventDefault()
@@ -2772,6 +2784,9 @@ export default function Chat() {
     }
   }
 
+  // Drops only the command token, so a command typed after other text does not
+  // take the rest of the message with it.
+  const dropSlashToken = (current: string) => current.replace(slashPattern, "").trimEnd()
   const selectSlashCommand = async (id?: string) => {
     setSlashMenuOpen(false)
     const command = slashCommands(language, registeredComposerCommands).find((item) => item.id === id)
@@ -2780,10 +2795,10 @@ export default function Chat() {
       try {
         if (command.kind === "action") {
           await command.contributed.onSelect?.(context)
-          setPrompt("")
+          setPrompt(dropSlashToken)
         } else if (command.contributed.createBlock) {
           setComposerBlocks((current) => [...current, command.contributed!.createBlock!(context)])
-          setPrompt("")
+          setPrompt(dropSlashToken)
         }
       } catch (cause) {
         error(apiErrorMessage(cause, language === "zh" ? "指令执行失败" : "Command failed"))
@@ -2791,17 +2806,17 @@ export default function Chat() {
       return
     }
     if (id === "file") {
-      setPrompt("")
+      setPrompt(dropSlashToken)
       composerFileInputRef.current?.click()
       return
     }
     if (id === "stored-file") {
-      setPrompt("")
+      setPrompt(dropSlashToken)
       openFilePicker("composer")
       return
     }
     if (id === "compact") {
-      setPrompt("")
+      setPrompt(dropSlashToken)
       void sendMessageWithContent(language === "zh"
         ? "请将此前的对话压缩成一份简洁、完整的摘要，保留关键事实、已作决定、用户偏好、未完成事项和必要上下文，便于后续继续工作。只输出摘要。"
         : "Compress the conversation so far into a concise, complete summary. Preserve key facts, decisions, user preferences, open tasks, and context needed to continue. Output only the summary.", undefined, true)
@@ -3913,19 +3928,19 @@ export default function Chat() {
         <div className="relative min-w-0 flex-1">
           {mentionMenuOpen && mentionMatch && currentConnectorDeviceID && (() => {
             const entries = (mentionFilesQuery.data?.entries || []).filter((entry) => entry.name.toLowerCase().startsWith(mentionFilter))
-            return <div className="absolute bottom-full left-0 z-50 mb-2 max-h-[min(24rem,50vh)] w-full overflow-y-auto rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl" role="listbox" aria-label={language === "zh" ? "工作区文件" : "Workspace files"}>
+            return <div className="absolute bottom-full left-0 z-50 mb-2 max-h-[min(24rem,50vh)] w-full overflow-y-auto rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-1 duration-150" role="listbox" aria-label={language === "zh" ? "工作区文件" : "Workspace files"}>
               <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">{mentionDirectory ? `@${mentionDirectory}` : (language === "zh" ? "文件" : "Files")}</div>
               {mentionFilesQuery.isLoading ? <div className="px-2 py-4 text-sm text-muted-foreground">{language === "zh" ? "加载中..." : "Loading..."}</div> : entries.length === 0 ? <div className="px-2 py-4 text-sm text-muted-foreground">{language === "zh" ? "没有匹配文件" : "No matching files"}</div> : entries.slice(0, 80).map((entry) => <button key={entry.path} type="button" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left hover:bg-muted" onMouseDown={(event) => event.preventDefault()} onClick={() => selectMentionEntry(entry)}>
                 {entry.type === "directory" ? <Folder size={16} className="shrink-0 text-primary" /> : <FileText size={16} className="shrink-0 text-muted-foreground" />}<span className="min-w-0 flex-1 truncate font-mono text-xs">{entry.name}</span><span className="text-[11px] text-muted-foreground">{entry.type === "directory" ? ">" : formatBytes(entry.size)}</span>
               </button>)}
             </div>
           })()}
-          {slashMenuOpen && prompt.startsWith("/") && (() => {
-            const query = prompt.slice(1).toLowerCase()
+          {slashMenuOpen && slashCommandMatch && (() => {
+            const query = slashCommandQuery.toLowerCase()
             const commands = slashCommands(language, registeredComposerCommands).filter((command) => command.name.toLowerCase().startsWith(query))
             const filteredIndex = Math.min(slashMenuIndex, Math.max(0, commands.length - 1))
             if (commands.length === 0) return null
-            return <div className="absolute bottom-full left-0 z-50 mb-2 max-h-[min(24rem,50vh)] w-full overflow-y-auto rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl" role="listbox" aria-label={language === "zh" ? "斜杠指令" : "Slash commands"}>
+            return <div className="absolute bottom-full left-0 z-50 mb-2 max-h-[min(24rem,50vh)] w-full overflow-y-auto rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-1 duration-150" role="listbox" aria-label={language === "zh" ? "斜杠指令" : "Slash commands"}>
               <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">{language === "zh" ? "添加" : "Add"}</div>
               {commands.filter((command) => command.kind === "block").map((command) => {
                 const index = commands.indexOf(command)
@@ -3966,8 +3981,8 @@ export default function Chat() {
           <div className="flex items-center gap-2">
             {attachmentMenuButton("composer")}
             <div className="hidden items-center gap-1 lg:flex">
-              {composerApprovalControl(true)}
               {composerModeControl(true)}
+              {composerApprovalControl(true)}
               {composerAgentControl(true)}
             </div>
             {agentWorkStatusButton("h-5 w-5")}
@@ -3981,9 +3996,9 @@ export default function Chat() {
       </div>
       <div className={cn("grid gap-2 lg:hidden", activeRunMode === "agent_group" || isAdvanced ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2")}>
         {composerModeControl()}
+        {composerApprovalControl()}
         {composerAgentControl()}
         {activeRunMode === "agent_group" && composerAgentGroupControl()}
-        {composerApprovalControl()}
       </div>
     </>
   )
@@ -7859,7 +7874,7 @@ function createSession(input: { agentID?: string; modelName?: string } = {}): Ch
     id: createID(),
     title: "",
     messages: [],
-    run_mode: "chat",
+    run_mode: "assistant",
     agent_id: input.agentID || undefined,
     agent_group_id: undefined,
     skill_ids: [],
