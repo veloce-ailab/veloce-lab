@@ -10,7 +10,7 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Coins, Copy, Eraser, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Coins, Copy, Eraser, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Upload, User, Users, Wrench, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { composerCommands, subscribeComposerCommands, type DashboardComposerCommand } from "@velocelab/dashboard/frontend"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
@@ -563,7 +563,7 @@ interface EnterprisePoolDevice {
 
 type ChatRunMode = "chat" | "assistant" | "agent_group"
 type ConnectorApprovalMode = "manual" | "full_access" | "assistant"
-type SessionConfigTab = "basic" | "advanced" | "agent" | "agent_group" | "skills" | "knowledge" | "mcp" | "device"
+type SessionConfigTab = "basic" | "advanced" | "agent_group" | "skills" | "knowledge" | "mcp" | "device"
 type SessionCapabilityPicker = "skills" | "knowledge" | "mcp" | null
 type AttachmentTarget = "composer" | "editor"
 type WorkspacePickerTarget = "session" | "pending" | "new_workspace"
@@ -1493,7 +1493,7 @@ export default function Chat() {
     }
   }, [activeRunID, activeRunMode, currentAgentGroup, currentSession?.id])
   useEffect(() => {
-    if ((configTab === "device" && activeRunMode === "chat") || (configTab === "agent" && activeRunMode === "agent_group")) {
+    if (configTab === "device" && activeRunMode === "chat") {
       setConfigTab("basic")
     }
   }, [activeRunMode, configTab])
@@ -4857,17 +4857,16 @@ export default function Chat() {
             </DialogHeader>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {([
-                  ["basic", copy.basicSettings],
-                  ["advanced", copy.advancedModelSettings],
-                  ...(activeRunMode !== "agent_group" ? ([["agent", copy.agent]] as const) : []),
-                  ["agent_group", agentGroupCopy.agentGroups],
-                  ["skills", copy.skills],
-					["knowledge", knowledgeCopy.label],
-                  ...(currentAdvancedSettings.assistant_mcp_tools_enabled ? ([["mcp", copy.mcpServers]] as const) : []),
-                  ...(assistantConnectorToolsEnabled && activeRunMode !== "chat" ? ([["device", copy.devices]] as const) : []),
-                ] as const).map(([tab, label]) => (
+                  ["basic", copy.basicSettings, Settings],
+                  ["advanced", copy.advancedModelSettings, SlidersHorizontal],
+                  ["agent_group", agentGroupCopy.agentGroups, Users],
+                  ["skills", copy.skills, Sparkles],
+                  ["knowledge", knowledgeCopy.label, FolderOpen],
+                  ...(currentAdvancedSettings.assistant_mcp_tools_enabled ? ([["mcp", copy.mcpServers, Server]] as const) : []),
+                  ...(assistantConnectorToolsEnabled && activeRunMode !== "chat" ? ([["device", copy.devices, Monitor]] as const) : []),
+                ] as const).map(([tab, label, Icon]) => (
                   <button
                     key={tab}
                     type="button"
@@ -4884,9 +4883,7 @@ export default function Chat() {
                       configTab === tab && "border-primary bg-primary/5 text-primary"
                     )}
                   >
-                    {tab === "skills" && <Sparkles size={14} />}
-                    {tab === "knowledge" && <FolderOpen size={14} />}
-                    {tab === "mcp" && <Server size={14} />}
+                    <Icon size={14} />
                     {label}
                   </button>
                 ))}
@@ -4897,7 +4894,7 @@ export default function Chat() {
                   {activeRunMode !== "agent_group" && (
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">{copy.sessionModel}</span>
-                      <Select value={String((activeModelName) || "__shadcn_empty__")} onValueChange={handleGroupedModelChange}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+                      <Select value={String((activeModelName) || "__shadcn_empty__")} onValueChange={handleGroupedModelChange}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
                         <SelectItem value="__shadcn_empty__">{copy.selectModel}</SelectItem>
                         {modelChannelGroups.map((group) => (
                           <SelectGroup key={`${group.id}:${group.name}`}>
@@ -4924,7 +4921,7 @@ export default function Chat() {
                         if (currentSession) {
                           updateSession(currentSession.id, (session) => ({ ...session, user_channel_id: nextID || undefined, model_name: nextModel }), { persist: true })
                         }
-                      }}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+                      }}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
                       <SelectItem value="__shadcn_empty__">{catalog.length ? copy.selectChannel : copy.noChannels}</SelectItem>
                       {catalog.map((channel) => (
                         <SelectItem key={channel.id} value={String(channel.id)}>
@@ -4933,6 +4930,27 @@ export default function Chat() {
                       ))}
                     </SelectContent></Select>
                   </label>
+                  {activeRunMode !== "agent_group" && (
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium">{copy.agent}</span>
+                      <Select
+                        value={selectedAgent ? String(selectedAgent.id) : "__shadcn_empty__"}
+                        onValueChange={(value) => {
+                          if (value !== "__shadcn_empty__") setSessionAgent(value)
+                        }}
+                      >
+                        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {agents.length === 0 && <SelectItem value="__shadcn_empty__">{copy.noAgents}</SelectItem>}
+                          {agents.map((agent) => (
+                            <SelectItem key={agent.id} value={String(agent.id)}>
+                              {agent.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </label>
+                  )}
                   <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2.5">
                     <div className="min-w-0">
                       <div className="text-sm font-medium">{copy.autoCompressContext}</div>
@@ -5008,7 +5026,7 @@ export default function Chat() {
                         if (currentSession) {
                           updateSession(currentSession.id, (session) => ({ ...session, reasoning_effort: (value === "__shadcn_empty__" ? "" : value) }), { persist: true })
                         }
-                      }}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+                      }}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
                       <SelectItem value="__shadcn_empty__">{copy.reasoningDefault}</SelectItem>
                       <SelectItem value="minimal">{copy.reasoningMinimal}</SelectItem>
                       <SelectItem value="low">{copy.reasoningLow}</SelectItem>
@@ -5039,45 +5057,6 @@ export default function Chat() {
                 </div>
               )}
 
-              {configTab === "agent" && (
-                <div className="space-y-4 rounded-md border p-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="text-sm font-medium">{copy.addedAgent}</div>
-                    <Button asChild variant="outline" size="sm">
-                      <Link to="/chat/agents">{copy.manageAgents}</Link>
-                    </Button>
-                  </div>
-                  {selectedAgent ? (
-                    <div className="grid grid-cols-[1fr_auto] gap-2 rounded-md border p-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{selectedAgent.name}</div>
-                        {selectedAgent.prompt && <div className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground">{selectedAgent.prompt}</div>}
-                      </div>
-                      {selectedAgent.id !== defaultAgentID && (
-                        <Button variant="ghost" size="sm" onClick={removeAgentFromSession} title={copy.remove}>
-                          <X size={15} />
-                        </Button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">{copy.noAgentAdded}</div>
-                  )}
-                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                    <Select value={String((pendingAgentID) || "__shadcn_empty__")} onValueChange={(value) => setPendingAgentID((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="h-10 rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
-                      {agents.length === 0 && <SelectItem value="__shadcn_empty__">{copy.noAgents}</SelectItem>}
-                      {agents.map((agent) => (
-                        <SelectItem key={agent.id} value={String(agent.id)}>
-                          {agent.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent></Select>
-                    <Button className="gap-2" disabled={!pendingAgentID} onClick={() => setSessionAgent(pendingAgentID)}>
-                      <Check size={16} />
-                      {selectedAgent ? copy.replaceAgent : copy.setAgent}
-                    </Button>
-                  </div>
-                </div>
-              )}
 
               {configTab === "skills" && (
                 <div className="space-y-4 rounded-md border p-3">
@@ -5216,7 +5195,7 @@ export default function Chat() {
                   )}
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">{agentGroupCopy.selectGroup}</span>
-                    <Select value={String((currentSession?.agent_group_id || "") || "__shadcn_empty__")} disabled={isFetchingAgentGroups} onValueChange={(value) => setSessionAgentGroup((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+                    <Select value={String((currentSession?.agent_group_id || "") || "__shadcn_empty__")} disabled={isFetchingAgentGroups} onValueChange={(value) => setSessionAgentGroup((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
                       <SelectItem value="__shadcn_empty__">{agentGroups.length ? agentGroupCopy.selectGroup : agentGroupCopy.noGroups}</SelectItem>
                       {agentGroups.map((group) => (
                         <SelectItem key={group.id} value={String(group.id)}>
@@ -5281,7 +5260,7 @@ export default function Chat() {
                     </div>
                     <div className="text-xs text-muted-foreground">{copy.cloudSandboxHint}</div>
                     <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-                      <Select value={String(pendingCloudSandboxID || "__shadcn_empty__")} onValueChange={(value) => setPendingCloudSandboxID(value === "__shadcn_empty__" ? "" : value)}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+                      <Select value={String(pendingCloudSandboxID || "__shadcn_empty__")} onValueChange={(value) => setPendingCloudSandboxID(value === "__shadcn_empty__" ? "" : value)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
                         <SelectItem value="__shadcn_empty__">{cloudSandboxes.length ? copy.selectCloudSandbox : copy.noCloudSandboxes}</SelectItem>
                         {cloudSandboxes.map((sandbox) => (
                           <SelectItem key={sandbox.id} value={String(sandbox.id)}>
@@ -5339,7 +5318,7 @@ export default function Chat() {
                   <div className="grid gap-3 sm:grid-cols-[1fr_1.5fr_auto]">
                     <label className="space-y-1 text-sm">
                       <span className="font-medium">{copy.selectDevice}</span>
-                      <Select value={String((pendingConnectorDeviceID) || "__shadcn_empty__")} onValueChange={(value) => setPendingConnectorDeviceID((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+                      <Select value={String((pendingConnectorDeviceID) || "__shadcn_empty__")} onValueChange={(value) => setPendingConnectorDeviceID((value === "__shadcn_empty__" ? "" : value))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
                         <SelectItem value="__shadcn_empty__">{selectableConnectorDevices.length ? copy.selectDevice : copy.noDevices}</SelectItem>
                         {selectableConnectorDevices.map((device) => (
                           <SelectItem key={device.id} value={String(device.id)}>
@@ -5380,7 +5359,7 @@ export default function Chat() {
                   </div>
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">{approvalModeCopy.label}</span>
-                    <Select value={String((pendingConnectorApprovalMode) || "__shadcn_empty__")} onValueChange={(value) => setPendingConnectorApprovalMode(normalizeConnectorApprovalMode((value === "__shadcn_empty__" ? "" : value)))}><SelectTrigger className="h-10 w-full rounded-2xl border border-border bg-background px-3 text-sm"><SelectValue /></SelectTrigger><SelectContent>
+                    <Select value={String((pendingConnectorApprovalMode) || "__shadcn_empty__")} onValueChange={(value) => setPendingConnectorApprovalMode(normalizeConnectorApprovalMode((value === "__shadcn_empty__" ? "" : value)))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
                       <SelectItem value="manual">{approvalModeCopy.manual}</SelectItem>
                       <SelectItem value="full_access">{approvalModeCopy.fullAccess}</SelectItem>
                       <SelectItem value="assistant" disabled={!currentAdvancedSettings.connector_approval_agent_id}>{approvalModeCopy.assistant}</SelectItem>
