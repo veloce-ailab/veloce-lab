@@ -507,6 +507,19 @@ export function registerAdvancedChatRoutes(
         );
     });
   ctx
+    .route("/api/user/advanced-chat/sessions/:id/usage")
+    .methods("GET")
+    .action(async (session, _params, id) => {
+      const current = await user(session);
+      if (current?.id === undefined) return;
+      const billing = (ctx.component as any).billing as {
+        sessionUsage?: (userId: number, sessionId: string) => Promise<{ session: unknown; run: unknown }>;
+      } | undefined;
+      // Billing is an optional plugin; without it the panel has nothing to report
+      // rather than the page failing to render.
+      session.respond(await billing?.sessionUsage?.(current.id, id).catch(() => undefined) ?? { session: null, run: null }, "json");
+    });
+  ctx
     .route("/api/user/advanced-chat/sessions/:id/messages/:messageId/restart")
     .methods("POST")
     .action(async (session, _params, id, messageId) => {

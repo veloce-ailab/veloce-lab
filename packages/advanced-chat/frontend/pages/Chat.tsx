@@ -10,7 +10,7 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Copy, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Coins, Copy, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { composerCommands, subscribeComposerCommands, type DashboardComposerCommand } from "@velocelab/dashboard/frontend"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
@@ -24,6 +24,7 @@ import { CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { PageInlineSlot, PageTitleSlot } from "@/components/layout/PageTitleSlot"
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
@@ -7730,7 +7731,11 @@ function formatTokenCount(count: number) {
   return new Intl.NumberFormat().format(count)
 }
 
+/** The ledger's view of a session, as returned by the usage endpoint. */
+type SessionUsageSummary = { cost: number; request_count: number; input_tokens: number; total_tokens: number }
+
 function SessionTokenUsage({ session, language }: { session?: ChatSession; language: string }) {
+  const [open, setOpen] = useState(false)
   const usage = useMemo(() => {
     const messages = session?.messages || []
     return messages.reduce((total, message) => ({
@@ -7740,17 +7745,63 @@ function SessionTokenUsage({ session, language }: { session?: ChatSession; langu
     }), { input: 0, output: 0, cached: 0 })
   }, [session?.messages])
   const total = usage.input + usage.output
+  // The cached share sits inside the reported input, so the uncached part is what is left.
+  const uncached = Math.max(0, usage.input - usage.cached)
+  const cacheRate = usage.input > 0 ? usage.cached / usage.input : 0
   const isChinese = language === "zh"
-  const label = isChinese ? "本会话 Token" : "Session tokens"
-  const inputLabel = isChinese ? "输入" : "Input"
-  const outputLabel = isChinese ? "输出" : "Output"
-  const cacheRate = usage.input > 0 ? `${(usage.cached / usage.input * 100).toFixed(1)}%` : "--"
-  const cacheLabel = isChinese ? "缓存命中" : "Cache hit"
-  const title = `${label}\n${inputLabel}: ${formatTokenCount(usage.input)}\n${outputLabel}: ${formatTokenCount(usage.output)}\n${cacheLabel}: ${formatTokenCount(usage.cached)} (${cacheRate})\n${isChinese ? "总计" : "Total"}: ${formatTokenCount(total)}`
+  const isJapanese = language === "ja"
+  const label = (zh: string, ja: string, en: string) => isChinese ? zh : isJapanese ? ja : en
+  // The price of a token only exists in the ledger, so the cost line is fetched when the
+  // panel is opened. Billing is optional and answers `null` when it is not installed.
+  const billed = useQuery<{ session: SessionUsageSummary | null; run: SessionUsageSummary | null }>({
+    queryKey: ["advanced-chat", "session-usage", session?.id],
+    queryFn: async () => (await api.get(`/user/advanced-chat/sessions/${session?.id}/usage`)).data,
+    enabled: open && Boolean(session?.id),
+    staleTime: 30_000,
+  })
+  const cost = billed.data?.session?.cost
+  const lastRun = billed.data?.run?.total_tokens
+  if (total <= 0) return null
+  const title = label("本会话用量", "このセッションの使用量", "Session usage")
+  const costText = typeof cost === "number" && Number.isFinite(cost)
+    ? (cost === 0 ? "0" : Math.abs(cost) < 0.01 ? cost.toPrecision(3) : cost.toFixed(2))
+    : undefined
+  const rows = [
+    { key: "model", label: label("提供方 / 模型", "提供元 / モデル", "Provider / model"), value: session?.model_name || "--" },
+    { key: "hit", label: label("缓存命中", "キャッシュ命中", "Cache hit"), value: usage.input > 0 ? `${(cacheRate * 100).toFixed(1)}%` : "--" },
+    { key: "uncached", label: label("未缓存输入", "未キャッシュ入力", "Uncached input"), value: `${formatTokenCount(uncached)} tok` },
+    { key: "cached", label: label("缓存读取", "キャッシュ読取", "Cache read"), value: `${formatTokenCount(usage.cached)} tok` },
+    { key: "output", label: label("输出", "出力", "Output"), value: `${formatTokenCount(usage.output)} tok` },
+    // The ledger bills one row per run, so its newest row is the newest round.
+    ...(typeof lastRun === "number" ? [{ key: "run", label: label("最近一轮", "直近の実行", "Latest round"), value: `${formatTokenCount(lastRun)} tok` }] : []),
+    ...(costText ? [{ key: "cost", label: label("费用", "費用", "Cost"), value: costText }] : []),
+  ]
   return (
-    <span className="hidden cursor-help whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground hover:bg-muted sm:inline" title={title} aria-label={title}>
-      {formatTokenCount(total)} tok
-    </span>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="hidden whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline"
+          aria-label={`${title}: ${formatTokenCount(total)} tok`}
+        >
+          {formatTokenCount(total)} tok
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" side="top" className="w-72 p-0 text-xs">
+        <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
+          <span className="inline-flex items-center gap-1.5 font-medium"><Coins size={14} />{title}</span>
+          <span className="tabular-nums text-muted-foreground">{formatTokenCount(total)} tok</span>
+        </div>
+        <dl className="grid gap-1.5 px-3 py-2">
+          {rows.map((row) => (
+            <div key={row.key} className="flex items-center justify-between gap-3">
+              <dt className="text-muted-foreground">{row.label}</dt>
+              <dd className="truncate text-right tabular-nums">{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </PopoverContent>
+    </Popover>
   )
 }
 

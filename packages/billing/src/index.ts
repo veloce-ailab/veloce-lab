@@ -1,8 +1,8 @@
 import { Context, Schema } from "yumeri";
-import type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask, ModelPrice, UserQuota, UserQuotaRow, QuotaPeriod } from "./types.js";
+import type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask, ModelPrice, UserQuota, UserQuotaRow, QuotaPeriod, UsageSummary } from "./types.js";
 import { applyMultipliers, priceUsage } from "./pricing.js";
 import "@velocelab/database-core";
-export type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask, ModelPrice, UserQuota, QuotaPeriod } from "./types.js";
+export type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask, ModelPrice, UserQuota, QuotaPeriod, UsageSummary } from "./types.js";
 
 declare module "@yumerijs/types" {
   interface Tables {
@@ -55,6 +55,12 @@ export interface BillingService {
   listQuotas(): Promise<UserQuota[]>;
   /** Remaining allowance, or `Infinity` when the user is unlimited. */
   balance(userId: number): Promise<number>;
+  /**
+   * What a chat session has spent, and what its most recent run spent.
+   *
+   * Scoped by user so a session id guessed from another account returns nothing.
+   */
+  sessionUsage(userId: number, sessionId: string): Promise<{ session: UsageSummary; run: UsageSummary | null }>;
 }
 export interface BillingConfig { currency: string }
 export const config: Schema<BillingConfig> = Schema.object({
@@ -78,7 +84,7 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
     id: { type: "integer", autoIncrement: true }, referrer_id: { type: "integer", nullable: false }, referred_user_id: { type: "integer", nullable: false }, token_log_id: { type: "integer", nullable: false }, base_cost: { type: "decimal", nullable: false }, rate: { type: "decimal", nullable: false }, amount: { type: "decimal", nullable: false }, created_at: "timestamp",
   }, { unique: ["token_log_id"] });
   await db.extend("token_logs", {
-    id: { type: "integer", autoIncrement: true }, user_id: "integer", api_key_id: "integer", user_channel_id: "integer", channel_id: "integer", model_config_id: "integer", model_name: "string", input_tokens: "integer", output_tokens: "integer", cached_input_tokens: { type: "integer", initial: 0 }, cache_write_input_tokens: { type: "integer", initial: 0 }, cache_write_1h_input_tokens: { type: "integer", initial: 0 }, image_input_tokens: { type: "integer", initial: 0 }, image_output_tokens: { type: "integer", initial: 0 }, audio_input_tokens: { type: "integer", initial: 0 }, audio_output_tokens: { type: "integer", initial: 0 }, response_time_ms: { type: "bigint", initial: 0 }, first_response_time_ms: { type: "bigint", initial: 0 }, base_cost: { type: "decimal", initial: 0 }, group_multiplier: { type: "decimal", initial: 1 }, user_channel_multiplier: { type: "decimal", initial: 1 }, input_price: { type: "decimal", initial: 0 }, output_price: { type: "decimal", initial: 0 }, cached_input_price: { type: "decimal", initial: 0 }, output_price_tiers: "text", pricing_formula: "text", cost: "decimal", status: { type: "integer", initial: 0 }, error_message: "string", ip: "string", user_agent: "text", created_at: "timestamp",
+    id: { type: "integer", autoIncrement: true }, user_id: "integer", api_key_id: "integer", user_channel_id: "integer", channel_id: "integer", model_config_id: "integer", model_name: "string", input_tokens: "integer", output_tokens: "integer", cached_input_tokens: { type: "integer", initial: 0 }, cache_write_input_tokens: { type: "integer", initial: 0 }, cache_write_1h_input_tokens: { type: "integer", initial: 0 }, session_id: "string", run_id: "string", image_input_tokens: { type: "integer", initial: 0 }, image_output_tokens: { type: "integer", initial: 0 }, audio_input_tokens: { type: "integer", initial: 0 }, audio_output_tokens: { type: "integer", initial: 0 }, response_time_ms: { type: "bigint", initial: 0 }, first_response_time_ms: { type: "bigint", initial: 0 }, base_cost: { type: "decimal", initial: 0 }, group_multiplier: { type: "decimal", initial: 1 }, user_channel_multiplier: { type: "decimal", initial: 1 }, input_price: { type: "decimal", initial: 0 }, output_price: { type: "decimal", initial: 0 }, cached_input_price: { type: "decimal", initial: 0 }, output_price_tiers: "text", pricing_formula: "text", cost: "decimal", status: { type: "integer", initial: 0 }, error_message: "string", ip: "string", user_agent: "text", created_at: "timestamp",
   });
   await db.extend("video_tasks", {
     id: { type: "integer", autoIncrement: true },
@@ -138,6 +144,9 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
     const cost = usage.cost ?? applyMultipliers(priced.baseCost, metadata.groupMultiplier, metadata.userChannelMultiplier);
     return await db.create("token_logs", {
       user_id: usage.userId ?? null,
+      // Attribution: without these the ledger cannot answer what a session cost.
+      session_id: metadata.sessionId ? String(metadata.sessionId) : null,
+      run_id: metadata.runId ? String(metadata.runId) : null,
       model_name: modelName,
       input_tokens: priced.inputTokens,
       output_tokens: priced.outputTokens,
@@ -259,6 +268,39 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
       })
       .sort((a, b) => a.user_id - b.user_id);
   };
+  const summarize = (rows: TokenLog[]): UsageSummary => {
+    const totals = rows.reduce((acc, row) => ({
+      request_count: acc.request_count + 1,
+      input_tokens: acc.input_tokens + (Number(row.input_tokens) || 0),
+      cached_input_tokens: acc.cached_input_tokens + (Number(row.cached_input_tokens) || 0),
+      cache_write_input_tokens: acc.cache_write_input_tokens + (Number(row.cache_write_input_tokens) || 0) + (Number(row.cache_write_1h_input_tokens) || 0),
+      output_tokens: acc.output_tokens + (Number(row.output_tokens) || 0),
+      cost: acc.cost + (Number(row.cost) || 0),
+    }), { request_count: 0, input_tokens: 0, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 0, cost: 0 });
+    // `input_tokens` already counts every bucket once, so the uncached share is the
+    // remainder rather than a stored column.
+    const cacheRead = Math.min(totals.cached_input_tokens, totals.input_tokens);
+    const billableInput = Math.max(0, totals.input_tokens - totals.cache_write_input_tokens);
+    const uncached = Math.max(0, billableInput - cacheRead);
+    const latest = rows[rows.length - 1];
+    return {
+      ...totals,
+      cached_input_tokens: cacheRead,
+      uncached_input_tokens: uncached,
+      total_tokens: totals.input_tokens + totals.output_tokens,
+      cache_hit_rate: billableInput > 0 ? cacheRead / billableInput : 0,
+      model_name: String(latest?.model_name ?? ""),
+    };
+  };
+  const sessionUsage = async (userId: number, sessionId: string) => {
+    const rows = await db.select("token_logs", { user_id: userId, session_id: sessionId } as any).catch(() => [] as TokenLog[]) as TokenLog[];
+    const ordered = [...rows].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || Number(a.id ?? 0) - Number(b.id ?? 0));
+    return {
+      session: summarize(ordered),
+      // One row per run, so the newest row is the newest run.
+      run: ordered.length ? summarize([ordered[ordered.length - 1]]) : null,
+    };
+  };
   const setQuota = async (userId: number, limit: number | null, period?: QuotaPeriod): Promise<UserQuota> => {
     if (!Number.isFinite(userId) || userId <= 0) throw new Error("user_id is required");
     if (limit !== null && (!Number.isFinite(limit) || limit < 0)) throw new Error("limit_amount must be zero or more, or empty for unlimited");
@@ -289,6 +331,7 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
     listQuotas,
     // Unlimited users report Infinity so a caller comparing against an amount keeps
     // working without having to special-case them.
+    sessionUsage,
     balance: async (userId) => {
       const quota = await quotaFor(userId);
       return quota.unlimited ? Number.POSITIVE_INFINITY : quota.remaining ?? 0;

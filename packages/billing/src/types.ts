@@ -33,7 +33,7 @@ export interface WalletTransaction { id?: number; user_id: number; source: strin
 export interface WalletLimitUsage { id?: number; wallet_transaction_id: number; user_id: number; source: string; limit_key: string; created_at: string; }
 export interface ReferralCommissionLog { id?: number; referrer_id: number; referred_user_id: number; token_log_id: number; base_cost: string; rate: string; amount: string; created_at: string; }
 export interface VideoTask { id: string; user_id: number; api_key_id?: number | null; user_channel_id?: number | null; channel_id: number; model_config_id: number; model_name: string; billing_model_name: string; upstream_task_id: string; status: string; cost: string; request_payload: string; response_payload: string; last_status_payload: string; created_at: string; updated_at: string; }
-export interface TokenLog { id?: number; user_id: number; api_key_id?: number | null; user_channel_id?: number | null; channel_id: number; model_config_id: number; model_name: string; input_tokens: number; output_tokens: number; cached_input_tokens: number; cache_write_input_tokens: number; cache_write_1h_input_tokens: number; image_input_tokens: number; image_output_tokens: number; audio_input_tokens: number; audio_output_tokens: number; response_time_ms: number; first_response_time_ms: number; base_cost: string; group_multiplier: string; user_channel_multiplier: string; input_price: string; output_price: string; cached_input_price: string; cache_write_input_price: string; cache_write_1h_input_price: string; pricing_formula: string; cost: string; status: number; error_message: string; ip: string; user_agent: string; created_at: string; }
+export interface TokenLog { id?: number; user_id: number; /** Chat session and run the request belonged to, so spend can be attributed. */ session_id?: string | null; run_id?: string | null; api_key_id?: number | null; user_channel_id?: number | null; channel_id: number; model_config_id: number; model_name: string; input_tokens: number; output_tokens: number; cached_input_tokens: number; cache_write_input_tokens: number; cache_write_1h_input_tokens: number; image_input_tokens: number; image_output_tokens: number; audio_input_tokens: number; audio_output_tokens: number; response_time_ms: number; first_response_time_ms: number; base_cost: string; group_multiplier: string; user_channel_multiplier: string; input_price: string; output_price: string; cached_input_price: string; cache_write_input_price: string; cache_write_1h_input_price: string; pricing_formula: string; cost: string; status: number; error_message: string; ip: string; user_agent: string; created_at: string; }
 
 /** "total" counts everything ever spent; "monthly" resets on the first of the month. */
 export type QuotaPeriod = "total" | "monthly";
@@ -68,4 +68,20 @@ export interface UserQuotaRow {
   period: string;
   created_at: string;
   updated_at: string;
+}
+
+/** Usage aggregated over a session or a single run. */
+export interface UsageSummary {
+  request_count: number;
+  /** Every input token, with the cache buckets counted once each. */
+  input_tokens: number;
+  uncached_input_tokens: number;
+  cached_input_tokens: number;
+  cache_write_input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost: number;
+  /** Share of the input that was served from the cache, 0-1. */
+  cache_hit_rate: number;
+  model_name: string;
 }
