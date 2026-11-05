@@ -168,16 +168,67 @@ export async function readTextFile(
   return { path: target, content };
 }
 
+export interface LineDiff {
+  added: number;
+  removed: number;
+}
+
+/**
+ * Lines added and removed between two versions of a file.
+ *
+ * The untouched head and tail are trimmed first, which is where nearly all of the
+ * saving is: an edit to one part of a large file leaves two small remainders to
+ * compare. Those are aligned with a longest-common-subsequence walk so a rewritten
+ * line counts as one addition and one deletion rather than two of each. Files with
+ * very large changed regions skip the walk, because the table would grow with the
+ * product of both sides, and fall back to treating each remainder as a wholesale
+ * replacement.
+ */
+export function lineDiff(before: string, after: string): LineDiff {
+  if (before === after) return { added: 0, removed: 0 };
+  const left = before ? before.split("\n") : [];
+  const right = after ? after.split("\n") : [];
+  let head = 0;
+  while (head < left.length && head < right.length && left[head] === right[head]) head += 1;
+  let tail = 0;
+  while (
+    tail < left.length - head
+    && tail < right.length - head
+    && left[left.length - 1 - tail] === right[right.length - 1 - tail]
+  ) tail += 1;
+  const a = left.slice(head, left.length - tail);
+  const b = right.slice(head, right.length - tail);
+  if (a.length === 0) return { added: b.length, removed: 0 };
+  if (b.length === 0) return { added: 0, removed: a.length };
+  if (a.length * b.length > 4_000_000) return { added: b.length, removed: a.length };
+  // `common[i][j]` is the LCS length of `a[i:]` and `b[j:]`, filled from the end.
+  let next = new Uint32Array(b.length + 1);
+  const rows: Uint32Array[] = [next];
+  for (let i = a.length - 1; i >= 0; i -= 1) {
+    const row = new Uint32Array(b.length + 1);
+    for (let j = b.length - 1; j >= 0; j -= 1) {
+      row[j] = a[i] === b[j] ? next[j + 1] + 1 : Math.max(next[j], row[j + 1]);
+    }
+    rows.unshift(row);
+    next = row;
+  }
+  const common = rows[0][0];
+  return { added: b.length - common, removed: a.length - common };
+}
+
 export async function writeTextFile(
   input: Record<string, unknown>,
-): Promise<{ path: string; size: number }> {
+): Promise<{ path: string; size: number; added: number; removed: number }> {
   const { target } = workingPath(input);
   const content = String(input.content ?? "");
   if (Buffer.byteLength(content) > MAX_TEXT_BYTES)
     throw Error("Content is larger than 2 MiB");
+  // Read before writing so the reply can say how much changed; a new file is all
+  // additions, which is what an empty previous version already produces.
+  const previous = await readFile(target, "utf8").catch(() => "");
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, content, "utf8");
-  return { path: target, size: Buffer.byteLength(content) };
+  return { path: target, size: Buffer.byteLength(content), ...lineDiff(previous, content) };
 }
 
 export async function listDirectory(
@@ -221,19 +272,19 @@ export async function fileSha256(
 
 export async function replaceText(
   input: Record<string, unknown>,
-): Promise<{ path: string; replacements: number }> {
+): Promise<{ path: string; replacements: number; added: number; removed: number }> {
   const { target } = workingPath(input);
   const oldText = String(input.old_text ?? "");
   if (!oldText) throw Error("old_text is required");
   const current = await readFile(target, "utf8").catch(() => undefined);
   if (current === undefined) throw Error(`File not found: ${target}`);
   const pieces = current.split(oldText);
-  if (pieces.length === 1) return { path: target, replacements: 0 };
+  if (pieces.length === 1) return { path: target, replacements: 0, added: 0, removed: 0 };
   const next = pieces.join(String(input.new_text ?? ""));
   if (Buffer.byteLength(next) > MAX_TEXT_BYTES)
     throw Error("Content is larger than 2 MiB");
   await writeFile(target, next, "utf8");
-  return { path: target, replacements: pieces.length - 1 };
+  return { path: target, replacements: pieces.length - 1, ...lineDiff(current, next) };
 }
 
 export interface CommandResult {

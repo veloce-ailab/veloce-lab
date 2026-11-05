@@ -5583,6 +5583,106 @@ const MessageContent = memo(function MessageContent({
   )
 })
 
+/** Line counts reported by a file-writing tool, dug out of its JSON result. */
+function fileEditStats(result?: string) {
+  if (!result) return null
+  let value: unknown
+  try { value = JSON.parse(result) } catch { return null }
+  const find = (node: any): any => {
+    if (!node || typeof node !== "object") return null
+    if (typeof node.added === "number" && typeof node.removed === "number") return node
+    // Connector replies arrive wrapped, and MCP replies put the payload in a content list.
+    for (const key of ["result", "data", "output", "payload"]) {
+      const found = find(node[key])
+      if (found) return found
+    }
+    if (Array.isArray(node.content)) {
+      for (const item of node.content) {
+        const text = typeof item?.text === "string" ? item.text : ""
+        if (!text) continue
+        try {
+          const found = find(JSON.parse(text))
+          if (found) return found
+        } catch {
+          // Not JSON, so it carries no counts.
+        }
+      }
+    }
+    return null
+  }
+  const node = find(value)
+  if (!node) return null
+  return { path: String(node.path ?? ""), added: Number(node.added) || 0, removed: Number(node.removed) || 0 }
+}
+
+/** One row per file, with the last edit to that file standing in for it. */
+function fileEditSummary(toolCalls: ChatToolCall[], workspacePath?: string) {
+  const byPath = new Map<string, { path: string; label: string; added: number; removed: number }>()
+  for (const call of toolCalls) {
+    const kind = builtinToolKind(call)
+    if (kind !== "write" && kind !== "replace") continue
+    const stats = fileEditStats(call.result)
+    if (!stats || (!stats.added && !stats.removed)) continue
+    const full = stats.path || stringArgument(call.arguments, "path")
+    if (!full) continue
+    const root = workspacePath || stringArgument(call.arguments, "workspace_path") || stringArgument(call.arguments, "connector_workspace_path")
+    const relative = root && full.startsWith(root) ? full.slice(root.length).replace(/^[\\/]+/, "") : full
+    const label = relative.replace(/\\/g, "/")
+    // A file edited twice in one round is reported by its final edit, so the totals
+    // describe the round rather than the sum of every intermediate write.
+    byPath.set(full, { path: full, label, added: stats.added, removed: stats.removed })
+  }
+  if (byPath.size === 0) return null
+  const files = [...byPath.values()]
+  return { files, added: files.reduce((sum, file) => sum + file.added, 0), removed: files.reduce((sum, file) => sum + file.removed, 0) }
+}
+
+const FileEditCard = memo(function FileEditCard({ summary }: { summary: NonNullable<ReturnType<typeof fileEditSummary>> }) {
+  const { language } = useI18n()
+  const [open, setOpen] = useState(false)
+  const title = language === "zh" ? `已编辑 ${summary.files.length} 个文件`
+    : language === "ja" ? `${summary.files.length} 個のファイルを編集しました`
+    : `Edited ${summary.files.length} ${summary.files.length === 1 ? "file" : "files"}`
+  const count = summary.files.length
+  // A single file has nothing to expand: the heading already names it.
+  const expandable = count > 1
+  return (
+    <div className="my-2 overflow-hidden rounded-lg border border-border/70 bg-muted/20">
+      <button
+        type="button"
+        onClick={() => expandable && setOpen(!open)}
+        aria-expanded={expandable ? open : undefined}
+        className={cn("flex w-full items-center gap-3 px-3 py-2.5 text-left", expandable && "hover:bg-muted/40")}
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><FileDiff size={18} /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{expandable ? title : summary.files[0].label}</span>
+          <span className="block text-xs tabular-nums">
+            <span className="text-emerald-600 dark:text-emerald-400">+{summary.added}</span>
+            <span className="ml-1.5 text-rose-600 dark:text-rose-400">-{summary.removed}</span>
+          </span>
+        </span>
+        {expandable && <ChevronDown size={15} className={cn("shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none", !open && "-rotate-90")} />}
+      </button>
+      {expandable && (
+        <Collapse open={open}>
+          <ul className="border-t border-border/70">
+            {summary.files.map((file) => (
+              <li key={file.path} className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm">
+                <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" title={file.path}>{file.label}</span>
+                <span className="shrink-0 text-xs tabular-nums">
+                  <span className="text-emerald-600 dark:text-emerald-400">+{file.added}</span>
+                  <span className="ml-1.5 text-rose-600 dark:text-rose-400">-{file.removed}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Collapse>
+      )}
+    </div>
+  )
+})
+
 const ToolCallRounds = memo(function ToolCallRounds({
   toolCalls, copy, approvalTasks = EMPTY_APPROVAL_TASKS, decidingTaskID = "", onDecide, expanded = false,
 }: {
@@ -5596,12 +5696,16 @@ const ToolCallRounds = memo(function ToolCallRounds({
   const [open, setOpen] = useState(expanded)
   useEffect(() => setOpen(expanded), [expanded])
   const { language } = useI18n()
+  // Above the early return: hooks must run on every render, and an empty first render
+  // followed by a populated one would otherwise change the hook count.
+  const edits = useMemo(() => fileEditSummary(toolCalls), [toolCalls])
   if (toolCalls.length === 0) return null
   const busy = toolCalls.some((call) => ["running", "approval_required", "pending_approval", "queued"].includes(call.status))
   const firstKind = builtinToolKind(toolCalls[0])
   const Icon = busy ? Loader2 : toolActivityIcon(firstKind)
   return (
     <div className="my-1 min-w-0 text-muted-foreground">
+      {edits && <FileEditCard summary={edits} />}
       <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
         className="flex max-w-full items-center gap-2 rounded py-1.5 text-left text-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <Icon size={17} className={cn("shrink-0", busy && "animate-spin")} />
