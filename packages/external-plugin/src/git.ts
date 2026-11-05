@@ -15,10 +15,18 @@ export function isCloneable(url: string): boolean {
   return /^(https?:\/\/|ssh:\/\/|git@)[^\s]+$/i.test(url.trim());
 }
 
+/**
+ * Brings `directory` to `target`, which may be a branch, a tag, or a commit.
+ *
+ * A commit cannot be given to `clone --branch`, and marketplace entries are
+ * pinned to commits as often as to tags, so the checkout is built with `init`
+ * and an explicit fetch instead: all three are fetchable by name, and the ones
+ * a server refuses fall back to the default branch rather than failing outright.
+ */
 export async function syncCheckout(
   url: string,
   directory: string,
-  ref?: string,
+  target?: string,
 ): Promise<{ revision: string }> {
   if (!isCloneable(url)) throw Error("Marketplace URL must be an HTTP(S) or SSH git URL");
   const env = {
@@ -28,24 +36,29 @@ export async function syncCheckout(
     GIT_LFS_SKIP_SMUDGE: "1",
   };
   const options = { timeout: 120_000, env, maxBuffer: 4 << 20 };
+  const wanted = target?.trim() || "HEAD";
   const exists = await run("git", ["-C", directory, "rev-parse", "--is-inside-work-tree"], options)
     .then(() => true)
     .catch(() => false);
   await mkdir(directory, { recursive: true });
-  if (!exists) {
-    // A failed clone must not leave a half-written tree behind that the next
-    // attempt would mistake for a checkout.
-    await rm(directory, { recursive: true, force: true });
-    await mkdir(directory, { recursive: true });
-    const clone = ["clone", "--depth", "1", "--single-branch"];
-    // A tag or branch can be asked for up front; a bare commit cannot.
-    if (ref) clone.push("--branch", ref);
-    clone.push("--", url.trim(), directory);
-    await run("git", clone, options);
-  } else {
-    await run("git", ["-C", directory, "fetch", "--depth", "1", "origin", ref || "HEAD"], options);
+  try {
+    if (!exists) {
+      // Whatever a failed attempt left behind must not be mistaken for a checkout.
+      await rm(directory, { recursive: true, force: true });
+      await mkdir(directory, { recursive: true });
+      await run("git", ["-C", directory, "init", "-q"], options);
+      await run("git", ["-C", directory, "remote", "add", "origin", url.trim()], options);
+    }
+    // Strictly what was asked for. Falling back here would hide the fact that a
+    // plugin is not the revision the marketplace pinned it to; the caller
+    // decides what to try next.
+    await run("git", ["-C", directory, "fetch", "--depth", "1", "origin", wanted], options);
     await run("git", ["-C", directory, "reset", "--hard", "FETCH_HEAD"], options);
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
   }
   const { stdout } = await run("git", ["-C", directory, "rev-parse", "--short", "HEAD"], options);
   return { revision: stdout.trim() };
 }
+

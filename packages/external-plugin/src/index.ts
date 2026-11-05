@@ -291,7 +291,23 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
     if (!marketplace) throw Error("The marketplace this plugin came from is gone");
     const slug = String(row.slug);
     const target = join(root, String(marketplace.directory), "plugins", slug);
-    await syncCheckout(String(source.url), target, source.ref || source.sha || undefined);
+    // The commit is the exact pin, a branch or tag is what the marketplace
+    // asked to follow, and the default branch is the last resort.
+    let failure: unknown;
+    for (const candidate of [source.sha, source.ref, undefined]) {
+      try {
+        await syncCheckout(String(source.url), target, candidate || undefined);
+        failure = undefined;
+        break;
+      } catch (error) {
+        failure = error;
+      }
+    }
+    if (failure) {
+      const detail = failure instanceof Error ? failure.message : String(failure);
+      const line = detail.split("\n").map((entry) => entry.trim()).find(Boolean) ?? detail;
+      throw Error(`${source.url} could not be fetched: ${line.replace(/^fatal:\s*/i, "")}`);
+    }
     const parsed = parsePluginFiles(
       await collectPluginFiles(source.path ? join(target, String(source.path)) : target),
     );
@@ -500,79 +516,94 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
     },
   });
 
+  /**
+   * Answers exactly once, whatever happens below.
+   *
+   * A handler that throws leaves the framework to respond after something has
+   * already been written, which takes the whole worker down. So every route
+   * ends here, and a failure becomes a response rather than an exception.
+   */
+  const handle = (session: Session, run: () => Promise<void>): Promise<void> =>
+    run().catch((error: unknown) => {
+      const detail = error instanceof Error ? error.message : String(error);
+      const line = detail.split("\n").map((entry) => entry.trim()).find(Boolean) || "The request failed";
+      session.status = /could not be fetched|ENOTFOUND|repository/i.test(line) ? 502 : 400;
+      try {
+        session.respond({ error: line.replace(/^fatal:\s*/i, "") }, "json");
+      } catch {
+        // Already answered; nothing more to say.
+      }
+    });
+
   ctx
     .route("/api/user/external-plugin/marketplaces")
     .methods("GET")
-    .action(async (session) => {
-      const id = user(session);
-      if (id === undefined) return;
-      session.respond({ marketplaces: await service.marketplaces(id) }, "json");
-    });
+    .action((session) =>
+      handle(session, async () => {
+        const id = user(session);
+        if (id === undefined) return;
+        session.respond({ marketplaces: await service.marketplaces(id) }, "json");
+      }),
+    );
   ctx
     .route("/api/user/external-plugin/marketplaces")
     .methods("POST")
-    .action(async (session) => {
-      const id = user(session);
-      if (id === undefined) return;
-      // The second argument is the query string; a JSON body has to be read.
-      const body = (await session.parseRequestBody()) as any;
-      const url = String(body?.url ?? "").trim();
-      if (!url) {
-        session.status = 400;
-        session.respond({ error: "A marketplace URL is required" }, "json");
-        return;
-      }
-      try {
+    .action((session) =>
+      handle(session, async () => {
+        const id = user(session);
+        if (id === undefined) return;
+        // The second action argument is the query string; the body is read.
+        const body = (await session.parseRequestBody()) as any;
+        const url = String(body?.url ?? "").trim();
+        if (!url) {
+          session.status = 400;
+          session.respond({ error: "A marketplace URL is required" }, "json");
+          return;
+        }
         session.respond({ marketplace: await service.addMarketplace(id, url) }, "json");
-      } catch (error) {
-        session.status = 502;
-        session.respond(
-          { error: error instanceof Error ? error.message : "Marketplace could not be read" },
-          "json",
-        );
-      }
-    });
+      }),
+    );
   ctx
     .route("/api/user/external-plugin/marketplaces/:id/sync")
     .methods("POST")
-    .action(async (session, _params, marketplaceId) => {
-      const id = user(session);
-      if (id === undefined) return;
-      try {
+    .action((session, _params, marketplaceId) =>
+      handle(session, async () => {
+        const id = user(session);
+        if (id === undefined) return;
         session.respond({ marketplace: await service.syncMarketplace(id, String(marketplaceId)) }, "json");
-      } catch (error) {
-        session.status = 502;
-        session.respond(
-          { error: error instanceof Error ? error.message : "Marketplace could not be read" },
-          "json",
-        );
-      }
-    });
+      }),
+    );
   ctx
     .route("/api/user/external-plugin/marketplaces/:id")
     .methods("DELETE")
-    .action(async (session, _params, marketplaceId) => {
-      const id = user(session);
-      if (id === undefined) return;
-      session.respond({ success: await service.removeMarketplace(id, String(marketplaceId)) }, "json");
-    });
+    .action((session, _params, marketplaceId) =>
+      handle(session, async () => {
+        const id = user(session);
+        if (id === undefined) return;
+        session.respond({ success: await service.removeMarketplace(id, String(marketplaceId)) }, "json");
+      }),
+    );
   ctx
     .route("/api/user/external-plugin/plugins")
     .methods("GET")
-    .action(async (session) => {
-      const id = user(session);
-      if (id === undefined) return;
-      session.respond({ plugins: await service.plugins(id) }, "json");
-    });
+    .action((session) =>
+      handle(session, async () => {
+        const id = user(session);
+        if (id === undefined) return;
+        session.respond({ plugins: await service.plugins(id) }, "json");
+      }),
+    );
   ctx
     .route("/api/user/external-plugin/plugins/:id")
     .methods("POST")
-    .action(async (session, _params, pluginId) => {
-      const id = user(session);
-      if (id === undefined) return;
-      const body = (await session.parseRequestBody()) as any;
-      const installed = Boolean(body?.installed ?? body?.enabled);
-      const ok = await service.setInstalled(id, String(pluginId), installed);
-      session.respond({ success: ok }, "json");
-    });
+    .action((session, _params, pluginId) =>
+      handle(session, async () => {
+        const id = user(session);
+        if (id === undefined) return;
+        const body = (await session.parseRequestBody()) as any;
+        const installed = Boolean(body?.installed ?? body?.enabled);
+        const ok = await service.setInstalled(id, String(pluginId), installed);
+        session.respond({ success: ok }, "json");
+      }),
+    );
 }
