@@ -1,10 +1,25 @@
-Veloce Lab
+<div align="center">
 
-Your better personal agent
+# Veloce Lab
 
-English | [简体中文](README_zh.md)
+<sub>Your better personal agent</sub>
+
+[![License: AGPL](https://img.shields.io/badge/License-AGPL--3.0-2f81f7.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A524%20LTS-3c873a.svg)](https://nodejs.org)
+[![Yarn](https://img.shields.io/badge/Yarn-4.14.1-2C8EBB.svg)](package.json)
+[![Built on YumeriJS](https://img.shields.io/badge/Built%20on-YumeriJS-7c5cff.svg)](https://www.npmjs.com/package/yumeri)
+
+[English](README.md) · [简体中文](README_zh.md)
 
 Veloce Lab is a personal assistant harness built on the YumeriJS framework, providing a unified runtime for AI capabilities, plugins, tools, and workflows.
+
+<a href="assets/screenshot1.png"><img src="assets/screenshot1.png" alt="Veloce Lab screenshot" width="880"></a>
+
+[Quick Install](#quick-install) · [Features](#features) · [Configuration](#configuration) · [Repository Structure](#repository-structure) · [License](#license)
+
+</div>
+
+---
 
 ## Quick Install
 
@@ -90,7 +105,7 @@ data/        Runtime data, files and memories
 
 ## License
 
-We use AGPL. See the LICENSE file for licensing information.
+We use AGPL. See the [LICENSE](LICENSE) file for licensing information.
 
 ## Special thanks
 

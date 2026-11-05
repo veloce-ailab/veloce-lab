@@ -1,10 +1,25 @@
-Veloce Lab
+<div align="center">
 
-你的新一代个人助理
+# Veloce Lab
 
-[English](README.md) | 简体中文
+<sub>你的新一代个人助理</sub>
+
+[![License: AGPL](https://img.shields.io/badge/License-AGPL--3.0-2f81f7.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A524%20LTS-3c873a.svg)](https://nodejs.org)
+[![Yarn](https://img.shields.io/badge/Yarn-4.14.1-2C8EBB.svg)](package.json)
+[![Built on YumeriJS](https://img.shields.io/badge/Built%20on-YumeriJS-7c5cff.svg)](https://www.npmjs.com/package/yumeri)
+
+[English](README.md) · 简体中文
 
 Veloce Lab 是一个面向个人助理的 harness，基于 YumeriJS 框架构建，为 AI 能力、插件、工具和工作流提供统一的运行环境。
+
+<a href="assets/screenshot1.png"><img src="assets/screenshot1.png" alt="Veloce Lab 截图" width="880"></a>
+
+[快速安装](#快速安装) · [功能特性](#功能特性) · [构建](#构建) · [配置](#配置) · [许可证](#许可证)
+
+</div>
+
+---
 
 ## 快速安装
 
@@ -43,22 +58,16 @@ irm -OutFile yumeri.json https://raw.githubusercontent.com/veloce-ailab/veloce-l
 
 ## 功能特性
 
+- 兼容 OpenAI 的 API 网关
 - 多上游渠道管理
 - OIDC 登录认证
+- Passkey（WebAuthn）登录
+- API Key 认证
 - 用户余额管理
 - Token 用量统计
 - 基础计费系统
 - 图片生成支持
 - 现代化 Web 管理后台
-
-## 仓库结构
-
-app/         Go 侧工具与平台辅助代码
-packages/    Yumeri 核心包、插件与适配器
-desktop/     桌面端应用
-mobile/      移动端应用
-scripts/     配置模板与辅助脚本
-data/        运行时数据、文件与记忆
 
 ## 构建
 
@@ -106,10 +115,23 @@ yumeri -c yumeri.json
 
 服务启动后，应用支持的设置也可以通过 Web 管理控制台进行配置；启动参数和插件加载配置仍需要在
 `yumeri.json` 中定义。
+
+## 仓库结构
+
+```text
+app/         Go 侧工具与平台辅助代码
+packages/    Yumeri 核心包、插件与适配器
+desktop/     桌面端应用
+mobile/      移动端应用
+scripts/     配置模板与辅助脚本
+data/        运行时数据、文件与记忆
+```
+
 ## 许可证
 
-本项目采用AGPL许可证，详情请查看仓库中 "LICENSE" 文件。
+本项目采用 AGPL 许可证，详情请查看仓库中的 [LICENSE](LICENSE) 文件。
 
 ## 特别鸣谢
 
 [Linuxdo](https://linux.do)
+
