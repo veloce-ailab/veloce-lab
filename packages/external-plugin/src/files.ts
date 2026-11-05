@@ -22,8 +22,27 @@ const textExtensions = new Set([
   ".yml",
 ]);
 
-const isPluginRoot = (names: string[]) =>
-  names.some((name) => pluginMarkers.has(name)) || names.some((name) => rootManifests.has(name));
+/**
+ * A marker directory only makes a plugin when it holds a manifest.
+ *
+ * A marketplace repository keeps its own index under `.claude-plugin/`, which
+ * would otherwise be mistaken for a plugin and stop the walk at the root.
+ */
+async function isPluginRoot(dir: string, names: string[]): Promise<boolean> {
+  for (const name of names) {
+    if (rootManifests.has(name)) return true;
+    if (!pluginMarkers.has(name)) continue;
+    for (const manifest of rootManifests) {
+      try {
+        await stat(join(dir, name, manifest));
+        return true;
+      } catch {
+        // Keep looking: another marker may be the real one.
+      }
+    }
+  }
+  return false;
+}
 
 /** Directories that hold a plugin, at most a few levels below the repository root. */
 export async function discoverPluginDirs(root: string): Promise<string[]> {
@@ -36,7 +55,7 @@ export async function discoverPluginDirs(root: string): Promise<string[]> {
     } catch {
       return;
     }
-    if (isPluginRoot(entries.map((entry) => entry.name))) {
+    if (await isPluginRoot(dir, entries.map((entry) => entry.name))) {
       found.push(dir);
       return;
     }
@@ -51,24 +70,50 @@ export async function discoverPluginDirs(root: string): Promise<string[]> {
 
 export interface MarketEntry {
   name: string;
-  /** Directory relative to the repository root, as the index declares it. */
+  /** Directory relative to the repository, blank when the plugin lives elsewhere. */
   path: string;
   category: string;
-  /** False when the index marks the plugin as not installable. */
-  available: boolean;
+  /** Set when the plugin is not part of this repository and has to be fetched. */
+  remote?: { url: string; path?: string; ref?: string; sha?: string };
+  /** What the index itself says, enough to describe a plugin we cannot read yet. */
+  description: string;
+  author: string;
+  homepage: string;
+}
+
+/** A remote source is either a whole repository or a directory inside one. */
+function readRemote(value: unknown): MarketEntry["remote"] | undefined {
+  const row = value as Record<string, unknown>;
+  const kind = String(row.source ?? "");
+  const url = String(row.url ?? "")
+    || (row.repo ? `https://github.com/${String(row.repo).replace(/\.git$/, "")}.git` : "")
+    // `github` and `git` both name a repository; `url` and `git-subdir` carry one.
+    || "";
+  if (!url) return undefined;
+  void kind;
+  return {
+    url,
+    path: String(row.path ?? "").replace(/^\.\//, "").replace(/\/+$/, "") || undefined,
+    ref: String(row.ref ?? "") || undefined,
+    sha: String(row.sha ?? "") || undefined,
+  };
 }
 
 /**
  * The index a marketplace repository ships to describe its own contents.
  *
- * Preferred over walking the tree: it names each plugin, where it lives, and
- * what category it belongs to, which no amount of directory guessing recovers.
+ * Two shapes are in circulation and both are read: a list of plugins that live
+ * in this repository, and a directory of plugins that mostly live in others.
+ * The latter is why a plugin is not always readable at sync time — the entry is
+ * recorded and fetched when somebody installs it.
  */
 export async function readMarketplaceIndex(root: string): Promise<MarketEntry[]> {
   const entries: MarketEntry[] = [];
   const indexes = [
     ".agents/plugins/marketplace.json",
     ".agents/plugins/api_marketplace.json",
+    ".claude-plugin/marketplace.json",
+    "marketplace.json",
   ];
   for (const path of indexes) {
     let text: string;
@@ -84,13 +129,27 @@ export async function readMarketplaceIndex(root: string): Promise<MarketEntry[]>
       continue;
     }
     for (const plugin of Array.isArray(parsed?.plugins) ? parsed.plugins : []) {
-      const location = String(plugin?.source?.path ?? "");
-      if (!location) continue;
+      const source = plugin?.source;
+      // A plain string is a path in this repository. An object either names a
+      // repository to fetch or, when it carries no URL, a path here as well —
+      // in which case `path` is relative to this repository, not to the remote.
+      const remote = typeof source === "object" && source ? readRemote(source) : undefined;
+      const local = typeof source === "string"
+        ? source
+        : remote
+          ? ""
+          : String((source as any)?.path ?? "");
+      if (!local && !remote) continue;
       entries.push({
         name: String(plugin?.name ?? ""),
-        path: location.replace(/^\.\//, "").replace(/\/+$/, ""),
+        path: local.replace(/^\.\//, "").replace(/\/+$/, ""),
         category: String(plugin?.category ?? ""),
-        available: String(plugin?.policy?.installation ?? "AVAILABLE") !== "UNAVAILABLE",
+        remote,
+        description: String(plugin?.description ?? ""),
+        author: typeof plugin?.author === "string"
+          ? plugin.author
+          : String(plugin?.author?.name ?? ""),
+        homepage: String(plugin?.homepage ?? ""),
       });
     }
   }

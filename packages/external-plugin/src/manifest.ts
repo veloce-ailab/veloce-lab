@@ -242,7 +242,24 @@ export function parsePluginFiles(files: Map<string, string>): ParsedPlugin | und
   const skillsField = asString(row.skills);
   const unsupported: string[] = [];
   if (row.apps) unsupported.push("apps: needs a ChatGPT app registration, which this server cannot provide");
-  if (row.hooks) unsupported.push("hooks: they would run code from the repository, which this never does");
+  // Directories the manifest does not mention but a plugin still ships. Slash
+  // commands and subagents are the client's own machinery, so they cannot be
+  // offered from here, and nothing from a repository is ever executed.
+  const countIn = (directory: string) =>
+    [...files.keys()].filter((path) => path.startsWith(`${directory}/`)).length;
+  const hooksInRepository = countIn("hooks") > 0 || Boolean(row.hooks);
+  if (hooksInRepository)
+    unsupported.push("hooks: they would run code from the repository, which this never does");
+  const commands = countIn("commands");
+  if (commands)
+    unsupported.push(
+      `${commands} slash command${commands === 1 ? "" : "s"}: those belong to the client, not to this server`,
+    );
+  const agents = countIn("agents");
+  if (agents)
+    unsupported.push(
+      `${agents} subagent${agents === 1 ? "" : "s"}: those belong to the client, not to this server`,
+    );
 
   return {
     name: asString(row.name),

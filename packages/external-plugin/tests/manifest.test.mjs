@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parsePluginFiles, readFrontmatter } from "../dist/manifest.js";
+import { discoverPluginDirs, readMarketplaceIndex } from "../dist/files.js";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const files = (entries) => new Map(Object.entries(entries));
 
@@ -188,4 +192,70 @@ test("falls back to the interface description", () => {
   })))
   assert.equal(parsed.description, "Short words")
   assert.equal(parsed.displayName, "Bare")
+})
+
+// A directory-style marketplace: most of its plugins live in other repositories.
+test("reads a marketplace index that mostly points elsewhere", async () => {
+  const root = await mkdtemp(join(tmpdir(), "marketplace-"));
+  try {
+    await mkdir(join(root, ".claude-plugin"), { recursive: true });
+    await writeFile(join(root, ".claude-plugin/marketplace.json"), JSON.stringify({
+      name: "official",
+      plugins: [
+        { name: "in-repo", source: "./plugins/in-repo", category: "tools" },
+        {
+          name: "elsewhere",
+          description: "From its own repository",
+          author: { name: "Someone" },
+          category: "design",
+          source: { source: "git-subdir", url: "https://example.com/a.git", path: "plugins/x", ref: "v1" },
+        },
+      ],
+    }));
+    const index = await readMarketplaceIndex(root);
+    assert.equal(index.length, 2);
+    const local = index.find((entry) => entry.name === "in-repo");
+    const remote = index.find((entry) => entry.name === "elsewhere");
+    assert.equal(local.path, "plugins/in-repo");
+    assert.equal(local.remote, undefined);
+    assert.equal(remote.path, "");
+    assert.equal(remote.remote.url, "https://example.com/a.git");
+    assert.equal(remote.remote.path, "plugins/x");
+    assert.equal(remote.remote.ref, "v1");
+    // The index alone is enough to describe a plugin that is not here yet.
+    assert.equal(remote.description, "From its own repository");
+    assert.equal(remote.author, "Someone");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a repository that only holds an index is not itself a plugin", async () => {
+  const root = await mkdtemp(join(tmpdir(), "marketplace-"));
+  try {
+    await mkdir(join(root, ".claude-plugin"), { recursive: true });
+    await writeFile(join(root, ".claude-plugin/marketplace.json"), JSON.stringify({ plugins: [] }));
+    await mkdir(join(root, "plugins/one/.claude-plugin"), { recursive: true });
+    await writeFile(join(root, "plugins/one/.claude-plugin/plugin.json"), JSON.stringify({ name: "one" }));
+    const dirs = await discoverPluginDirs(root);
+    assert.equal(dirs.length, 1);
+    assert.match(dirs[0], /plugins\/one$/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("says which parts of a plugin cannot be offered here", () => {
+  const parsed = parsePluginFiles(new Map(Object.entries({
+    ".claude-plugin/plugin.json": JSON.stringify({ name: "Rich" }),
+    "skills/one/SKILL.md": "---\nname: One\n---\nBody",
+    "commands/deploy.md": "# /deploy",
+    "agents/reviewer.md": "# reviewer",
+    "hooks/hooks.json": "{}",
+  })))
+  assert.equal(parsed.skills.length, 1)
+  assert.equal(parsed.unsupported.length, 3)
+  assert.ok(parsed.unsupported.some((entry) => entry.startsWith("hooks:")))
+  assert.ok(parsed.unsupported.some((entry) => entry.includes("slash command")))
+  assert.ok(parsed.unsupported.some((entry) => entry.includes("subagent")))
 })

@@ -110,6 +110,9 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
     mcpServers: decode(row.mcp_servers, []),
     ignored: decode(row.ignored, []),
     unsupported: decode(row.unsupported, []),
+    category: String(row.category ?? ""),
+    source: decode(row.source, null),
+    materialized: Number(row.materialized) === 1,
     installed: Number(row.enabled) === 1,
   });
 
@@ -163,6 +166,9 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
         author: parsed.author,
         homepage: parsed.homepage,
         license: parsed.license,
+        category: parsed.category || hint?.category || "",
+        source: "",
+        materialized: 1,
         manifest_path: parsed.manifestPath,
         // Server ids are namespaced so a call can name one without also naming
         // the plugin it came from.
@@ -188,6 +194,54 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
         });
       }
     }
+    // Most plugins in a directory-style marketplace live in their own
+    // repository. They are listed from the index alone and fetched when
+    // somebody installs one, because fetching three hundred repositories so
+    // that a list can be drawn is not a trade worth making.
+    for (const entry of index) {
+      if (!entry.remote) continue;
+      const slug = entry.name;
+      if (!slug || keep.has(slug)) continue;
+      keep.add(slug);
+      const now = new Date().toISOString();
+      const existing: any = await db.selectOne("external_plugins", {
+        user_id: userId,
+        marketplace_id: marketplaceId,
+        slug,
+      });
+      // Only what the index knows. Anything read from the checkout stays put.
+      const values = {
+        name: entry.name,
+        description: entry.description,
+        author: entry.author,
+        homepage: entry.homepage,
+        category: entry.category,
+        source: JSON.stringify(entry.remote),
+        updated_at: now,
+      };
+      if (existing) {
+        await db.update("external_plugins", { id: String(existing.id) }, values);
+      } else {
+        await db.create("external_plugins", {
+          id: randomUUID(),
+          user_id: userId,
+          marketplace_id: marketplaceId,
+          slug,
+          version: "",
+          license: "",
+          manifest_path: "",
+          skills: "[]",
+          mcp_servers: "[]",
+          ignored: "[]",
+          unsupported: "[]",
+          materialized: 0,
+          enabled: 0,
+          created_at: now,
+          ...values,
+        });
+      }
+    }
+
     // A plugin that disappeared from the repository stops existing here too.
     for (const plugin of await pluginsOf(userId)) {
       if (plugin.marketplaceId === marketplaceId && !keep.has(plugin.slug)) {
@@ -221,6 +275,48 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
       (plugin) => plugin.marketplaceId === String(row.id),
     ).length;
     return marketplaceRow(refreshed ?? row, count);
+  };
+
+  /**
+   * Fetches a plugin that the marketplace only points at, and reads it.
+   *
+   * This is the one operation here that reaches the network on a user's behalf,
+   * and it happens because that user asked for this specific plugin.
+   */
+  const materialise = async (userId: number, row: any, source: any): Promise<void> => {
+    const marketplace: any = await db.selectOne("external_plugin_marketplaces", {
+      id: String(row.marketplace_id),
+      user_id: userId,
+    });
+    if (!marketplace) throw Error("The marketplace this plugin came from is gone");
+    const slug = String(row.slug);
+    const target = join(root, String(marketplace.directory), "plugins", slug);
+    await syncCheckout(String(source.url), target, source.ref || source.sha || undefined);
+    const parsed = parsePluginFiles(
+      await collectPluginFiles(source.path ? join(target, String(source.path)) : target),
+    );
+    if (!parsed) throw Error("Nothing in that repository could be read as a plugin");
+    await db.update(
+      "external_plugins",
+      { id: String(row.id), user_id: userId },
+      {
+        version: parsed.version,
+        description: parsed.description || row.description,
+        author: parsed.author || row.author,
+        homepage: parsed.homepage || row.homepage,
+        license: parsed.license,
+        category: parsed.category || row.category,
+        manifest_path: parsed.manifestPath,
+        skills: JSON.stringify(parsed.skills),
+        mcp_servers: JSON.stringify(
+          parsed.mcpServers.map((server) => ({ ...server, id: `${slug}:${server.id}` })),
+        ),
+        ignored: JSON.stringify(parsed.ignored),
+        unsupported: JSON.stringify(parsed.unsupported),
+        materialized: 1,
+        updated_at: new Date().toISOString(),
+      },
+    );
   };
 
   const service = {
@@ -275,6 +371,11 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
     async setInstalled(userId: number, id: string, installed: boolean) {
       const row: any = await db.selectOne("external_plugins", { id, user_id: userId });
       if (!row) return false;
+      if (installed && Number(row.materialized) !== 1) {
+        const source = decode(row.source, null);
+        if (!source?.url) return false;
+        await materialise(userId, row, source);
+      }
       // The column is still called `enabled`; it holds exactly this flag.
       await db.update(
         "external_plugins",

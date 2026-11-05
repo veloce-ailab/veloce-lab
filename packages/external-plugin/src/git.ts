@@ -15,7 +15,11 @@ export function isCloneable(url: string): boolean {
   return /^(https?:\/\/|ssh:\/\/|git@)[^\s]+$/i.test(url.trim());
 }
 
-export async function syncCheckout(url: string, directory: string): Promise<{ revision: string }> {
+export async function syncCheckout(
+  url: string,
+  directory: string,
+  ref?: string,
+): Promise<{ revision: string }> {
   if (!isCloneable(url)) throw Error("Marketplace URL must be an HTTP(S) or SSH git URL");
   const env = {
     ...process.env,
@@ -33,9 +37,13 @@ export async function syncCheckout(url: string, directory: string): Promise<{ re
     // attempt would mistake for a checkout.
     await rm(directory, { recursive: true, force: true });
     await mkdir(directory, { recursive: true });
-    await run("git", ["clone", "--depth", "1", "--single-branch", "--", url.trim(), directory], options);
+    const clone = ["clone", "--depth", "1", "--single-branch"];
+    // A tag or branch can be asked for up front; a bare commit cannot.
+    if (ref) clone.push("--branch", ref);
+    clone.push("--", url.trim(), directory);
+    await run("git", clone, options);
   } else {
-    await run("git", ["-C", directory, "fetch", "--depth", "1", "origin", "HEAD"], options);
+    await run("git", ["-C", directory, "fetch", "--depth", "1", "origin", ref || "HEAD"], options);
     await run("git", ["-C", directory, "reset", "--hard", "FETCH_HEAD"], options);
   }
   const { stdout } = await run("git", ["-C", directory, "rev-parse", "--short", "HEAD"], options);

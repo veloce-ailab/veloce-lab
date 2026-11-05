@@ -31,6 +31,9 @@ type Plugin = {
   mcpServers: Server[]
   ignored: string[]
   unsupported: string[]
+  category: string
+  source: { url: string; path?: string; ref?: string } | null
+  materialized: boolean
   installed: boolean
 }
 
@@ -81,6 +84,9 @@ const copy = {
     cancel: "取消",
     close: "关闭",
     syncing: "正在读取…",
+    remote: "外部仓库",
+    remoteNote: (url: string) => `这个插件不在市场仓库里。安装时会从 ${url} 拉取并读取它的内容。`,
+    fetchInstall: "下载并安装",
   },
   en: {
     title: "External plugins",
@@ -128,6 +134,9 @@ const copy = {
     cancel: "Cancel",
     close: "Close",
     syncing: "Reading…",
+    remote: "External repo",
+    remoteNote: (url: string) => `This plugin lives in its own repository. Installing fetches from ${url} and reads it.`,
+    fetchInstall: "Fetch and install",
   },
 }
 
@@ -221,6 +230,7 @@ export default function ExternalPlugins() {
       plugin.slug,
       plugin.description,
       plugin.author,
+      plugin.category,
       ...plugin.skills.map((skill) => skill.name),
       ...plugin.mcpServers.map((server) => server.name),
     ]
@@ -238,6 +248,12 @@ export default function ExternalPlugins() {
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium">{plugin.name || plugin.slug}</span>
           {plugin.version && <Badge variant="outline">{plugin.version}</Badge>}
+          {plugin.source && !plugin.materialized && (
+            <Badge variant="outline" className="gap-1">
+              <GitBranch size={11} />
+              {t.remote}
+            </Badge>
+          )}
           {plugin.installed && (
             <Badge variant="secondary" className="gap-1">
               <Check size={11} />
@@ -270,7 +286,11 @@ export default function ExternalPlugins() {
             onClick={() => setInstalled.mutate({ id: plugin.id, installed: !plugin.installed })}
           >
             {plugin.installed ? <Check size={15} /> : <Download size={15} />}
-            {plugin.installed ? t.installedAlready : t.install}
+            {plugin.installed
+              ? t.installedAlready
+              : plugin.materialized
+                ? t.install
+                : t.fetchInstall}
           </Button>
         ) : (
           <Button
@@ -465,6 +485,12 @@ export default function ExternalPlugins() {
                 )}
               </div>
 
+              {detail.source && !detail.materialized && (
+                <div className="rounded-md bg-muted/60 px-2 py-1.5 text-xs text-muted-foreground">
+                  {t.remoteNote(detail.source.path ? `${detail.source.url} (${detail.source.path})` : detail.source.url)}
+                </div>
+              )}
+
               {detail.unsupported.length > 0 && (
                 <div className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs">
                   <div className="text-amber-700 dark:text-amber-500">{t.unsupported}</div>
@@ -489,7 +515,7 @@ export default function ExternalPlugins() {
                 onClick={() => setInstalled.mutate({ id: detail.id, installed: !detail.installed })}
               >
                 {detail.installed ? <Trash2 size={15} /> : <Download size={15} />}
-                {detail.installed ? t.uninstall : t.install}
+                {detail.installed ? t.uninstall : detail.materialized ? t.install : t.fetchInstall}
               </Button>
             )}
           </DialogFooter>

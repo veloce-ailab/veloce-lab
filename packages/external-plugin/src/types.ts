@@ -25,6 +25,11 @@ export interface ExternalPlugin {
   mcpServers: PluginMcpServer[];
   ignored: string[];
   unsupported: string[];
+  category: string;
+  /** Set when the plugin lives in another repository and has to be fetched. */
+  source: { url: string; path?: string; ref?: string } | null;
+  /** Whether its skills and servers have been read; false until installed. */
+  materialized: boolean;
   /** Installed into this user's chats; a plugin that is merely available is not. */
   installed: boolean;
 }
@@ -59,6 +64,9 @@ declare module "yumeri" {
       id: string;
       user_id: number;
       marketplace_id: string;
+      category: string;
+      source: string;
+      materialized: number;
       slug: string;
       name: string;
       version: string;

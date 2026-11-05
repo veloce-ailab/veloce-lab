@@ -63,6 +63,11 @@ export async function ensureTables(db: Database): Promise<void> {
       author: { type: "string", initial: "" },
       homepage: { type: "string", initial: "" },
       license: { type: "string", initial: "" },
+      category: { type: "string", initial: "" },
+      // Where to fetch a plugin that does not live in the marketplace repository
+      // itself, as JSON. Empty for plugins that were readable at sync time.
+      source: { type: "string", initial: "" },
+      materialized: { type: "integer", initial: 0 },
       manifest_path: { type: "string", initial: "" },
       skills: { type: "string", initial: "[]" },
       mcp_servers: { type: "string", initial: "[]" },
