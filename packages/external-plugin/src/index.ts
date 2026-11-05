@@ -409,10 +409,12 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
   ctx
     .route("/api/user/external-plugin/marketplaces")
     .methods("POST")
-    .action(async (session, params) => {
+    .action(async (session) => {
       const id = user(session);
       if (id === undefined) return;
-      const url = String((params as any)?.url ?? "").trim();
+      // The second argument is the query string; a JSON body has to be read.
+      const body = (await session.parseRequestBody()) as any;
+      const url = String(body?.url ?? "").trim();
       if (!url) {
         session.status = 400;
         session.respond({ error: "A marketplace URL is required" }, "json");
@@ -463,10 +465,11 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
   ctx
     .route("/api/user/external-plugin/plugins/:id")
     .methods("POST")
-    .action(async (session, params, pluginId) => {
+    .action(async (session, _params, pluginId) => {
       const id = user(session);
       if (id === undefined) return;
-      const enabled = Boolean((params as any)?.enabled);
+      const body = (await session.parseRequestBody()) as any;
+      const enabled = Boolean(body?.enabled);
       const ok = await service.setEnabled(id, String(pluginId), enabled);
       session.respond({ success: ok }, "json");
     });
