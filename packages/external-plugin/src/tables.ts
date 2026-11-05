@@ -79,4 +79,21 @@ export async function ensureTables(db: Database): Promise<void> {
     },
     { unique: [["user_id", "marketplace_id", "slug"]] },
   );
+
+  // A token a user pasted for one MCP server of one plugin. Stored per user
+  // because it is their own credential, and kept out of every response.
+  await db.extend(
+    "external_plugin_credentials",
+    {
+      id: { type: "string", nullable: false },
+      user_id: "integer",
+      /** `<plugin slug>:<server id>`, the same id a tool call names. */
+      server_id: { type: "string", nullable: false },
+      plugin_id: { type: "string", initial: "" },
+      token: { type: "string", initial: "" },
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+    { unique: [["user_id", "server_id"]] },
+  );
 }

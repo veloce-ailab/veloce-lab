@@ -107,7 +107,10 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
     license: String(row.license ?? ""),
     manifestPath: String(row.manifest_path ?? ""),
     skills: decode(row.skills, []),
-    mcpServers: decode(row.mcp_servers, []),
+    mcpServers: (decode(row.mcp_servers, []) as any[]).map((server) => ({
+      ...server,
+      hasToken: false,
+    })),
     ignored: decode(row.ignored, []),
     unsupported: decode(row.unsupported, []),
     category: String(row.category ?? ""),
@@ -116,10 +119,27 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
     installed: Number(row.enabled) === 1,
   });
 
-  const pluginsOf = async (userId: number): Promise<ExternalPlugin[]> =>
-    (await db.select("external_plugins", { user_id: userId }))
+  /** Which servers this user has pasted a credential for. Never the credential. */
+  const storedTokens = async (userId: number): Promise<Set<string>> => {
+    const rows = await db.select("external_plugin_credentials", { user_id: userId });
+    return new Set(
+      rows.filter((row) => String(row.token ?? "").trim()).map((row) => String(row.server_id)),
+    );
+  };
+
+  const pluginsOf = async (userId: number): Promise<ExternalPlugin[]> => {
+    const tokens = await storedTokens(userId);
+    return (await db.select("external_plugins", { user_id: userId }))
       .map(pluginRow)
+      .map((plugin) => ({
+        ...plugin,
+        mcpServers: plugin.mcpServers.map((server) => ({
+          ...server,
+          hasToken: tokens.has(server.id),
+        })),
+      }))
       .sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
+  };
 
   const enabledPlugins = async (userId: number) =>
     (await pluginsOf(userId)).filter((plugin) => plugin.installed);
@@ -384,6 +404,56 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
       return true;
     },
     plugins: pluginsOf,
+    async setToken(userId: number, pluginId: string, serverId: string, token: string) {
+      const plugin: any = await db.selectOne("external_plugins", { id: pluginId, user_id: userId });
+      if (!plugin) throw Error("That plugin is not in your list");
+      const servers = decode(plugin.mcp_servers, []) as any[];
+      if (!servers.some((server) => server.id === serverId))
+        throw Error("That MCP server does not belong to this plugin");
+      const value = token.trim();
+      const existing: any = await db.selectOne("external_plugin_credentials", {
+        user_id: userId,
+        server_id: serverId,
+      });
+      if (!value) {
+        if (existing) await db.remove("external_plugin_credentials", { id: String(existing.id) });
+        return;
+      }
+      const now = new Date().toISOString();
+      if (existing) {
+        await db.update(
+          "external_plugin_credentials",
+          { id: String(existing.id) },
+          { token: value, plugin_id: pluginId, updated_at: now },
+        );
+        return;
+      }
+      await db.create("external_plugin_credentials", {
+        id: randomUUID(),
+        user_id: userId,
+        server_id: serverId,
+        plugin_id: pluginId,
+        token: value,
+        created_at: now,
+        updated_at: now,
+      });
+    },
+    async testServer(userId: number, serverId: string) {
+      const server = await serverFor(userId, serverId);
+      if (!server) return { ok: false, tools: [] as string[], error: "No such server among your installed plugins" };
+      const client = new McpClient(server.url, server.headers, requestTimeoutMs);
+      try {
+        await client.initialize();
+        const tools = await client.listTools();
+        return { ok: true, tools: tools.map((tool) => tool.name).slice(0, 50), error: "" };
+      } catch (error) {
+        return {
+          ok: false,
+          tools: [] as string[],
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
     async setInstalled(userId: number, id: string, installed: boolean) {
       const row: any = await db.selectOne("external_plugins", { id, user_id: userId });
       if (!row) return false;
@@ -472,7 +542,18 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
   const serverFor = async (userId: number, id: string) => {
     for (const plugin of await enabledPlugins(userId)) {
       const server = plugin.mcpServers.find((entry) => entry.id === id);
-      if (server) return server;
+      if (!server) continue;
+      // The credential is the user's own; it is attached here and nowhere else.
+      const credential: any = await db.selectOne("external_plugin_credentials", {
+        user_id: userId,
+        server_id: id,
+      });
+      const token = String(credential?.token ?? "").trim();
+      if (!token) return server;
+      return {
+        ...server,
+        headers: { ...(server.headers || {}), Authorization: `Bearer ${token}` },
+      };
     }
     return undefined;
   };
@@ -591,6 +672,35 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
         const id = user(session);
         if (id === undefined) return;
         session.respond({ plugins: await service.plugins(id) }, "json");
+      }),
+    );
+  ctx
+    .route("/api/user/external-plugin/plugins/:id/credentials")
+    .methods("POST")
+    .action((session, _params, pluginId) =>
+      handle(session, async () => {
+        const id = user(session);
+        if (id === undefined) return;
+        const body = (await session.parseRequestBody()) as any;
+        const serverId = String(body?.serverId ?? "").trim();
+        if (!serverId) {
+          session.status = 400;
+          session.respond({ error: "Which server is this credential for?" }, "json");
+          return;
+        }
+        await service.setToken(id, String(pluginId), serverId, String(body?.token ?? ""));
+        session.respond({ success: true, hasToken: Boolean(String(body?.token ?? "").trim()) }, "json");
+      }),
+    );
+  ctx
+    .route("/api/user/external-plugin/plugins/:id/test")
+    .methods("POST")
+    .action((session) =>
+      handle(session, async () => {
+        const id = user(session);
+        if (id === undefined) return;
+        const body = (await session.parseRequestBody()) as any;
+        session.respond(await service.testServer(id, String(body?.serverId ?? "").trim()), "json");
       }),
     );
   ctx

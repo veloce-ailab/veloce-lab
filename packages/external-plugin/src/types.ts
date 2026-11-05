@@ -22,7 +22,8 @@ export interface ExternalPlugin {
   license: string;
   manifestPath: string;
   skills: PluginSkill[];
-  mcpServers: PluginMcpServer[];
+  /** `hasToken` says whether this user has stored a credential; it is never returned. */
+  mcpServers: Array<PluginMcpServer & { hasToken: boolean }>;
   ignored: string[];
   unsupported: string[];
   category: string;
@@ -41,6 +42,9 @@ export interface ExternalPluginService {
   removeMarketplace(userId: number, id: string): Promise<boolean>;
   plugins(userId: number): Promise<ExternalPlugin[]>;
   setInstalled(userId: number, id: string, installed: boolean): Promise<boolean>;
+  setToken(userId: number, pluginId: string, serverId: string, token: string): Promise<void>;
+  /** Connects with whatever credential is stored, so the answer is the truth. */
+  testServer(userId: number, serverId: string): Promise<{ ok: boolean; tools: string[]; error: string }>;
 }
 
 declare module "yumeri" {
@@ -64,9 +68,6 @@ declare module "yumeri" {
       id: string;
       user_id: number;
       marketplace_id: string;
-      category: string;
-      source: string;
-      materialized: number;
       slug: string;
       name: string;
       version: string;
@@ -74,12 +75,24 @@ declare module "yumeri" {
       author: string;
       homepage: string;
       license: string;
+      category: string;
+      source: string;
+      materialized: number;
       manifest_path: string;
       skills: string;
       mcp_servers: string;
       ignored: string;
       unsupported: string;
       enabled: number;
+      created_at: string;
+      updated_at: string;
+    };
+    external_plugin_credentials: {
+      id: string;
+      user_id: number;
+      server_id: string;
+      plugin_id: string;
+      token: string;
       created_at: string;
       updated_at: string;
     };

@@ -14,7 +14,7 @@ type Marketplace = {
 }
 
 type Skill = { id: string; name: string; description: string; content: string }
-type Server = { id: string; name: string; url: string; description?: string }
+type Server = { id: string; name: string; url: string; description?: string; hasToken: boolean }
 
 type Plugin = {
   id: string
@@ -85,6 +85,18 @@ const copy = {
     close: "关闭",
     syncing: "正在读取…",
     remote: "外部仓库",
+    token: "访问令牌",
+    tokenPlaceholder: "粘贴该服务的 API token",
+    tokenPlaceholderSaved: "已保存，留空保持不变",
+    save: "保存",
+    test: "测试连接",
+    testing: "连接中…",
+    configured: "已配置令牌",
+    notConfigured: "未配置令牌",
+    testOk: (count: number) => `连接成功，可用工具 ${count} 个`,
+    tokenSaved: "令牌已保存",
+    tokenCleared: "令牌已清除",
+    tokenHint: "很多服务要令牌才连得上。令牌只存在服务端，不会回传到页面。",
     remoteNote: (url: string) => `这个插件不在市场仓库里。安装时会从 ${url} 拉取并读取它的内容。`,
     fetchInstall: "下载并安装",
   },
@@ -135,6 +147,18 @@ const copy = {
     close: "Close",
     syncing: "Reading…",
     remote: "External repo",
+    token: "Access token",
+    tokenPlaceholder: "Paste the service's API token",
+    tokenPlaceholderSaved: "Saved; leave blank to keep it",
+    save: "Save",
+    test: "Test",
+    testing: "Connecting…",
+    configured: "Token saved",
+    notConfigured: "No token",
+    testOk: (count: number) => `Connected, ${count} tool${count === 1 ? "" : "s"}`,
+    tokenSaved: "Token saved",
+    tokenCleared: "Token cleared",
+    tokenHint: "Most services need a token before they answer. It is kept on the server and never sent back to this page.",
     remoteNote: (url: string) => `This plugin lives in its own repository. Installing fetches from ${url} and reads it.`,
     fetchInstall: "Fetch and install",
   },
@@ -151,6 +175,9 @@ export default function ExternalPlugins() {
   const [detail, setDetail] = useState<Plugin | null>(null)
   const [pendingRemoval, setPendingRemoval] = useState<Marketplace | null>(null)
   const [query, setQuery] = useState("")
+  const [tokens, setTokens] = useState<Record<string, string>>({})
+  const [results, setResults] = useState<Record<string, { ok: boolean; tools: string[]; error: string }>>({})
+  const [busyServer, setBusyServer] = useState("")
   const [pages, setPages] = useState<Record<string, number>>({})
 
   const marketplaces = useQuery<Marketplace[]>({
@@ -215,6 +242,33 @@ export default function ExternalPlugins() {
       setDetail((current) => (current && current.id === input.id ? { ...current, installed: input.installed } : current))
     },
     onError: (cause) => toast.error(apiErrorMessage(cause, t.failed)),
+  })
+
+  const saveToken = useMutation({
+    mutationFn: async (input: { pluginId: string; serverId: string; token: string }) =>
+      (await api.post(`/user/external-plugin/plugins/${input.pluginId}/credentials`, { serverId: input.serverId, token: input.token })).data,
+    onSuccess: (data, input) => {
+      const saved = Boolean(data?.hasToken)
+      setTokens((current) => ({ ...current, [input.serverId]: "" }))
+      setDetail((current) =>
+        current && current.id === input.pluginId
+          ? { ...current, mcpServers: current.mcpServers.map((server) => (server.id === input.serverId ? { ...server, hasToken: saved } : server)) }
+          : current,
+      )
+      refresh()
+      toast.success(saved ? t.tokenSaved : t.tokenCleared)
+    },
+    onError: (cause) => toast.error(apiErrorMessage(cause, t.failed)),
+  })
+
+  const testServer = useMutation({
+    mutationFn: async (input: { pluginId: string; serverId: string }) =>
+      (await api.post(`/user/external-plugin/plugins/${input.pluginId}/test`, { serverId: input.serverId })).data as { ok: boolean; tools: string[]; error: string },
+    onMutate: (input) => setBusyServer(input.serverId),
+    onSettled: () => setBusyServer(""),
+    onSuccess: (data, input) => setResults((current) => ({ ...current, [input.serverId]: data })),
+    onError: (cause, input) =>
+      setResults((current) => ({ ...current, [input.serverId]: { ok: false, tools: [], error: apiErrorMessage(cause, t.failed) } })),
   })
 
   const all = plugins.data || []
@@ -474,14 +528,58 @@ export default function ExternalPlugins() {
                 {detail.mcpServers.length === 0 ? (
                   <div className="text-xs text-muted-foreground">{t.noMcp}</div>
                 ) : (
-                  <ul className="space-y-1">
-                    {detail.mcpServers.map((server) => (
-                      <li key={server.id} className="rounded-md border px-2 py-1.5">
-                        <div className="text-xs font-medium">{server.name}</div>
-                        <div className="truncate font-mono text-xs text-muted-foreground">{server.url}</div>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <p className="mb-1.5 text-xs text-muted-foreground">{t.tokenHint}</p>
+                    <ul className="space-y-1.5">
+                      {detail.mcpServers.map((server) => {
+                        const result = results[server.id]
+                        const busy = busyServer === server.id || saveToken.isPending
+                        return (
+                          <li key={server.id} className="space-y-1.5 rounded-md border px-2 py-1.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="text-xs font-medium">{server.name}</div>
+                                <div className="truncate font-mono text-[11px] text-muted-foreground">{server.url}</div>
+                              </div>
+                              <Badge variant={server.hasToken ? "secondary" : "outline"} className="shrink-0">
+                                {server.hasToken ? t.configured : t.notConfigured}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Input
+                                type="password"
+                                className="h-8 flex-1 text-xs"
+                                placeholder={server.hasToken ? t.tokenPlaceholderSaved : t.tokenPlaceholder}
+                                value={tokens[server.id] ?? ""}
+                                onChange={(event) => setTokens((current) => ({ ...current, [server.id]: event.target.value }))}
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={busy}
+                                onClick={() => saveToken.mutate({ pluginId: detail.id, serverId: server.id, token: tokens[server.id] ?? "" })}
+                              >
+                                {t.save}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={busy || testServer.isPending}
+                                onClick={() => testServer.mutate({ pluginId: detail.id, serverId: server.id })}
+                              >
+                                {busyServer === server.id ? t.testing : t.test}
+                              </Button>
+                            </div>
+                            {result && (
+                              <div className={result.ok ? "text-[11px] text-emerald-600 dark:text-emerald-500" : "text-[11px] text-destructive"}>
+                                {result.ok ? t.testOk(result.tools.length) : result.error}
+                              </div>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </>
                 )}
               </div>
 
