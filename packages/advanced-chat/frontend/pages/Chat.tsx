@@ -3193,7 +3193,7 @@ export default function Chat() {
                   mode: activeRunMode, status: "running", current_round: 0, tool_call_details: [],
                 },
               }))
-              const statusText = streamStatusText(event.payload, copy)
+              const statusText = streamStatusText(event.payload, copy, language)
               if (!statusText || accumulatedText) {
                 return
               }
@@ -3221,6 +3221,11 @@ export default function Chat() {
               const finalContent = preferCompleteText(accumulatedText, reportedContent)
               const finalParts = normalizeContentParts(event.payload.message?.content_parts, finalContent)
               const finalToolCalls = normalizeToolCalls(event.payload.tool_call_details)
+              // A turn that ran out of tool rounds is paused, not finished; saying so
+              // is the difference between "done" and "gave up without a word".
+              if (event.payload.finish_reason === "tool_round_limit") {
+                error(language === "zh" ? "本轮工具调用已达上限，回复“继续”可以让它接着做。" : "This turn hit its tool-call limit. Reply “continue” to let it carry on.")
+              }
               upsertAssistantMessage((message) => ({
                 ...message,
                 content: finalContent || copy.emptyResponse,
@@ -6929,10 +6934,19 @@ function parseSSEEvent(raw: string): ParsedSSEEvent | null {
   }
 }
 
-function streamStatusText(payload: any, copy: ChatCopy) {
+function streamStatusText(payload: any, copy: ChatCopy, language = "en") {
   const message = typeof payload?.message === "string" ? payload.message : ""
   const retryMatch = message.match(/^retrying:(\d+)\/(\d+)$/)
-  if (message === "retrying" || retryMatch) {
+  // A retry is worth showing as itself: the run is waiting because something went
+  // wrong, and "thinking" hides that from the person watching.
+  if (retryMatch) {
+    const attempt = Number(retryMatch[1])
+    const total = Number(retryMatch[2])
+    return language === "zh" ? `请求失败，正在重试（${attempt}/${total}）…`
+      : language === "ja" ? `リクエスト失敗、再試行中（${attempt}/${total}）…`
+      : `Request failed, retrying (${attempt}/${total})…`
+  }
+  if (message === "retrying") {
     return copy.streamThinking
   }
   if (["stream_started", "loading_tools", "assistant_started", "model_round"].includes(message)) {

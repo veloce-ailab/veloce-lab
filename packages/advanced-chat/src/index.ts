@@ -75,6 +75,8 @@ declare module "@yumerijs/types" {
 export interface AdvancedChatConfig {
   connectorOnlineWindowSeconds: string;
   retryAttempts: number;
+  maxToolRounds: number;
+  maxAssistantToolRounds: number;
   assistantRetryAttempts: number;
   retryDelayMs: number;
   retryMaxDelayMs: number;
@@ -417,6 +419,8 @@ export const config: Schema<AdvancedChatConfig> = Schema.object({
     "Connector online window seconds",
   ).key("advanced-chat.config.connectorOnlineWindowSeconds").default("60"),
   retryAttempts: Schema.number("Chat retry attempts").key("advanced-chat.config.retryAttempts").default(5),
+  maxToolRounds: Schema.number("Chat tool rounds per turn").key("advanced-chat.config.maxToolRounds").default(20),
+  maxAssistantToolRounds: Schema.number("Assistant tool rounds per turn").key("advanced-chat.config.maxAssistantToolRounds").default(50),
   assistantRetryAttempts: Schema.number("Assistant retry attempts").key("advanced-chat.config.assistantRetryAttempts").default(10),
   retryDelayMs: Schema.number("Chat retry delay milliseconds").key("advanced-chat.config.retryDelayMs").default(500),
   retryMaxDelayMs: Schema.number(
@@ -486,6 +490,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
   ctx.i18n({ "advanced-chat": { config: {
     connectorOnlineWindowSeconds: { zh: "连接器在线窗口（秒）", en: "Connector online window seconds", ja: "コネクターオンライン時間（秒）" },
     retryAttempts: { zh: "聊天重试次数", en: "Chat retry attempts", ja: "チャット再試行回数" },
+    maxToolRounds: { zh: "每轮工具调用上限", en: "Tool rounds per turn", ja: "1ターンのツール回数上限" },
+    maxAssistantToolRounds: { zh: "助手工具调用上限", en: "Assistant tool rounds per turn", ja: "アシスタントのツール回数上限" },
     assistantRetryAttempts: { zh: "助手重试次数", en: "Assistant retry attempts", ja: "アシスタント再試行回数" },
     retryDelayMs: { zh: "聊天重试延迟（毫秒）", en: "Chat retry delay milliseconds", ja: "チャット再試行遅延（ミリ秒）" },
     retryMaxDelayMs: { zh: "聊天最大重试延迟（毫秒）", en: "Chat retry maximum delay milliseconds", ja: "チャット最大再試行遅延（ミリ秒）" },
@@ -1941,8 +1947,12 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         await persistProgress();
         if (!streamedContent && content) emit("text", { delta: content, round: 1 });
         let runEventSeq = 0;
+        // How long a single turn may keep calling tools. The old 20/8 cut long tasks
+        // off mid-way with no explanation, which reads as the assistant giving up.
         const maxToolRounds =
-          mode === "assistant" || mode === "agent_group" ? 20 : 8;
+          mode === "assistant" || mode === "agent_group"
+            ? Math.max(1, Number(pluginConfig.maxAssistantToolRounds) || 50)
+            : Math.max(1, Number(pluginConfig.maxToolRounds) || 20);
         const runtime = ctx.component["agent-runtime"] as AgentRuntimeService;
         const turn = await runtime.runTurn({
           initial: {
@@ -2169,6 +2179,9 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           metadata: { sessionId, runId, channelId: Number(selected.channel.id), modelConfigId: Number(selected.config.id) },
         }).catch(() => undefined);
         emit("done", {
+          // Carried so the client can say a turn paused at the round budget instead of
+          // presenting an unfinished task as a finished one.
+          finish_reason: finishReason,
           message: { id: assistantMessageId, content, content_parts: contentParts, records: conversationRecords(contentParts, toolCallDetails) },
           tool_call_details: toolCallDetails,
           input_tokens: inputTokens,

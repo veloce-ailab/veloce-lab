@@ -62,6 +62,13 @@ export interface AgentTurnResult {
   cacheWriteInputTokens: number;
   cacheWrite1hInputTokens: number;
   rounds: number;
+  /**
+   * The conversation as this turn left it.
+   *
+   * A caller that wants to keep going after `tool_round_limit` resumes from here
+   * rather than rebuilding the assistant and tool messages by hand.
+   */
+  conversation: Array<Record<string, unknown>>;
 }
 
 export interface AgentRuntimeService {
@@ -195,6 +202,13 @@ export function apply(ctx: Context) {
         await input.onAssistantContent?.(step.content, rounds);
       }
 
+      // The loop stops for one of two reasons, and they are not the same outcome: the
+      // model has nothing left to call, or the round budget ran out with calls still
+      // pending. Reporting the second as a normal stop is what makes a long task look
+      // finished when it is only paused.
+      if (finishReason !== "error" && step.toolCalls.length > 0)
+        finishReason = "tool_round_limit";
+
       return {
         content,
         finishReason,
@@ -205,6 +219,7 @@ export function apply(ctx: Context) {
         cacheWriteInputTokens,
         cacheWrite1hInputTokens,
         rounds,
+        conversation,
       };
     },
   };
