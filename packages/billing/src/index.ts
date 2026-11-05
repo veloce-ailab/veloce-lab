@@ -1,8 +1,8 @@
 import { Context, Schema } from "yumeri";
-import type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask, ModelPrice } from "./types.js";
+import type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask, ModelPrice, UserQuota, UserQuotaRow, QuotaPeriod } from "./types.js";
 import { applyMultipliers, priceUsage } from "./pricing.js";
 import "@velocelab/database-core";
-export type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask, ModelPrice } from "./types.js";
+export type { PaymentOrder, WalletTransaction, WalletLimitUsage, ReferralCommissionLog, TokenLog, VideoTask, ModelPrice, UserQuota, QuotaPeriod } from "./types.js";
 
 declare module "@yumerijs/types" {
   interface Tables {
@@ -12,6 +12,7 @@ declare module "@yumerijs/types" {
     referral_commission_logs: ReferralCommissionLog;
     token_logs: TokenLog;    video_tasks: VideoTask;
     model_prices: ModelPrice;
+    user_quotas: UserQuotaRow;
   }
 }
 
@@ -42,7 +43,17 @@ export interface BillingService {
   recordUsage(usage: TokenUsageRecord): Promise<TokenLog>;
   listModelPrices(): Promise<ModelPrice[]>;
   setModelPrice(channelId: number, modelConfigId: number, prices: Partial<Omit<ModelPrice, "id" | "channel_id" | "model_config_id" | "model_name" | "channel_name" | "created_at" | "updated_at">>): Promise<ModelPrice>;
-  charge(userId: number, amount: number, metadata?: Record<string, unknown>): Promise<boolean>;
+  /**
+   * The user's allowance and what they have spent against it.
+   *
+   * Every deployment bills nobody until a limit is set, so this always reports the
+   * usage; `unlimited` says whether anything is enforced.
+   */
+  quota(userId: number): Promise<UserQuota>;
+  /** `limit` of null clears the limit, returning the user to unlimited. */
+  setQuota(userId: number, limit: number | null, period?: QuotaPeriod): Promise<UserQuota>;
+  listQuotas(): Promise<UserQuota[]>;
+  /** Remaining allowance, or `Infinity` when the user is unlimited. */
   balance(userId: number): Promise<number>;
 }
 export interface BillingConfig { currency: string }
@@ -88,6 +99,15 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
     created_at: "timestamp",
     updated_at: "timestamp",
   }, { unique: ["id"] });
+  await db.extend("user_quotas", {
+    id: { type: "integer", autoIncrement: true },
+    user_id: { type: "integer", nullable: false },
+    // Null is meaningful: it is the default "this deployment bills nobody" state.
+    limit_amount: "decimal",
+    period: { type: "string", initial: "total" },
+    created_at: "timestamp",
+    updated_at: "timestamp",
+  }, { unique: ["user_id"] });
   await db.extend("model_prices", {
     id: { type: "integer", autoIncrement: true }, channel_id: { type: "integer", nullable: false }, model_config_id: { type: "integer", nullable: false }, model_name: { type: "string", nullable: false },
     input_price: { type: "decimal", initial: 0 }, output_price: { type: "decimal", initial: 0 }, cached_input_price: { type: "decimal", initial: 0 }, cache_write_input_price: { type: "decimal", initial: 0 }, cache_write_1h_input_price: { type: "decimal", initial: 0 }, image_input_price: { type: "decimal", initial: 0 }, image_output_price: { type: "decimal", initial: 0 }, audio_input_price: { type: "decimal", initial: 0 }, audio_output_price: { type: "decimal", initial: 0 },
@@ -142,7 +162,117 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
       created_at: now(),
     } as any) as TokenLog;
   };
-  const balances = new Map<number, number>();
+  const monthStart = () => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1).toISOString();
+  };
+  /**
+   * Sums the recorded cost of a user's usage.
+   *
+   * Spending is derived from the ledger rather than tracked as a mutable balance, so a
+   * corrected or refunded row is reflected immediately and two concurrent requests
+   * cannot both spend the same allowance.
+   */
+  const spending = async (userId: number, period: QuotaPeriod) => {
+    const rows = await db.select("token_logs", { user_id: userId } as any) as TokenLog[];
+    const since = period === "monthly" ? monthStart() : "";
+    const inPeriod = since ? rows.filter((row) => String(row.created_at) >= since) : rows;
+    return inPeriod.reduce((totals, row) => ({
+      spent: totals.spent + (Number(row.cost) || 0),
+      request_count: totals.request_count + 1,
+      input_tokens: totals.input_tokens + (Number(row.input_tokens) || 0),
+      output_tokens: totals.output_tokens + (Number(row.output_tokens) || 0),
+    }), { spent: 0, request_count: 0, input_tokens: 0, output_tokens: 0 });
+  };
+  const normalizePeriod = (value: unknown): QuotaPeriod => value === "monthly" ? "monthly" : "total";
+  const composeQuota = (userId: number, username: string, email: string, isAdmin: boolean, row: any, usage: Awaited<ReturnType<typeof spending>>): UserQuota => {
+    const limit = row?.limit_amount === null || row?.limit_amount === undefined ? null : Number(row.limit_amount);
+    const unlimited = limit === null || !Number.isFinite(limit);
+    return {
+      user_id: userId,
+      username,
+      email,
+      is_admin: isAdmin,
+      limit_amount: unlimited ? null : limit,
+      period: normalizePeriod(row?.period),
+      spent: usage.spent,
+      remaining: unlimited ? null : Math.max(0, limit - usage.spent),
+      unlimited,
+      request_count: usage.request_count,
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+    };
+  };
+  const usersTable = async () => {
+    try {
+      return await (db as any).select("users", {}) as Array<Record<string, any>>;
+    } catch {
+      return [] as Array<Record<string, any>>;
+    }
+  };
+  /**
+   * The hot path: called before a run starts, so it reads only this user's rows and
+   * never the user table. Identity is filled in by `listQuotas`, the only caller that
+   * displays it.
+   */
+  const quotaFor = async (userId: number): Promise<UserQuota> => {
+    const row = await db.selectOne("user_quotas", { user_id: userId }).catch(() => undefined) as any;
+    const usage = await spending(userId, normalizePeriod(row?.period));
+    return composeQuota(userId, "", "", false, row, usage);
+  };
+  const quotaRows = async () => {
+    try {
+      return await db.select("user_quotas", {}) as any[];
+    } catch {
+      return [] as any[];
+    }
+  };
+  const listQuotas = async (): Promise<UserQuota[]> => {
+    // One read of each table and a join in memory, rather than a usage query per user.
+    const [rows, people, logs] = await Promise.all([
+      quotaRows(),
+      usersTable(),
+      (db.select("token_logs", {}) as Promise<TokenLog[]>).catch(() => [] as TokenLog[]),
+    ]);
+    const byUser = new Map(rows.map((row) => [Number(row.user_id), row]));
+    const totals = new Map<number, { spent: number; request_count: number; input_tokens: number; output_tokens: number }>();
+    for (const log of logs) {
+      const userId = Number(log.user_id);
+      const period = normalizePeriod(byUser.get(userId)?.period);
+      if (period === "monthly" && String(log.created_at) < monthStart()) continue;
+      const totals_ = totals.get(userId) ?? { spent: 0, request_count: 0, input_tokens: 0, output_tokens: 0 };
+      totals.set(userId, {
+        spent: totals_.spent + (Number(log.cost) || 0),
+        request_count: totals_.request_count + 1,
+        input_tokens: totals_.input_tokens + (Number(log.input_tokens) || 0),
+        output_tokens: totals_.output_tokens + (Number(log.output_tokens) || 0),
+      });
+    }
+    const ids = new Set<number>(people.map((person) => Number(person.id)));
+    for (const row of rows) ids.add(Number(row.user_id));
+    for (const userId of totals.keys()) ids.add(userId);
+    return [...ids]
+      .map((userId) => {
+        const person = people.find((item) => Number(item.id) === userId);
+        const usage = totals.get(userId) ?? { spent: 0, request_count: 0, input_tokens: 0, output_tokens: 0 };
+        return composeQuota(userId, String(person?.username ?? ""), String(person?.email ?? ""), Boolean(person?.is_admin), byUser.get(userId), usage);
+      })
+      .sort((a, b) => a.user_id - b.user_id);
+  };
+  const setQuota = async (userId: number, limit: number | null, period?: QuotaPeriod): Promise<UserQuota> => {
+    if (!Number.isFinite(userId) || userId <= 0) throw new Error("user_id is required");
+    if (limit !== null && (!Number.isFinite(limit) || limit < 0)) throw new Error("limit_amount must be zero or more, or empty for unlimited");
+    const existing = await db.selectOne("user_quotas", { user_id: userId }).catch(() => undefined) as any;
+    const record = {
+      user_id: userId,
+      limit_amount: limit === null ? null : String(limit),
+      period: normalizePeriod(period ?? existing?.period),
+      updated_at: now(),
+    };
+    if (existing?.id) await db.update("user_quotas", { id: existing.id }, record as any);
+    else await db.create("user_quotas", { ...record, created_at: now() } as any);
+    return await quotaFor(userId);
+  };
   const service: BillingService = {
     countTokens: (_model, text) => estimate(text),
     calculateCost: (input, output, inputPrice, outputPrice, group = 1, channel = 1) => ((input * inputPrice + output * outputPrice) / 1_000_000) * group * channel,
@@ -154,14 +284,22 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
       const values = Object.fromEntries(priceFields.map((field) => [field, String(updates[field] ?? base[field] ?? "")])) as Record<string, string>; const record = { ...values, quota_type: Number(updates.quota_type ?? base.quota_type ?? 0), channel_id: channelId, model_config_id: modelConfigId, model_name: modelName, updated_at: now() };
       if (existing?.id) await db.update("model_prices", { id: existing.id }, record as any); else await db.create("model_prices", { ...record, created_at: now() } as any); return await db.selectOne("model_prices", { channel_id: channelId, model_config_id: modelConfigId }) as ModelPrice;
     },
-    balance: async (userId) => balances.get(userId) ?? 0,
-    charge: async (userId, amount) => { if (amount <= 0) return true; const current = balances.get(userId) ?? 0; if (current < amount) return false; balances.set(userId, current - amount); return true; },
+    quota: quotaFor,
+    setQuota,
+    listQuotas,
+    // Unlimited users report Infinity so a caller comparing against an amount keeps
+    // working without having to special-case them.
+    balance: async (userId) => {
+      const quota = await quotaFor(userId);
+      return quota.unlimited ? Number.POSITIVE_INFINITY : quota.remaining ?? 0;
+    },
   };
   ctx.on("advanced-chat.usage", async (usage: TokenUsageRecord) => {
     await recordUsage(usage).catch(() => undefined);
   });
   ctx.i18n("billing.config.currency", { zh: "计费货币", en: "Billing currency", ja: "請求通貨" });
   ctx.i18n("billing.modelPrices", { zh: "模型价格", en: "Model prices", ja: "モデル価格" });
+  ctx.i18n("billing.userQuotas", { zh: "用户额度", en: "User quotas", ja: "ユーザー割当" });
   ctx.component.dashboard.addEntry({ dev: new URL("../frontend/index.tsx", import.meta.url).pathname, prod: new URL("./frontend/billing.js", import.meta.url).pathname, plugin: "billing" });
   ctx.route("/api/billing/model-prices").methods("GET").action(async (session) => {
     if (!user(session)?.is_admin) { session.status = 403; session.respond({ error: "forbidden" }, "json"); return; }
@@ -171,6 +309,24 @@ export async function apply(ctx: Context, cfg: BillingConfig) {
     if (!user(session)?.is_admin) { session.status = 403; session.respond({ error: "forbidden" }, "json"); return; }
     try { const input = await body(session); session.respond(await service.setModelPrice(Number(input.channel_id), Number(input.model_config_id), input as any), "json"); }
     catch (error) { session.status = 400; session.respond({ error: error instanceof Error ? error.message : "invalid" }, "json"); }
+  });
+  ctx.route("/api/billing/quotas").methods("GET").action(async (session) => {
+    if (!user(session)?.is_admin) { session.status = 403; session.respond({ error: "forbidden" }, "json"); return; }
+    session.respond({ quotas: await listQuotas(), currency: cfg.currency }, "json");
+  });
+  ctx.route("/api/billing/quotas").methods("POST").action(async (session) => {
+    if (!user(session)?.is_admin) { session.status = 403; session.respond({ error: "forbidden" }, "json"); return; }
+    try {
+      const input = await body(session);
+      // An empty field in the form means "no limit", which is the default state.
+      const raw = input.limit_amount;
+      const limit = raw === null || raw === undefined || raw === "" ? null : Number(raw);
+      const period = input.period === "monthly" ? "monthly" : "total";
+      session.respond(await setQuota(Number(input.user_id), limit, period), "json");
+    } catch (error) {
+      session.status = 400;
+      session.respond({ error: error instanceof Error ? error.message : "invalid" }, "json");
+    }
   });
   const statisticsProvider = {
     id: "billing",

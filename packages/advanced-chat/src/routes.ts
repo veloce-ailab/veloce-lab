@@ -880,6 +880,18 @@ export function registerAdvancedChatRoutes(
     .action(async (session) => {
       const current = await user(session);
       if (current?.id === undefined) return;
+      // Nobody is limited unless an administrator assigned an allowance, so this only
+      // rejects a run once a configured limit is used up. The lookup fails open: a
+      // billing error must not take chat down when the default is "unlimited".
+      const billing = (ctx.component as any).billing as {
+        quota?: (userId: number) => Promise<{ unlimited: boolean; remaining: number | null; limit_amount: number | null }>;
+      } | undefined;
+      const allowance = await billing?.quota?.(current.id).catch(() => undefined);
+      if (allowance && !allowance.unlimited && (allowance.remaining ?? 0) <= 0) {
+        session.status = 402;
+        session.respond({ error: "quota_exceeded", limit_amount: allowance.limit_amount, remaining: allowance.remaining }, "json");
+        return;
+      }
       const input = await body(session);
       const messages = Array.isArray(input.messages)
         ? input.messages.map((item: any) => ({

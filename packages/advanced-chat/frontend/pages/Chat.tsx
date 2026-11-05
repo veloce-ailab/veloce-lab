@@ -3144,6 +3144,11 @@ export default function Chat() {
             signal: controller.signal,
           })
           if (!response.ok) {
+            // 402 is the quota gate rejecting the run before it starts. Show the reason
+            // instead of the `quota_exceeded` machine code the body carries.
+            if (response.status === 402) {
+              throw new Error(language === "zh" ? "额度已用尽，请联系管理员调整额度。" : "Your quota is used up. Ask an administrator to raise it.")
+            }
             throw new Error(await responseErrorMessage(response))
           }
           if (!response.body) {
