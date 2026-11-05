@@ -696,6 +696,16 @@ const SessionSidebarRow = memo(function SessionSidebarRow({
 })
 
 /**
+ * How often buffered assistant text is committed while a run streams.
+ *
+ * Every commit re-renders the conversation and re-parses the message as
+ * markdown, and a fast model can emit far more tokens than a screen can show.
+ * Roughly twelve commits a second still reads as smooth typing while cutting
+ * that work by most of it; the first token of a burst is never delayed.
+ */
+const assistantTextFlushMs = 80
+
+/**
  * `Date.parse` on an ISO string is not free, and the session list sorts and
  * groups on every streaming commit. Parsing each distinct timestamp once keeps
  * that work out of the frame budget.
@@ -3057,21 +3067,23 @@ export default function Chat() {
         }
 
         let accumulatedText = ""
-        // Text arrives one delta per token and every commit re-normalises the
-        // whole session, so applying a delta as it landed meant a full session
-        // rebuild per token. Text is the only high-frequency event: buffer it and
-        // commit at most once per frame. Status changes, tool calls and the final
-        // message still commit immediately so ordering is unchanged.
+        // Text arrives one delta per token and every commit re-renders the
+        // conversation, so applying a delta as it landed meant a full rebuild per
+        // token. Text is the only high-frequency event: buffer it and commit at
+        // most once per `assistantTextFlushMs`. Status changes, tool calls and
+        // the final message still commit immediately so ordering is unchanged.
         let pendingTextDeltas: Array<{ round: number; delta: string }> = []
-        let pendingFrame = 0
+        let pendingTimer = 0
+        let lastFlushAt = 0
         const flushAssistantText = () => {
-          if (pendingFrame) {
-            cancelAnimationFrame(pendingFrame)
-            pendingFrame = 0
+          if (pendingTimer) {
+            window.clearTimeout(pendingTimer)
+            pendingTimer = 0
           }
           if (!pendingTextDeltas.length) {
             return
           }
+          lastFlushAt = Date.now()
           const deltas = pendingTextDeltas
           pendingTextDeltas = []
           // `accumulatedText` is the full text so far, so it is always ahead of
@@ -3084,13 +3096,16 @@ export default function Chat() {
           }))
         }
         const scheduleAssistantText = () => {
-          if (pendingFrame) {
+          if (pendingTimer) {
             return
           }
-          pendingFrame = requestAnimationFrame(() => {
-            pendingFrame = 0
+          // Leading edge first: the first token of a burst shows up right away,
+          // the rest of the burst rides along until the interval has passed.
+          const wait = Math.max(0, assistantTextFlushMs - (Date.now() - lastFlushAt))
+          pendingTimer = window.setTimeout(() => {
+            pendingTimer = 0
             flushAssistantText()
-          })
+          }, wait)
         }
         try {
           const token = getAuthToken()
@@ -3191,9 +3206,9 @@ export default function Chat() {
             } else if (event.type === "done") {
               // The final message carries the complete text and parts, so a
               // buffered delta would only add a redundant commit.
-              if (pendingFrame) {
-                cancelAnimationFrame(pendingFrame)
-                pendingFrame = 0
+              if (pendingTimer) {
+                window.clearTimeout(pendingTimer)
+                pendingTimer = 0
               }
               pendingTextDeltas = []
               const reportedContent = typeof event.payload.message?.content === "string" ? event.payload.message.content : ""
@@ -3261,11 +3276,11 @@ export default function Chat() {
             error(apiErrorMessage(err, err instanceof Error ? err.message : copy.sendFailed))
           }
         } finally {
-          // A frame outliving the stream would commit into a session that has
+          // A timer outliving the stream would commit into a session that has
           // already been finalised.
-          if (pendingFrame) {
-            cancelAnimationFrame(pendingFrame)
-            pendingFrame = 0
+          if (pendingTimer) {
+            window.clearTimeout(pendingTimer)
+            pendingTimer = 0
           }
           pendingTextDeltas = []
           abortControllerRef.current = null
