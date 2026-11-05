@@ -5,6 +5,7 @@ import "@xterm/xterm/css/xterm.css"
 import { TerminalSquare } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toolCommandTranscript, toolPreviewPath, type ToolPreviewCall } from "../../lib/tool-preview"
+import { Collapse } from "./Collapse"
 
 const ToolFilePreview = lazy(() => import("./ToolFilePreview"))
 
@@ -19,7 +20,7 @@ export interface ToolCallPreviewProps {
 /** Display a recorded invocation only. This never starts a shell or reads today's file. */
 export function ToolCallPreview({ toolCall, kind, language, open, onOpenChange }: ToolCallPreviewProps) {
   const zh = language === "zh"
-  if (kind === "command") return open ? <ToolCommandOutput toolCall={toolCall} language={language} /> : null
+  if (kind === "command") return <Collapse open={open}><ToolCommandOutput toolCall={toolCall} language={language} /></Collapse>
   const path = toolPreviewPath(toolCall)
   const failed = ["error", "invalid_arguments", "cancelled"].includes(toolCall.status)
   return (

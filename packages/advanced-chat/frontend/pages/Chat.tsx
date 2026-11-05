@@ -3,6 +3,7 @@ import { channelIDForModel, groupModelsByChannel } from "../lib/model-groups"
 import { workspacePickerCanGoUp, workspacePickerIsDriveRoot, workspacePickerIsWindows, workspacePickerParentPath } from "../lib/workspace-picker"
 import { conversationRecords, mergeConversationTools, readConversationRecords, type ConversationComposerBlock, type ConversationRecord } from "../../src/conversation-records"
 import { ToolCallPreview } from "../components/chat/ToolCallPreview"
+import { Collapse } from "../components/chat/Collapse"
 import { toolActivityKind, toolActivitySummary } from "../lib/tool-activity"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
@@ -5452,12 +5453,14 @@ function ToolCallRounds({
         className="flex max-w-full items-center gap-2 rounded py-1.5 text-left text-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <Icon size={17} className={cn("shrink-0", busy && "animate-spin")} />
         <span className="min-w-0 truncate">{toolActivitySummary(toolCalls, language)}</span>
-        <ChevronDown size={15} className={cn("shrink-0 transition-transform", !open && "-rotate-90")} />
+        <ChevronDown size={15} className={cn("shrink-0 transition-transform duration-200 motion-reduce:transition-none", !open && "-rotate-90")} />
       </button>
-      {open && <div className={cn("mt-1 space-y-0.5", toolCalls.length > 6 && "max-h-80 overflow-y-auto overscroll-contain pr-2")}>
-        {toolCalls.map((toolCall) => <ToolCallDetails key={toolCall.id} toolCall={toolCall} copy={copy}
-          approvalTask={findConnectorApprovalTask(toolCall, approvalTasks)} decidingTaskID={decidingTaskID} onDecide={onDecide} />)}
-      </div>}
+      <Collapse open={open} className="mt-1">
+        <div className={cn("space-y-0.5", toolCalls.length > 6 && "max-h-80 overflow-y-auto overscroll-contain pr-2")}>
+          {toolCalls.map((toolCall) => <ToolCallDetails key={toolCall.id} toolCall={toolCall} copy={copy}
+            approvalTask={findConnectorApprovalTask(toolCall, approvalTasks)} decidingTaskID={decidingTaskID} onDecide={onDecide} />)}
+        </div>
+      </Collapse>
       {!open && approvalTasks.filter((task) => toolCalls.some((call) => connectorApprovalTaskMatchesToolCall(call, task))).map((task) => (
         <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
           <span>{copy.toolStatusApprovalRequired}</span>
@@ -5510,10 +5513,10 @@ function ToolCallDetails({ toolCall, copy, approvalTask, decidingTaskID = "", on
       <ConnectorApprovalControls task={approvalTask} copy={copy} decidingTaskID={decidingTaskID} onDecide={onDecide} className="my-1 ml-6" />
       {kind === "command" || filePreview ? (
         <ToolCallPreview toolCall={toolCall} kind={kind as "command" | "read" | "write" | "replace"} language={language} open={open} onOpenChange={setOpen} />
-      ) : open ? <div className="mb-2 ml-6">
+      ) : <Collapse open={open} className="mb-2 ml-6">
         {!kind && <><div className="mt-2 text-[11px] font-medium">{copy.toolArguments}</div><pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-xs">{formatToolArguments(toolCall.arguments)}</pre></>}
         <ToolResultBlock result={toolCall.result} copy={copy} />
-      </div> : null}
+      </Collapse>}
     </div>
   )
 }
