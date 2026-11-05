@@ -5,7 +5,7 @@ import { conversationRecords, mergeConversationTools, readConversationRecords, t
 import { ToolCallPreview } from "../components/chat/ToolCallPreview"
 import { Collapse } from "../components/chat/Collapse"
 import { toolActivityKind, toolActivitySummary } from "../lib/tool-activity"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
@@ -924,7 +924,20 @@ export default function Chat() {
     () => sessions.find((session) => session.id === activeSessionID) || (loadedSharedSession?.id === activeSessionID ? loadedSharedSession : undefined),
     [sessions, activeSessionID, loadedSharedSession]
   )
-  const displaySessions = useMemo(() => sessions.map(normalizeRuntimeSession), [sessions])
+  // `sessions` gets a new array on every streaming commit while only the active
+  // session is a new object, so normalising the list wholesale rebuilt every
+  // message of every session per frame. Reuse the last result per session.
+  const normalizedSessionCache = useRef(new WeakMap<ChatSession, ChatSession>())
+  const displaySessions = useMemo(
+    () => sessions.map((session) => {
+      const cached = normalizedSessionCache.current.get(session)
+      if (cached) return cached
+      const normalized = normalizeRuntimeSession(session)
+      normalizedSessionCache.current.set(session, normalized)
+      return normalized
+    }),
+    [sessions]
+  )
   const searchedSessions = useMemo(
     () => displaySessions
       .sort((a, b) => Date.parse(b.updated_at || b.created_at) - Date.parse(a.updated_at || a.created_at)),
@@ -3215,6 +3228,16 @@ export default function Chat() {
     }
   }
 
+  // The rows below are memoised, so their callbacks have to keep a stable
+  // identity or every commit re-renders the whole conversation. Each wrapper
+  // calls through a ref instead of closing over the handler, so it stays fresh
+  // without the wrapper itself changing.
+  const chatActionsRef = useRef({ copyMessage, forkMessage, decideConnectorApproval })
+  chatActionsRef.current = { copyMessage, forkMessage, decideConnectorApproval }
+  const onCopyMessage = useCallback((message: ChatMessage) => void chatActionsRef.current.copyMessage(message), [])
+  const onForkMessage = useCallback((message: ChatMessage) => void chatActionsRef.current.forkMessage(message), [])
+  const onDecideConnectorApproval = useCallback((taskID: string, approved: boolean) => void chatActionsRef.current.decideConnectorApproval(taskID, approved), [])
+
   const handleMessageSelectionContextMenu = () => {
     const selection = window.getSelection()
     const rawText = selection?.toString().replace(/\s+/g, " ").trim() || ""
@@ -4103,10 +4126,10 @@ export default function Chat() {
                             copy={copy}
                             approvalTasks={pendingConnectorApprovals}
                             decidingTaskID={decidingConnectorTaskID}
-                            onDecide={decideConnectorApproval}
-                            onCopy={() => copyMessage(message)}
-                             onFork={() => void forkMessage(message)}
-                             forkEnabled={chatForkEnabled}
+                            onDecide={onDecideConnectorApproval}
+                            onCopy={onCopyMessage}
+                            onFork={onForkMessage}
+                            forkEnabled={chatForkEnabled}
                              forkLabel={language === "zh" ? "创建分支" : "Fork chat"}
                             controlsHidden={isActiveRunRunning && activeRun?.assistant_message_id === message.id}
                           />
@@ -4157,7 +4180,7 @@ export default function Chat() {
                                       copy={copy}
                                       approvalTasks={pendingConnectorApprovals}
                                       decidingTaskID={decidingConnectorTaskID}
-                                      onDecide={decideConnectorApproval}
+                                      onDecide={onDecideConnectorApproval}
                                     />
                                   )}
                                 </div>
@@ -4290,7 +4313,7 @@ export default function Chat() {
                       tasks={pendingConnectorApprovals}
                       copy={copy}
                       decidingTaskID={decidingConnectorTaskID}
-                      onDecide={decideConnectorApproval}
+                      onDecide={onDecideConnectorApproval}
                     />
                   )}
                   {attachments.length > 0 && (
@@ -5218,7 +5241,7 @@ type MarkdownBlock =
   | { type: "table"; headers: string[]; alignments: Array<"left" | "center" | "right">; rows: string[][] }
   | { type: "hr" }
 
-function MarkdownContent({ content }: { content: string }) {
+function MarkdownContentImpl({ content }: { content: string }) {
   const blocks = parseMarkdownBlocks(content)
   if (blocks.length === 0) {
     return null
@@ -5229,6 +5252,13 @@ function MarkdownContent({ content }: { content: string }) {
     </div>
   )
 }
+
+/**
+ * Parsing markdown is by far the most expensive per-message work, and the whole
+ * conversation re-renders on every streaming frame. The component depends on the
+ * text alone, so an unchanged message skips the parser entirely.
+ */
+const MarkdownContent = memo(MarkdownContentImpl)
 
 function UserMessageContent({ content, blocks = [] }: { content: string; blocks?: ConversationComposerBlock[] }) {
   const parsed = parseMessageAttachments(content)
@@ -5289,7 +5319,16 @@ function AttachmentChips({
   )
 }
 
-function AssistantMessageSequence({
+/** A shared empty list: a fresh `[]` on every render defeats the memo checks below. */
+const EMPTY_APPROVAL_TASKS: ConnectorApprovalTask[] = []
+
+/**
+ * Memoised because it is the expensive row: it derives round blocks, then
+ * renders markdown and tool calls for every part. Every prop is either a
+ * primitive or held stable by the caller, so an untouched message costs one
+ * shallow comparison instead of a full re-render.
+ */
+const AssistantMessageSequence = memo(function AssistantMessageSequence({
   message,
   activeRun,
   copy,
@@ -5308,8 +5347,8 @@ function AssistantMessageSequence({
   approvalTasks: ConnectorApprovalTask[]
   decidingTaskID: string
   onDecide: (taskID: string, approved: boolean) => void
-  onCopy: () => void
-  onFork: () => void
+  onCopy: (message: ChatMessage) => void
+  onFork: (message: ChatMessage) => void
   forkEnabled: boolean
   forkLabel: string
   controlsHidden: boolean
@@ -5338,10 +5377,10 @@ function AssistantMessageSequence({
                     controlsHidden && "pointer-events-none opacity-0"
                   )}
                 >
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCopy} title={copy.copyMessage}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCopy(message)} title={copy.copyMessage}>
                     <Copy size={14} />
                   </Button>
-                  {forkEnabled && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onFork} title={forkLabel}><GitBranch size={14} /></Button>}
+                  {forkEnabled && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onFork(message)} title={forkLabel}><GitBranch size={14} /></Button>}
                 </div>
               </div>
             ))}
@@ -5353,7 +5392,7 @@ function AssistantMessageSequence({
               toolCalls={block.toolCalls}
               expanded={callIsRunning}
               copy={copy}
-              approvalTasks={block.toolCalls.some((toolCall) => toolCall.status === "approval_required") ? approvalTasks : []}
+              approvalTasks={block.toolCalls.some((toolCall) => toolCall.status === "approval_required") ? approvalTasks : EMPTY_APPROVAL_TASKS}
               decidingTaskID={decidingTaskID}
               onDecide={onDecide}
             />
@@ -5362,9 +5401,9 @@ function AssistantMessageSequence({
       ))}
     </div>
   )
-}
+})
 
-function MessageContent({
+const MessageContent = memo(function MessageContent({
   message,
   activeRun,
   isAdvanced,
@@ -5421,17 +5460,17 @@ function MessageContent({
           toolCalls={block.toolCalls}
           expanded={callIsRunning}
           copy={copy}
-          approvalTasks={isAdvanced && block.toolCalls.some((toolCall) => toolCall.status === "approval_required") ? approvalTasks : []}
+          approvalTasks={isAdvanced && block.toolCalls.some((toolCall) => toolCall.status === "approval_required") ? approvalTasks : EMPTY_APPROVAL_TASKS}
           decidingTaskID={decidingTaskID}
           onDecide={onDecide}
         />
       ))}
     </div>
   )
-}
+})
 
-function ToolCallRounds({
-  toolCalls, copy, approvalTasks = [], decidingTaskID = "", onDecide, expanded = false,
+const ToolCallRounds = memo(function ToolCallRounds({
+  toolCalls, copy, approvalTasks = EMPTY_APPROVAL_TASKS, decidingTaskID = "", onDecide, expanded = false,
 }: {
   toolCalls: ChatToolCall[]
   copy: ChatCopy
@@ -5469,7 +5508,7 @@ function ToolCallRounds({
       ))}
     </div>
   )
-}
+})
 
 function toolActivityIcon(kind: ReturnType<typeof builtinToolKind>) {
   switch (kind) {
@@ -7146,13 +7185,37 @@ function normalizeSession(value: unknown): ChatSession | null {
   }
 }
 
+/**
+ * Normalises one message, returning the *same* object when it already is.
+ *
+ * `readConversationRecords` always allocates, so the previous version rebuilt
+ * every message on every call. A streaming commit runs this over the whole
+ * session, which handed a fresh object to every row sixty times a second and
+ * made memoisation impossible. Identity is preserved unless something actually
+ * changes, and only the first pass pays for the allocation.
+ */
+function normalizeRuntimeMessage(message: ChatMessage): ChatMessage {
+  const records = readConversationRecords(message.records)
+  if (records.length) {
+    // Already normalised: the filter kept every entry, so the object is final.
+    return Array.isArray(message.records) && message.records.length === records.length
+      ? message
+      : { ...message, records }
+  }
+  return {
+    ...message,
+    records: conversationRecords(
+      message.content_parts || (message.content ? [{ round: 1, content: message.content }] : []),
+      message.tool_calls || [],
+      message.composer_blocks || [],
+    ),
+  }
+}
+
 function normalizeRuntimeSession(session: ChatSession): ChatSession {
   return {
     ...session,
-    messages: Array.isArray(session.messages) ? session.messages.map((message) => {
-      const records = readConversationRecords(message.records)
-      return { ...message, records: records.length ? records : conversationRecords(message.content_parts || (message.content ? [{ round: 1, content: message.content }] : []), message.tool_calls || [], message.composer_blocks || []) }
-    }) : [],
+    messages: Array.isArray(session.messages) ? session.messages.map(normalizeRuntimeMessage) : [],
     skill_ids: Array.isArray(session.skill_ids) ? session.skill_ids.filter((id): id is string => typeof id === "string") : [],
     mcp_server_ids: Array.isArray(session.mcp_server_ids) ? session.mcp_server_ids.filter((id): id is string => typeof id === "string") : [],
 		knowledge_base_ids: Array.isArray(session.knowledge_base_ids) ? session.knowledge_base_ids.filter((id): id is string => typeof id === "string") : [],
@@ -7160,12 +7223,31 @@ function normalizeRuntimeSession(session: ChatSession): ChatSession {
       ? session.connector_command_prefixes.filter((prefix): prefix is string => typeof prefix === "string")
       : [],
     run_mode: normalizeChatRunMode(session.run_mode),
-    latest_run: normalizeRun(session.latest_run),
+    latest_run: normalizeRunCached(session.latest_run),
   }
 }
 
 function normalizeChatRunMode(value: unknown): ChatRunMode {
   return value === "assistant" || value === "agent_group" ? value : "chat"
+}
+
+/**
+ * Runs are rebuilt every time their session is normalised, and `activeRun` is a
+ * prop of every message row, so an unchanged run keeping its identity is what
+ * lets those rows skip a render. Keyed on the raw run object, which a text-only
+ * session update carries over untouched.
+ */
+const normalizedRunCache = new WeakMap<object, ChatRun | undefined>()
+function normalizeRunCached(value: unknown): ChatRun | undefined {
+  if (!isRecord(value)) {
+    return undefined
+  }
+  if (normalizedRunCache.has(value)) {
+    return normalizedRunCache.get(value)
+  }
+  const normalized = normalizeRun(value)
+  normalizedRunCache.set(value, normalized)
+  return normalized
 }
 
 function normalizeRun(value: unknown): ChatRun | undefined {
