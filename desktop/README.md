@@ -88,6 +88,15 @@ window gets the desktop bridge, so another program on the machine must not be ab
 to claim the address first. `desktop-server.json` records the port that was used,
 for diagnostics.
 
+## The tray
+
+The tray menu shows the conversations the server says are recent — its
+`GET /api/desktop/recent-sessions` (provided by `@velocelab/desktop`) — newest
+first, up to eight. Choosing one brings the window forward on that conversation
+(by changing the panel's hash, so nothing reloads); a server without the plugin
+simply has no list. The menu is refreshed when a window finishes loading, after
+the built-in server is up, and every fifteen seconds.
+
 ## Developer mode
 
 A release build only talks to the server it started. Settings → *Developer mode*

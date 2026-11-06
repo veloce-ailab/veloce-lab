@@ -10,6 +10,7 @@
     "build": "../../node_modules/.bin/tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@velocelab/advanced-chat": "^0.1.2",
     "@velocelab/dashboard": "^0.1.5"
   },
   "peerDependencies": {

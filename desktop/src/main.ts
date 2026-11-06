@@ -389,6 +389,7 @@ async function ensureBuiltinServerRunning() {
     builtinServerRestarts = 0
     updateBuiltinServerStatus({ phase: "running", message: "Built-in server is running", serverURL: url, version: app.getVersion() })
     loadAppInWindows(url)
+  void refreshRecentSessions()
     return builtinServerStatus
   } catch (error) {
     serverReady = false
@@ -531,6 +532,9 @@ function createWindow() {
     if (mainWindow === window) {
       mainWindow = Array.from(appWindows)[0] || null
     }
+  })
+  window.webContents.on("did-finish-load", () => {
+    void refreshRecentSessions()
   })
   window.webContents.on("before-input-event", (event, input) => {
     if (!desktopDevMode || input.type !== "keyDown") return
@@ -1182,14 +1186,29 @@ function downloadFile(url: string, destination: string) {
 
 
 
-function createTray() {
-  if (tray) {
-    return
-  }
-  tray = new Tray(iconPath)
-  tray.setToolTip(desktopDisplayName)
-  tray.setContextMenu(Menu.buildFromTemplate([
+interface RecentSession {
+  id: string
+  title: string
+  updated_at: string
+}
+
+let recentSessions: RecentSession[] = []
+let recentSessionsRefreshing = false
+
+/** The menu the tray shows: what this window can do, and where you were. */
+function trayMenuTemplate(): Electron.MenuItemConstructorOptions[] {
+  const sessions: Electron.MenuItemConstructorOptions[] = recentSessions.length
+    ? recentSessions.map((session) => ({
+        label: session.title || "未命名会话",
+        tooltip: session.updated_at,
+        click: () => openSessionInWindow(session.id),
+      }))
+    : [{ label: "暂无最近会话", enabled: false }]
+  return [
     { label: `显示 ${desktopDisplayName}`, click: showMainWindow },
+    { label: "新建窗口", click: () => openWindow() },
+    { type: "separator" },
+    { label: "最近会话", submenu: sessions },
     { type: "separator" },
     {
       label: "退出",
@@ -1198,7 +1217,68 @@ function createTray() {
         app.quit()
       },
     },
-  ]))
+  ]
+}
+
+function rebuildTrayMenu() {
+  if (!tray) return
+  tray.setContextMenu(Menu.buildFromTemplate(trayMenuTemplate()))
+}
+
+/**
+ * Asks the server which conversations are recent. The answer comes from
+ * `@velocelab/desktop`, which is the only place that knows what the shell may
+ * know; a server without it simply has no sessions to offer.
+ */
+async function refreshRecentSessions() {
+  if (recentSessionsRefreshing) return
+  const base = activeServerURL || (serverReady ? trustedServerURL() : "")
+  if (!base) {
+    if (recentSessions.length) {
+      recentSessions = []
+      rebuildTrayMenu()
+    }
+    return
+  }
+  recentSessionsRefreshing = true
+  try {
+    const response = await fetch(`${base}/api/desktop/recent-sessions?limit=8`, {
+      signal: AbortSignal.timeout(3000),
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const payload = (await response.json()) as { sessions?: RecentSession[] }
+    recentSessions = Array.isArray(payload.sessions) ? payload.sessions.slice(0, 8) : []
+  } catch {
+    // The menu is a convenience: keep what it had rather than emptying it on one
+    // failed request.
+  } finally {
+    recentSessionsRefreshing = false
+    rebuildTrayMenu()
+  }
+}
+
+/** Brings a window forward on one conversation, without reloading the panel. */
+function openSessionInWindow(sessionId: string) {
+  const base = (activeServerURL || trustedServerURL()).replace(/\/+$/, "")
+  if (!base) return
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  showMainWindow()
+  const hash = `#/chat/session/${encodeURIComponent(sessionId)}`
+  if (window.webContents.getURL().startsWith(base)) {
+    void window.webContents.executeJavaScript(`window.location.hash = ${JSON.stringify(hash)}`)
+    window.focus()
+    return
+  }
+  void window.loadURL(`${base}/${hash}`)
+}
+
+function createTray() {
+  if (tray) {
+    return
+  }
+  tray = new Tray(iconPath)
+  tray.setToolTip(desktopDisplayName)
+  rebuildTrayMenu()
   tray.on("click", showMainWindow)
 }
 
@@ -1226,6 +1306,9 @@ if (gotSingleInstanceLock) {
       void ensureBuiltinServerRunning()
     }
     app.on("activate", showMainWindow)
+    // Slow enough to be free, fast enough that the tray follows the conversation
+    // the user just had.
+    setInterval(() => void refreshRecentSessions(), 15_000).unref()
   }
   app.whenReady().then(start).catch((error: unknown) => {
     const message = error instanceof Error ? error.stack || error.message : String(error)
