@@ -4,6 +4,8 @@ export const messageTranslations = {
   "message.empty": { zh: "暂无消息", en: "No messages", ja: "メッセージはありません" },
   "message.from": { zh: "来自 {source}", en: "From {source}", ja: "送信元: {source}" },
   "message.delete": { zh: "删除消息", en: "Delete message", ja: "メッセージを削除" },
+  "message.clearAll": { zh: "清空消息", en: "Clear all", ja: "すべて消去" },
+  "message.clearConfirm": { zh: "将删除全部 {count} 条消息，此操作无法恢复。", en: "This will delete all {count} messages. This cannot be undone.", ja: "全 {count} 件のメッセージを削除します。この操作は取り消せません。" },
   "message.markRead": { zh: "标记已读", en: "Mark as read", ja: "既読にする" },
   "message.types": { zh: "消息类型", en: "Message types", ja: "メッセージの種類" },
   "message.other": { zh: "其他消息", en: "Other messages", ja: "その他のメッセージ" },
