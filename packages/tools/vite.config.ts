@@ -18,7 +18,7 @@ export default defineConfig({
   ] },
   build: {
     outDir: "dist/frontend",
-    rollupOptions: { external: [client] },
+    rollupOptions: { output: { codeSplitting: false },  external: [client] },
     lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "tools.js" },
   },
 })

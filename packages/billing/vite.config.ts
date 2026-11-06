@@ -20,5 +20,5 @@ export default defineConfig({
       { find: "@", replacement: "frontend" },
     ],
   },
-  build: { outDir: "dist/frontend", rollupOptions: { external: [client] }, lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "billing.js" } },
+  build: { outDir: "dist/frontend", rollupOptions: { output: { codeSplitting: false },  external: [client] }, lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "billing.js" } },
 });

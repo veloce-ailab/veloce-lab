@@ -16,5 +16,5 @@ export default defineConfig({
       { find: /^@\/(components|lib|hooks)(?:\/.*)?$/, replacement: client }, { find: "@", replacement: "frontend" },
     ],
   },
-  build: { outDir: "dist/frontend", rollupOptions: { external: [client] }, lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "skill.js" } },
+  build: { outDir: "dist/frontend", rollupOptions: { output: { codeSplitting: false },  external: [client] }, lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "skill.js" } },
 });

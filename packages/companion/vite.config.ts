@@ -19,5 +19,5 @@ export default defineConfig({
     { find: /^@\/(components|lib|hooks)(?:\/.*)?$/, replacement: client },
     { find: "@", replacement: frontend },
   ] },
-  build: { outDir: "dist/frontend", emptyOutDir: true, rollupOptions: { external: [client] }, lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "companion.js" } },
+  build: { outDir: "dist/frontend", emptyOutDir: true, rollupOptions: { output: { codeSplitting: false },  external: [client] }, lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "companion.js" } },
 });

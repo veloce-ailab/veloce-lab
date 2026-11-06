@@ -22,7 +22,7 @@ export default defineConfig({
   build: {
     outDir: "dist/frontend",
     emptyOutDir: true,
-    rollupOptions: { external: [client] },
+    rollupOptions: { output: { codeSplitting: false },  external: [client] },
     lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "settings.js" },
   },
 });

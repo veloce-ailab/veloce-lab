@@ -17,7 +17,7 @@ export default defineConfig({
   build: {
     outDir: "dist/frontend",
     emptyOutDir: true,
-    rollupOptions: { external: [client], output: { inlineDynamicImports: true } },
+    rollupOptions: { external: [client], output: { codeSplitting: false } },
     lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "chat-git.js" },
   },
 })

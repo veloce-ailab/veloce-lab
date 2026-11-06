@@ -16,4 +16,4 @@ export default defineConfig({ define: { "process.env.NODE_ENV": JSON.stringify("
   { find: /^@\/components\/chat/, replacement: path.join(frontend, "components/chat") },
   { find: /^@\/(components|lib|hooks)(?:\/.*)?$/, replacement: client },
   { find: "@", replacement: frontend },
-] }, build: { outDir: "dist/frontend", emptyOutDir: true, rollupOptions: { external: [client] }, lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "advanced-chat.js" } } });
+] }, build: { outDir: "dist/frontend", emptyOutDir: true, rollupOptions: { external: [client], output: { codeSplitting: false } }, lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "advanced-chat.js" } } });

@@ -11,5 +11,5 @@ export default defineConfig({
     { find: /^@\/(components|lib|hooks)(?:\/.*)?$/, replacement: client },
     { find: "@", replacement: path.resolve(import.meta.dirname, "frontend") },
   ] },
-  build: { outDir: "dist/frontend", emptyOutDir: true, rollupOptions: { external: [client], output: { inlineDynamicImports: true } }, lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "browser.js" } },
+  build: { outDir: "dist/frontend", emptyOutDir: true, rollupOptions: { external: [client], output: { codeSplitting: false } }, lib: { entry: "frontend/index.tsx", formats: ["es"], fileName: () => "browser.js" } },
 })

@@ -3,12 +3,33 @@ import type { DashboardPlugin } from "./runtime"
 export interface DashboardPluginAsset { id: string; url: string; mime?: string; plugin?: string; data?: Record<string, unknown> }
 export interface DashboardManifestEntry { id: string; plugin?: string; data?: Record<string, unknown>; files: DashboardPluginAsset[] }
 export interface DashboardManifest { revision?: string; entries?: DashboardManifestEntry[]; assets?: DashboardPluginAsset[]; i18n?: Record<string, Record<string, string>> }
+/**
+ * Some bundled dependencies are still CommonJS and call `require("react")`,
+ * which the build rewrites to this panel's runtime URL. A module has no `require`
+ * in the browser, so those calls land in a shim that can only work if one
+ * exists — and the one thing they can name is the runtime every plugin shares.
+ * Installing it before the first plugin loads keeps such dependencies working
+ * without bundling a second copy of React into every plugin.
+ */
+let requireShim: Promise<void> | undefined
+function installRequireShim() {
+  const target = globalThis as { require?: (id: string) => unknown }
+  requireShim ??= import(/* @vite-ignore */ "/dashboard-client.js").then((runtime) => {
+    target.require ??= (id: string) => {
+      if (id === "/dashboard-client.js") return runtime
+      throw new Error(`require("${id}") is not available inside the dashboard panel`)
+    }
+  })
+  return requireShim
+}
+
 export class DashboardPluginLoader {
   private readonly contexts = new Map<string, DashboardContext>()
   private readonly styles = new Map<string, HTMLLinkElement[]>()
   private readonly signatures = new Map<string, string>()
   async sync(input: DashboardManifest | DashboardPluginAsset[]) {
     const entries = Array.isArray(input) ? this.legacyEntries(input) : (input.entries?.length ? input.entries : this.legacyEntries(input.assets ?? []))
+    if (entries.length > 0) await installRequireShim()
     const next = new Set(entries.map((entry) => entry.id))
     for (const [id, context] of [...this.contexts]) {
       if (next.has(id)) continue
