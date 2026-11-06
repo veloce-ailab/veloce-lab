@@ -6,7 +6,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import api from "@/lib/api";
+import api, { isDesktopTarget } from "@/lib/api";
 import type { PublicSettings } from "@/lib/public-settings";
 import { withPublicSettingsDefaults } from "@/lib/public-settings";
 import { cn } from "@/lib/utils";
@@ -25,7 +25,9 @@ export function Layout({ children }: { children?: ReactNode }) {
   });
   const publicSettings = withPublicSettingsDefaults(settings);
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-background">
+    // The desktop shell gives this container a definite height (the window minus
+    // its title bar), so the layout fills it rather than the whole viewport.
+    <div className={cn("flex flex-col overflow-hidden bg-background", isDesktopTarget() ? "h-full" : "h-dvh")}>
       <DashboardSlot name="header.before" />
       {/* The top bar belongs to its own package and is rendered from the slot;
           the console only supplies the control that drives its own sidebar. */}

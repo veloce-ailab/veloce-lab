@@ -171,6 +171,16 @@ function main() {
   }
   console.log(`[build-server] ${plugins.length} plugins`)
 
+  // A panel without its shared runtime renders blank, and the dashboard's own
+  // app build wipes `dist/web` first — so this is checked here rather than
+  // discovered on a user's screen.
+  const clientBundle = path.join(repoRoot, "packages", "dashboard", "dist", "web", "dashboard-client.js")
+  if (!fs.existsSync(clientBundle)) {
+    throw new Error(
+      `The dashboard client bundle is missing (${clientBundle}). Run \`yarn build\` in the repository root ` +
+        "(the dashboard's build has three steps; running only the first one deletes it).",
+    )
+  }
   fs.copyFileSync(templatePath, path.join(outputRoot, "yumeri.json"))
   console.log(`[build-server] payload ${directorySize(outputRoot)}`)
 }

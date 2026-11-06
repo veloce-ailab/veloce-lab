@@ -225,7 +225,11 @@ export function DesktopShell() {
       <DesktopNavigationBridge />
       <DocumentTitle />
       <DesktopTitleBar overlay={overlay} />
-      <div className={cn("fixed inset-x-0 bottom-0 overflow-hidden bg-background", overlayTitleBarClass)}>
+      {/* `transform-gpu` makes this box the containing block for the panel's own
+          `position: fixed` children (the chat sidebar is one) — without it they
+          pin themselves to the viewport and slide under the title bar. Portals
+          still go to the body, so dialogs and menus are unaffected. */}
+      <div className={cn("fixed inset-x-0 bottom-0 transform-gpu overflow-hidden bg-background", overlayTitleBarClass)}>
         <DesktopPageRoutes />
       </div>
     </HashRouter>
