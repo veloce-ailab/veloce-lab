@@ -733,7 +733,10 @@ const SessionSidebarRow = memo(function SessionSidebarRow({
   >
     <button type="button" className="min-w-0 text-left" onClick={() => actions.select(session.id)}>
       <div className="flex min-w-0 items-center gap-1.5">
-        {isRunActive(session.latest_run) && <RefreshCw size={12} className="shrink-0 animate-spin text-primary" aria-label={language === "zh" ? "任务运行中" : "Task running"} />}
+        {/* The same spinner a running tool shows, so "this conversation is working"
+            reads the same wherever it appears; a rotating refresh arrow looked like
+            a button that had been pressed. */}
+        {isRunActive(session.latest_run) && <Loader2 size={13} className="shrink-0 animate-spin text-primary" aria-label={language === "zh" ? "任务运行中" : "Task running"} />}
         <div className={cn("truncate text-xs font-medium", isActive ? "text-primary" : "text-foreground")}>{session.title || copy.untitledSession}</div>
         {archived && (
           <span className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-[10px] font-normal text-muted-foreground">
