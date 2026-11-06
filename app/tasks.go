@@ -17,6 +17,11 @@ func (client connectorClient) pollLoop() {
 			continue
 		}
 		if envelope.Task == nil || envelope.Task.ID == "" {
+			// Nothing to do yet. The server answers an empty queue immediately, so
+			// a bare `continue` would hammer it — and its database — as fast as the
+			// network allows; a short pause keeps a tool call responsive without
+			// turning an idle connector into a spin loop.
+			time.Sleep(idlePollInterval)
 			continue
 		}
 		// Terminal tasks are short-lived polls that must not queue behind a
@@ -45,6 +50,9 @@ func (client connectorClient) runTask(task connectorTask, verbose bool) {
 		fmt.Printf("result upload failed: %v\n", err)
 	}
 }
+
+// idlePollInterval is how long the poll loop rests between empty answers.
+const idlePollInterval = 250 * time.Millisecond
 
 func isTerminalTaskAction(action string) bool {
 	switch action {
@@ -190,8 +198,11 @@ func (client connectorClient) executeTask(task connectorTask) (taskResult, error
 		result, err := syncAgentSkills(task.Payload)
 		return textTaskResult(result), err
 	case "list_windows_drives":
-		result, err := listWindowsDrives()
-		return textTaskResult(result), err
+		return jsonAction(windowsDriveEntries(), nil)
+	case "list_directories":
+		return jsonAction(actionListDirectories("", task.Payload))
+	case "pick_directory":
+		return jsonAction(actionPickDirectory(task.Payload))
 	case "list_agent_groups":
 		result, err := listAgentGroups()
 		return textTaskResult(result), err
@@ -223,21 +234,24 @@ func (client connectorClient) executeTask(task connectorTask) (taskResult, error
 		}
 	}
 	switch task.Action {
-	case "list_files":
-		result, err := listFiles(sandboxWorkspace, stringArg(task.Payload, "path"), intArg(task.Payload, "max_entries", 100))
-		return textTaskResult(result), err
+	// These four answer with the same JSON the built-in connector returns, so
+	// the panel and the tools cannot tell which connector served them.
+	case "list_files", "list_directory":
+		return jsonAction(actionListDirectory(sandboxWorkspace, task.Payload))
 	case "read_file":
-		result, err := readFile(sandboxWorkspace, stringArg(task.Payload, "path"), intArg(task.Payload, "max_bytes", 120000))
-		return textTaskResult(result), err
+		return jsonAction(actionReadFile(sandboxWorkspace, task.Payload))
 	case "file_sha256":
-		result, err := fileSHA256(sandboxWorkspace, stringArg(task.Payload, "path"))
-		return textTaskResult(result), err
+		return jsonAction(actionFileSHA256(sandboxWorkspace, task.Payload))
 	case "write_file":
-		result, err := writeFile(sandboxWorkspace, stringArg(task.Payload, "path"), stringArg(task.Payload, "content"), boolArg(task.Payload, "overwrite"), boolArg(task.Payload, "create_dirs"))
-		return textTaskResult(result), err
+		return jsonAction(actionWriteFile(sandboxWorkspace, task.Payload))
 	case "replace_text":
-		result, err := replaceText(sandboxWorkspace, stringArg(task.Payload, "path"), stringArg(task.Payload, "old_text"), stringArg(task.Payload, "new_text"))
-		return textTaskResult(result), err
+		return jsonAction(actionReplaceText(sandboxWorkspace, task.Payload))
+	case "open_file_manager":
+		return jsonAction(actionOpenPath(workspace, task.Payload, openFileManager))
+	case "open_terminal":
+		return jsonAction(actionOpenPath(workspace, task.Payload, openTerminal))
+	case "open_vscode":
+		return jsonAction(actionOpenPath(workspace, task.Payload, openVSCode))
 	case "commit_delta":
 		result, err := commitDelta(workspace, task.Payload)
 		return textTaskResult(result), err

@@ -3,13 +3,15 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import { ensureTables } from "./tables.js";
+import { connectorTaskNeedsApproval } from "./approval.js";
 export * from "./approval.js";
 export const depend = ["dashboard", "database"];
 export const provide = ["connector"];
-export interface ConnectorConfig { maxTaskResultChars: string; maxTaskErrorChars: string; }
+export interface ConnectorConfig { maxTaskResultChars: string; maxTaskErrorChars: string; taskWaitMs: string; }
 export const config: Schema<ConnectorConfig> = Schema.object({
   maxTaskResultChars: Schema.string("Maximum stored connector task result characters").key("connector.config.maxTaskResultChars").default("1000000"),
   maxTaskErrorChars: Schema.string("Maximum stored connector task error characters").key("connector.config.maxTaskErrorChars").default("100000"),
+  taskWaitMs: Schema.string("How long a tool call waits for an external device to answer").key("connector.config.taskWaitMs").default("60000"),
 });
 /** A row of `advanced_chat_connector_devices`, without its token hash. */
 export interface ConnectorDeviceRecord {
@@ -170,6 +172,14 @@ export interface ConnectorHandler {
     input: Record<string, unknown>,
   ): Promise<unknown>;
 }
+/**
+ * Actions whose terms come from the session's approval level. Everything else a
+ * connector answers — files, listings, folder picking, opening an editor — is
+ * workspace-scoped by construction and never waits for a decision, which is what
+ * the built-in connector does inline as well.
+ */
+const APPROVAL_GATED_ACTIONS = new Set(["run_command", "git_action"]);
+
 declare module "yumeri" {
   interface Components {
     connector: ConnectorService;
@@ -233,6 +243,85 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
     // when what was missing was one action nobody serves.
     throw Error(`No connector runtime serves the action "${action}"`);
   };
+  /**
+   * Waits for one queued task to settle and answers the way an inline action
+   * would: JSON when the device reported JSON, the plain text otherwise.
+   *
+   * A task still waiting for approval, or one that outlives the wait, is
+   * reported as such rather than thrown: the user may be looking at the prompt
+   * right now, and the model is better served by "ask again" than by a failure.
+   */
+  const awaitTask = async (userId: number, taskId: string, action: string) => {
+    const deadline =
+      Date.now() + Math.max(1_000, Number(cfg.taskWaitMs) || 60_000);
+    for (;;) {
+      const row: any = await db.selectOne("advanced_chat_connector_tasks", {
+        id: taskId,
+        user_id: userId,
+      });
+      if (!row) return { task_id: taskId, status: "unknown" };
+      const status = String(row.status ?? "");
+      if (status === "completed") {
+        const result = String(row.result ?? "").trim();
+        try {
+          return JSON.parse(result);
+        } catch {
+          return result;
+        }
+      }
+      if (status === "failed" || status === "rejected")
+        throw Error(
+          String(row.error_message || row.result || "").trim() ||
+            `The device could not run "${action}"`,
+        );
+      if (Date.now() >= deadline)
+        return {
+          task_id: taskId,
+          status,
+          message:
+            status === "pending_approval"
+              ? `"${action}" is waiting for your approval on the device page; approve it there and run the tool again.`
+              : `"${action}" is still running on the device; run the tool again to see the result.`,
+        };
+      await new Promise((resolve) => ctx.setTimeout(resolve, 200));
+    }
+  };
+
+  /**
+   * Asks an external device to run one action through the task queue and waits
+   * for its answer.
+   *
+   * A connector that is a separate program has no in-process handler to call, so
+   * the queue is the only way to reach it. Without this the whole action set a
+   * device advertises would be unreachable from a tool call — the seam answered
+   * "no connector runtime serves the action" while the device sat there polling.
+   */
+  const askQueued = async (
+    userId: number,
+    device: ConnectorDeviceRecord,
+    action: string,
+    input: Record<string, unknown>,
+  ) => {
+    // An agent that is not polling would leave the call hanging for the whole
+    // wait, so say so now instead.
+    if (String(device.status ?? "") !== "online")
+      throw Error(
+        `Connector device "${device.name || device.id}" is offline; it cannot run "${action}" right now`,
+      );
+    const task = await service.createTask(userId, {
+      device_id: String(device.id),
+      action,
+      workspace_path: String(
+        input.workspace_path ?? input.connector_workspace_path ?? "",
+      ),
+      run_id: String(input.run_id ?? ""),
+      payload: input,
+      requiresApproval:
+        APPROVAL_GATED_ACTIONS.has(action) && connectorTaskNeedsApproval(input),
+    });
+    return await awaitTask(userId, String(task.id), action);
+  };
+
   const dispatchTask = async (task: ConnectorTaskRecord, device: ConnectorDeviceRecord) => {
     const type = typeByID(String(device.kind ?? ""));
     if (!type?.runTask) return undefined;
@@ -1057,6 +1146,31 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
             record as ConnectorDeviceRecord,
           );
         }
+        // A device whose kind nobody registered here is a connector that is its
+        // own process. A handler registered for such connectors still gets the
+        // first say (that is the older seam); when none answers, the device is
+        // asked through its queue instead of the call failing.
+        if (!type) {
+          const { token_hash: _hash, ...record } = device;
+          try {
+            return await runGeneric(userId, action, {
+              ...input,
+              device_id: String(device.id),
+            });
+          } catch (error) {
+            if (
+              !(error instanceof Error) ||
+              !error.message.startsWith("No connector runtime serves the action")
+            )
+              throw error;
+            return await askQueued(
+              userId,
+              record as ConnectorDeviceRecord,
+              action,
+              input,
+            );
+          }
+        }
         // A known type that does not answer this action, and a type nobody
         // registered at all, both fall through to the generic runtimes so an
         // external agent can still serve them.
@@ -1102,13 +1216,25 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
           record as ConnectorDeviceRecord,
         );
       // Fall back to a runtime that exposes folder selection as an action, so a
-      // connector written before types existed still works.
+      // connector written before types existed still works, then to the device's
+      // own queue for a connector that is its own process.
       const viaAction = await runGeneric(userId, "pick_directory", {
         ...input,
         device_id: deviceId,
       }).catch(() => undefined);
       if (viaAction && typeof viaAction === "object")
         return viaAction as { path: string; cancelled: boolean };
+      if (!type) {
+        const { token_hash: _hash, ...record } = device;
+        const picked = await askQueued(
+          userId,
+          record as ConnectorDeviceRecord,
+          "pick_directory",
+          input,
+        );
+        if (picked && typeof picked === "object")
+          return picked as { path: string; cancelled: boolean };
+      }
       throw Error(
         `Connector type "${device.kind}" does not support folder selection`,
       );

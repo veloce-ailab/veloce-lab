@@ -17,6 +17,35 @@ go run . -server http://localhost:8080 -token <connector-token>
 If no mode is specified, the connector runs in the standard platform mode for
 workspace file and command tools.
 
+## What a device can do
+
+The connector answers the same action set as the built-in local connector
+(`packages/device-local`), so a session works the same whichever one it is
+pointed at — the host cannot tell them apart, and it parses the same JSON from
+both:
+
+| Family | Actions |
+|---|---|
+| Workspace files | `list_files`, `list_directory`, `read_file`, `write_file`, `replace_text`, `file_sha256` |
+| Folder choice | `list_directories`, `list_windows_drives`, `pick_directory` |
+| Desktop | `open_file_manager`, `open_terminal`, `open_vscode` |
+| Git | `git_status`, `git_action` |
+| Terminals | `terminal_open`, `terminal_input`, `terminal_read`, `terminal_resize`, `terminal_close` |
+| MCP | `mcp_list_tools`, `mcp_call_tool`, `list_mcp_processes`, `stop_mcp_process` |
+| Beyond the built-in connector | `web_search`, `web_fetch`, agent skill and agent group actions, `commit_delta` (sandboxd mode) |
+
+Paths follow the built-in connector's rules: a relative path starts in the
+session workspace, an absolute path is accepted only while it stays inside it,
+and `list_directories` is the one action that browses the machine (that is how a
+workspace gets chosen). File actions answer with the same objects — `{path,
+content}`, `{path, entries}`, `{path, size, added, removed}`, `{path, sha256,
+size}` — so the panel's file tree and the model's tools read them unchanged.
+
+`VELOCE_CONNECTOR_PICK_COMMAND` replaces the folder dialog with a command that
+receives the starting folder as its last argument and prints the chosen one,
+which is how a headless or test host supplies its own picker (the built-in
+connector has the same hook as `DEVICE_LOCAL_PICK_COMMAND`).
+
 ## Command confinement
 
 A session's approval mode decides the terms a command runs under. In `sandbox`
