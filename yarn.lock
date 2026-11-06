@@ -3304,6 +3304,7 @@ __metadata:
   resolution: "@velocelab/device-local@workspace:packages/device-local"
   dependencies:
     "@velocelab/connector": "npm:^0.1.2"
+    "@velocelab/sandbox": "npm:^0.1.0"
     node-pty: "npm:^1.1.0"
   peerDependencies:
     yumeri: ^3.0.0
@@ -3493,6 +3494,14 @@ __metadata:
 "@velocelab/ratelimit@workspace:packages/ratelimit":
   version: 0.0.0-use.local
   resolution: "@velocelab/ratelimit@workspace:packages/ratelimit"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/sandbox@npm:^0.1.0, @velocelab/sandbox@workspace:packages/sandbox":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/sandbox@workspace:packages/sandbox"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown

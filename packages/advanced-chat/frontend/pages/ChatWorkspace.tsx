@@ -30,6 +30,7 @@ interface GlobalChatSession {
   title?: string
   updated_at?: string
   created_at?: string
+  archived?: boolean
 }
 
 interface ChatSidebarItem {
@@ -71,6 +72,7 @@ export default function ChatWorkspace() {
   const filteredGlobalSessions = useMemo(() => {
     const query = globalSearch.trim().toLowerCase()
     return globalSessions.slice()
+      .filter((session) => session.archived !== true)
       .filter((session) => !query || (session.title || "").toLowerCase().includes(query))
       .sort((a, b) => Date.parse(b.updated_at || b.created_at || "") - Date.parse(a.updated_at || a.created_at || ""))
       .slice(0, 50)

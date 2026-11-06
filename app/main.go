@@ -30,6 +30,13 @@ type connectorClient struct {
 }
 
 func main() {
+	// The sandbox launcher mode: this binary applies a Landlock ruleset to
+	// itself and then becomes the command, which is how a confined command is
+	// started on hosts where bubblewrap cannot run. Handled before the flags
+	// because the rest of the argument list belongs to the command.
+	if len(os.Args) > 1 && os.Args[1] == "-sandbox-landlock" {
+		os.Exit(runLandlockLauncher(os.Args[2:]))
+	}
 	server := flag.String("server", "http://localhost:8080", "Backend server URL")
 	token := flag.String("token", "", "Connector token generated from agent chat")
 	name := flag.String("name", "", "Device name shown in agent chat")

@@ -440,6 +440,18 @@ export function registerAdvancedChatRoutes(
         session.respond(await service.listSessions(current.id), "json");
     });
   ctx
+    .route("/api/user/advanced-chat/session-order")
+    .methods("PUT")
+    .action(async (session) => {
+      const current = await user(session);
+      if (current?.id === undefined) return;
+      const input = await body(session);
+      const ids = Array.isArray(input.ids)
+        ? input.ids.map((id) => String(id ?? "").trim()).filter(Boolean)
+        : [];
+      session.respond({ success: await service.reorderSessions(current.id, ids) }, "json");
+    });
+  ctx
     .route("/api/user/advanced-chat/sessions")
     .methods("POST")
     .action(async (session) => {
@@ -655,6 +667,18 @@ export function registerAdvancedChatRoutes(
         return;
       }
       session.respond(saved, "json");
+    });
+  ctx
+    .route("/api/user/advanced-chat/sessions/:id/archive")
+    .methods("PUT")
+    .action(async (session, _params, id) => {
+      const current = await user(session);
+      if (current?.id === undefined) return;
+      const input = await body(session);
+      const updated = await service.updateSession(current.id, id, {
+        archived: input.archived === true,
+      });
+      session.respond(updated ?? null, "json");
     });
   ctx
     .route("/api/user/advanced-chat/sessions/:id/folder")

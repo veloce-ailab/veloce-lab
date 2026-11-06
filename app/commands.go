@@ -32,15 +32,23 @@ func runCommand(workspace string, command string, timeoutSec int) (commandResult
 }
 
 func runCommandInDir(workspace string, command string, timeoutSec int) (commandResult, error) {
+	if runtime.GOOS == "windows" {
+		return execCommand("cmd.exe", []string{"/d", "/s", "/c", "chcp 65001>nul & " + command}, workspace, timeoutSec)
+	}
+	return execCommand("sh", []string{"-c", command}, workspace, timeoutSec)
+}
+
+// execCommand runs one already-built invocation and reports what it printed.
+// It is separate from the shell choice above so a sandboxed command can hand in
+// its own launcher (`bwrap`, `sandbox-exec`) and keep the same result plumbing.
+func execCommand(file string, args []string, workspace string, timeoutSec int) (commandResult, error) {
+	if timeoutSec <= 0 || timeoutSec > 120 {
+		timeoutSec = 30
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd.exe", "/d", "/s", "/c", "chcp 65001>nul & "+command)
-	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-c", command)
-	}
+	cmd := exec.CommandContext(ctx, file, args...)
 	if strings.TrimSpace(workspace) != "" {
 		cmd.Dir = workspace
 	}

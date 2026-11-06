@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@velocelab/connector": "^0.1.2",
+    "@velocelab/sandbox": "^0.1.0",
     "node-pty": "^1.1.0"
   },
   "peerDependencies": {

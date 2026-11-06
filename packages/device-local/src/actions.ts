@@ -6,7 +6,10 @@
 //   that is how a workspace gets chosen, so it accepts any absolute path;
 // - working inside a workspace (`read_file`, `write_file`, `replace_text`, git)
 //   is confined to `workspace_path` when one is given, so a path coming from a
-//   model or a stale session cannot reach outside the folder the user picked.
+//   model or a stale session cannot reach outside the folder the user picked;
+// - running a command is confined by the kernel instead, through
+//   `@velocelab/sandbox`: `runCommand` below is the unconfined path a sandbox-mode
+//   session never takes.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
@@ -295,12 +298,14 @@ export interface CommandResult {
 }
 
 /**
- * Runs a shell command inside the workspace.
+ * Runs a shell command inside the workspace, unconfined.
  *
- * This is the one action that can do anything on this machine, so a caller only
- * reaches it through an approved task: by the time it runs, the decision has
- * already been made. A non-zero exit is a result rather than a failure — the
- * whole point of the tool is showing the model what the command printed.
+ * This is the one action that can do anything on this machine, so it is only
+ * reached for a task that was approved, or for a session with full access. A
+ * session in sandbox mode does not come through here at all: its commands run
+ * under `@velocelab/sandbox`, which holds the workspace boundary in the kernel.
+ * A non-zero exit is a result rather than a failure — the whole point of the
+ * tool is showing the model what the command printed.
  */
 export async function runCommand(
   input: Record<string, unknown>,

@@ -12,7 +12,7 @@ loader.config({ monaco })
 function GitPanel(props: Record<string, unknown>) {
   const { session: currentSession, runMode } = props as ChatSlotData
   const currentConnectorDeviceID = currentSession?.connector_device_id || ""
-  const approvalMode = currentSession?.connector_approval_mode || "manual"
+  const approvalMode = currentSession?.connector_approval_mode || "sandbox"
   const { language } = useI18n()
   const { resolvedTheme } = useTheme()
   const { error } = useToast()

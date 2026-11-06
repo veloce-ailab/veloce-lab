@@ -83,7 +83,7 @@ async function harness() {
 }
 
 const data = () => ({
-  session: { id: "session-a", connector_device_id: "device-a", connector_workspace_path: "/work/a", connector_approval_mode: "manual" },
+  session: { id: "session-a", connector_device_id: "device-a", connector_workspace_path: "/work/a", connector_approval_mode: "sandbox" },
   runMode: "assistant", messages: [], device: { id: "device-a", name: "My device", online: true }, devices: [], recentWorkspacePaths: [],
   setDevice() {}, setWorkspacePath() {}, openWorkspacePicker() {},
 })

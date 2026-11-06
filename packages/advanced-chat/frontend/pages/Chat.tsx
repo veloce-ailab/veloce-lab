@@ -11,7 +11,7 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ArrowDown, ArrowUp, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Cloud, Coins, Copy, Eraser, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, Hand, HardDrive, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
+import { Activity, Archive, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpDown, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Clock, Cloud, Coins, Copy, Eraser, Ellipsis, FileDiff, FileText, Folder, FolderOpen, FolderTree, GitBranch, Globe, HardDrive, List, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, Shield, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { composerCommands, subscribeComposerCommands, type DashboardComposerCommand } from "@velocelab/dashboard/frontend"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
@@ -254,6 +254,8 @@ interface ChatSession {
   workspace_id?: string
   title: string
   messages: ChatMessage[]
+  archived?: boolean
+  sort_order?: number
   run_mode: ChatRunMode
   latest_run?: ChatRun
   agent_id?: string
@@ -568,12 +570,16 @@ interface EnterprisePoolDevice {
 }
 
 type ChatRunMode = "chat" | "assistant" | "agent_group"
-type ConnectorApprovalMode = "manual" | "full_access" | "assistant"
+// `manual` is retired: sandbox mode runs workspace-confined work unattended and
+// lets the kernel refuse everything outside the workspace.
+type ConnectorApprovalMode = "sandbox" | "full_access" | "assistant"
 type SessionConfigTab = "basic" | "advanced" | "skills" | "knowledge" | "mcp" | "device"
 type SessionCapabilityPicker = "skills" | "knowledge" | "mcp" | null
 type AttachmentTarget = "composer" | "editor"
 type WorkspacePickerTarget = "session" | "pending" | "new_workspace"
-type SessionGroupMode = "time" | "workspace"
+type SessionGroupMode = "workspace" | "tree" | "list"
+type SessionSortMode = "recent" | "manual"
+type SessionArchiveFilter = "hide" | "all" | "only"
 
 interface ChatStoreKeys {
   sessions: string
@@ -590,6 +596,8 @@ interface ParsedSSEEvent {
 const selectedAgentStoreKey = "windypear.advanced_chat.selected_agent.v1"
 const recentAgentStoreKey = "windypear.advanced_chat.recent_agents.v1"
 const sessionGroupModeStorageKey = "windypear.chat.session_group_mode.v1"
+const sessionSortModeStorageKey = "windypear.chat.session_sort_mode.v1"
+const sessionArchiveFilterStorageKey = "windypear.chat.session_archive_filter.v1"
 const defaultAgentID = "default"
 const agentsQueryKey = ["advanced-chat-agents"] as const
 const skillsQueryKey = ["advanced-chat-skills"] as const
@@ -639,6 +647,8 @@ type SessionRowActions = {
   regenerate: (session: ChatSession) => void
   moveToWorkspace: (sessionID: string) => void
   clearMessages: (session: ChatSession) => void
+  archive: (session: ChatSession) => void
+  unarchive: (session: ChatSession) => void
 }
 
 /**
@@ -658,6 +668,14 @@ const SessionSidebarRow = memo(function SessionSidebarRow({
   copy,
   regenerating,
   actions,
+  manualSort,
+  dragging,
+  dragOver,
+  indent,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
   session: ChatSession
   isActive: boolean
@@ -667,11 +685,47 @@ const SessionSidebarRow = memo(function SessionSidebarRow({
   copy: ChatCopy
   regenerating: boolean
   actions: SessionRowActions
+  manualSort: boolean
+  dragging: boolean
+  dragOver: boolean
+  indent: number
+  onDragStart: (sessionID: string) => void
+  onDragOver: (sessionID: string) => void
+  onDrop: (draggedID: string, targetID: string) => void
+  onDragEnd: () => void
 }) {
+  const archived = session.archived === true
+  const archiveLabel = archived
+    ? (language === "zh" ? "取消归档" : "Unarchive")
+    : (language === "zh" ? "归档" : "Archive")
   const item = <div
+    draggable={manualSort && !isSharedRow}
+    onDragStart={(event) => {
+      if (!manualSort || isSharedRow) return
+      event.dataTransfer.effectAllowed = "move"
+      event.dataTransfer.setData("text/plain", session.id)
+      onDragStart(session.id)
+    }}
+    onDragOver={(event) => {
+      if (!manualSort || isSharedRow) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = "move"
+      onDragOver(session.id)
+    }}
+    onDrop={(event) => {
+      if (!manualSort || isSharedRow) return
+      event.preventDefault()
+      const draggedID = event.dataTransfer.getData("text/plain")
+      if (draggedID) onDrop(draggedID, session.id)
+    }}
+    onDragEnd={onDragEnd}
+    style={indent > 0 ? { marginLeft: indent * 14 } : undefined}
     className={cn(
       "group relative grid min-h-6 grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-transparent px-1.5 py-0.5 transition-colors",
-      isActive ? "border-primary/40 bg-primary/15 shadow-sm before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-r before:bg-primary" : "hover:bg-muted"
+      isActive ? "border-primary/40 bg-primary/15 shadow-sm before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-r before:bg-primary" : "hover:bg-muted",
+      manualSort && !isSharedRow && "cursor-grab",
+      dragging && "opacity-40",
+      dragOver && !dragging && "border-primary/50 bg-primary/10"
     )}
     onContextMenu={(event) => event.stopPropagation()}
   >
@@ -679,11 +733,30 @@ const SessionSidebarRow = memo(function SessionSidebarRow({
       <div className="flex min-w-0 items-center gap-1.5">
         {isRunActive(session.latest_run) && <RefreshCw size={12} className="shrink-0 animate-spin text-primary" aria-label={language === "zh" ? "任务运行中" : "Task running"} />}
         <div className={cn("truncate text-xs font-medium", isActive ? "text-primary" : "text-foreground")}>{session.title || copy.untitledSession}</div>
+        {archived && (
+          <span className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-[10px] font-normal text-muted-foreground">
+            {language === "zh" ? "已归档" : "Archived"}
+          </span>
+        )}
       </div>
     </button>
-    {!isSharedRow && <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100" onClick={() => actions.requestDelete(session)} title={copy.deleteSession}>
-      <Trash2 size={13} />
-    </Button>}
+    {!isSharedRow && (
+      <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={(event) => { event.stopPropagation(); (archived ? actions.unarchive : actions.archive)(session) }}
+          title={archiveLabel}
+          aria-label={archiveLabel}
+        >
+          {archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+        </Button>
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(event) => { event.stopPropagation(); actions.requestDelete(session) }} title={copy.deleteSession} aria-label={copy.deleteSession}>
+          <Trash2 size={13} />
+        </Button>
+      </div>
+    )}
   </div>
   if (isSharedRow) {
     return item
@@ -692,6 +765,11 @@ const SessionSidebarRow = memo(function SessionSidebarRow({
     <ContextMenu>
       <ContextMenuTrigger asChild>{item}</ContextMenuTrigger>
       <ContextMenuContent className="w-56">
+        <ContextMenuItem onSelect={() => (archived ? actions.unarchive : actions.archive)(session)}>
+          {archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+          {archiveLabel}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => actions.rename(session)}>{copy.customTitle}</ContextMenuItem>
         <ContextMenuItem disabled={!isAdvanced || regenerating} onSelect={() => actions.regenerate(session)}>
           {regenerating ? copy.regeneratingTitle : copy.regenerateTitle}
@@ -787,6 +865,10 @@ export default function Chat() {
   const [desktopSessionsSidebarHost, setDesktopSessionsSidebarHost] = useState<HTMLElement | null>(null)
   const [visibleSessionCount, setVisibleSessionCount] = useState(20)
   const [sessionGroupMode, setSessionGroupMode] = useState<SessionGroupMode>(readSessionGroupMode)
+  const [sessionSortMode, setSessionSortMode] = useState<SessionSortMode>(readSessionSortMode)
+  const [sessionArchiveFilter, setSessionArchiveFilter] = useState<SessionArchiveFilter>(readSessionArchiveFilter)
+  const [draggingSessionID, setDraggingSessionID] = useState("")
+  const [dragOverSessionID, setDragOverSessionID] = useState("")
   const [newWorkspaceDialogOpen, setNewWorkspaceDialogOpen] = useState(false)
   const [newWorkspaceName, setNewWorkspaceName] = useState("")
   const [newWorkspaceDeviceID, setNewWorkspaceDeviceID] = useState("")
@@ -797,7 +879,7 @@ export default function Chat() {
   const [pendingConnectorDeviceID, setPendingConnectorDeviceID] = useState("")
   const [pendingConnectorWorkspace, setPendingConnectorWorkspace] = useState("")
   const [pendingCloudSandboxID, setPendingCloudSandboxID] = useState("")
-  const [pendingConnectorApprovalMode, setPendingConnectorApprovalMode] = useState<ConnectorApprovalMode>("manual")
+  const [pendingConnectorApprovalMode, setPendingConnectorApprovalMode] = useState<ConnectorApprovalMode>("sandbox")
   const [pendingConnectorCommandPrefixes, setPendingConnectorCommandPrefixes] = useState("")
   const [isWorkspacePickerOpen, setIsWorkspacePickerOpen] = useState(false)
   const [isPickingWorkspaceFolder, setIsPickingWorkspaceFolder] = useState(false)
@@ -1052,69 +1134,156 @@ export default function Chat() {
     }),
     [sessions]
   )
-  const searchedSessions = useMemo(
-    // Copies before sorting: `sort` mutates, and `displaySessions` is memoised.
-    () => [...displaySessions]
-      .sort((a, b) => sessionTimestamp(b) - sessionTimestamp(a)),
-    [displaySessions]
+  const filteredSessions = useMemo(
+    () => displaySessions.filter((session) => {
+      if (sessionArchiveFilter === "only") {
+        return session.archived === true
+      }
+      if (sessionArchiveFilter === "hide") {
+        return session.archived !== true
+      }
+      return true
+    }),
+    [displaySessions, sessionArchiveFilter]
   )
+  const orderedSessions = useMemo(() => {
+    const next = [...filteredSessions]
+    if (sessionSortMode === "manual") {
+      // Sessions created before manual ordering existed have sort_order 0, so
+      // creation time is the tiebreaker and new rows start at the end.
+      next.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || sessionTimestamp(a) - sessionTimestamp(b))
+    } else {
+      next.sort((a, b) => sessionTimestamp(b) - sessionTimestamp(a))
+    }
+    return next
+  }, [filteredSessions, sessionSortMode])
   const visibleSessionGroups = useMemo(() => {
-    const now = new Date()
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-    const yesterdayStart = todayStart - 24 * 60 * 60 * 1000
-    const sevenDaysStart = todayStart - 7 * 24 * 60 * 60 * 1000
-    const groups = new Map<string, { label: string; sessions: ChatSession[]; workspaceId?: string }>()
+    type SessionListGroup = { label: string; sessions: ChatSession[]; workspaceId?: string; depth?: number }
+    const sessions = orderedSessions.slice(0, visibleSessionCount)
+    const groups: SessionListGroup[] = []
+    if (sessionGroupMode === "list") {
+      if (sessions.length > 0) {
+        groups.push({ label: "", sessions })
+      }
+      return groups
+    }
 
-    searchedSessions.slice(0, visibleSessionCount).forEach((session) => {
-      if (sessionGroupMode === "workspace") {
-        const workspace = workspaces.find((item) => item.id === session.workspace_id)
+    const workspaceByID = new Map(workspaces.map((workspace) => [workspace.id, workspace]))
+    const noWorkspaceLabel = language === "zh" ? "未选择工作区" : "No workspace"
+    if (sessionGroupMode === "workspace") {
+      for (const session of sessions) {
+        const workspace = workspaceByID.get(session.workspace_id || "")
         const key = session.workspace_id || "__no_workspace__"
-        const label = workspace?.name || (language === "zh" ? "未选择工作区" : "No workspace")
-        const group = groups.get(key)
+        const group = groups.find((item) => (item.workspaceId || "__no_workspace__") === key)
         if (group) {
           group.sessions.push(session)
         } else {
-          groups.set(key, { label, sessions: [session], workspaceId: session.workspace_id })
+          groups.push({ label: workspace?.name || noWorkspaceLabel, sessions: [session], workspaceId: session.workspace_id })
         }
-        return
       }
-      const timestamp = sessionTimestamp(session)
-      const date = Number.isFinite(timestamp) ? new Date(timestamp) : new Date(0)
-      let key: string
-      let label: string
-      if (timestamp >= todayStart) {
-        key = "today"
-        label = language === "zh" ? "今天" : "Today"
-      } else if (timestamp >= yesterdayStart) {
-        key = "yesterday"
-        label = language === "zh" ? "昨天" : "Yesterday"
-      } else if (timestamp >= sevenDaysStart) {
-        key = "previous-seven-days"
-        label = language === "zh" ? "过去 7 天" : "Previous 7 Days"
-      } else {
-        key = `${date.getFullYear()}-${date.getMonth()}`
-        label = language === "zh"
-          ? `${date.getFullYear() === now.getFullYear() ? "" : `${date.getFullYear()}年`}${date.getMonth() + 1}月`
-          : date.toLocaleDateString("en-US", { month: "long", year: date.getFullYear() === now.getFullYear() ? undefined : "numeric" })
-      }
-      const group = groups.get(key)
-      if (group) {
-        group.sessions.push(session)
-      } else {
-        groups.set(key, { label, sessions: [session] })
-      }
-    })
-    if (sessionGroupMode === "workspace") {
-      // An empty workspace still belongs in the list. Deriving the groups from sessions
-      // alone hid a newly created workspace until something was started in it, which
-      // also left no row to rename or delete it from.
+      // An empty workspace still belongs in the list. Deriving the groups from
+      // sessions alone hid a newly created workspace until something was
+      // started in it, which also left no row to rename or delete it from.
       for (const workspace of workspaces) {
-        if (groups.has(workspace.id)) continue
-        groups.set(workspace.id, { label: workspace.name, sessions: [], workspaceId: workspace.id })
+        if (!groups.some((group) => group.workspaceId === workspace.id)) {
+          groups.push({ label: workspace.name, sessions: [], workspaceId: workspace.id })
+        }
+      }
+      return groups
+    }
+
+    // Workspace tree: nest a workspace under the longest other workspace path
+    // that prefixes it, on the same device. Most users have a flat set of
+    // projects, in which case this looks exactly like workspace grouping.
+    const normalisedPath = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "")
+    const children = new Map<string, ChatWorkspace[]>()
+    const roots: ChatWorkspace[] = []
+    for (const workspace of workspaces) {
+      const target = normalisedPath(workspace.path || "")
+      let parent: ChatWorkspace | undefined
+      let parentLength = -1
+      for (const other of workspaces) {
+        if (other.id === workspace.id || other.device_id !== workspace.device_id) continue
+        const base = normalisedPath(other.path || "")
+        if (!base || base.length <= parentLength || !target.startsWith(`${base}/`)) continue
+        parent = other
+        parentLength = base.length
+      }
+      if (parent) {
+        const siblings = children.get(parent.id) || []
+        siblings.push(workspace)
+        children.set(parent.id, siblings)
+      } else {
+        roots.push(workspace)
       }
     }
-    return Array.from(groups.values())
-  }, [language, searchedSessions, sessionGroupMode, visibleSessionCount, workspaces])
+    const byPath = (a: ChatWorkspace, b: ChatWorkspace) => (a.path || a.name).localeCompare(b.path || b.name)
+    const appendTree = (workspace: ChatWorkspace, depth: number) => {
+      groups.push({
+        label: workspace.name,
+        sessions: sessions.filter((session) => session.workspace_id === workspace.id),
+        workspaceId: workspace.id,
+        depth,
+      })
+      for (const child of (children.get(workspace.id) || []).sort(byPath)) {
+        appendTree(child, depth + 1)
+      }
+    }
+    for (const root of roots.sort(byPath)) {
+      appendTree(root, 0)
+    }
+    const unassigned = sessions.filter((session) => !session.workspace_id || !workspaceByID.has(session.workspace_id))
+    if (unassigned.length > 0) {
+      groups.push({ label: noWorkspaceLabel, sessions: unassigned })
+    }
+    return groups
+  }, [language, orderedSessions, sessionGroupMode, visibleSessionCount, workspaces])
+
+  // Manual order is a drag over the rendered list. The order is global, so a
+  // drop inside one workspace never moves a row out of another workspace.
+  const reorderSessionsRef = useRef<(draggedID: string, targetID: string) => void>(() => {})
+  reorderSessionsRef.current = (draggedID, targetID) => {
+    if (sessionSortMode !== "manual" || !draggedID || !targetID || draggedID === targetID) {
+      return
+    }
+    const dragged = sessions.find((session) => session.id === draggedID)
+    const target = sessions.find((session) => session.id === targetID)
+    if (!dragged || !target) {
+      return
+    }
+    if (sessionGroupMode !== "list" && (dragged.workspace_id || "") !== (target.workspace_id || "")) {
+      return
+    }
+    const order = orderedSessions.map((session) => session.id)
+    const from = order.indexOf(draggedID)
+    const to = order.indexOf(targetID)
+    if (from < 0 || to < 0) {
+      return
+    }
+    order.splice(from, 1)
+    order.splice(to, 0, draggedID)
+    const positions = new Map(order.map((id, index) => [id, index]))
+    setSessions((current) => current.map((session) => {
+      const position = positions.get(session.id)
+      return position === undefined ? session : { ...session, sort_order: position }
+    }))
+    void api.put("/user/advanced-chat/session-order", { ids: order }).catch((err) => {
+      error(apiErrorMessage(err, language === "zh" ? "会话排序保存失败" : "Could not save the session order"))
+      void refetchAdvancedSessions()
+    })
+  }
+  const handleReorderSessions = useCallback((draggedID: string, targetID: string) => reorderSessionsRef.current(draggedID, targetID), [])
+  const handleDragStartSession = useCallback((id: string) => {
+    setDraggingSessionID(id)
+    setDragOverSessionID("")
+  }, [])
+  const handleDragOverSession = useCallback((id: string) => {
+    setDragOverSessionID((current) => (current === id ? current : id))
+  }, [])
+  const handleDragEndSession = useCallback(() => {
+    setDraggingSessionID("")
+    setDragOverSessionID("")
+  }, [])
   const currentSessionRaw = activeSession || (isAdvanced && routeSessionID ? undefined : draftSession)
   const currentSession = useMemo(
     () => currentSessionRaw ? normalizeRuntimeSession(currentSessionRaw) : undefined,
@@ -1512,6 +1681,15 @@ export default function Chat() {
   useEffect(() => {
     localStorage.setItem(sessionGroupModeStorageKey, sessionGroupMode)
   }, [sessionGroupMode])
+
+  useEffect(() => {
+    localStorage.setItem(sessionSortModeStorageKey, sessionSortMode)
+  }, [sessionSortMode])
+
+  useEffect(() => {
+    localStorage.setItem(sessionArchiveFilterStorageKey, sessionArchiveFilter)
+    setVisibleSessionCount(20)
+  }, [sessionArchiveFilter])
 
   const recentWorkspacePaths = useMemo(() => {
     if (!currentConnectorDeviceID) {
@@ -2047,6 +2225,22 @@ export default function Chat() {
     }
   }
 
+  const setSessionArchived = (session: ChatSession, archived: boolean) => {
+    // Optimistic: the row leaves the list immediately, and a refetch restores
+    // it if the write failed.
+    setSessions((current) => current.map((item) => item.id === session.id ? { ...item, archived } : item))
+    void api.put(`/user/advanced-chat/sessions/${encodeURIComponent(session.id)}/archive`, { archived })
+      .then(() => {
+        success(archived
+          ? (language === "zh" ? "会话已归档" : "Session archived")
+          : (language === "zh" ? "已取消归档" : "Session unarchived"))
+        void refetchAdvancedSessions()
+      })
+      .catch((err) => {
+        error(apiErrorMessage(err, language === "zh" ? "归档会话失败" : "Could not archive the session"))
+        void refetchAdvancedSessions()
+      })
+  }
   const clearSessionMessages = (sessionID: string) => {
     // The session stays, so only its contents are dropped locally; refetching keeps the
     // server and the list in step if anything could not be deleted.
@@ -2375,7 +2569,7 @@ export default function Chat() {
       connector_workspace_path: mode === "chat" || session.cloud_sandbox_id ? undefined : localDeviceID && session.connector_device_id !== localDeviceID ? undefined : session.connector_workspace_path,
       cloud_sandbox_id: mode === "chat" ? undefined : session.cloud_sandbox_id,
       connector_auto_approve: mode === "chat" ? false : session.connector_auto_approve,
-      connector_approval_mode: mode === "chat" ? "manual" : connectorApprovalModeFor(session),
+      connector_approval_mode: mode === "chat" ? "sandbox" : connectorApprovalModeFor(session),
       connector_command_prefixes: mode === "chat" ? [] : session.connector_command_prefixes || [],
       model_name: mode === "agent_group" ? undefined : session.model_name,
     }), { persist: true })
@@ -2612,7 +2806,7 @@ export default function Chat() {
       cloud_sandbox_id: undefined,
       agent_group_id: undefined,
       connector_auto_approve: false,
-      connector_approval_mode: "manual",
+      connector_approval_mode: "sandbox",
       connector_command_prefixes: [],
     }), { persist: true })
     setPendingCloudSandboxID("")
@@ -3055,7 +3249,7 @@ export default function Chat() {
               connector_workspace_path: "",
               workspace_id: session.workspace_id || "",
               connector_auto_approve: false,
-              connector_approval_mode: "manual",
+              connector_approval_mode: "sandbox",
               connector_command_prefixes: [],
               max_tokens: session.max_tokens || 0,
               temperature: session.temperature ?? null,
@@ -3181,7 +3375,7 @@ export default function Chat() {
               connector_workspace_path: "",
               workspace_id: session.workspace_id || "",
               connector_auto_approve: false,
-              connector_approval_mode: "manual",
+              connector_approval_mode: "sandbox",
               connector_command_prefixes: [],
               max_tokens: session.max_tokens || 0,
               temperature: session.temperature ?? null,
@@ -3419,8 +3613,8 @@ export default function Chat() {
   const onForkMessage = useCallback((message: ChatMessage) => void chatActionsRef.current.forkMessage(message), [])
   const onDecideConnectorApproval = useCallback((taskID: string, approved: boolean) => void chatActionsRef.current.decideConnectorApproval(taskID, approved), [])
 
-  const sessionRowActionsRef = useRef({ selectSession, setSessionPendingDeletion, setSessionPendingClear, renameSessionTitle, regenerateSessionTitle, setWorkspaceMoveSessionID, setWorkspaceSelectionOpen })
-  sessionRowActionsRef.current = { selectSession, setSessionPendingDeletion, setSessionPendingClear, renameSessionTitle, regenerateSessionTitle, setWorkspaceMoveSessionID, setWorkspaceSelectionOpen }
+  const sessionRowActionsRef = useRef({ selectSession, setSessionPendingDeletion, setSessionPendingClear, renameSessionTitle, regenerateSessionTitle, setWorkspaceMoveSessionID, setWorkspaceSelectionOpen, setSessionArchived })
+  sessionRowActionsRef.current = { selectSession, setSessionPendingDeletion, setSessionPendingClear, renameSessionTitle, regenerateSessionTitle, setWorkspaceMoveSessionID, setWorkspaceSelectionOpen, setSessionArchived }
   const sessionRowActions = useMemo<SessionRowActions>(() => ({
     select: (sessionID) => sessionRowActionsRef.current.selectSession(sessionID),
     requestDelete: (session) => sessionRowActionsRef.current.setSessionPendingDeletion(session),
@@ -3431,6 +3625,8 @@ export default function Chat() {
       sessionRowActionsRef.current.setWorkspaceSelectionOpen(true)
     },
     clearMessages: (session) => sessionRowActionsRef.current.setSessionPendingClear(session),
+    archive: (session) => sessionRowActionsRef.current.setSessionArchived(session, true),
+    unarchive: (session) => sessionRowActionsRef.current.setSessionArchived(session, false),
   }), [])
 
   const handleMessageSelectionContextMenu = () => {
@@ -3818,11 +4014,11 @@ export default function Chat() {
       }), { persist: true })
     }
     const labels: Record<ConnectorApprovalMode, string> = {
-      manual: approvalModeCopy.manual,
+      sandbox: approvalModeCopy.sandbox,
       full_access: approvalModeCopy.fullAccess,
       assistant: approvalModeCopy.assistant,
     }
-    const icons = { manual: Hand, full_access: ShieldCheck, assistant: Bot }
+    const icons = { sandbox: Shield, full_access: ShieldCheck, assistant: Bot }
     const ApprovalIcon = icons[approvalMode]
     return (
       <DropdownMenu>
@@ -3839,7 +4035,7 @@ export default function Chat() {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuRadioGroup value={approvalMode} onValueChange={(value) => selectApprovalMode(value as ConnectorApprovalMode)}>
-            {(["manual", "full_access", "assistant"] as const).map((mode) => {
+            {(["sandbox", "full_access", "assistant"] as const).map((mode) => {
               const disabled = mode === "assistant" && !currentAdvancedSettings.connector_approval_agent_id
               const ApprovalOptionIcon = icons[mode]
               return (
@@ -4034,14 +4230,29 @@ export default function Chat() {
         <div className="flex items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={sessionSidebarCopy.groupMode} title={sessionSidebarCopy.groupMode}>
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={sessionSidebarCopy.filters} title={sessionSidebarCopy.filters}>
                 <ListFilter size={16} />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuRadioGroup value={sessionGroupMode} onValueChange={(value) => setSessionGroupMode(value === "workspace" ? "workspace" : "time")}>
-                <DropdownMenuRadioItem value="time">{sessionSidebarCopy.groupByTime}</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="workspace">{sessionSidebarCopy.groupByWorkspace}</DropdownMenuRadioItem>
+            <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuLabel>{sessionSidebarCopy.groupMode}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={sessionGroupMode} onValueChange={(value) => setSessionGroupMode(value === "tree" || value === "list" ? value : "workspace")}>
+                <DropdownMenuRadioItem value="workspace"><FolderOpen size={14} className="mr-2" />{sessionSidebarCopy.groupByWorkspace}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="tree"><FolderTree size={14} className="mr-2" />{sessionSidebarCopy.groupByWorkspaceTree}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="list"><List size={14} className="mr-2" />{sessionSidebarCopy.groupByList}</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{sessionSidebarCopy.sortMode}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={sessionSortMode} onValueChange={(value) => setSessionSortMode(value === "manual" ? "manual" : "recent")}>
+                <DropdownMenuRadioItem value="manual"><ArrowUpDown size={14} className="mr-2" />{sessionSidebarCopy.sortManual}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="recent"><Clock size={14} className="mr-2" />{sessionSidebarCopy.sortRecent}</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{sessionSidebarCopy.archiveFilter}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={sessionArchiveFilter} onValueChange={(value) => setSessionArchiveFilter(value === "all" || value === "only" ? value : "hide")}>
+                <DropdownMenuRadioItem value="hide"><Archive size={14} className="mr-2" />{sessionSidebarCopy.archiveHide}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="all"><ArchiveRestore size={14} className="mr-2" />{sessionSidebarCopy.archiveAll}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="only"><Archive size={14} className="mr-2" />{sessionSidebarCopy.archiveOnly}</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -4067,11 +4278,11 @@ export default function Chat() {
         )}
         {visibleSessionGroups.map((group) => (
           <div key={group.workspaceId ?? group.label} className="pb-2">
-            {sessionGroupMode === "workspace" ? (() => {
+            {sessionGroupMode !== "list" ? (() => {
               const workspace = workspaces.find((item) => item.id === (group.workspaceId ?? group.sessions[0]?.workspace_id))
-              const header = <div className="group/workspace flex h-9 items-center gap-1 rounded-md px-2 py-1 hover:bg-muted">
+              const header = <div className="group/workspace flex h-9 items-center gap-1 rounded-md px-2 py-1 hover:bg-muted" style={{ paddingLeft: 8 + (group.depth ?? 0) * 14 }}>
                 <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm" onClick={() => workspace && createSessionInWorkspace(workspace)}>
-                  <FolderOpen size={17} className="shrink-0 text-muted-foreground" />
+                  {sessionGroupMode === "tree" ? <FolderTree size={17} className="shrink-0 text-muted-foreground" /> : <FolderOpen size={17} className="shrink-0 text-muted-foreground" />}
                   <span className="min-w-0 truncate font-medium">{group.label}</span>
                 </button>
                 {workspace && <>
@@ -4102,9 +4313,9 @@ export default function Chat() {
                   </ContextMenuContent>
                 </ContextMenu>
               ) : header
-            })() : <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">{group.label}</div>}
+            })() : null}
             {group.sessions.length === 0 && (
-              <div className="px-3 pb-1 pl-9 text-xs text-muted-foreground">{language === "zh" ? "没有会话" : "No sessions"}</div>
+              <div className="px-3 pb-1 text-xs text-muted-foreground" style={{ paddingLeft: 36 + (group.depth ?? 0) * 14 }}>{language === "zh" ? "没有会话" : "No sessions"}</div>
             )}
             {group.sessions.map((session) => (
               <SessionSidebarRow
@@ -4117,11 +4328,19 @@ export default function Chat() {
                 copy={copy}
                 regenerating={regeneratingTitleSessionID === session.id}
                 actions={sessionRowActions}
+                manualSort={sessionSortMode === "manual"}
+                dragging={draggingSessionID === session.id}
+                dragOver={dragOverSessionID === session.id}
+                indent={group.depth ?? 0}
+                onDragStart={handleDragStartSession}
+                onDragOver={handleDragOverSession}
+                onDrop={handleReorderSessions}
+                onDragEnd={handleDragEndSession}
               />
             ))}
           </div>
         ))}
-        {visibleSessionCount < searchedSessions.length && (
+        {visibleSessionCount < orderedSessions.length && (
           <Button
             type="button"
             variant="ghost"
@@ -5355,10 +5574,13 @@ export default function Chat() {
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">{approvalModeCopy.label}</span>
                     <Select value={String((pendingConnectorApprovalMode) || "__shadcn_empty__")} onValueChange={(value) => setPendingConnectorApprovalMode(normalizeConnectorApprovalMode((value === "__shadcn_empty__" ? "" : value)))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
-                      <SelectItem value="manual">{approvalModeCopy.manual}</SelectItem>
+                      <SelectItem value="sandbox">{approvalModeCopy.sandbox}</SelectItem>
                       <SelectItem value="full_access">{approvalModeCopy.fullAccess}</SelectItem>
                       <SelectItem value="assistant" disabled={!currentAdvancedSettings.connector_approval_agent_id}>{approvalModeCopy.assistant}</SelectItem>
                     </SelectContent></Select>
+                    {pendingConnectorApprovalMode === "sandbox" && (
+                      <span className="block text-xs text-muted-foreground">{approvalModeCopy.sandboxHint}</span>
+                    )}
                     {pendingConnectorApprovalMode === "assistant" && !currentAdvancedSettings.connector_approval_agent_id && (
                       <span className="block text-xs text-destructive">{approvalModeCopy.agentRequired}</span>
                     )}
@@ -6899,9 +7121,30 @@ function readRecentAgentIDs() {
 
 function readSessionGroupMode(): SessionGroupMode {
   if (typeof window === "undefined") {
-    return "time"
+    return "workspace"
   }
-  return localStorage.getItem(sessionGroupModeStorageKey) === "time" ? "time" : "workspace"
+  const value = localStorage.getItem(sessionGroupModeStorageKey)
+  if (value === "workspace" || value === "tree" || value === "list") {
+    return value
+  }
+  // "time" was the old second option; a single ordered list is its closest
+  // replacement now that grouping is about workspaces.
+  return value === "time" ? "list" : "workspace"
+}
+
+function readSessionSortMode(): SessionSortMode {
+  if (typeof window === "undefined") {
+    return "recent"
+  }
+  return localStorage.getItem(sessionSortModeStorageKey) === "manual" ? "manual" : "recent"
+}
+
+function readSessionArchiveFilter(): SessionArchiveFilter {
+  if (typeof window === "undefined") {
+    return "hide"
+  }
+  const value = localStorage.getItem(sessionArchiveFilterStorageKey)
+  return value === "all" || value === "only" ? value : "hide"
 }
 
 async function responseErrorMessage(response: Response) {
@@ -7480,6 +7723,8 @@ function normalizeSession(value: unknown): ChatSession | null {
     reasoning_effort: stringFromUnknown(value.reasoning_effort) || "",
     auto_compress_context: value.auto_compress_context !== false,
     disabled_tool_groups: normalizeDisabledToolGroups(value.disabled_tool_groups),
+    archived: value.archived === true,
+    sort_order: Number(value.sort_order || 0) || 0,
     created_at: typeof value.created_at === "string" ? value.created_at : new Date().toISOString(),
     updated_at: typeof value.updated_at === "string" ? value.updated_at : new Date().toISOString(),
   }
@@ -7859,10 +8104,12 @@ function runModeLabel(mode: ChatRunMode, copy: ChatCopy, agentGroupCopy: AgentGr
 }
 
 function normalizeConnectorApprovalMode(value: unknown, legacyFullAccess = false): ConnectorApprovalMode {
-  if (value === "full_access" || value === "assistant") {
+  if (value === "full_access" || value === "assistant" || value === "sandbox") {
     return value
   }
-  return legacyFullAccess ? "full_access" : "manual"
+  // `manual` and `safe` are retired names for the sandbox bargain; a stored
+  // session that still carries one must not fall back to prompting.
+  return legacyFullAccess ? "full_access" : "sandbox"
 }
 
 function connectorApprovalModeFor(session?: Pick<ChatSession, "connector_approval_mode" | "connector_auto_approve">): ConnectorApprovalMode {
@@ -7884,7 +8131,7 @@ function createSession(input: { agentID?: string; modelName?: string } = {}): Ch
     connector_device_id: undefined,
     connector_workspace_path: undefined,
     connector_auto_approve: false,
-    connector_approval_mode: "manual",
+    connector_approval_mode: "sandbox",
     connector_command_prefixes: [],
     model_name: input.modelName || undefined,
     max_tokens: 0,
@@ -9168,7 +9415,8 @@ const zhAgentGroupCopy: AgentGroupCopy = {
 
 const zhConnectorApprovalModeCopy = {
   label: "连接器权限",
-  manual: "手动审批",
+  sandbox: "沙箱",
+  sandboxHint: "工作区内的读写和命令直接执行，不用逐条确认；工作区之外的写入会被内核拒绝。",
   fullAccess: "完全访问",
   assistant: "助手审批",
   agentRequired: "请先在个人设置中选择审批助手。",
@@ -9176,7 +9424,8 @@ const zhConnectorApprovalModeCopy = {
 
 const enConnectorApprovalModeCopy: typeof zhConnectorApprovalModeCopy = {
   label: "Connector access",
-  manual: "Manual approval",
+  sandbox: "Sandbox",
+  sandboxHint: "Reads, writes and commands inside the workspace run without approval; writes outside it are refused by the kernel.",
   fullAccess: "Full access",
   assistant: "Assistant approval",
   agentRequired: "Select an approval assistant in personal settings first.",
@@ -9233,17 +9482,35 @@ const enTaskChangeCopy: typeof zhTaskChangeCopy = {
 const zhSessionSidebarCopy = {
   search: "搜索会话",
   noSessions: "没有匹配的会话",
-  groupMode: "会话分组方式",
-  groupByTime: "按时间分组",
-  groupByWorkspace: "按工作区分组",
+  filters: "会话筛选与排序",
+  groupMode: "分组方式",
+  groupByWorkspace: "按工作区",
+  groupByWorkspaceTree: "按工作区树",
+  groupByList: "单列表",
+  sortMode: "排序方式",
+  sortManual: "手动排序",
+  sortRecent: "最近更新",
+  archiveFilter: "筛选会话",
+  archiveHide: "隐藏已归档",
+  archiveAll: "全部对话（显示已归档）",
+  archiveOnly: "仅显示已归档",
 }
 
 const enSessionSidebarCopy: typeof zhSessionSidebarCopy = {
   search: "Search sessions",
   noSessions: "No matching sessions",
-  groupMode: "Session grouping",
-  groupByTime: "Group by time",
-  groupByWorkspace: "Group by workspace",
+  filters: "Filter and sort sessions",
+  groupMode: "Group by",
+  groupByWorkspace: "Workspace",
+  groupByWorkspaceTree: "Workspace tree",
+  groupByList: "Single list",
+  sortMode: "Sort by",
+  sortManual: "Manual order",
+  sortRecent: "Last updated",
+  archiveFilter: "Filter sessions",
+  archiveHide: "Hide archived",
+  archiveAll: "All conversations (with archived)",
+  archiveOnly: "Archived only",
 }
 
 function VSCodeIcon({ size = 16 }: { size?: number }) {

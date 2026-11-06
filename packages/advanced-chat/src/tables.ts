@@ -34,6 +34,9 @@ export async function ensureTables(db: Database): Promise<void> {
       folder_id: "string",
       workspace_id: { type: "string", initial: "" },
       visible: { type: "boolean", initial: true },
+      archived: { type: "boolean", initial: false },
+      /** Position in the user's manual order; large values sort last. */
+      sort_order: { type: "integer", initial: 0 },
       title: { type: "string", initial: "" },
       run_mode: { type: "string", initial: "assistant" },
       agent_id: "string",
@@ -44,7 +47,10 @@ export async function ensureTables(db: Database): Promise<void> {
       connector_device_id: "string",
       connector_workspace_path: "string",
       connector_auto_approve: "boolean",
-      connector_approval_mode: { type: "string", initial: "manual" },
+      // Sandbox mode is where a session starts: no approval prompt for work
+      // that stays in the workspace, and a kernel refusal for anything that
+      // does not. `manual` is only a retired name here, never a stored default.
+      connector_approval_mode: { type: "string", initial: "sandbox" },
       connector_command_prefixes: { type: "string", initial: "[]" },
       model_name: "string",
       user_channel_id: "integer",

@@ -1,5 +1,8 @@
 import { Context } from "yumeri";
-import { ConnectorService } from "@velocelab/connector";
+import {
+  DEFAULT_CONNECTOR_APPROVAL_MODE,
+  type ConnectorService,
+} from "@velocelab/connector";
 import { AdvancedChatService, ChatToolDefinition } from "@velocelab/advanced-chat";
 
 export const depend = ["advanced-chat", "connector"];
@@ -37,7 +40,9 @@ export function connectorInput(
     ...(context.runId ? { run_id: context.runId } : {}),
     ...(context.toolCallId ? { preview_tool_call_id: context.toolCallId } : {}),
     ...(context.connectorDeviceId ? { device_id: context.connectorDeviceId } : {}),
-    approval_mode: context.connectorApprovalMode ?? "manual",
+    // The session's mode, never the model's choice: a tool argument must not be
+    // able to widen the terms the user picked for this conversation.
+    approval_mode: context.connectorApprovalMode ?? DEFAULT_CONNECTOR_APPROVAL_MODE,
     ...(context.connectorAutoApprove ? { auto_approve: true } : {}),
   };
 }
@@ -115,7 +120,9 @@ export function apply(ctx: Context) {
   const connectorTools: Array<[string, string, string, Record<string, unknown>]> = [
     ["list_files", "List files in a workspace directory.", "list_files", { path: { type: "string" } }],
     ["list_windows_drives", "List available Windows drives.", "list_windows_drives", {}],
-    ["run_command", "Run an approved command through the connector.", "run_command", { command: { type: "string" } }],
+    // The model reads this verbatim: it explains what the sandbox does on the
+    // model's behalf, so a refusal it hits reads as the boundary and not a bug.
+    ["run_command", "Run a shell command in the workspace. In sandbox mode the command may write inside the workspace and the kernel refuses writes anywhere else.", "run_command", { command: { type: "string" } }],
     ["replace_text", "Replace text in a workspace file.", "replace_text", { path: { type: "string" }, old_text: { type: "string" }, new_text: { type: "string" } }],
     ["web_search", "Search the web through the connector.", "web_search", { query: { type: "string" } }],
     ["web_fetch", "Fetch a web page through the connector.", "web_fetch", { url: { type: "string" } }],

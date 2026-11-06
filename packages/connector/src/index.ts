@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import { ensureTables } from "./tables.js";
+export * from "./approval.js";
 export const depend = ["dashboard", "database"];
 export const provide = ["connector"];
 export interface ConnectorConfig { maxTaskResultChars: string; maxTaskErrorChars: string; }

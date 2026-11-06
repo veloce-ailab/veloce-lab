@@ -17,6 +17,29 @@ go run . -server http://localhost:8080 -token <connector-token>
 If no mode is specified, the connector runs in the standard platform mode for
 workspace file and command tools.
 
+## Command confinement
+
+A session's approval mode decides the terms a command runs under. In `sandbox`
+mode (the default) the command runs inside a kernel sandbox: bubblewrap mounts
+the world read-only and binds the workspace back writable, and on hosts where
+bubblewrap cannot start — a container without user namespaces, a machine without
+bwrap — the connector applies the same boundary with Landlock instead. For that
+it re-executes itself as
+
+```bash
+veloce-app -sandbox-landlock <writable-root>... -- sh -c '<command>'
+```
+
+which installs the ruleset on the child and then becomes the command. Either way
+a write outside the workspace fails in the kernel (`EROFS` on Linux, `EACCES`
+under Landlock), while reads and execs stay available. `full_access` runs
+commands unconfined; `assistant` waits for an approval first.
+
+Besides the workspace, a confined command may write to the scratch directory,
+the user cache directory and `/dev`; `VELOCE_SANDBOX_WRITABLE` adds more, one
+absolute path per line. The web connector keeps the same settings in the
+sandbox plugin (`@velocelab/sandbox`).
+
 ## Managed cloud sandbox worker
 
 Administrators can register a sandbox host in the admin API, which returns a

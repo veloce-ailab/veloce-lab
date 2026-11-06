@@ -13,6 +13,11 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { normalize } from "node:path";
 import { stat } from "node:fs/promises";
 import path from "node:path";
+import {
+  connectorTaskIsSandboxed,
+  connectorTaskNeedsApproval,
+} from "@velocelab/connector";
+import type { SandboxService } from "@velocelab/sandbox";
 import type {
   ConnectorDeviceRecord,
   ConnectorService,
@@ -69,7 +74,7 @@ async function openLocalPath(input: Record<string, unknown>, kind: "file-manager
 }
 
 // `advanced-chat` owns the device and task tables, so it has to have run first.
-export const depend = ["database", "advanced-chat", "connector"];
+export const depend = ["database", "advanced-chat", "connector", "sandbox"];
 export const provide = ["device-local"];
 export interface LocalDeviceConfig { commandWaitMs: string; allowCommandExecution: boolean; allowFileWrite: boolean; allowMcpProcesses: boolean; }
 export const config: Schema<LocalDeviceConfig> = Schema.object({
@@ -89,8 +94,10 @@ declare module "yumeri" {
 /**
  * Actions this host answers. `run_command` is here, but only as a queued task:
  * running an arbitrary shell command on the host from a chat tool is exactly
- * what the approval flow exists for, so it is never answered inline — the
- * session's approval mode decides whether the user is asked first.
+ * what confinement exists for, so it is never answered inline — the session's
+ * approval mode decides the terms: `sandbox` runs it under a kernel sandbox,
+ * `assistant` asks the approval assistant first, `full_access` runs it as the
+ * host user.
  */
 const CAPABILITIES = [
   "list_directories",
@@ -126,6 +133,9 @@ const CAPABILITIES = [
  */
 const COMMAND_WAIT_MS = 60_000;
 
+/** How long a confined command may run before the sandbox gives up on it. */
+const commandTimeoutMs = 120_000;
+
 export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
   ctx.i18n({
     "device-local": {
@@ -134,6 +144,9 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
   });
   const db = ctx.component.database as Database;
   const connector = ctx.component.connector as ConnectorService;
+  // Confinement is the sandbox plugin's business; this connector only decides
+  // that a session asked for it.
+  const sandbox = ctx.component.sandbox as SandboxService;
   const mcp = new LocalMCPManager();
   ctx.affect(() => mcp.dispose());
   const terminals = new LocalTerminalManager();
@@ -233,16 +246,26 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
         if (!cfg.allowCommandExecution) return { success: false, error_message: "Local command execution is disabled" };
         // The task's own workspace path wins over anything in the payload, so a
         // command cannot be talked into running outside the folder the session
-        // works in.
-        const outcome = await runCommand({
-          ...payload,
-          workspace_path: workspacePath,
-        });
+        // works in. A sandbox-mode session gets the same boundary from the
+        // kernel instead of from the task.
+        const outcome = connectorTaskIsSandboxed(payload)
+          ? await sandbox.run({
+              workspace: workspacePath,
+              cwd: workspacePath,
+              command: String(payload.command ?? ""),
+              timeoutMs: commandTimeoutMs,
+            })
+          : await runCommand({ ...payload, workspace_path: workspacePath });
         return {
           success: outcome.exit_code === 0,
           result: [
             `$ ${outcome.command}`,
             `cwd: ${outcome.cwd}`,
+            // Naming the backend tells the model which boundary it just hit, so
+            // a refusal reads as the policy and not as a broken command.
+            ...("backend" in outcome && outcome.backend
+              ? [`sandbox: ${outcome.backend}`]
+              : []),
             `exit code: ${outcome.exit_code}`,
             outcome.output,
           ]
@@ -267,13 +290,15 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
   };
 
   /**
-   * Whether a queued action has to be approved first. The session carries both
-   * switches: the newer approval mode and the older auto-approve flag, and
-   * either one can be the reason a command is allowed to run unattended.
+   * Whether a queued action has to be approved first. Only `assistant` waits for
+   * a decision: `sandbox` runs the work itself (a command under the kernel
+   * sandbox) and `full_access` asks nobody. `@velocelab/connector` owns that
+   * vocabulary so the external agent and this one cannot drift apart.
    */
   const needsApproval = (input: Record<string, unknown>) =>
-    String(input.approval_mode ?? "manual") !== "full_access" &&
-    input.auto_approve !== true;
+    connectorTaskNeedsApproval(input);
+
+
 
   /**
    * Waits for a queued task to settle, so a command's output reaches the model
@@ -360,14 +385,15 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
       // task, exactly as it would for an external connector, and the approval
       // mode decides whether it waits for the user.
       git_action: async (userId, input, device) => {
-        const approvalMode = String(input.approval_mode ?? "manual");
         return connector.createTask(userId, {
           device_id: String(device.id),
           action: "git_action",
           workspace_path: String(input.connector_workspace_path ?? ""),
           run_id: String(input.run_id ?? ""),
           payload: input,
-          requiresApproval: approvalMode !== "full_access",
+          // Git work is workspace-scoped by construction, so sandbox mode runs
+          // it directly and only an approving assistant asks anyone.
+          requiresApproval: needsApproval(input),
         });
       },
       mcp_list_tools: (_userId, input) => { if (!cfg.allowMcpProcesses) throw Error("Local MCP processes are disabled"); return mcp.listTools(input); },
@@ -378,9 +404,9 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
       open_terminal: (_userId, input) => openLocalPath(input, "terminal"),
       open_vscode: (_userId, input) => openLocalPath(input, "vscode"),
       // `run_command` is queued and then waited for, so the model sees the
-      // output of what it asked to run. A session that has not been given
-      // full access still goes through the approval prompt first; the wait
-      // covers the user answering it while the run is still open.
+      // output of what it asked to run. In sandbox mode the task runs right away
+      // under the kernel sandbox; in `assistant` mode it waits for a decision,
+      // and this wait covers the decision plus the run.
       run_command: async (userId, input, device) => {
         const requiresApproval = needsApproval(input);
         const task = await connector.createTask(userId, {

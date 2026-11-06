@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/advanced-chat";
+import { connectorTaskNeedsApproval } from "@velocelab/connector";
 import "@velocelab/connector";
 import "@velocelab/file";
 import { ensureTables } from "./tables.js";
@@ -120,8 +121,9 @@ export async function apply(ctx: Context) {
     error instanceof Error ? error.message : String(error);
   /**
    * Queues an action for an external agent, which serves its work through the
-   * task table rather than an inline handler. A git action waits for approval
-   * unless the session runs with full access, mirroring the local connector.
+   * task table rather than an inline handler. A git action waits for a decision
+   * only in `assistant` mode, mirroring the local connector: sandbox mode treats
+   * git work as workspace-scoped and runs it.
    */
   const queueOnDevice = async (
     userId: number,
@@ -140,9 +142,7 @@ export async function apply(ctx: Context) {
       action,
       workspace_path: String(input.workspace_path ?? ""),
       payload: input,
-      requiresApproval:
-        action === "git_action" &&
-        String(input.approval_mode ?? "manual") !== "full_access",
+      requiresApproval: action === "git_action" && connectorTaskNeedsApproval(input),
     });
   };
   /**

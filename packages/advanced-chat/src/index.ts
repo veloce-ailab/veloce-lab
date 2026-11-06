@@ -108,6 +108,8 @@ export interface AdvancedChatService {
   agentIsDefault(userId: number, id: string): Promise<boolean>;
   deleteAgent(userId: number, id: string): Promise<void>;
   listSessions(userId: number): Promise<HarnessSession[]>;
+  /** Persists the user's manual order for the sessions in `ids`. */
+  reorderSessions(userId: number, ids: string[]): Promise<boolean>;
   createSession(userId: number, input: SessionInput): Promise<HarnessSession>;
   getSession(
     userId: number,
@@ -356,6 +358,8 @@ export interface AgentInput {
 export interface SessionInput {
   /** Hidden sessions keep internal agent work out of the user conversation list. */
   visible?: boolean;
+  /** Archived sessions stay readable but are hidden from the default list. */
+  archived?: boolean;
   agentId?: string;
   title?: string;
   modelName?: string;
@@ -808,6 +812,17 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       );
       return hydrated.filter(Boolean) as unknown as HarnessSession[];
     },
+    async reorderSessions(userId, ids) {
+      const ordered = [...new Set(ids.map((id) => String(id ?? "").trim()).filter(Boolean))].slice(0, 2000);
+      for (let index = 0; index < ordered.length; index += 1) {
+        await db.update(
+          "advanced_chat_sessions",
+          { id: ordered[index], user_id: userId },
+          { sort_order: index },
+        );
+      }
+      return true;
+    },
     async createSession(userId, input) {
       const now = new Date().toISOString();
       return db.create("advanced_chat_sessions", {
@@ -816,6 +831,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         folder_id: "",
         workspace_id: String(input.workspaceId ?? ""),
         visible: input.visible !== false,
+        archived: input.archived === true,
+        sort_order: Date.now(),
          title: input.title?.trim() ?? "",
         run_mode: "assistant",
         agent_id: input.agentId ?? "",
@@ -826,7 +843,9 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         connector_device_id: "",
         connector_workspace_path: "",
         connector_auto_approve: false,
-        connector_approval_mode: "manual",
+        // Sessions start in sandbox mode: workspace-confined work runs without a
+        // prompt, and anything reaching outside the workspace is refused.
+        connector_approval_mode: "sandbox",
         connector_command_prefixes: "[]",
         model_name: input.modelName?.trim() ?? "",
         user_channel_id: input.userChannelId || null,
@@ -911,6 +930,9 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           ...(input.workspaceId !== undefined
             ? { workspace_id: String(input.workspaceId ?? "") }
             : {}),
+          ...(input.archived !== undefined
+            ? { archived: input.archived === true }
+            : {}),
           updated_at: new Date().toISOString(),
         },
       );
@@ -946,7 +968,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         connector_workspace_path: String(input.connectorWorkspacePath ?? ""),
         workspace_id: String(input.workspaceId ?? ""),
         connector_auto_approve: input.connectorAutoApprove === true,
-        connector_approval_mode: String(input.connectorApprovalMode ?? "manual"),
+        connector_approval_mode: String(input.connectorApprovalMode ?? "sandbox"),
         connector_command_prefixes: JSON.stringify(
           input.connectorCommandPrefixes ?? [],
         ),
@@ -973,6 +995,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
           user_id: userId,
           folder_id: "",
           workspace_id: String(input.workspaceId ?? ""),
+          archived: false,
+          sort_order: Date.now(),
           ...fields,
           created_at: now,
         });
@@ -1384,7 +1408,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             workspace_id: String(input.workspaceId ?? ""),
             connector_auto_approve: input.connectorAutoApprove === true,
             connector_approval_mode: String(
-              input.connectorApprovalMode ?? "manual",
+              input.connectorApprovalMode ?? "sandbox",
             ),
             connector_command_prefixes: JSON.stringify(
               input.connectorCommandPrefixes ?? [],
@@ -2015,7 +2039,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
               disabledToolGroups,
               connectorDeviceId,
               connectorWorkspacePath: String(input.connectorWorkspacePath ?? session.connector_workspace_path ?? ""),
-              connectorApprovalMode: String(input.connectorApprovalMode ?? session.connector_approval_mode ?? "manual"),
+              connectorApprovalMode: String((input.connectorApprovalMode ?? session.connector_approval_mode) || "sandbox"),
               connectorAutoApprove: input.connectorAutoApprove === true || session.connector_auto_approve === true || Number(session.connector_auto_approve ?? 0) === 1,
             });
             return value;

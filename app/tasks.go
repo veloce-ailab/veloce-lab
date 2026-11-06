@@ -250,7 +250,15 @@ func (client connectorClient) executeTask(task connectorTask) (taskResult, error
 		result, err := gitActionJSON(workspace, stringArg(task.Payload, "action"), stringArg(task.Payload, "message"))
 		return textTaskResult(result), err
 	case "run_command":
-		result, err := runCommandWithSandbox(workspace, stringArg(task.Payload, "command"), intArg(task.Payload, "timeout_sec", 30), sandboxCommandOptions{
+		timeout := intArg(task.Payload, "timeout_sec", 30)
+		// A sandbox-mode session is held to its workspace by the kernel, so it
+		// does not need the copy-on-write path below; a cloud sandbox already
+		// runs in a workspace of its own and keeps using it.
+		if strings.TrimSpace(stringArg(task.Payload, "sandbox_id")) == "" && isSandboxSession(task.Payload) {
+			result, err := runSandboxedCommand(workspace, stringArg(task.Payload, "command"), timeout)
+			return commandTaskResult(result), err
+		}
+		result, err := runCommandWithSandbox(workspace, stringArg(task.Payload, "command"), timeout, sandboxCommandOptions{
 			SandboxID: stringArg(task.Payload, "sandbox_id"),
 			Backend:   stringArg(task.Payload, "sandbox_backend"),
 		})

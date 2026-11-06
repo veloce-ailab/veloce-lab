@@ -1,0 +1,15 @@
+{
+  "name": "@velocelab/sandbox",
+  "version": "0.1.0",
+  "description": "Kernel-enforced workspace sandbox for connector commands",
+  "type": "module",
+  "main": "dist/index.js",
+  "dev": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "../../node_modules/.bin/tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "yumeri": "^3.0.0"
+  }
+}
