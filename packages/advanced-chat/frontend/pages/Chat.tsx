@@ -1,6 +1,7 @@
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { channelIDForModel, groupModelsByChannel } from "../lib/model-groups"
 import { workspacePickerCanGoUp, workspacePickerIsDriveRoot, workspacePickerIsWindows, workspacePickerParentPath } from "../lib/workspace-picker"
+import { formatMessageClock, formatMessageMoment } from "../lib/message-time"
 import { conversationRecords, mergeConversationTools, readConversationRecords, type ConversationComposerBlock, type ConversationRecord } from "../../src/conversation-records"
 import { ToolCallPreview } from "../components/chat/ToolCallPreview"
 import { Collapse } from "../components/chat/Collapse"
@@ -837,6 +838,8 @@ export default function Chat() {
   const fileCopy = useMemo(() => (language === "zh" ? zhFileAttachmentCopy : enFileAttachmentCopy), [language])
   const agentGroupCopy = useMemo(() => (language === "zh" ? zhAgentGroupCopy : enAgentGroupCopy), [language])
   const approvalModeCopy = useMemo(() => (language === "zh" ? zhConnectorApprovalModeCopy : enConnectorApprovalModeCopy), [language])
+  // What the hover timestamp calls itself in its tooltip.
+  const sentAtLabel = language === "zh" ? "发送时间" : language === "ja" ? "送信時刻" : "Sent"
   const newSessionGreeting = `${greetingForHour(language)}${currentUser?.username ? `${language === "zh" ? "，" : language === "ja" ? "、" : ", "}${currentUser.username}` : ""}`
   const recentAgentsLabel = language === "zh" ? "最近助理" : language === "ja" ? "最近のアシスタント" : "Recent assistants"
   const workspaceEditorCopy = language === "zh" ? { openInVSCode: "在 VS Code 中打开", openVSCodeFailed: "无法在 VS Code 中打开工作区" } : { openInVSCode: "Open in VS Code", openVSCodeFailed: "Failed to open the workspace in VS Code" }
@@ -4537,6 +4540,7 @@ export default function Chat() {
                             onFork={onForkMessage}
                             forkEnabled={chatForkEnabled}
                              forkLabel={language === "zh" ? "创建分支" : "Fork chat"}
+                            sentLabel={sentAtLabel}
                             controlsHidden={isActiveRunRunning && activeRun?.assistant_message_id === message.id}
                           />
                         )
@@ -4627,6 +4631,7 @@ export default function Chat() {
                                 )}
                               </>
                             )}
+                            <MessageSentAt message={message} label={sentAtLabel} />
                           </div>
                           {message.role === "user" && processingDuration !== undefined && (
                             <div className="pl-1 text-xs text-muted-foreground">{formatProcessingDuration(processingDuration)}</div>
@@ -5737,6 +5742,32 @@ const EMPTY_APPROVAL_TASKS: ConnectorApprovalTask[] = []
  * primitive or held stable by the caller, so an untouched message costs one
  * shallow comparison instead of a full re-render.
  */
+/**
+ * The send time that appears beside a message's copy/fork buttons on hover.
+ * It rides in the same row, so it fades in and out with them.
+ */
+const MessageSentAt = memo(function MessageSentAt({
+  message,
+  label,
+}: {
+  message: ChatMessage
+  label: string
+}) {
+  const clock = formatMessageClock(message.created_at)
+  if (!clock) {
+    return null
+  }
+  return (
+    <time
+      dateTime={message.created_at}
+      title={`${label}: ${formatMessageMoment(message.created_at)}`}
+      className="pointer-events-none self-center px-1 text-[11px] tabular-nums text-muted-foreground"
+    >
+      {clock}
+    </time>
+  )
+})
+
 const AssistantMessageSequence = memo(function AssistantMessageSequence({
   message,
   activeRun,
@@ -5748,6 +5779,7 @@ const AssistantMessageSequence = memo(function AssistantMessageSequence({
   onFork,
   forkEnabled,
   forkLabel,
+  sentLabel,
   controlsHidden,
 }: {
   message: ChatMessage
@@ -5760,6 +5792,7 @@ const AssistantMessageSequence = memo(function AssistantMessageSequence({
   onFork: (message: ChatMessage) => void
   forkEnabled: boolean
   forkLabel: string
+  sentLabel: string
   controlsHidden: boolean
 }) {
   const parts = messageContentParts(message, activeRun, copy)
@@ -5790,6 +5823,7 @@ const AssistantMessageSequence = memo(function AssistantMessageSequence({
                     <Copy size={14} />
                   </Button>
                   {forkEnabled && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onFork(message)} title={forkLabel}><GitBranch size={14} /></Button>}
+                  <MessageSentAt message={message} label={sentLabel} />
                 </div>
               </div>
             ))}
@@ -8392,6 +8426,7 @@ function formatAgentWorkTime(value: string) {
   }
   return date.toLocaleString()
 }
+
 
 function messageDisplayContent(message: ChatMessage, run: ChatRun | undefined, copy: ChatCopy) {
   if (message.content.trim()) {
