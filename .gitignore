@@ -26,3 +26,9 @@ dist/
 # credentials. scripts/yumeri.json is the tracked template; the installer copies
 # it into place. Leading slash so the template stays tracked.
 /yumeri.json
+
+# Built by `desktop/scripts/*`: the server payload the desktop app ships and the
+# connector binary it starts, plus the Node runtime cache they are built from.
+/desktop/resources/server/
+/desktop/resources/bin/
+/desktop/.cache/

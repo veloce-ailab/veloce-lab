@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Veloce Lab</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --background: #ffffff;
+        --foreground: #111827;
+        --muted: #6b7280;
+        --accent: #6366f1;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: #0b0f19;
+          --foreground: #f8fafc;
+          --muted: #94a3b8;
+          --accent: #818cf8;
+        }
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        background: var(--background);
+        color: var(--foreground);
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-app-region: drag;
+        user-select: none;
+      }
+      main {
+        display: grid;
+        gap: 12px;
+        justify-items: center;
+        text-align: center;
+        padding: 24px;
+      }
+      .spinner {
+        width: 28px;
+        height: 28px;
+        border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+        border-top-color: var(--accent);
+        border-radius: 999px;
+        animation: spin 0.8s linear infinite;
+      }
+      .title {
+        font-weight: 600;
+      }
+      .hint {
+        color: var(--muted);
+        max-width: 32ch;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      What a window shows until the built-in server answers: the shell is local,
+      the panel is not. Nothing here talks to the bridge — failures are reported
+      by the main process, which owns the retry and the log path.
+    -->
+    <main>
+      <div class="spinner"></div>
+      <div class="title">Starting Veloce Lab</div>
+      <div class="hint">The built-in server is getting ready. This window will load as soon as it answers.</div>
+    </main>
+  </body>
+</html>

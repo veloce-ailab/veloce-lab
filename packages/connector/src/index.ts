@@ -418,18 +418,52 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
       const input = (await s.parseRequestBody()) as any;
       const token = randomBytes(32).toString("base64url");
       const now = new Date().toISOString();
+      // A machine that manages its own connector (the desktop app) names the
+      // kind it is and the installation it belongs to, so the same installation
+      // gets the same device row back instead of piling up a new one per start.
+      const kind = String(input.kind ?? "cli").trim() || "cli";
+      const desktopInstanceID = String(input.desktop_instance_id ?? "").trim().slice(0, 120);
+      const existing: any = desktopInstanceID
+        ? await db.selectOne("advanced_chat_connector_devices", {
+            user_id: id,
+            kind,
+            desktop_instance_id: desktopInstanceID,
+          })
+        : undefined;
+      if (existing) {
+        const rotated = await db.update(
+          "advanced_chat_connector_devices",
+          { id: existing.id, user_id: id },
+          {
+            token_hash: tokenHash(token),
+            name: String(input.name ?? existing.name ?? "Connector").slice(0, 120),
+            hostname: String(input.hostname ?? existing.hostname ?? "").slice(0, 200),
+            os: String(input.os ?? existing.os ?? "").slice(0, 40),
+            arch: String(input.arch ?? existing.arch ?? "").slice(0, 40),
+            version: String(input.version ?? existing.version ?? "").slice(0, 80),
+            updated_at: now,
+          },
+        );
+        if (rotated === 0) throw Error("Could not rotate the device token");
+        const row: any = await db.selectOne("advanced_chat_connector_devices", {
+          id: existing.id,
+        });
+        const { token_hash: _rotated_hash, ...device } = row;
+        s.respond({ ...device, token }, "json");
+        return;
+      }
       const row = await db.create("advanced_chat_connector_devices", {
         id: randomUUID(),
         user_id: id,
         token_hash: tokenHash(token),
         name: String(input.name ?? "Connector").slice(0, 120),
         remark: String(input.remark ?? "").slice(0, 200),
-        hostname: "",
-        os: "",
-        arch: "",
-        version: "",
-        kind: "cli",
-        desktop_instance_id: "",
+        hostname: String(input.hostname ?? "").slice(0, 200),
+        os: String(input.os ?? "").slice(0, 40),
+        arch: String(input.arch ?? "").slice(0, 40),
+        version: String(input.version ?? "").slice(0, 80),
+        kind,
+        desktop_instance_id: desktopInstanceID,
         mode: "platform",
         status: "offline",
         last_seen_at: null,

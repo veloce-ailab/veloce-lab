@@ -1,29 +1,46 @@
-import { app, BrowserWindow, Menu, Notification, Tray, WebContentsView, dialog, ipcMain, nativeTheme, shell } from "electron"
-import { spawn, spawnSync } from "node:child_process"
-import type { ChildProcess } from "node:child_process"
+// The desktop shell: one Electron process, one server, many windows.
+//
+// It does not bundle a frontend. A server is started from the payload that ships
+// with the app (`resources/server`), and every window loads that server's own
+// dashboard, so the panel a window shows is always the panel that server serves —
+// plugins included. The shell itself owns the window, the tray, OS notifications,
+// the connector process and the update check, and it exposes those to the page
+// through the preload bridge.
+//
+// Only the built-in server is reachable by default. A developer build can point
+// the windows at another server instead, which is why every IPC call checks the
+// origin it came from before doing anything.
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeTheme, shell } from "electron"
+import { type ChildProcess, spawn } from "node:child_process"
 import fs from "node:fs"
 import fsp from "node:fs/promises"
 import https from "node:https"
-import { createHash, randomBytes, randomUUID } from "node:crypto"
+import net from "node:net"
 import os from "node:os"
 import path from "node:path"
+import { randomUUID } from "node:crypto"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const indexPath = path.join(__dirname, "web", "index.html")
+const resourcesRoot = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..", "resources")
+const serverRoot = path.join(resourcesRoot, "server")
+const serverEntry = path.join(serverRoot, "node_modules", "yumeri", "bin.js")
+const serverRuntimePath = path.join(serverRoot, "runtime", process.platform === "win32" ? "node.exe" : "node")
+const serverTemplatePath = path.join(serverRoot, "yumeri.json")
+const shellPagePath = path.join(__dirname, "shell", "index.html")
 const iconPath = path.join(__dirname, "..", "assets", "logo.png")
 const preloadPath = path.join(__dirname, "preload.cjs")
 const desktopInternalName = "veloce-lab"
 const desktopDisplayName = "Veloce Lab"
+const preferredServerPort = 12789
 
-// Use the project identifier for Electron's single-instance lock while
-// keeping the display name user-facing in windows and the tray.
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
 app.setName(desktopInternalName)
 
 let mainWindow: BrowserWindow | null = null
-let browserWindow: BrowserWindow | null = null
-let browserToolbarView: WebContentsView | null = null
+const appWindows = new Set<BrowserWindow>()
 let tray: Tray | null = null
 let isQuitting = false
 const desktopProtocolScheme = "veloce"
@@ -31,11 +48,11 @@ const desktopTaskNotificationIDs = new Set<string>()
 const desktopApprovalNotificationIDs = new Set<string>()
 const desktopApprovalNotificationOwners = new Map<string, Electron.WebContents>()
 const desktopApprovalNotifications = new Map<string, Notification>()
-let builtinServerEnabled = false
+let builtinServerEnabled = true
 let builtinServerProcess: ChildProcess | null = null
-const initialWindowTabs = new Map<number, DesktopTab>()
-const browserTabs = new Map<string, { id: string; title: string; url: string; view: WebContentsView }>()
-let activeBrowserTabID = ""
+let builtinServerRestarts = 0
+let serverReady = false
+let activeServerURL = ""
 let desktopTitleBarTheme: "light" | "dark" | null = null
 
 function titleBarOverlayOptions(theme = desktopTitleBarTheme || (nativeTheme.shouldUseDarkColors ? "dark" : "light")) {
@@ -47,7 +64,7 @@ function titleBarOverlayOptions(theme = desktopTitleBarTheme || (nativeTheme.sho
 }
 
 function applyTitleBarOverlayTheme() {
-  for (const window of [mainWindow, browserWindow]) {
+  for (const window of appWindows) {
     if (window && !window.isDestroyed()) {
       window.setTitleBarOverlay(titleBarOverlayOptions())
     }
@@ -55,6 +72,7 @@ function applyTitleBarOverlayTheme() {
 }
 
 type BuiltinServerPhase = "idle" | "checking" | "downloading" | "starting" | "running" | "error"
+
 type ManagedProcessKind = "builtin-server" | "connector"
 
 interface BuiltinServerStatus {
@@ -78,6 +96,8 @@ interface GitHubRelease {
 
 interface BuiltinServerConfig {
   enabled?: boolean
+  /** The port the built-in server last listened on. */
+  port?: number
 }
 
 interface PreparedDesktopUpdate {
@@ -92,6 +112,10 @@ interface DesktopSettings {
   connectorPath: string
   preparedUpdate?: PreparedDesktopUpdate | null
   desktopConnectorTokens: Record<string, string>
+  /** Only a developer build may point the windows at another server. */
+  developerMode: boolean
+  /** The external server that developer mode allows. */
+  serverURL: string
 }
 
 interface DesktopUpdateResult {
@@ -144,13 +168,6 @@ interface DesktopProcessStatus {
   processes: ManagedProcessStatus[]
 }
 
-interface DesktopTab {
-  id: string
-  title: string
-  serverURL: string
-  path: string
-}
-
 interface ManagedConnectorProcess {
   process: ChildProcess | null
   status: ConnectorStatus
@@ -159,24 +176,19 @@ interface ManagedConnectorProcess {
   stopRequested: boolean
 }
 
-interface BrowserToolbarState {
-  activeID: string
-  tabs: Array<{ id: string; title: string; url: string }>
-  canGoBack: boolean
-  canGoForward: boolean
-}
-
 let builtinServerStatus: BuiltinServerStatus = {
   enabled: false,
   running: false,
   phase: "idle",
   message: "",
-  serverURL: builtinServerURL(),
+  serverURL: `http://127.0.0.1:${preferredServerPort}`,
   version: "",
 }
 
 const connectorProcesses = new Map<string, ManagedConnectorProcess>()
+
 const desktopConnectorEnsureRequests = new Map<string, Promise<{ ok: boolean; message: string; version: string }>>()
+
 const connectorRestartTimers = new Map<string, NodeJS.Timeout>()
 
 let desktopSettings: DesktopSettings = {
@@ -185,6 +197,8 @@ let desktopSettings: DesktopSettings = {
   connectorPath: "",
   preparedUpdate: null,
   desktopConnectorTokens: {},
+  developerMode: false,
+  serverURL: "",
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
@@ -239,31 +253,299 @@ function handleDesktopProtocolURL(rawURL: string) {
   }
 }
 
-function tokenFromURL(rawURL: string) {
-  try {
-    const url = new URL(rawURL)
-    const queryToken = url.searchParams.get("token")
-    if (queryToken) {
-      return queryToken
-    }
-    if (url.hash.startsWith("#token=")) {
-      return url.hash.slice("#token=".length)
-    }
-    const hashQueryIndex = url.hash.indexOf("?")
-    if (hashQueryIndex >= 0) {
-      return new URLSearchParams(url.hash.slice(hashQueryIndex + 1)).get("token")
-    }
-  } catch {
-    return null
-  }
-  return null
+// --- built-in server -------------------------------------------------------
+
+function desktopServerDir() {
+  return path.join(veloceDataDir(), "desktop-server")
 }
 
-function loadLocalApp(hash = "/login") {
-  if (!mainWindow) {
+function desktopServerConfigPath() {
+  return path.join(desktopServerDir(), "yumeri.json")
+}
+
+function desktopServerDBPath() {
+  return path.join(desktopServerDir(), "veloce.db")
+}
+
+function desktopServerDataDir() {
+  return path.join(desktopServerDir(), "data")
+}
+
+function desktopServerLogPath() {
+  return path.join(desktopServerDir(), "server.log")
+}
+
+function portIsFree(port: number) {
+  return new Promise<boolean>((resolve) => {
+    const probe = net.createServer()
+    probe.once("error", () => resolve(false))
+    probe.once("listening", () => probe.close(() => resolve(true)))
+    probe.listen(port, "127.0.0.1")
+  })
+}
+
+/**
+ * A port nothing else is listening on.
+ *
+ * It is picked at random rather than reused, so another program on this machine
+ * cannot park itself on the address the shell is about to load — the page in the
+ * window has the desktop bridge, and that is not something a stranger's server
+ * should be able to claim. The preferred range is only a fallback.
+ */
+async function resolveServerPort() {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const candidate = 20_000 + Math.floor(Math.random() * 40_000)
+    if (await portIsFree(candidate)) {
+      const config = await readBuiltinServerConfig()
+      await writeBuiltinServerConfig({ ...config, port: candidate })
+      return candidate
+    }
+  }
+  for (let port = preferredServerPort; port < preferredServerPort + 100; port += 1) {
+    if (await portIsFree(port)) {
+      const config = await readBuiltinServerConfig()
+      await writeBuiltinServerConfig({ ...config, port })
+      return port
+    }
+  }
+  throw new Error("No free port for the built-in server")
+}
+
+/**
+ * Writes the server's configuration from the template that ships with the app,
+ * every start: the template is the source of truth, and the machine-specific
+ * parts (port, database, data root) are filled in here.
+ */
+async function ensureDesktopServerConfig(port: number) {
+  await fsp.mkdir(desktopServerDir(), { recursive: true })
+  await fsp.mkdir(desktopServerDataDir(), { recursive: true })
+  const template = JSON.parse(await fsp.readFile(serverTemplatePath, "utf8"))
+  template.core = { ...(template.core ?? {}), host: "127.0.0.1", port }
+  template.plugins = {
+    ...(template.plugins ?? {}),
+    "@velocelab/sqlite": { path: desktopServerDBPath() },
+    "@velocelab/file": { root: desktopServerDataDir() },
+  }
+  await fsp.writeFile(desktopServerConfigPath(), `${JSON.stringify(template, null, 2)}\n`)
+}
+
+async function appendServerLog(chunk: Buffer) {
+  const text = chunk.toString("utf8")
+  if (!text) return
+  await fsp.appendFile(desktopServerLogPath(), text).catch(() => undefined)
+}
+
+async function waitForServer(url: string, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (!builtinServerProcess || builtinServerProcess.killed) {
+      throw new Error("The built-in server stopped before it was ready")
+    }
+    try {
+      const response = await fetch(`${url}/api/public/settings`, { signal: AbortSignal.timeout(2000) })
+      if (response.ok) return
+    } catch {
+      // Not listening yet.
+    }
+    await sleep(250)
+  }
+  throw new Error(`The built-in server did not answer within ${Math.round(timeoutMs / 1000)} seconds`)
+}
+
+async function ensureBuiltinServerRunning() {
+  if (builtinServerProcess && !builtinServerProcess.killed && serverReady) {
+    return builtinServerStatus
+  }
+  try {
+    updateBuiltinServerStatus({ phase: "checking", message: "Preparing the built-in server", serverURL: "" })
+    const port = await resolveServerPort()
+    await ensureDesktopServerConfig(port)
+    await fsp.writeFile(desktopServerLogPath(), "")
+    const runtime = fs.existsSync(serverRuntimePath) ? serverRuntimePath : process.execPath
+    const env: NodeJS.ProcessEnv = {
+      ...desktopProcessEnv(),
+      NODE_ENV: "production",
+      PORT: String(port),
+    }
+    if (runtime === process.execPath) {
+      // No bundled runtime: the shell's own Node is the next best thing.
+      env.ELECTRON_RUN_AS_NODE = "1"
+    }
+    updateBuiltinServerStatus({ phase: "starting", message: "Starting the built-in server", version: app.getVersion() })
+    const child = spawn(runtime, [serverEntry, "start", "-c", desktopServerConfigPath()], {
+      cwd: serverRoot,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    })
+    builtinServerProcess = child
+    child.stdout?.on("data", (chunk: Buffer) => void appendServerLog(chunk))
+    child.stderr?.on("data", (chunk: Buffer) => void appendServerLog(chunk))
+    child.on("exit", () => {
+      builtinServerProcess = null
+      serverReady = false
+      if (isQuitting || !builtinServerEnabled) return
+      if (builtinServerRestarts < 3) {
+        builtinServerRestarts += 1
+        updateBuiltinServerStatus({ phase: "starting", message: "Restarting the built-in server", version: "" })
+        void ensureBuiltinServerRunning()
+        return
+      }
+      updateBuiltinServerStatus({ phase: "error", message: `The built-in server stopped. See ${desktopServerLogPath()}`, version: "" })
+    })
+    const url = `http://127.0.0.1:${port}`
+    await waitForServer(url, 25_000)
+    serverReady = true
+    builtinServerRestarts = 0
+    updateBuiltinServerStatus({ phase: "running", message: "Built-in server is running", serverURL: url, version: app.getVersion() })
+    loadAppInWindows(url)
+    return builtinServerStatus
+  } catch (error) {
+    serverReady = false
+    const message = error instanceof Error ? error.message : "Failed to start the built-in server"
+    updateBuiltinServerStatus({ phase: "error", message })
+    void showServerFailure(message)
+    return builtinServerStatus
+  }
+}
+
+function stopBuiltinServer() {
+  if (!builtinServerProcess) {
+    serverReady = false
     return
   }
-  void mainWindow.loadFile(indexPath, { hash })
+  const child = builtinServerProcess
+  builtinServerProcess = null
+  serverReady = false
+  child.kill()
+}
+
+/**
+ * Where the windows point. A developer build may name another server; anything
+ * else is the built-in one, which is the only origin the bridge trusts.
+ */
+function trustedServerURL() {
+  if (desktopSettings.developerMode && /^https?:\/\//i.test(desktopSettings.serverURL)) {
+    return desktopSettings.serverURL.replace(/\/+$/, "")
+  }
+  return builtinServerStatus.serverURL || `http://127.0.0.1:${preferredServerPort}`
+}
+
+function trustedOrigin() {
+  try {
+    return new URL(trustedServerURL()).origin
+  } catch {
+    return ""
+  }
+}
+
+// --- windows ---------------------------------------------------------------
+
+function loadAppInWindows(url: string) {
+  activeServerURL = url
+  for (const window of appWindows) {
+    if (window.isDestroyed()) continue
+    void window.loadURL(url)
+  }
+  updateWindowTitles()
+}
+
+function updateWindowTitles() {
+  const external = desktopSettings.developerMode && /^https?:\/\//i.test(desktopSettings.serverURL)
+  for (const window of appWindows) {
+    if (window.isDestroyed()) continue
+    window.setTitle(external ? `${desktopDisplayName} — external server` : desktopDisplayName)
+  }
+}
+
+function isTrustedNavigation(rawURL: string) {
+  if (rawURL.startsWith("about:")) return true
+  try {
+    return new URL(rawURL).origin === trustedOrigin()
+  } catch {
+    return false
+  }
+}
+
+function handleAppNavigation(event: Electron.Event, rawURL: string) {
+  if (isTrustedNavigation(rawURL)) return
+  event.preventDefault()
+  if (/^https?:\/\//i.test(rawURL)) void shell.openExternal(rawURL)
+}
+
+async function showServerFailure(message: string) {
+  const options = {
+    type: "error" as const,
+    title: desktopDisplayName,
+    message: "The built-in server could not start",
+    detail: `${message}\n\nLog: ${desktopServerLogPath()}`,
+    buttons: ["Retry", "Open data folder", "Quit"],
+    defaultId: 0,
+    cancelId: 2,
+  }
+  const result = mainWindow
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options)
+  if (result.response === 0) {
+    builtinServerRestarts = 0
+    void ensureBuiltinServerRunning()
+    return
+  }
+  if (result.response === 1) {
+    await shell.openPath(desktopServerDir())
+    return
+  }
+  isQuitting = true
+  app.quit()
+}
+
+function createWindow() {
+  const window = new BrowserWindow({
+    width: 1280,
+    height: 860,
+    minWidth: 960,
+    minHeight: 640,
+    title: desktopDisplayName,
+    icon: iconPath,
+    ...(process.platform === "win32" ? { backgroundMaterial: "acrylic" as const } : {}),
+    titleBarStyle: "hidden",
+    titleBarOverlay: titleBarOverlayOptions(),
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: preloadPath,
+      sandbox: false,
+    },
+  })
+  appWindows.add(window)
+  if (!mainWindow) mainWindow = window
+  window.webContents.on("will-navigate", handleAppNavigation)
+  window.webContents.on("will-redirect", handleAppNavigation)
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isTrustedNavigation(url)) return { action: "allow" }
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+    return { action: "deny" }
+  })
+  window.on("close", (event) => {
+    if (isQuitting || window !== mainWindow) return
+    event.preventDefault()
+    window.hide()
+  })
+  window.on("closed", () => {
+    appWindows.delete(window)
+    if (mainWindow === window) {
+      mainWindow = Array.from(appWindows)[0] || null
+    }
+  })
+  void window.loadFile(shellPagePath)
+  if (serverReady && activeServerURL) void window.loadURL(activeServerURL)
+  return window
+}
+
+function openWindow() {
+  const window = createWindow()
+  window.show()
+  window.focus()
 }
 
 function showMainWindow() {
@@ -271,209 +553,151 @@ function showMainWindow() {
     createWindow()
     return
   }
-  if (mainWindow.isMinimized()) {
-    mainWindow.restore()
-  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
 }
 
-function normalizeBrowserURL(value: unknown) {
-  const raw = typeof value === "string" ? value.trim() : ""
-  if (!raw) {
-    return "https://www.bing.com/"
-  }
+// --- IPC ------------------------------------------------------------------
+
+/** Whether a frame is allowed to use the bridge: the server, or our own shell page. */
+function isTrustedSender(frameURL: string) {
+  if (!frameURL) return false
   try {
-    const url = new URL(raw)
-    if (url.protocol === "http:" || url.protocol === "https:") {
-      return url.toString()
-    }
+    const parsed = new URL(frameURL)
+    if (parsed.protocol === "file:") return decodeURIComponent(parsed.pathname) === shellPagePath
+    return parsed.origin === trustedOrigin()
   } catch {
-    // Treat text without a valid http(s) URL as a search query.
-  }
-  return `https://www.bing.com/search?q=${encodeURIComponent(raw)}`
-}
-
-function currentBrowserTab() {
-  return browserTabs.get(activeBrowserTabID) || null
-}
-
-function browserToolbarState(): BrowserToolbarState {
-  const active = currentBrowserTab()
-  return {
-    activeID: active?.id || "",
-    tabs: Array.from(browserTabs.values()).map((tab) => ({ id: tab.id, title: tab.title, url: tab.url })),
-    canGoBack: Boolean(active?.view.webContents.canGoBack()),
-    canGoForward: Boolean(active?.view.webContents.canGoForward()),
+    return false
   }
 }
 
-function emitBrowserState() {
-  browserToolbarView?.webContents.send("browser:state", browserToolbarState())
-}
-
-function askBrowserPage(tab: { title: string; url: string }) {
-  mainWindow?.webContents.send("browser:ask-page", { title: tab.title, url: tab.url })
-}
-
-function layoutBrowserViews() {
-  if (!browserWindow || browserWindow.isDestroyed() || !browserToolbarView) {
-    return
-  }
-  const [width, height] = browserWindow.getContentSize()
-  const toolbarHeight = 76
-  browserToolbarView.setBounds({ x: 0, y: 0, width, height: toolbarHeight })
-  const active = currentBrowserTab()
-  if (active) {
-    active.view.setBounds({ x: 0, y: toolbarHeight, width, height: Math.max(0, height - toolbarHeight) })
-  }
-}
-
-function setActiveBrowserTab(tabID: string) {
-  const tab = browserTabs.get(tabID)
-  if (!browserWindow || !tab) {
-    return
-  }
-  const current = currentBrowserTab()
-  if (current && current.id !== tabID) {
-    browserWindow.contentView.removeChildView(current.view)
-  }
-  activeBrowserTabID = tabID
-  browserWindow.contentView.addChildView(tab.view)
-  layoutBrowserViews()
-  emitBrowserState()
-}
-
-function createBrowserTab(rawURL?: string) {
-  if (!browserWindow) {
-    return
-  }
-  const id = `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  const view = new WebContentsView({
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
+function handle(channel: string, handler: (event: Electron.IpcMainInvokeEvent, ...args: any[]) => unknown) {
+  ipcMain.handle(channel, (event, ...args) => {
+    const frameURL = event.senderFrame?.url ?? ""
+    if (!isTrustedSender(frameURL)) {
+      throw new Error(`Refused ${channel} from an untrusted origin: ${frameURL}`)
+    }
+    return handler(event, ...args)
   })
-  const tab = { id, title: "New tab", url: normalizeBrowserURL(rawURL), view }
-  browserTabs.set(id, tab)
-  view.webContents.on("page-title-updated", (_event, title) => {
-    tab.title = title.trim() || "New tab"
-    emitBrowserState()
-  })
-  const updateURL = () => {
-    tab.url = view.webContents.getURL() || tab.url
-    emitBrowserState()
+}
+
+async function saveDesktopSettings(event: Electron.IpcMainInvokeEvent, input: unknown) {
+  const next = normalizeDesktopSettings(input)
+  if (next.developerMode && !desktopSettings.developerMode) {
+    const window = BrowserWindow.fromWebContents(event.sender) ?? mainWindow ?? undefined
+    const options = {
+      type: "warning" as const,
+      title: desktopDisplayName,
+      message: "Allow connecting to an external server?",
+      detail:
+        "A page served by another machine gets the same desktop abilities this app has, including opening files, starting a connector and showing notifications. Only do this with a server you control.",
+      buttons: ["Cancel", "Allow"],
+      defaultId: 0,
+      cancelId: 0,
+    }
+    const answer = window ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options)
+    if (answer.response !== 1) return desktopSettingsForRenderer()
   }
-  view.webContents.on("did-navigate", updateURL)
-  view.webContents.on("did-navigate-in-page", updateURL)
-  view.webContents.on("did-stop-loading", updateURL)
-  view.webContents.setWindowOpenHandler(({ url }) => {
-    createBrowserTab(url)
-    return { action: "deny" }
+  if (!next.developerMode) next.serverURL = ""
+  if (next.serverURL && !/^https?:\/\//i.test(next.serverURL)) {
+    throw new Error("The server URL must start with http:// or https://")
+  }
+  const targetChanged = next.developerMode !== desktopSettings.developerMode || next.serverURL !== desktopSettings.serverURL
+  desktopSettings = await writeDesktopSettings(next)
+  applyDesktopProxySettings()
+  if (targetChanged) {
+    if (desktopSettings.developerMode && desktopSettings.serverURL) {
+      loadAppInWindows(desktopSettings.serverURL.replace(/\/+$/, ""))
+    } else {
+      void ensureBuiltinServerRunning().then(() => loadAppInWindows(trustedServerURL()))
+    }
+  }
+  return desktopSettingsForRenderer()
+}
+
+function setupIPC() {
+  handle("builtin-server:get-status", () => builtinServerStatus)
+  handle("builtin-server:set-enabled", async (_event, enabled: boolean) => {
+    builtinServerEnabled = enabled === true
+    await writeBuiltinServerConfig({ enabled: builtinServerEnabled, port: builtinServerStatus.serverURL ? Number(new URL(builtinServerStatus.serverURL).port) : undefined })
+    if (builtinServerEnabled) {
+      await ensureBuiltinServerRunning()
+    } else {
+      stopBuiltinServer()
+      updateBuiltinServerStatus({ phase: "idle", message: "The built-in server is turned off", version: "" })
+    }
+    return builtinServerStatus
   })
-  view.webContents.on("context-menu", (_event, params) => {
-    const selection = params.selectionText.trim()
-    const menu = Menu.buildFromTemplate([
-      { label: "后退", enabled: view.webContents.canGoBack(), click: () => view.webContents.goBack() },
-      { label: "前进", enabled: view.webContents.canGoForward(), click: () => view.webContents.goForward() },
-      { label: "刷新", click: () => view.webContents.reload() },
-      { type: "separator" },
-      ...(selection ? [
-        { label: "复制", click: () => view.webContents.copy() },
-        { label: "使用 Bing 搜索选中文本", click: () => createBrowserTab(`https://www.bing.com/search?q=${encodeURIComponent(selection)}`) },
-      ] : []),
-      ...(selection ? [{ type: "separator" as const }] : []),
-      { label: "询问本页面", click: () => askBrowserPage(tab) },
-      { label: "在默认浏览器中打开", click: () => void shell.openExternal(tab.url) },
-    ])
-    if (browserWindow && !browserWindow.isDestroyed()) {
-      menu.popup({ window: browserWindow })
+  handle("connector:start", async (_event, input: StartConnectorInput) => startConnector(input))
+  handle("connector:ensure-desktop", async (_event, input: { serverURL: string; token: string; deviceID?: string }) => ensureDesktopConnector(input))
+  handle("desktop-processes:get-status", () => getDesktopProcessStatus())
+  handle("desktop-processes:terminate", (_event, id: string) => terminateManagedProcess(id))
+  handle("desktop-settings:get", () => desktopSettingsForRenderer())
+  handle("desktop-settings:save", (event, input: unknown) => saveDesktopSettings(event, input))
+  handle("desktop-settings:choose-file", async () => chooseDesktopExecutable())
+  handle("desktop:choose-folder", async (_event, initialPath: unknown) => chooseDesktopFolder(initialPath))
+  handle("desktop:get-system-info", () => ({ hostname: os.hostname(), platform: process.platform, instanceID: desktopInstanceID() }))
+  handle("desktop:open-in-vscode", async (_event, workspacePath: string) => openWorkspaceInVSCode(workspacePath))
+  handle("desktop:notify-task-complete", (event, input: unknown) => showDesktopTaskNotification(event.sender, input))
+  handle("desktop:notify-connector-approval", (event, input: unknown) => showDesktopApprovalNotification(event.sender, input))
+  handle("desktop:dismiss-connector-approval", (_event, taskID: unknown) => ({ ok: dismissDesktopApprovalNotification(typeof taskID === "string" ? taskID : "") }))
+  handle("desktop:menu-action", (event, action: unknown) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (action === "new-window") {
+      openWindow()
+      return { ok: true }
+    }
+    if (action === "close-window") {
+      window?.destroy()
+      return { ok: true }
+    }
+    if (action === "quit") {
+      isQuitting = true
+      app.quit()
+      return { ok: true }
+    }
+    if (!window || !["copy", "paste", "cut", "delete", "undo", "redo"].includes(String(action))) {
+      return { ok: false }
+    }
+    const contents = window.webContents
+    if (action === "copy") contents.copy()
+    if (action === "paste") contents.paste()
+    if (action === "cut") contents.cut()
+    if (action === "delete") contents.delete()
+    if (action === "undo") contents.undo()
+    if (action === "redo") contents.redo()
+    return { ok: true }
+  })
+  handle("desktop:open-link", async (_event, target: unknown) => {
+    const links: Record<string, string> = {
+      "official-site": "https://veloce.flweb.cn",
+      github: "https://github.com/veloce-ailab/veloce-lab",
+    }
+    const url = typeof target === "string" ? links[target] : undefined
+    if (!url) return { ok: false }
+    await shell.openExternal(url)
+    return { ok: true }
+  })
+  handle("desktop:open-external-url", async (_event, rawURL: unknown) => {
+    if (typeof rawURL !== "string") return { ok: false }
+    try {
+      const url = new URL(rawURL)
+      if (url.protocol !== "https:" && url.protocol !== "http:") return { ok: false }
+      await shell.openExternal(url.toString())
+      return { ok: true }
+    } catch {
+      return { ok: false }
     }
   })
-  setActiveBrowserTab(id)
-  void view.webContents.loadURL(tab.url)
-}
-
-function closeBrowserTab(tabID: string) {
-  const tab = browserTabs.get(tabID)
-  if (!tab || !browserWindow) {
-    return
-  }
-  const ids = Array.from(browserTabs.keys())
-  const index = ids.indexOf(tabID)
-  browserWindow.contentView.removeChildView(tab.view)
-  browserTabs.delete(tabID)
-  tab.view.webContents.close()
-  if (browserTabs.size === 0) {
-    createBrowserTab()
-    return
-  }
-  if (activeBrowserTabID === tabID) {
-    setActiveBrowserTab(ids[Math.max(0, index - 1)] || Array.from(browserTabs.keys())[0])
-    return
-  }
-  emitBrowserState()
-}
-
-function openDesktopBrowser(rawURL?: string) {
-  if (!browserWindow || browserWindow.isDestroyed()) {
-    browserWindow = new BrowserWindow({
-      width: 1180,
-      height: 820,
-      minWidth: 760,
-      minHeight: 520,
-      title: `${desktopDisplayName} Browser`,
-      icon: iconPath,
-      ...(process.platform === "win32" ? { backgroundMaterial: "acrylic" as const } : {}),
-      titleBarStyle: "hidden",
-      titleBarOverlay: titleBarOverlayOptions(),
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        preload: preloadPath,
-        sandbox: false,
-      },
-    })
-    browserToolbarView = new WebContentsView({
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        preload: preloadPath,
-        sandbox: false,
-      },
-    })
-    browserWindow.contentView.addChildView(browserToolbarView)
-    browserWindow.on("resize", layoutBrowserViews)
-    browserWindow.on("closed", () => {
-      for (const tab of browserTabs.values()) {
-        tab.view.webContents.close()
-      }
-      browserWindow = null
-      browserToolbarView = null
-      activeBrowserTabID = ""
-      browserTabs.clear()
-    })
-    browserToolbarView.webContents.on("did-finish-load", emitBrowserState)
-    void browserToolbarView.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(browserToolbarHTML())}`)
-  }
-  browserWindow.show()
-  browserWindow.focus()
-  if (rawURL || browserTabs.size === 0) {
-    createBrowserTab(rawURL)
-  } else {
-    layoutBrowserViews()
-    emitBrowserState()
-  }
-}
-
-function browserToolbarHTML() {
-  return `<!doctype html>
-<html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box}body{position:relative;margin:0;background:#f7f8fa;color:#172033;font:13px system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}.tabs{height:36px;display:flex;align-items:end;gap:4px;padding:4px 142px 0 8px;-webkit-app-region:drag}.tabs button,.nav button,.external{font:inherit;-webkit-app-region:no-drag}.tab{display:flex;align-items:center;gap:7px;min-width:0;max-width:220px;height:28px;padding:0 8px;border:1px solid transparent;border-radius:6px 6px 0 0;background:transparent;color:#667085}.tab.active{background:#fff;border-color:#e2e5ea;color:#172033}.tab span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tab-close{border:0;background:transparent;color:inherit;font-size:16px;line-height:1;cursor:pointer}.new-tab{width:28px;height:28px;border:0;border-radius:5px;background:transparent;color:#556070;font-size:18px;cursor:pointer}.external{position:absolute;right:138px;top:4px;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:5px;background:transparent;cursor:pointer}.external:hover{background:#e9edf2}.browser-icon{position:relative;width:15px;height:12px;border:1.5px solid #556070;border-radius:2px}.browser-icon:before{content:'';position:absolute;left:-1.5px;right:-1.5px;top:2px;border-top:1.5px solid #556070}.nav{height:40px;display:flex;align-items:center;gap:6px;padding:4px 10px;border-top:1px solid #e5e7eb;background:#fff}.nav button{width:28px;height:28px;border:0;border-radius:5px;background:transparent;color:#475467;font-size:16px;cursor:pointer}.nav button:disabled{opacity:.35}.address{height:28px;flex:1;border:1px solid #d8dde5;border-radius:5px;background:#f7f8fa;padding:0 9px;color:#172033;outline:none}.address:focus{border-color:#98a2b3;background:#fff}</style></head>
-<body><div class="tabs" id="tabs"></div><button id="external" class="external" title="Open in default browser"><span class="browser-icon"></span></button><div class="nav"><button id="back" title="Back">&lt;</button><button id="forward" title="Forward">&gt;</button><button id="reload" title="Reload">R</button><input id="address" class="address" autocomplete="off" spellcheck="false"><button id="go" title="Go">Go</button></div>
-<script>const api=window.veloceDesktop;let state={tabs:[],activeID:'',canGoBack:false,canGoForward:false};const tabs=document.getElementById('tabs'),address=document.getElementById('address'),back=document.getElementById('back'),forward=document.getElementById('forward');const action=(input)=>api.browserAction(input);function render(next){state=next||state;tabs.textContent='';state.tabs.forEach(tab=>{const item=document.createElement('button');item.className='tab'+(tab.id===state.activeID?' active':'');item.onclick=()=>action({type:'activate',id:tab.id});const label=document.createElement('span');label.textContent=tab.title||tab.url;item.append(label);const close=document.createElement('button');close.className='tab-close';close.textContent='x';close.onclick=(event)=>{event.stopPropagation();action({type:'close',id:tab.id})};item.append(close);tabs.append(item)});const add=document.createElement('button');add.className='new-tab';add.textContent='+';add.onclick=()=>action({type:'new'});tabs.append(add);const active=state.tabs.find(tab=>tab.id===state.activeID);address.value=active?active.url:'';back.disabled=!state.canGoBack;forward.disabled=!state.canGoForward}address.addEventListener('keydown',event=>{if(event.key==='Enter')action({type:'navigate',url:address.value})});document.getElementById('go').onclick=()=>action({type:'navigate',url:address.value});document.getElementById('external').onclick=()=>action({type:'external'});back.onclick=()=>action({type:'back'});forward.onclick=()=>action({type:'forward'});document.getElementById('reload').onclick=()=>action({type:'reload'});api.onBrowserState(render);action({type:'state'}).then(render);</script></body></html>`
+  handle("desktop:set-titlebar-theme", (_event, theme: unknown) => {
+    if (theme !== "light" && theme !== "dark") return { ok: false }
+    desktopTitleBarTheme = theme
+    applyTitleBarOverlayTheme()
+    return { ok: true }
+  })
+  handle("desktop-update:check", async () => checkDesktopUpdate())
+  handle("desktop-update:install-prepared", async () => installPreparedDesktopUpdate())
 }
 
 function veloceDataDir() {
@@ -508,18 +732,6 @@ function desktopInstanceID() {
   fs.mkdirSync(veloceDataDir(), { recursive: true })
   fs.writeFileSync(desktopInstanceIDPath(), instanceID, "utf8")
   return instanceID
-}
-
-function builtinServerRuntimeDir() {
-  return path.join(veloceDataDir(), "community-data")
-}
-
-function builtinServerDBPath() {
-  const configured = process.env.VELOCE_BUILTIN_SERVER_DB_PATH?.trim()
-  if (configured) {
-    return path.isAbsolute(configured) ? configured : path.join(builtinServerRuntimeDir(), configured)
-  }
-  return path.join(builtinServerRuntimeDir(), "flai.db")
 }
 
 async function readBuiltinServerConfig() {
@@ -575,6 +787,8 @@ function normalizeDesktopSettings(value: unknown): DesktopSettings {
       ? { tagName: prepared.tagName, assetName: prepared.assetName, filePath: prepared.filePath }
       : null,
     desktopConnectorTokens,
+    developerMode: item.developerMode === true,
+    serverURL: typeof item.serverURL === "string" ? item.serverURL.trim().replace(/\/+$/, "") : "",
   }
 }
 
@@ -608,93 +822,6 @@ function desktopProcessEnv() {
     env.https_proxy = proxy
   }
   return env
-}
-
-function builtinServerPort() {
-  return (process.env.VELOCE_BUILTIN_SERVER_PORT || process.env.PORT || "8080").trim()
-}
-
-function builtinServerURL() {
-  return `http://localhost:${builtinServerPort()}`
-}
-
-function builtinServerEnv() {
-  return {
-    ...desktopProcessEnv(),
-    PORT: builtinServerPort(),
-    DB_PATH: builtinServerDBPath(),
-  }
-}
-
-async function resolveBuiltinServerURL(pid?: number) {
-  if (pid) {
-    const port = await waitForProcessListenPort(pid, 8000)
-    if (port) {
-      return `http://localhost:${port}`
-    }
-  }
-  return builtinServerURL()
-}
-
-async function waitForProcessListenPort(pid: number, timeoutMs: number) {
-  const startedAt = Date.now()
-  while (Date.now() - startedAt < timeoutMs) {
-    const port = detectProcessListenPort(pid)
-    if (port) {
-      return port
-    }
-    await sleep(250)
-  }
-  return null
-}
-
-function detectProcessListenPort(pid: number) {
-  if (process.platform === "win32") {
-    return detectWindowsListenPort(pid)
-  }
-  return detectLsofListenPort(pid) || detectSsListenPort(pid)
-}
-
-function detectWindowsListenPort(pid: number) {
-  const script = `$ErrorActionPreference='SilentlyContinue'; ` + [
-    `Get-NetTCPConnection -OwningProcess ${pid} -State Listen`,
-    "Where-Object { $_.LocalAddress -eq '127.0.0.1' -or $_.LocalAddress -eq '0.0.0.0' -or $_.LocalAddress -eq '::1' -or $_.LocalAddress -eq '::' }",
-    "Sort-Object LocalPort",
-    "Select-Object -First 1 -ExpandProperty LocalPort",
-  ].join(" | ")
-  const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", script], { encoding: "utf8", windowsHide: true })
-  return firstPort(result.stdout)
-}
-
-function detectLsofListenPort(pid: number) {
-  const result = spawnSync("lsof", ["-nP", "-a", "-p", String(pid), "-iTCP", "-sTCP:LISTEN", "-FnP"], { encoding: "utf8" })
-  return firstPort(result.stdout)
-}
-
-function detectSsListenPort(pid: number) {
-  const result = spawnSync("ss", ["-ltnp"], { encoding: "utf8" })
-  const line = result.stdout
-    .split(/\r?\n/)
-    .find((item) => item.includes(`pid=${pid},`))
-  return firstPort(line || "")
-}
-
-function firstPort(value: string) {
-  const colonMatch = value.match(/:(\d+)(?:\s|$)/)
-  const plainMatch = value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => /^\d{2,5}$/.test(line))
-  const rawPort = colonMatch?.[1] || plainMatch
-  if (!rawPort) {
-    return null
-  }
-  const port = Number(rawPort)
-  return port > 0 && port <= 65535 ? port : null
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function updateBuiltinServerStatus(patch: Partial<BuiltinServerStatus>) {
@@ -769,156 +896,10 @@ function emitDesktopProcessStatus() {
   }
 }
 
-function setupBuiltinServerIPC() {
-  ipcMain.handle("builtin-server:get-status", () => builtinServerStatus)
-  ipcMain.handle("builtin-server:set-enabled", async (_event, enabled: boolean) => {
-    builtinServerEnabled = enabled
-    await writeBuiltinServerConfig({ enabled })
-    if (enabled) {
-      await ensureBuiltinServerRunning()
-    } else {
-      stopBuiltinServer()
-      updateBuiltinServerStatus({ phase: "idle", message: "", version: "" })
-    }
-    return builtinServerStatus
-  })
-  ipcMain.handle("connector:start", async (_event, input: StartConnectorInput) => startConnector(input))
-  ipcMain.handle("connector:ensure-desktop", async (_event, input: { serverURL: string; authToken: string }) => ensureDesktopConnector(input))
-  ipcMain.handle("desktop-auth:login", async (event, input: unknown) => desktopAuthLogin(event, input))
-  ipcMain.handle("desktop-processes:terminate", (_event, id: string) => terminateManagedProcess(id))
-  ipcMain.handle("desktop-processes:get-status", () => getDesktopProcessStatus())
-  ipcMain.handle("desktop-settings:get", () => desktopSettingsForRenderer())
-  ipcMain.handle("desktop-settings:save", async (_event, input: DesktopSettings) => writeDesktopSettings(input))
-  ipcMain.handle("desktop-settings:choose-file", async () => chooseDesktopExecutable())
-  ipcMain.handle("desktop:choose-folder", async (_event, initialPath: unknown) => chooseDesktopFolder(initialPath))
-  ipcMain.handle("desktop:get-system-info", () => ({ hostname: os.hostname(), platform: process.platform, instanceID: desktopInstanceID() }))
-  ipcMain.handle("desktop:open-in-vscode", async (_event, workspacePath: string) => openWorkspaceInVSCode(workspacePath))
-  ipcMain.handle("desktop:notify-task-complete", (event, input: unknown) => showDesktopTaskNotification(event.sender, input))
-  ipcMain.handle("desktop:notify-connector-approval", (event, input: unknown) => showDesktopApprovalNotification(event.sender, input))
-  ipcMain.handle("desktop:dismiss-connector-approval", (_event, taskID: unknown) => ({ ok: dismissDesktopApprovalNotification(typeof taskID === "string" ? taskID : "") }))
-  ipcMain.handle("desktop:menu-action", (event, action: unknown) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (action === "new-window") {
-      const nextWindow = createWindow()
-      nextWindow.show()
-      nextWindow.focus()
-      return { ok: true }
-    }
-    if (action === "close-window") {
-      window?.destroy()
-      return { ok: true }
-    }
-    if (action === "quit") {
-      isQuitting = true
-      app.quit()
-      return { ok: true }
-    }
-    if (!window || !["copy", "paste", "cut", "delete", "undo", "redo"].includes(String(action))) {
-      return { ok: false }
-    }
-    const contents = window.webContents
-    if (action === "copy") contents.copy()
-    if (action === "paste") contents.paste()
-    if (action === "cut") contents.cut()
-    if (action === "delete") contents.delete()
-    if (action === "undo") contents.undo()
-    if (action === "redo") contents.redo()
-    return { ok: true }
-  })
-  ipcMain.handle("desktop:open-link", async (_event, target: unknown) => {
-    const links: Record<string, string> = {
-      "official-site": "https://veloce.flweb.cn",
-      github: "https://github.com/veloce-ailab/veloce-lab",
-    }
-    const url = typeof target === "string" ? links[target] : undefined
-    if (!url) return { ok: false }
-    await shell.openExternal(url)
-    return { ok: true }
-  })
-  ipcMain.handle("desktop:open-external-url", async (_event, rawURL: unknown) => {
-    if (typeof rawURL !== "string") {
-      return { ok: false }
-    }
-    try {
-      const url = new URL(rawURL)
-      if (url.protocol !== "https:" && url.protocol !== "http:") {
-        return { ok: false }
-      }
-      await shell.openExternal(url.toString())
-      return { ok: true }
-    } catch {
-      return { ok: false }
-    }
-  })
-  ipcMain.handle("desktop:set-titlebar-theme", (_event, theme: unknown) => {
-    if (theme !== "light" && theme !== "dark") {
-      return { ok: false }
-    }
-    desktopTitleBarTheme = theme
-    applyTitleBarOverlayTheme()
-    return { ok: true }
-  })
-  ipcMain.handle("browser:open", async (_event, rawURL?: unknown) => {
-    openDesktopBrowser(typeof rawURL === "string" ? rawURL : undefined)
-    return { ok: true }
-  })
-  ipcMain.handle("browser:action", async (_event, input: unknown) => handleBrowserAction(input))
-  ipcMain.handle("desktop-update:check", async () => checkDesktopUpdate())
-  ipcMain.handle("desktop-update:install-prepared", async () => installPreparedDesktopUpdate())
-  ipcMain.handle("desktop-tabs:get-initial-state", (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    return { windowID: window?.id || 0, tab: window ? initialWindowTabs.get(window.id) || null : null }
-  })
-  ipcMain.handle("desktop-tabs:detach", (event, input: unknown) => detachDesktopTab(event.sender, input))
-}
-
-function detachDesktopTab(sender: Electron.WebContents, input: unknown) {
-  const sourceWindow = BrowserWindow.fromWebContents(sender)
-  const tab = normalizeDesktopTab(input)
-  if (!sourceWindow || !tab) {
-    return { moved: false }
-  }
-  const point = isRecord(input) ? input : {}
-  const screenX = finiteNumber(point.screenX)
-  const screenY = finiteNumber(point.screenY)
-  const targetWindow = BrowserWindow.getAllWindows().find((window) => {
-    if (window.id === sourceWindow.id || window.isDestroyed()) {
-      return false
-    }
-    const bounds = window.getBounds()
-    return screenX >= bounds.x && screenX <= bounds.x + bounds.width && screenY >= bounds.y && screenY <= bounds.y + bounds.height
-  })
-  if (targetWindow) {
-    targetWindow.webContents.send("desktop-tabs:received", tab)
-    targetWindow.show()
-    targetWindow.focus()
-    return { moved: true, targetWindowID: targetWindow.id }
-  }
-  const window = createWindow(tab)
-  return { moved: Boolean(window), targetWindowID: window?.id || 0 }
-}
-
-function normalizeDesktopTab(value: unknown): DesktopTab | null {
-  if (!isRecord(value)) {
-    return null
-  }
-  const id = typeof value.id === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(value.id) ? value.id : ""
-  if (!id) {
-    return null
-  }
-  const title = typeof value.title === "string" ? value.title.trim().slice(0, 40) : "Chat"
-  const serverURL = typeof value.serverURL === "string" ? value.serverURL.trim().slice(0, 2048) : ""
-  const pagePath = typeof value.path === "string" && value.path.startsWith("/") ? value.path.slice(0, 1024) : "/chat"
-  return { id, title: title || "Chat", serverURL, path: pagePath }
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object"
 }
 
-function finiteNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : -1
-}
 
 async function openWorkspaceInVSCode(workspacePath: string) {
   const targetPath = workspacePath.trim()
@@ -930,128 +911,6 @@ async function openWorkspaceInVSCode(workspacePath: string) {
     return { ok: true, message: "VS Code opened" }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "Failed to open VS Code" }
-  }
-}
-
-async function ensureBuiltinServerRunning() {
-  if (builtinServerProcess && !builtinServerProcess.killed) {
-    return updateBuiltinServerStatus({ phase: "running", message: "Built-in server is running", serverURL: builtinServerStatus.serverURL || builtinServerURL() })
-  }
-
-  try {
-    updateBuiltinServerStatus({ phase: "checking", message: "Preparing bundled built-in server", serverURL: "" })
-    const install = await ensureLatestCommunityInstall()
-    await prepareBuiltinServerRuntime()
-    updateBuiltinServerStatus({ phase: "starting", message: "Starting built-in server", version: install.tagName })
-    builtinServerProcess = spawn(install.executablePath, [], {
-      cwd: builtinServerRuntimeDir(),
-      env: builtinServerEnv(),
-      stdio: "ignore",
-      windowsHide: true,
-    })
-    builtinServerProcess.on("exit", () => {
-      builtinServerProcess = null
-      if (!isQuitting && builtinServerEnabled) {
-        updateBuiltinServerStatus({ phase: "error", message: "Built-in server stopped unexpectedly" })
-      }
-    })
-    builtinServerProcess.unref()
-    const serverURL = await resolveBuiltinServerURL(builtinServerProcess.pid)
-    return updateBuiltinServerStatus({ phase: "running", message: "Built-in server is running", serverURL, version: install.tagName })
-  } catch (error) {
-    return updateBuiltinServerStatus({
-      phase: "error",
-      message: error instanceof Error ? error.message : "Failed to start built-in server",
-    })
-  }
-}
-
-function stopBuiltinServer() {
-  if (!builtinServerProcess) {
-    return
-  }
-  builtinServerProcess.kill()
-  builtinServerProcess = null
-}
-
-async function prepareBuiltinServerRuntime() {
-  const runtimeDir = builtinServerRuntimeDir()
-  const dbPath = builtinServerDBPath()
-  await fsp.mkdir(runtimeDir, { recursive: true })
-  if (fs.existsSync(dbPath)) {
-    return
-  }
-  const legacyDBPath = await findLegacyBuiltinServerDB()
-  if (legacyDBPath) {
-    await fsp.mkdir(path.dirname(dbPath), { recursive: true })
-    await fsp.copyFile(legacyDBPath, dbPath)
-  }
-}
-
-async function findLegacyBuiltinServerDB() {
-  const communityRoot = path.join(veloceDataDir(), "community")
-  const candidates: Array<{ filePath: string; mtimeMs: number }> = []
-  await collectLegacyDBFiles(communityRoot, candidates)
-  candidates.sort((left, right) => right.mtimeMs - left.mtimeMs)
-  return candidates[0]?.filePath || null
-}
-
-async function collectLegacyDBFiles(root: string, candidates: Array<{ filePath: string; mtimeMs: number }>) {
-  const entries = await fsp.readdir(root, { withFileTypes: true }).catch(() => [])
-  for (const entry of entries) {
-    const fullPath = path.join(root, entry.name)
-    if (entry.isDirectory()) {
-      await collectLegacyDBFiles(fullPath, candidates)
-      continue
-    }
-    if (entry.name.toLowerCase() !== "flai.db") {
-      continue
-    }
-    const stat = await fsp.stat(fullPath).catch(() => null)
-    if (stat?.isFile()) {
-      candidates.push({ filePath: fullPath, mtimeMs: stat.mtimeMs })
-    }
-  }
-}
-
-async function ensureLatestCommunityInstall() {
-  const customPath = desktopSettings.builtinServerPath.trim()
-  if (customPath) {
-    await assertExecutableFile(customPath, "Built-in server")
-    return {
-      tagName: "custom",
-      assetName: path.basename(customPath),
-      executablePath: customPath,
-    }
-  }
-  return bundledRuntimeInstall("flai-community", "Built-in server")
-}
-
-async function ensureLatestConnectorInstall() {
-  const customPath = desktopSettings.connectorPath.trim()
-  if (customPath) {
-    await assertExecutableFile(customPath, "Connector")
-    return {
-      tagName: "custom",
-      assetName: path.basename(customPath),
-      executablePath: customPath,
-    }
-  }
-  return bundledRuntimeInstall("veloce-connector", "Connector")
-}
-
-async function bundledRuntimeInstall(binaryName: string, label: string) {
-  const executableName = process.platform === "win32" ? `${binaryName}.exe` : binaryName
-  const resourceRoot = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..", "resources")
-  const executablePath = path.join(resourceRoot, "bin", executableName)
-  await assertExecutableFile(executablePath, label)
-  if (process.platform !== "win32") {
-    await fsp.chmod(executablePath, 0o755)
-  }
-  return {
-    tagName: app.getVersion(),
-    assetName: executableName,
-    executablePath,
   }
 }
 
@@ -1151,36 +1010,6 @@ function desktopApprovalToastXML(taskID: string, title: string, body: string, ap
 
 function escapeToastXML(value: string) {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&apos;" })[character] || character)
-}
-
-function handleBrowserAction(input: unknown) {
-  const value = input && typeof input === "object" ? input as Record<string, unknown> : {}
-  const type = typeof value.type === "string" ? value.type : ""
-  if (!browserWindow || browserWindow.isDestroyed()) {
-    openDesktopBrowser()
-  }
-  const tab = currentBrowserTab()
-  if (type === "new") {
-    createBrowserTab()
-  } else if (type === "activate" && typeof value.id === "string") {
-    setActiveBrowserTab(value.id)
-  } else if (type === "close" && typeof value.id === "string") {
-    closeBrowserTab(value.id)
-  } else if (type === "navigate" && tab) {
-    void tab.view.webContents.loadURL(normalizeBrowserURL(value.url))
-  } else if (type === "back" && tab?.view.webContents.canGoBack()) {
-    tab.view.webContents.goBack()
-  } else if (type === "forward" && tab?.view.webContents.canGoForward()) {
-    tab.view.webContents.goForward()
-  } else if (type === "reload" && tab) {
-    tab.view.webContents.reload()
-  } else if (type === "external" && tab) {
-    void shell.openExternal(tab.url)
-  } else if (type === "ask" && tab) {
-    askBrowserPage(tab)
-  }
-  emitBrowserState()
-  return browserToolbarState()
 }
 
 function clearConnectorRestart(connectorID: string) {
@@ -1321,68 +1150,40 @@ async function startConnector(input: StartConnectorInput) {
   }
 }
 
-function ensureDesktopConnector(input: { serverURL: string; authToken: string }) {
-  const key = input.serverURL.trim().replace(/\/+$/, "")
-  const pending = desktopConnectorEnsureRequests.get(key)
-  if (pending) {
-    return pending
+/**
+ * Starts the connector for the desktop app's own server.
+ *
+ * The page does the part that needs credentials — it asks the server for a
+ * device token of kind `desktop` — and hands the token here; the shell only
+ * supervises the process. Nothing in this path assumes an authentication plugin:
+ * a server without one answers the same request.
+ */
+async function ensureDesktopConnectorForServer(input: { serverURL: string; token: string; deviceID?: string }) {
+  const serverURL = String(input.serverURL ?? "").trim().replace(/\/+$/, "")
+  const token = String(input.token ?? "").trim()
+  if (!/^https?:\/\//i.test(serverURL) || !token) {
+    return { ok: false, message: "Missing connector server URL or device token", version: "" }
   }
+  return startConnector({
+    serverURL,
+    token,
+    mode: "platform",
+    deviceID: String(input.deviceID ?? "").trim(),
+    deviceKind: "desktop",
+    desktopInstanceID: desktopInstanceID(),
+    restart: false,
+  })
+}
+
+function ensureDesktopConnector(input: { serverURL: string; token: string; deviceID?: string }) {
+  const key = String(input.serverURL ?? "").trim().replace(/\/+$/, "")
+  const pending = desktopConnectorEnsureRequests.get(key)
+  if (pending) return pending
   const request = ensureDesktopConnectorForServer(input).finally(() => {
     desktopConnectorEnsureRequests.delete(key)
   })
   desktopConnectorEnsureRequests.set(key, request)
   return request
-}
-
-async function ensureDesktopConnectorForServer(input: { serverURL: string; authToken: string }) {
-  const serverURL = input.serverURL.trim().replace(/\/+$/, "")
-  const authToken = input.authToken.trim()
-  if (!/^https?:\/\//i.test(serverURL) || !authToken) {
-    return { ok: false, message: "Missing desktop connector server URL or login token", version: "" }
-  }
-  const savedToken = desktopSettings.desktopConnectorTokens[serverURL] || ""
-  try {
-    const response = await fetch(`${serverURL}/api/user/advanced-chat/devices/desktop/ensure`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        "Content-Type": "application/json",
-        ...(savedToken ? { "X-Desktop-Connector-Token": savedToken } : {}),
-      },
-      body: JSON.stringify({
-        desktop_instance_id: desktopInstanceID(),
-        hostname: os.hostname(),
-        os: process.platform,
-        arch: process.arch,
-        version: app.getVersion(),
-      }),
-    })
-    const payload = await response.json().catch(() => ({})) as { token?: unknown; device?: { id?: unknown } }
-    if (!response.ok) {
-      throw new Error(typeof (payload as { error?: unknown }).error === "string" ? (payload as { error: string }).error : `HTTP ${response.status}`)
-    }
-    const token = typeof payload.token === "string" && payload.token.trim() ? payload.token.trim() : savedToken
-    const deviceID = typeof payload.device?.id === "string" ? payload.device.id.trim() : ""
-    if (!token || !deviceID) {
-      throw new Error("Desktop connector credentials are unavailable")
-    }
-    if (token !== savedToken) {
-      desktopSettings.desktopConnectorTokens[serverURL] = token
-      await fsp.mkdir(veloceDataDir(), { recursive: true })
-      await fsp.writeFile(desktopSettingsPath(), JSON.stringify(desktopSettings, null, 2))
-    }
-    return startConnector({
-      serverURL,
-      token,
-      mode: "platform",
-      deviceID,
-      deviceKind: "desktop",
-      desktopInstanceID: desktopInstanceID(),
-      restart: token !== savedToken,
-    })
-  } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to connect desktop connector", version: "" }
-  }
 }
 
 function terminateManagedProcess(id: string) {
@@ -1447,7 +1248,14 @@ async function chooseDesktopFolder(initialPath: unknown) {
   return result.canceled ? "" : result.filePaths[0] || ""
 }
 
+// Desktop updates are not wired yet: the entry point stays (and so does the
+// installer path below), but nothing is fetched until a release feed exists.
+const desktopUpdateCheckEnabled = false
+
 async function checkDesktopUpdate(): Promise<DesktopUpdateResult> {
+  if (!desktopUpdateCheckEnabled) {
+    return { state: "not_available", message: "Desktop updates are not available yet", version: app.getVersion() }
+  }
   const prepared = desktopSettings.preparedUpdate
   if (prepared && fs.existsSync(prepared.filePath)) {
     return {
@@ -1596,166 +1404,32 @@ function downloadFile(url: string, destination: string) {
   })
 }
 
-function handleNavigationURL(event: Electron.Event, rawURL: string) {
-  const token = tokenFromURL(rawURL)
-  if (token) {
-    event.preventDefault()
-    loadLocalApp(`/chat?token=${encodeURIComponent(token)}`)
-    return
+async function bundledRuntimeInstall(binaryName: string, label: string) {
+  const executableName = process.platform === "win32" ? `${binaryName}.exe` : binaryName
+  const resourceRoot = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..", "resources")
+  const executablePath = path.join(resourceRoot, "bin", executableName)
+  await assertExecutableFile(executablePath, label)
+  if (process.platform !== "win32") {
+    await fsp.chmod(executablePath, 0o755)
   }
-
-  const parsedURL = new URL(rawURL)
-  if (parsedURL.protocol === "file:" || parsedURL.protocol === "http:" || parsedURL.protocol === "https:") {
-    return
+  return {
+    tagName: app.getVersion(),
+    assetName: executableName,
+    executablePath,
   }
-
-  event.preventDefault()
-  void shell.openExternal(rawURL)
 }
 
-interface DesktopAuthLoginResult {
-  ok: boolean
-  token?: string
-  cancelled?: boolean
-  message?: string
-}
-
-const desktopAuthCallbackPrefix = `${desktopProtocolScheme}://desktop-auth/callback`
-const desktopAuthTimeoutMs = 10 * 60 * 1000
-
-// Sign in through the server's own web authorization flow: open an embedded
-// window at /desktop/authorize with a PKCE challenge, wait for the page to
-// bounce back through the veloce:// callback, then exchange the one-time code
-// (plus verifier) for a JWT. The verifier never leaves the main process.
-async function desktopAuthLogin(event: Electron.IpcMainInvokeEvent, input: unknown): Promise<DesktopAuthLoginResult> {
-  const record = isRecord(input) ? input : {}
-  const serverURL = typeof record.serverURL === "string" ? record.serverURL.trim().replace(/\/+$/, "") : ""
-  const hint = typeof record.hint === "string" && /^[a-zA-Z0-9:_-]{0,120}$/.test(record.hint) ? record.hint : ""
-  if (!/^https?:\/\//i.test(serverURL)) {
-    return { ok: false, message: "Invalid server URL" }
+async function ensureLatestConnectorInstall() {
+  const customPath = desktopSettings.connectorPath.trim()
+  if (customPath) {
+    await assertExecutableFile(customPath, "Connector")
+    return {
+      tagName: "custom",
+      assetName: path.basename(customPath),
+      executablePath: customPath,
+    }
   }
-
-  const state = randomBytes(32).toString("base64url")
-  const codeVerifier = randomBytes(32).toString("base64url")
-  const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url")
-
-  const authorizeURL = new URL(`${serverURL}/desktop/authorize`)
-  authorizeURL.searchParams.set("state", state)
-  authorizeURL.searchParams.set("code_challenge", codeChallenge)
-  if (hint) {
-    authorizeURL.searchParams.set("hint", hint)
-  }
-
-  const parent = BrowserWindow.fromWebContents(event.sender) || undefined
-  const authWindow = new BrowserWindow({
-    width: 480,
-    height: 760,
-    parent,
-    title: desktopDisplayName,
-    icon: iconPath,
-    autoHideMenuBar: true,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      // Persist login cookies/storage across authorizations so repeat sign-ins
-      // only need one click on the consent page.
-      partition: "persist:desktop-auth",
-    },
-  })
-  authWindow.setMenuBarVisibility(false)
-
-  return await new Promise<DesktopAuthLoginResult>((resolve) => {
-    let settled = false
-    const finish = (result: DesktopAuthLoginResult) => {
-      if (settled) {
-        return
-      }
-      settled = true
-      clearTimeout(timeout)
-      resolve(result)
-      if (!authWindow.isDestroyed()) {
-        authWindow.destroy()
-      }
-    }
-    const timeout = setTimeout(() => finish({ ok: false, cancelled: true, message: "Authorization timed out" }), desktopAuthTimeoutMs)
-
-    const handleCallbackURL = async (rawURL: string) => {
-      let url: URL
-      try {
-        url = new URL(rawURL)
-      } catch {
-        return
-      }
-      const callbackError = url.searchParams.get("error")
-      const code = url.searchParams.get("code") || ""
-      const returnedState = url.searchParams.get("state") || ""
-      if (callbackError) {
-        finish({ ok: false, cancelled: callbackError === "access_denied", message: callbackError })
-        return
-      }
-      if (!code || returnedState !== state) {
-        finish({ ok: false, message: "Invalid authorization response" })
-        return
-      }
-      try {
-        const response = await fetch(`${serverURL}/auth/desktop/token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, code_verifier: codeVerifier }),
-        })
-        const payload = await response.json().catch(() => ({})) as { token?: unknown; error?: unknown }
-        if (!response.ok || typeof payload.token !== "string" || !payload.token) {
-          throw new Error(typeof payload.error === "string" ? payload.error : `HTTP ${response.status}`)
-        }
-        finish({ ok: true, token: payload.token })
-      } catch (error) {
-        finish({ ok: false, message: error instanceof Error ? error.message : "Failed to complete sign-in" })
-      }
-    }
-
-    const isCallbackURL = (rawURL: string) => rawURL.startsWith(desktopAuthCallbackPrefix)
-
-    // Allow free http(s) navigation inside the window (login page, external
-    // OIDC providers, back again); only the veloce:// callback and other
-    // non-web schemes are intercepted.
-    const interceptNavigation = (navigationEvent: Electron.Event, rawURL: string) => {
-      if (isCallbackURL(rawURL)) {
-        navigationEvent.preventDefault()
-        void handleCallbackURL(rawURL)
-        return
-      }
-      try {
-        const parsed = new URL(rawURL)
-        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-          navigationEvent.preventDefault()
-        }
-      } catch {
-        navigationEvent.preventDefault()
-      }
-    }
-
-    authWindow.webContents.on("will-navigate", interceptNavigation)
-    authWindow.webContents.on("will-redirect", interceptNavigation)
-    authWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (isCallbackURL(url)) {
-        void handleCallbackURL(url)
-        return { action: "deny" }
-      }
-      try {
-        const parsed = new URL(url)
-        if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-          void authWindow.webContents.loadURL(url)
-        }
-      } catch {
-        // Ignore malformed popup URLs.
-      }
-      return { action: "deny" }
-    })
-    authWindow.on("closed", () => finish({ ok: false, cancelled: true }))
-
-    void authWindow.loadURL(authorizeURL.toString())
-  })
+  return bundledRuntimeInstall("veloce-connector", "Connector")
 }
 
 function createTray() {
@@ -1778,62 +1452,8 @@ function createTray() {
   tray.on("click", showMainWindow)
 }
 
-function createWindow(initialTab?: DesktopTab) {
-  const window = new BrowserWindow({
-    width: 1280,
-    height: 860,
-    minWidth: 960,
-    minHeight: 640,
-    title: desktopDisplayName,
-    icon: iconPath,
-    ...(process.platform === "win32" ? { backgroundMaterial: "acrylic" as const } : {}),
-    titleBarStyle: "hidden",
-    titleBarOverlay: titleBarOverlayOptions(),
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload: preloadPath,
-      sandbox: false,
-    },
-  })
-
-  if (initialTab) {
-    initialWindowTabs.set(window.id, initialTab)
-  }
-  if (!mainWindow) {
-    mainWindow = window
-  }
-  window.webContents.on("will-navigate", handleNavigationURL)
-  window.webContents.on("will-redirect", handleNavigationURL)
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    const token = tokenFromURL(url)
-    if (token) {
-      loadLocalApp(`/chat?token=${encodeURIComponent(token)}`)
-    } else {
-      void shell.openExternal(url)
-    }
-    return { action: "deny" }
-  })
-  window.on("close", (event) => {
-    if (isQuitting || window !== mainWindow) {
-      return
-    }
-    event.preventDefault()
-    window.hide()
-  })
-  window.on("closed", () => {
-    initialWindowTabs.delete(window.id)
-    if (mainWindow === window) {
-      mainWindow = BrowserWindow.getAllWindows().find((candidate) => candidate !== window && candidate !== browserWindow) || null
-    }
-  })
-
-  void window.loadFile(indexPath)
-  return window
-}
-
 if (gotSingleInstanceLock) {
-  setupBuiltinServerIPC()
+  setupIPC()
 
   app.whenReady().then(async () => {
     registerDesktopProtocol()
@@ -1841,11 +1461,14 @@ if (gotSingleInstanceLock) {
     desktopSettings = await readDesktopSettings()
     applyDesktopProxySettings()
     const config = await readBuiltinServerConfig()
-    builtinServerEnabled = Boolean(config.enabled)
+    builtinServerEnabled = config.enabled !== false
     updateBuiltinServerStatus({ enabled: builtinServerEnabled })
     createTray()
     createWindow()
-    if (builtinServerEnabled) {
+    if (desktopSettings.developerMode && desktopSettings.serverURL) {
+      serverReady = true
+      loadAppInWindows(desktopSettings.serverURL.replace(/\/+$/, ""))
+    } else if (builtinServerEnabled) {
       void ensureBuiltinServerRunning()
     }
     app.on("activate", showMainWindow)

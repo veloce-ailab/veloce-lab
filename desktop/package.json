@@ -13,12 +13,12 @@
   "scripts": {
     "install:mirror": "node scripts/install-with-mirror.mjs",
     "install:electron": "node scripts/install-electron-with-mirror.mjs",
-    "build:web": "npm --prefix ../web run build && npm --prefix ../web run build:desktop",
-    "build:runtimes": "node scripts/build-runtimes.mjs",
     "build:electron": "tsc -p tsconfig.json",
-    "build": "npm run build:web && npm run build:runtimes && npm run build:electron",
-    "dist": "npm run build && electron-builder",
-    "start": "npm run build && electron ."
+    "build:shell": "node scripts/copy-static.mjs",
+    "build:server": "node scripts/build-server.mjs",
+    "build": "npm run build:electron && npm run build:shell && npm run build:server",
+    "dist": "npm run build && npm run build:runtimes && electron-builder",
+    "start": "npm run build:electron && npm run build:shell && electron ."
   },
   "build": {
     "appId": "com.windypear.veloce.lab",
@@ -33,6 +33,10 @@
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "resources/server",
+        "to": "server"
+      },
       {
         "from": "resources/bin",
         "to": "bin",

@@ -30,6 +30,8 @@ interface DesktopSettings {
   httpProxy: string
   builtinServerPath: string
   connectorPath: string
+  developerMode: boolean
+  serverURL: string
   preparedUpdate?: {
     tagName: string
     assetName: string
@@ -42,13 +44,6 @@ interface DesktopUpdateResult {
   message: string
   version: string
   filePath?: string
-}
-
-interface DesktopTabState {
-  id: string
-  title: string
-  serverURL: string
-  path: string
 }
 
 interface Window {
@@ -69,23 +64,17 @@ interface Window {
     openDesktopLink: (target: "official-site" | "github") => Promise<{ ok: boolean }>
     openExternalURL: (url: string) => Promise<{ ok: boolean }>
     setTitleBarTheme: (theme: "light" | "dark") => Promise<{ ok: boolean }>
-    openDesktopBrowser: (url?: string) => Promise<{ ok: boolean }>
-    onBrowserAskPage: (callback: (page: { title?: string; url?: string }) => void) => () => void
     checkDesktopUpdate: () => Promise<DesktopUpdateResult>
     installPreparedDesktopUpdate: () => Promise<{ ok: boolean; message: string }>
-    getDesktopTabInitialState: () => Promise<{ windowID: number; tab: DesktopTabState | null }>
-    detachDesktopTab: (input: DesktopTabState & { screenX: number; screenY: number }) => Promise<{ moved: boolean; targetWindowID?: number }>
     setBuiltinServerEnabled: (enabled: boolean) => Promise<BuiltinServerStatus>
     startConnector: (input: {
       serverURL: string
       token: string
       mode: "platform"
     }) => Promise<{ ok: boolean; message: string; version: string }>
-    ensureDesktopConnector: (input: { serverURL: string; authToken: string }) => Promise<{ ok: boolean; message: string; version: string }>
-    desktopAuthLogin: (input: { serverURL: string; hint?: string }) => Promise<{ ok: boolean; token?: string; cancelled?: boolean; message?: string }>
+    ensureDesktopConnector: (input: { serverURL: string; token: string; deviceID?: string }) => Promise<{ ok: boolean; message: string; version: string }>
     onBuiltinServerStatus: (callback: (status: BuiltinServerStatus) => void) => () => void
     onDesktopProcessStatus: (callback: (status: DesktopProcessStatus) => void) => () => void
-    onDesktopTabReceived: (callback: (tab: DesktopTabState) => void) => () => void
     onConnectorApprovalDecision: (callback: (input: { taskID: string; approved: boolean }) => void) => () => void
   }
 }

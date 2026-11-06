@@ -42,6 +42,8 @@ interface DesktopSettings {
   httpProxy: string
   builtinServerPath: string
   connectorPath: string
+  developerMode: boolean
+  serverURL: string
   preparedUpdate?: {
     tagName: string
     assetName: string
@@ -54,13 +56,6 @@ interface DesktopUpdateResult {
   message: string
   version: string
   filePath?: string
-}
-
-interface DesktopTab {
-  id: string
-  title: string
-  serverURL: string
-  path: string
 }
 
 contextBridge.exposeInMainWorld("veloceDesktop", {
@@ -80,16 +75,11 @@ contextBridge.exposeInMainWorld("veloceDesktop", {
   openDesktopLink: (target: "official-site" | "github") => ipcRenderer.invoke("desktop:open-link", target) as Promise<{ ok: boolean }>,
   openExternalURL: (url: string) => ipcRenderer.invoke("desktop:open-external-url", url) as Promise<{ ok: boolean }>,
   setTitleBarTheme: (theme: "light" | "dark") => ipcRenderer.invoke("desktop:set-titlebar-theme", theme) as Promise<{ ok: boolean }>,
-  openDesktopBrowser: (url?: string) => ipcRenderer.invoke("browser:open", url) as Promise<{ ok: boolean }>,
-  browserAction: (input: Record<string, unknown>) => ipcRenderer.invoke("browser:action", input) as Promise<unknown>,
   checkDesktopUpdate: () => ipcRenderer.invoke("desktop-update:check") as Promise<DesktopUpdateResult>,
   installPreparedDesktopUpdate: () => ipcRenderer.invoke("desktop-update:install-prepared") as Promise<{ ok: boolean; message: string }>,
-  getDesktopTabInitialState: () => ipcRenderer.invoke("desktop-tabs:get-initial-state") as Promise<{ windowID: number; tab: DesktopTab | null }>,
-  detachDesktopTab: (input: DesktopTab & { screenX: number; screenY: number }) => ipcRenderer.invoke("desktop-tabs:detach", input) as Promise<{ moved: boolean; targetWindowID?: number }>,
   setBuiltinServerEnabled: (enabled: boolean) => ipcRenderer.invoke("builtin-server:set-enabled", enabled) as Promise<BuiltinServerStatus>,
   startConnector: (input: StartConnectorInput) => ipcRenderer.invoke("connector:start", input) as Promise<StartConnectorResult>,
-  ensureDesktopConnector: (input: { serverURL: string; authToken: string }) => ipcRenderer.invoke("connector:ensure-desktop", input) as Promise<StartConnectorResult>,
-  desktopAuthLogin: (input: { serverURL: string; hint?: string }) => ipcRenderer.invoke("desktop-auth:login", input) as Promise<{ ok: boolean; token?: string; cancelled?: boolean; message?: string }>,
+  ensureDesktopConnector: (input: { serverURL: string; token: string; deviceID?: string }) => ipcRenderer.invoke("connector:ensure-desktop", input) as Promise<StartConnectorResult>,
   onBuiltinServerStatus: (callback: (status: BuiltinServerStatus) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: BuiltinServerStatus) => callback(status)
     ipcRenderer.on("builtin-server:status", listener)
@@ -100,24 +90,9 @@ contextBridge.exposeInMainWorld("veloceDesktop", {
     ipcRenderer.on("desktop-processes:status", listener)
     return () => ipcRenderer.off("desktop-processes:status", listener)
   },
-  onDesktopTabReceived: (callback: (tab: DesktopTab) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, tab: DesktopTab) => callback(tab)
-    ipcRenderer.on("desktop-tabs:received", listener)
-    return () => ipcRenderer.off("desktop-tabs:received", listener)
-  },
   onConnectorApprovalDecision: (callback: (input: { taskID: string; approved: boolean }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, input: { taskID: string; approved: boolean }) => callback(input)
     ipcRenderer.on("desktop:connector-approval-decision", listener)
     return () => ipcRenderer.off("desktop:connector-approval-decision", listener)
-  },
-  onBrowserState: (callback: (state: unknown) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)
-    ipcRenderer.on("browser:state", listener)
-    return () => ipcRenderer.off("browser:state", listener)
-  },
-  onBrowserAskPage: (callback: (page: { title?: string; url?: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, page: { title?: string; url?: string }) => callback(page)
-    ipcRenderer.on("browser:ask-page", listener)
-    return () => ipcRenderer.off("browser:ask-page", listener)
   },
 })

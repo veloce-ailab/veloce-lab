@@ -13,6 +13,7 @@ async function harness({
 } = {}) {
   const tasks = [];
   const created = [];
+  const routes = [];
   const devices = [
     { id: "dev-1", user_id: 1, name: "desk", kind: "cli", status: devicestatus },
   ];
@@ -39,11 +40,25 @@ async function harness({
             // the live row, and the test is about what the host asked for.
             created.push({ table, values: { ...values } });
             if (table === "advanced_chat_connector_tasks") tasks.push(row);
+            if (table === "advanced_chat_connector_devices") devices.push(row);
             return row;
           },
           async selectOne(table, where) {
-            if (table === "advanced_chat_connector_devices")
-              return devices.find((device) => device.id === where.id && device.user_id === where.user_id);
+            if (table === "advanced_chat_connector_devices") {
+              if (where.id)
+                return devices.find(
+                  (device) =>
+                    device.id === where.id &&
+                    (where.user_id === undefined || device.user_id === where.user_id),
+                );
+              // An installation asks for its own row by kind and instance id.
+              return devices.find(
+                (device) =>
+                  device.user_id === where.user_id &&
+                  device.kind === where.kind &&
+                  device.desktop_instance_id === where.desktop_instance_id,
+              );
+            }
             if (table === "advanced_chat_connector_tasks") {
               const row = tasks.find(
                 (task) =>
@@ -60,19 +75,47 @@ async function harness({
             }
             return undefined;
           },
-          async update() {
+          async update(table, where, values) {
+            if (table !== "advanced_chat_connector_devices") return 1;
+            const device = devices.find((entry) => entry.id === where.id && entry.user_id === where.user_id);
+            if (!device) return 0;
+            Object.assign(device, values);
             return 1;
           },
         },
       },
-      route() {
-        const route = { methods: () => route, action: () => route };
+      route(path) {
+        // Routes are recorded so a test can call one the way the server would.
+        const route = {
+          methods: () => route,
+          action(handler) {
+            routes.push({ path, handler });
+            return route;
+          },
+        };
         return route;
       },
     },
     { maxTaskResultChars: "1000000", maxTaskErrorChars: "100000", taskWaitMs: "1000" },
   );
-  return { service, tasks, created };
+  const call = async (path, body = {}, userId = 1) => {
+    const route = routes.find((entry) => entry.path === path);
+    if (!route) throw new Error(`no route registered for ${path}`);
+    let responded;
+    let status = 200;
+    await route.handler({
+      properties: { user: { id: userId } },
+      status,
+      async parseRequestBody() {
+        return body;
+      },
+      respond(value) {
+        responded = value;
+      },
+    });
+    return responded;
+  };
+  return { service, tasks, created, routes, call };
 }
 
 test("an action a device serves itself is asked through its queue", async () => {
@@ -136,6 +179,31 @@ test("an offline device fails at once instead of hanging the call", async () => 
     /offline/,
   );
   assert.equal(created.length, 0);
+});
+
+test("a desktop installation keeps one device row and gets a fresh token", async () => {
+  const { call, created } = await harness();
+  const input = {
+    name: "workstation",
+    kind: "desktop",
+    desktop_instance_id: "install-1",
+    hostname: "workstation",
+    os: "linux",
+    arch: "x64",
+    version: "0.1.0",
+  };
+  const first = await call("/api/user/advanced-chat/devices/token", input);
+  assert.equal(first.kind, "desktop");
+  assert.equal(first.desktop_instance_id, "install-1");
+  assert.ok(first.token);
+  const devices = created.filter((entry) => entry.table === "advanced_chat_connector_devices");
+  assert.equal(devices.length, 1);
+
+  // The same installation asks again: the row is reused and only its token
+  // changes, so restarting the app does not pile up devices in the list.
+  const second = await call("/api/user/advanced-chat/devices/token", input);
+  assert.notEqual(second.token, first.token);
+  assert.equal(created.filter((entry) => entry.table === "advanced_chat_connector_devices").length, 1);
 });
 
 test("with no device to ask the seam still reports what it cannot serve", async () => {

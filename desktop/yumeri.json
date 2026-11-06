@@ -1,0 +1,95 @@
+{
+  "core": {
+    "host": "127.0.0.1",
+    "port": 12789,
+    "enableCors": false
+  },
+  "plugins": {
+    "@velocelab/cache": {
+      "address": "127.0.0.1:6379",
+      "username": "",
+      "password": "",
+      "database": "0",
+      "tls": false
+    },
+    "@velocelab/sqlite": {
+      "path": "./veloce.db"
+    },
+    "@velocelab/dashboard": {},
+    "@velocelab/message": {},
+    "@velocelab/topbar": {},
+    "@velocelab/sidebar": {},
+    "@velocelab/chat-environment": {},
+    "@velocelab/chat-git": {},
+    "@velocelab/chat-terminal": {},
+    "@velocelab/chat-files": {},
+    "@velocelab/home-redirect": {},
+    "@velocelab/settings": {},
+    "@velocelab/guide": {},
+    "@velocelab/community": {},
+    "@velocelab/knowledge": {},
+    "@velocelab/memory": {
+      "root": "./data/memories"
+    },
+    "@velocelab/billing": {},
+    "@velocelab/scheduler": {},
+    "@velocelab/user": {},
+    "@velocelab/model-catalog": {},
+    "@velocelab/adapters": {},
+    "@velocelab/adapter-claude": {},
+    "@velocelab/adapter-dashscope": {},
+    "@velocelab/adapter-deepseek": {},
+    "@velocelab/adapter-deepseek-account": {},
+    "@velocelab/adapter-gemini": {},
+    "@velocelab/adapter-kling": {},
+    "@velocelab/adapter-midjourney": {},
+    "@velocelab/adapter-moonshot": {},
+    "@velocelab/adapter-openai": {},
+    "@velocelab/adapter-openai-compatible": {},
+    "@velocelab/adapter-openai-video": {},
+    "@velocelab/adapter-responses": {},
+    "@velocelab/adapter-siliconflow": {},
+    "@velocelab/adapter-xai": {},
+    "@velocelab/adapter-zhipu": {},
+    "@velocelab/channel": {
+      "contextMessageCount": "12",
+      "webhookPayloadMaxBytes": "1048576"
+    },
+    "@velocelab/ratelimit": {
+      "requestsPerMinute": "600",
+      "burst": "100"
+    },
+    "@velocelab/advanced-chat": {
+      "connectorOnlineWindowSeconds": "60",
+      "retryAttempts": 3,
+      "assistantRetryAttempts": 10,
+      "retryDelayMs": 500,
+      "retryMaxDelayMs": 30000,
+      "requestTimeoutMs": 120000
+    },
+    "@velocelab/agent-runtime": {},
+    "@velocelab/workspace": {},
+    "@velocelab/file": {
+      "root": "./data"
+    },
+    "@velocelab/connector": {},
+    "@velocelab/sandbox": {},
+    "@velocelab/device-local": {},
+    "@velocelab/skill": {},
+    "@velocelab/mcp": {},
+    "@velocelab/external-plugin": {},
+    "@velocelab/delivery": {},
+    "@velocelab/uptime": {},
+    "@velocelab/tools": {},
+    "@velocelab/explorer": {},
+    "@velocelab/browser": {},
+    "@velocelab/inner-tools": {},
+    "@velocelab/audit": {},
+    "@velocelab/channel-admin": {},
+    "@velocelab/companion": {},
+    "@velocelab/update-checker": {
+      "checkIntervalMinutes": "360"
+    },
+    "@velocelab/desktop": {}
+  }
+}

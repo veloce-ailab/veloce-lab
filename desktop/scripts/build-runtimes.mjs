@@ -12,7 +12,6 @@ const binaryExtension = goos === "windows" ? ".exe" : ""
 // The desktop package lives beside the backend in this repository. Keep the
 // environment override for CI/checkouts that use a different layout, while
 // making the local default point at the actual repository root.
-const communitySource = path.resolve(desktopRoot, process.env.VELOCE_COMMUNITY_SOURCE || "..")
 const connectorSource = path.resolve(desktopRoot, process.env.VELOCE_CONNECTOR_SOURCE || "../app")
 const connectorVersion = process.env.VELOCE_RUNTIME_VERSION || "dev"
 
@@ -21,7 +20,6 @@ if (!goos || !goarch) {
 }
 
 fs.mkdirSync(runtimeDir, { recursive: true })
-buildGoBinary(communitySource, path.join(runtimeDir, `flai-community${binaryExtension}`), "-s -w")
 buildGoBinary(connectorSource, path.join(runtimeDir, `veloce-connector${binaryExtension}`), `-s -w -X main.connectorVersion=${connectorVersion}`)
 
 function buildGoBinary(source, output, ldflags) {

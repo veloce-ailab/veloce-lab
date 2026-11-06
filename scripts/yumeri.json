@@ -85,6 +85,7 @@
     "@velocelab/connector": {},
     "@velocelab/sandbox": {},
     "@velocelab/device-local": {},
+    "@velocelab/desktop": {},
     "@velocelab/skill": {},
     "@velocelab/mcp": {},
     "@velocelab/external-plugin": {},

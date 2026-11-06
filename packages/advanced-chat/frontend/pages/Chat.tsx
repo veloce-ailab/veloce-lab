@@ -3681,8 +3681,10 @@ export default function Chat() {
         ? `https://www.google.com/search?q=${query}`
         : `https://www.baidu.com/s?wd=${query}`
     setMessageSelectionMenu(null)
-    if (isDesktop && window.veloceDesktop?.openDesktopBrowser) {
-      await window.veloceDesktop.openDesktopBrowser(url)
+    // In the desktop app a new window is a browser window we do not own, so the
+    // search goes to the system browser instead.
+    if (isDesktop && window.veloceDesktop?.openExternalURL) {
+      await window.veloceDesktop.openExternalURL(url)
       return
     }
     window.open(url, "_blank", "noopener,noreferrer")

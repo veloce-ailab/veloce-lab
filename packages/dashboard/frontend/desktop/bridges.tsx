@@ -1,28 +1,47 @@
 import { useEffect } from "react"
-import { useLocation, useNavigate } from "react-router-dom"
-import api, { apiURL, clearAuthToken, getAuthToken, getDesktopServerURL, setAuthToken } from "@/lib/api"
-import { getTokenFromURL } from "@/desktop/auth"
+import { useNavigate } from "react-router-dom"
+import api from "@/lib/api"
 
-export function TokenBridge() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  useEffect(() => {
-    const token = getTokenFromURL()
-    if (!token) return
-    setAuthToken(token)
-    localStorage.removeItem("referral_code")
-    navigate("/chat", { replace: true })
-  }, [location.key, navigate])
-  return null
+// A desktop window has no account of its own: the panel it renders is served by
+// the server that owns it, so the device token the server issues for this
+// installation is the only credential the connector needs.
+let desktopConnectorRequest: Promise<void> | null = null
+
+async function requestDesktopDeviceToken() {
+  const bridge = window.veloceDesktop
+  if (!bridge) return
+  const info = await bridge.getDesktopSystemInfo()
+  // The bridge reports the hostname, the platform and the installation id; the
+  // other device columns are left to the server, which keeps what it already
+  // stored for this installation instead of being sent a made-up value.
+  const response = await api.post("/user/advanced-chat/devices/token", {
+    kind: "desktop",
+    desktop_instance_id: info.instanceID,
+    name: info.hostname,
+    hostname: info.hostname,
+    os: info.platform,
+  })
+  const token = typeof response.data?.token === "string" ? response.data.token : ""
+  const deviceID = typeof response.data?.id === "string" ? response.data.id : ""
+  if (!token) throw new Error("The server returned no desktop device token")
+  await bridge.ensureDesktopConnector({
+    serverURL: window.location.origin,
+    token,
+    ...(deviceID ? { deviceID } : {}),
+  })
 }
 
 export function DesktopConnectorBridge() {
-  const location = useLocation()
   useEffect(() => {
-    const authToken = getAuthToken()
-    if (!authToken || !window.veloceDesktop?.ensureDesktopConnector) return
-    void window.veloceDesktop.ensureDesktopConnector({ serverURL: getDesktopServerURL(), authToken })
-  }, [location.key])
+    if (!window.veloceDesktop) return
+    // One window reload is one device token: the request is shared so a second
+    // mount (strict mode) rotates the same credential instead of racing for it.
+    desktopConnectorRequest ??= requestDesktopDeviceToken().catch((error) => {
+      // The connector is an accessory of the panel: a server that refuses the
+      // token must not take the window down with it.
+      console.warn("Desktop connector is unavailable", error)
+    })
+  }, [])
   return null
 }
 
@@ -39,13 +58,8 @@ export function DesktopNavigationBridge() {
     const receiveNavigation = (event: MessageEvent) => {
       const data = event.data
       if (!data || typeof data !== "object") return
-      if (data.type === "veloce-desktop-navigate" && data.path === "/settings") navigate(data.path)
-      if (data.type === "veloce-desktop-logout") {
-        // Logging out is the server's business now: it revokes the token and
-        // clears the session cookie the pages are loaded with.
-        void api.post("/auth/logout").catch(() => undefined)
-        clearAuthToken()
-        window.location.assign(apiURL("/login"))
+      if (data.type === "veloce-desktop-navigate" && typeof data.path === "string" && data.path.startsWith("/")) {
+        navigate(data.path)
       }
     }
     window.addEventListener("message", receiveNavigation)

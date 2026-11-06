@@ -9,9 +9,11 @@ import { ToastProvider } from "./components/ui/toast";
 import { I18nProvider } from "@/lib/i18n";
 import { ThemeProvider } from "./lib/theme";
 import { DashboardSlot } from "@/lib/slots";
+import { isDesktopTarget } from "@/lib/api";
 import { frames as extensionFrames, routes as extensionRoutes, subscribeExtensions } from "./extension";
 import { DashboardPluginLoader, type DashboardManifest } from "./plugin-loader";
 import { Layout } from "./components/layout/Layout";
+import { DesktopShell } from "./desktop/AppDesktop";
 
 const queryClient = new QueryClient();
 
@@ -20,6 +22,9 @@ function App() {
   const [extensionError, setExtensionError] = useState<string>();
   const [extensionsReady, setExtensionsReady] = useState(false);
   const [manifest, setManifest] = useState<DashboardManifest>({});
+  // One bundle serves both targets, and only the preload bridge says which one
+  // this page is: the desktop shell adds window chrome the browser cannot have.
+  const isDesktop = isDesktopTarget();
   useEffect(
     () => subscribeExtensions(() => refreshExtensions((value) => value + 1)),
     [],
@@ -57,21 +62,23 @@ function App() {
           <I18nProvider translations={manifest.i18n}>
             <ToastProvider>
                 <DashboardSlot name="app.before" />
-                <BrowserRouter>
-                  {extensionsReady ? (
-                    <Routes>
-                        {registeredRoutes.map((route) => {
-                          const Component = route.component;
-                          return <Route key={route.path} path={route.path} element={route.shell === "owned" ? <Component /> : <Layout><Component /></Layout>} />;
-                        })}
-                        {registeredFrames.map((frame) => {
-                          const Component = frame.component;
-                          const path = `${frame.path.replace(/\/$/, "")}/*`;
-                          return <Route key={frame.id} path={path} element={<Component />} />;
-                        })}
-                      </Routes>
-                  ) : null}
-                </BrowserRouter>
+                {isDesktop ? <DesktopShell /> : (
+                  <BrowserRouter>
+                    {extensionsReady ? (
+                      <Routes>
+                          {registeredRoutes.map((route) => {
+                            const Component = route.component;
+                            return <Route key={route.path} path={route.path} element={route.shell === "owned" ? <Component /> : <Layout><Component /></Layout>} />;
+                          })}
+                          {registeredFrames.map((frame) => {
+                            const Component = frame.component;
+                            const path = `${frame.path.replace(/\/$/, "")}/*`;
+                            return <Route key={frame.id} path={path} element={<Component />} />;
+                          })}
+                        </Routes>
+                    ) : null}
+                  </BrowserRouter>
+                )}
                 <DashboardSlot name="app.after" />
             </ToastProvider>
           </I18nProvider>
