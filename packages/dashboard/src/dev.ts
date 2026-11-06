@@ -60,10 +60,16 @@ export interface DashboardDevServer {
   close(): Promise<void>;
 }
 
-/** The URL a source file is served from, with imports rewritten by Vite. */
+/**
+ * The URL a source file is served from, with imports rewritten by Vite.
+ *
+ * Percent-encoded: this string travels in a `Location` header and in the
+ * browser's module graph, and a workspace path is not guaranteed to be ASCII —
+ * a raw "文档" in a header makes Node throw while writing it.
+ */
 export function sourceUrl(file: string) {
   const normalized = file.replace(/\\/g, "/");
-  return `/@fs/${normalized.replace(/^\//, "")}`;
+  return encodeURI(`/@fs/${normalized.replace(/^\//, "")}`);
 }
 
 /** The workspace the plugin sources live in, so Vite is allowed to read them. */
@@ -203,8 +209,15 @@ export async function startDashboardDevServer(options: DashboardDevServerOptions
           // runtime by its stable URL. Send them to the source runtime, so the
           // whole application keeps one copy of React.
           if (pathname === runtimePath) {
-            res.writeHead(302, { Location: sourceUrl(clientEntry) });
-            res.end();
+            try {
+              res.writeHead(302, { Location: sourceUrl(clientEntry) });
+              res.end();
+            } catch (error) {
+              // A bad header must not leave the response half-written: the core
+              // would try to write again and take the worker down with it.
+              res.statusCode = 500;
+              res.end(error instanceof Error ? error.message : String(error));
+            }
             return Promise.resolve(true);
           }
           return new Promise<boolean>((resolve) => {
