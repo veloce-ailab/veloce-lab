@@ -33,3 +33,4 @@ dist/
 /desktop/resources/bin/
 /desktop/.cache/
 /desktop/release/
+/desktop/.dev-data/

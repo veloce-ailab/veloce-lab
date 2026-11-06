@@ -53,6 +53,13 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 app.setName(desktopInternalName)
 
+if (desktopDevMode) {
+  // A development run keeps its own profile: it must not fight the installed app
+  // for the single-instance lock, and it must not write its scratch database into
+  // the user's real data directory.
+  app.setPath("userData", path.join(__dirname, "..", ".dev-data"))
+}
+
 let mainWindow: BrowserWindow | null = null
 const appWindows = new Set<BrowserWindow>()
 let tray: Tray | null = null
@@ -218,6 +225,12 @@ let desktopSettings: DesktopSettings = {
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 
 if (!gotSingleInstanceLock) {
+  // Closing the window only hides it, so a forgotten instance in the tray is the
+  // usual reason for this; saying so beats disappearing without a word.
+  process.stderr.write(
+    `[desktop] Another ${desktopDisplayName} instance is already running (profile: ${app.getPath("userData")}).\n` +
+      "[desktop] Quit it from the tray (or `pkill -f veloce-lab`) and start again — or run `npm run start:dev`, which uses its own profile.\n",
+  )
   app.quit()
 }
 
@@ -769,6 +782,9 @@ function setupIPC() {
 }
 
 function veloceDataDir() {
+  // A development run owns everything it writes, next to its Electron profile:
+  // its scratch database must never be the one the installed app is using.
+  if (desktopDevMode) return app.getPath("userData")
   if (process.platform === "win32") {
     return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), desktopInternalName)
   }
@@ -1523,7 +1539,9 @@ function createTray() {
 if (gotSingleInstanceLock) {
   setupIPC()
 
-  app.whenReady().then(async () => {
+  const start = async () => {
+    devLog(`userData: ${app.getPath("userData")}`)
+    devLog(`resources: ${resourcesRoot}`)
     registerDesktopProtocol()
     handleDesktopProtocolArguments(process.argv)
     desktopSettings = await readDesktopSettings()
@@ -1542,6 +1560,16 @@ if (gotSingleInstanceLock) {
       void ensureBuiltinServerRunning()
     }
     app.on("activate", showMainWindow)
+  }
+  app.whenReady().then(start).catch((error: unknown) => {
+    const message = error instanceof Error ? error.stack || error.message : String(error)
+    process.stderr.write(`[desktop] Failed to start: ${message}\n`)
+    dialog.showErrorBox(
+      `${desktopDisplayName} could not start`,
+      `${error instanceof Error ? error.message : String(error)}\n\nData directory: ${veloceDataDir()}`,
+    )
+    isQuitting = true
+    app.quit()
   })
 }
 

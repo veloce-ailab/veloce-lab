@@ -36,6 +36,9 @@ the server that runs is the packaged payload, so what you look at is what ships:
   (**⌘⌥I** on macOS) toggle them, **Ctrl/Cmd+R** reloads and adding Shift
   reloads without the cache
 - the View menu carries the same commands, so they are discoverable
+- the run keeps its own profile (`desktop/.dev-data`), so it never fights an
+  installed instance for the single-instance lock and never writes its scratch
+  database into `~/veloce-lab`
 
 `npm run start` does not build the server payload; a development run uses the one
 already in `resources/server`. Rebuild it (after changing plugins) with:
