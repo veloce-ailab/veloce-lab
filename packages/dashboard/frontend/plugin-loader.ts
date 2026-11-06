@@ -14,12 +14,20 @@ export interface DashboardManifest { revision?: string; entries?: DashboardManif
 let requireShim: Promise<void> | undefined
 function installRequireShim() {
   const target = globalThis as { require?: (id: string) => unknown }
-  requireShim ??= import(/* @vite-ignore */ "/dashboard-client.js").then((runtime) => {
-    target.require ??= (id: string) => {
-      if (id === "/dashboard-client.js") return runtime
-      throw new Error(`require("${id}") is not available inside the dashboard panel`)
-    }
-  })
+  // The URL is the host's, and it is built at run time on purpose: a literal
+  // specifier is something the development server tries to resolve, and there is
+  // no such file in the source tree — it only exists once the panel is built.
+  const clientURL = "/dashboard-client.js"
+  requireShim ??= import(/* @vite-ignore */ clientURL)
+    .then((runtime) => {
+      target.require ??= (id: string) => {
+        if (id === clientURL) return runtime
+        throw new Error(`require("${id}") is not available inside the dashboard panel`)
+      }
+    })
+    // A server that has not built the client yet must not stop the plugins from
+    // loading; only CommonJS dependencies that `require` the runtime notice.
+    .catch(() => undefined)
   return requireShim
 }
 
