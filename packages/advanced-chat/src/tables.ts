@@ -47,10 +47,9 @@ export async function ensureTables(db: Database): Promise<void> {
       connector_device_id: "string",
       connector_workspace_path: "string",
       connector_auto_approve: "boolean",
-      // The approval level the user picked, and nothing else: an empty value
-      // means the session never chose, so the connector device applies its own
-      // policy. Chat stores the value; it does not decide what it means.
-      connector_approval_mode: { type: "string", initial: "" },
+      // Sessions start on the sandbox; chat stores the level as a value and the
+      // connector device is what makes it mean something.
+      connector_approval_mode: { type: "string", initial: "sandbox" },
       connector_command_prefixes: { type: "string", initial: "[]" },
       model_name: "string",
       user_channel_id: "integer",

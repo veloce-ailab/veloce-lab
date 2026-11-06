@@ -843,10 +843,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         connector_device_id: "",
         connector_workspace_path: "",
         connector_auto_approve: false,
-        // Left empty unless the client names one: the approval level is the
-        // device's to interpret (see `@velocelab/connector` for the vocabulary),
-        // and chat storing a default would take that decision away from it.
-        connector_approval_mode: "",
+        connector_approval_mode: "sandbox",
         connector_command_prefixes: "[]",
         model_name: input.modelName?.trim() ?? "",
         user_channel_id: input.userChannelId || null,
@@ -969,7 +966,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         connector_workspace_path: String(input.connectorWorkspacePath ?? ""),
         workspace_id: String(input.workspaceId ?? ""),
         connector_auto_approve: input.connectorAutoApprove === true,
-        connector_approval_mode: String(input.connectorApprovalMode ?? ""),
+        connector_approval_mode: String(input.connectorApprovalMode ?? "sandbox"),
         connector_command_prefixes: JSON.stringify(
           input.connectorCommandPrefixes ?? [],
         ),
@@ -1408,7 +1405,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
             connector_workspace_path: String(input.connectorWorkspacePath ?? ""),
             workspace_id: String(input.workspaceId ?? ""),
             connector_auto_approve: input.connectorAutoApprove === true,
-            connector_approval_mode: String(input.connectorApprovalMode ?? ""),
+            connector_approval_mode: String(input.connectorApprovalMode ?? "sandbox"),
             connector_command_prefixes: JSON.stringify(
               input.connectorCommandPrefixes ?? [],
             ),
@@ -2038,8 +2035,8 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
               disabledToolGroups,
               connectorDeviceId,
               connectorWorkspacePath: String(input.connectorWorkspacePath ?? session.connector_workspace_path ?? ""),
-              // Forwarded as stored, empty included: the executor resolves what
-              // an unset level means, not chat.
+              // Forwarded as stored; an empty row (stored before the sandbox
+              // existed) is resolved by the executor, not re-guessed here.
               connectorApprovalMode: String(input.connectorApprovalMode ?? session.connector_approval_mode ?? ""),
               connectorAutoApprove: input.connectorAutoApprove === true || session.connector_auto_approve === true || Number(session.connector_auto_approve ?? 0) === 1,
             });

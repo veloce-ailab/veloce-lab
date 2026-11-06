@@ -573,9 +573,8 @@ interface EnterprisePoolDevice {
 type ChatRunMode = "chat" | "assistant" | "agent_group"
 // The approval level is a value chat stores and shows; what it *means* belongs
 // to the connector device (see `@velocelab/connector` and
-// `@velocelab/sandbox`). An empty value is "no opinion": the device applies its
-// own policy. `manual` is a retired name for the sandbox bargain.
-type ConnectorApprovalMode = "" | "sandbox" | "full_access" | "assistant"
+// `@velocelab/sandbox`). `manual` is a retired name for the sandbox bargain.
+type ConnectorApprovalMode = "sandbox" | "full_access" | "assistant"
 type SessionConfigTab = "basic" | "advanced" | "skills" | "knowledge" | "mcp" | "device"
 type SessionCapabilityPicker = "skills" | "knowledge" | "mcp" | null
 type AttachmentTarget = "composer" | "editor"
@@ -882,7 +881,7 @@ export default function Chat() {
   const [pendingConnectorDeviceID, setPendingConnectorDeviceID] = useState("")
   const [pendingConnectorWorkspace, setPendingConnectorWorkspace] = useState("")
   const [pendingCloudSandboxID, setPendingCloudSandboxID] = useState("")
-  const [pendingConnectorApprovalMode, setPendingConnectorApprovalMode] = useState<ConnectorApprovalMode>("")
+  const [pendingConnectorApprovalMode, setPendingConnectorApprovalMode] = useState<ConnectorApprovalMode>("sandbox")
   const [pendingConnectorCommandPrefixes, setPendingConnectorCommandPrefixes] = useState("")
   const [isWorkspacePickerOpen, setIsWorkspacePickerOpen] = useState(false)
   const [isPickingWorkspaceFolder, setIsPickingWorkspaceFolder] = useState(false)
@@ -2572,7 +2571,7 @@ export default function Chat() {
       connector_workspace_path: mode === "chat" || session.cloud_sandbox_id ? undefined : localDeviceID && session.connector_device_id !== localDeviceID ? undefined : session.connector_workspace_path,
       cloud_sandbox_id: mode === "chat" ? undefined : session.cloud_sandbox_id,
       connector_auto_approve: mode === "chat" ? false : session.connector_auto_approve,
-      connector_approval_mode: mode === "chat" ? "" : connectorApprovalModeFor(session),
+      connector_approval_mode: mode === "chat" ? "sandbox" : connectorApprovalModeFor(session),
       connector_command_prefixes: mode === "chat" ? [] : session.connector_command_prefixes || [],
       model_name: mode === "agent_group" ? undefined : session.model_name,
     }), { persist: true })
@@ -2659,13 +2658,16 @@ export default function Chat() {
       error(copy.assistantWorkspaceToolsDisabled)
       return
     }
-    // A cloud sandbox host enforces its own policy, so the session keeps the
-    // level the user picked rather than this client inventing one for the host.
+    // A cloud sandbox is an isolated machine of its own, so the session runs
+    // with full access on it — the same terms as before the sandbox existed;
+    // the host's own policy is what actually governs the work there.
     updateSession(currentSession.id, (session) => ({
       ...session,
       cloud_sandbox_id: sandboxID || undefined,
       connector_device_id: undefined,
       connector_workspace_path: undefined,
+      connector_auto_approve: Boolean(sandboxID),
+      connector_approval_mode: sandboxID ? "full_access" : session.connector_approval_mode,
     }), { persist: true })
     setPendingCloudSandboxID(sandboxID)
     setPendingConnectorDeviceID("")
@@ -2807,7 +2809,7 @@ export default function Chat() {
       cloud_sandbox_id: undefined,
       agent_group_id: undefined,
       connector_auto_approve: false,
-      connector_approval_mode: "",
+      connector_approval_mode: "sandbox",
       connector_command_prefixes: [],
     }), { persist: true })
     setPendingCloudSandboxID("")
@@ -3250,7 +3252,7 @@ export default function Chat() {
               connector_workspace_path: "",
               workspace_id: session.workspace_id || "",
               connector_auto_approve: false,
-              connector_approval_mode: "",
+              connector_approval_mode: "sandbox",
               connector_command_prefixes: [],
               max_tokens: session.max_tokens || 0,
               temperature: session.temperature ?? null,
@@ -4015,12 +4017,11 @@ export default function Chat() {
       }), { persist: true })
     }
     const labels: Record<ConnectorApprovalMode, string> = {
-      "": approvalModeCopy.deviceDefault,
       sandbox: approvalModeCopy.sandbox,
       full_access: approvalModeCopy.fullAccess,
       assistant: approvalModeCopy.assistant,
     }
-    const icons = { "": Monitor, sandbox: Shield, full_access: ShieldCheck, assistant: Bot }
+    const icons = { sandbox: Shield, full_access: ShieldCheck, assistant: Bot }
     const ApprovalIcon = icons[approvalMode]
     return (
       <DropdownMenu>
@@ -4036,15 +4037,12 @@ export default function Chat() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuRadioGroup
-            value={approvalMode || "__device_default__"}
-            onValueChange={(value) => selectApprovalMode((value === "__device_default__" ? "" : value) as ConnectorApprovalMode)}
-          >
-            {(["" as const, "sandbox", "full_access", "assistant"] as const).map((mode) => {
+          <DropdownMenuRadioGroup value={approvalMode} onValueChange={(value) => selectApprovalMode(value as ConnectorApprovalMode)}>
+            {(["sandbox", "full_access", "assistant"] as const).map((mode) => {
               const disabled = mode === "assistant" && !currentAdvancedSettings.connector_approval_agent_id
               const ApprovalOptionIcon = icons[mode]
               return (
-                <DropdownMenuRadioItem key={mode || "__device_default__"} value={mode || "__device_default__"} disabled={disabled} className="gap-2">
+                <DropdownMenuRadioItem key={mode} value={mode} disabled={disabled} className="gap-2">
                   <ApprovalOptionIcon size={15} className="shrink-0" />
                   <span>{labels[mode]}</span>
                 </DropdownMenuRadioItem>
@@ -5581,7 +5579,6 @@ export default function Chat() {
                   <label className="space-y-1 text-sm">
                     <span className="font-medium">{approvalModeCopy.label}</span>
                     <Select value={String((pendingConnectorApprovalMode) || "__shadcn_empty__")} onValueChange={(value) => setPendingConnectorApprovalMode(normalizeConnectorApprovalMode((value === "__shadcn_empty__" ? "" : value)))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>
-                      <SelectItem value="__shadcn_empty__">{approvalModeCopy.deviceDefault}</SelectItem>
                       <SelectItem value="sandbox">{approvalModeCopy.sandbox}</SelectItem>
                       <SelectItem value="full_access">{approvalModeCopy.fullAccess}</SelectItem>
                       <SelectItem value="assistant" disabled={!currentAdvancedSettings.connector_approval_agent_id}>{approvalModeCopy.assistant}</SelectItem>
@@ -8146,10 +8143,9 @@ function normalizeConnectorApprovalMode(value: unknown, legacyFullAccess = false
   if (value === "full_access" || value === "assistant" || value === "sandbox") {
     return value
   }
-  // Anything else — a retired `manual`/`safe`, a mode from a newer host, or
-  // nothing at all — is not this client's decision to make: it renders as "the
-  // device decides" and stays that way until the user picks something.
-  return legacyFullAccess ? "full_access" : ""
+  // A retired `manual`/`safe`, or a row stored before the sandbox existed, keeps
+  // the sandbox bargain rather than falling back to prompting.
+  return legacyFullAccess ? "full_access" : "sandbox"
 }
 
 function connectorApprovalModeFor(session?: Pick<ChatSession, "connector_approval_mode" | "connector_auto_approve">): ConnectorApprovalMode {
@@ -8171,8 +8167,7 @@ function createSession(input: { agentID?: string; modelName?: string } = {}): Ch
     connector_device_id: undefined,
     connector_workspace_path: undefined,
     connector_auto_approve: false,
-    // Unset until the user picks a level: the device's policy applies meanwhile.
-    connector_approval_mode: "",
+    connector_approval_mode: "sandbox",
     connector_command_prefixes: [],
     model_name: input.modelName || undefined,
     max_tokens: 0,
@@ -9457,7 +9452,6 @@ const zhAgentGroupCopy: AgentGroupCopy = {
 
 const zhConnectorApprovalModeCopy = {
   label: "连接器权限",
-  deviceDefault: "设备默认",
   sandbox: "沙箱",
   sandboxHint: "工作区内的读写和命令直接执行，不用逐条确认；工作区之外的写入会被内核拒绝。",
   fullAccess: "完全访问",
@@ -9467,7 +9461,6 @@ const zhConnectorApprovalModeCopy = {
 
 const enConnectorApprovalModeCopy: typeof zhConnectorApprovalModeCopy = {
   label: "Connector access",
-  deviceDefault: "Device default",
   sandbox: "Sandbox",
   sandboxHint: "Reads, writes and commands inside the workspace run without approval; writes outside it are refused by the kernel.",
   fullAccess: "Full access",
