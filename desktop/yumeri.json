@@ -75,6 +75,7 @@
     "@velocelab/connector": {},
     "@velocelab/sandbox": {},
     "@velocelab/device-local": {},
+    "@velocelab/desktop": {},
     "@velocelab/skill": {},
     "@velocelab/mcp": {},
     "@velocelab/external-plugin": {},
@@ -87,9 +88,10 @@
     "@velocelab/audit": {},
     "@velocelab/channel-admin": {},
     "@velocelab/companion": {},
+    "@velocelab/pwa": {},
+    "@velocelab/notification": {},
     "@velocelab/update-checker": {
       "checkIntervalMinutes": "360"
-    },
-    "@velocelab/desktop": {}
+    }
   }
 }

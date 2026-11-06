@@ -17,6 +17,7 @@
     },
     "@velocelab/dashboard": {},
     "@velocelab/message": {},
+    "@velocelab/notification": {},
     "@velocelab/topbar": {},
     "@velocelab/sidebar": {},
     "@velocelab/chat-environment": {},
@@ -98,6 +99,9 @@
     "@velocelab/audit": {},
     "@velocelab/channel-admin": {},
     "@velocelab/companion": {},
-    "@velocelab/update-checker": { "checkIntervalMinutes": "360" }
+    "@velocelab/update-checker": {
+      "checkIntervalMinutes": "360"
+    },
+    "@velocelab/pwa": {}
   }
 }
