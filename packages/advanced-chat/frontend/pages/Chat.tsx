@@ -12,7 +12,7 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, Archive, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpDown, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Clock, Cloud, Coins, Copy, Eraser, Ellipsis, FileDiff, FileText, Folder, FolderOpen, FolderTree, GitBranch, Globe, HardDrive, List, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, Shield, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
+import { Activity, Archive, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpDown, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Clock, Cloud, Coins, Copy, Eraser, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, HardDrive, List, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, Shield, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { composerCommands, subscribeComposerCommands, type DashboardComposerCommand } from "@velocelab/dashboard/frontend"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
@@ -579,7 +579,7 @@ type SessionConfigTab = "basic" | "advanced" | "skills" | "knowledge" | "mcp" | 
 type SessionCapabilityPicker = "skills" | "knowledge" | "mcp" | null
 type AttachmentTarget = "composer" | "editor"
 type WorkspacePickerTarget = "session" | "pending" | "new_workspace"
-type SessionGroupMode = "workspace" | "tree" | "list"
+type SessionGroupMode = "workspace" | "list"
 type SessionSortMode = "recent" | "manual"
 type SessionArchiveFilter = "hide" | "all" | "only"
 
@@ -1165,7 +1165,7 @@ export default function Chat() {
     return next
   }, [filteredSessions, sessionSortMode])
   const visibleSessionGroups = useMemo(() => {
-    type SessionListGroup = { label: string; sessions: ChatSession[]; workspaceId?: string; depth?: number }
+    type SessionListGroup = { label: string; sessions: ChatSession[]; workspaceId?: string }
     const sessions = orderedSessions.slice(0, visibleSessionCount)
     const groups: SessionListGroup[] = []
     if (sessionGroupMode === "list") {
@@ -1199,46 +1199,6 @@ export default function Chat() {
       return groups
     }
 
-    // Workspace tree: nest a workspace under the longest other workspace path
-    // that prefixes it, on the same device. Most users have a flat set of
-    // projects, in which case this looks exactly like workspace grouping.
-    const normalisedPath = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "")
-    const children = new Map<string, ChatWorkspace[]>()
-    const roots: ChatWorkspace[] = []
-    for (const workspace of workspaces) {
-      const target = normalisedPath(workspace.path || "")
-      let parent: ChatWorkspace | undefined
-      let parentLength = -1
-      for (const other of workspaces) {
-        if (other.id === workspace.id || other.device_id !== workspace.device_id) continue
-        const base = normalisedPath(other.path || "")
-        if (!base || base.length <= parentLength || !target.startsWith(`${base}/`)) continue
-        parent = other
-        parentLength = base.length
-      }
-      if (parent) {
-        const siblings = children.get(parent.id) || []
-        siblings.push(workspace)
-        children.set(parent.id, siblings)
-      } else {
-        roots.push(workspace)
-      }
-    }
-    const byPath = (a: ChatWorkspace, b: ChatWorkspace) => (a.path || a.name).localeCompare(b.path || b.name)
-    const appendTree = (workspace: ChatWorkspace, depth: number) => {
-      groups.push({
-        label: workspace.name,
-        sessions: sessions.filter((session) => session.workspace_id === workspace.id),
-        workspaceId: workspace.id,
-        depth,
-      })
-      for (const child of (children.get(workspace.id) || []).sort(byPath)) {
-        appendTree(child, depth + 1)
-      }
-    }
-    for (const root of roots.sort(byPath)) {
-      appendTree(root, 0)
-    }
     const unassigned = sessions.filter((session) => !session.workspace_id || !workspaceByID.has(session.workspace_id))
     if (unassigned.length > 0) {
       groups.push({ label: noWorkspaceLabel, sessions: unassigned })
@@ -4246,9 +4206,8 @@ export default function Chat() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-60">
               <DropdownMenuLabel>{sessionSidebarCopy.groupMode}</DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={sessionGroupMode} onValueChange={(value) => setSessionGroupMode(value === "tree" || value === "list" ? value : "workspace")}>
+              <DropdownMenuRadioGroup value={sessionGroupMode} onValueChange={(value) => setSessionGroupMode(value === "list" ? "list" : "workspace")}>
                 <DropdownMenuRadioItem value="workspace"><FolderOpen size={14} className="mr-2" />{sessionSidebarCopy.groupByWorkspace}</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="tree"><FolderTree size={14} className="mr-2" />{sessionSidebarCopy.groupByWorkspaceTree}</DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="list"><List size={14} className="mr-2" />{sessionSidebarCopy.groupByList}</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
@@ -4290,9 +4249,9 @@ export default function Chat() {
           <div key={group.workspaceId ?? group.label} className="pb-2">
             {sessionGroupMode !== "list" ? (() => {
               const workspace = workspaces.find((item) => item.id === (group.workspaceId ?? group.sessions[0]?.workspace_id))
-              const header = <div className="group/workspace flex h-9 items-center gap-1 rounded-md px-2 py-1 hover:bg-muted" style={{ paddingLeft: 8 + (group.depth ?? 0) * 14 }}>
+              const header = <div className="group/workspace flex h-9 items-center gap-1 rounded-md px-2 py-1 hover:bg-muted">
                 <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm" onClick={() => workspace && createSessionInWorkspace(workspace)}>
-                  {sessionGroupMode === "tree" ? <FolderTree size={17} className="shrink-0 text-muted-foreground" /> : <FolderOpen size={17} className="shrink-0 text-muted-foreground" />}
+                  <FolderOpen size={17} className="shrink-0 text-muted-foreground" />
                   <span className="min-w-0 truncate font-medium">{group.label}</span>
                 </button>
                 {workspace && <>
@@ -4325,7 +4284,7 @@ export default function Chat() {
               ) : header
             })() : null}
             {group.sessions.length === 0 && (
-              <div className="px-3 pb-1 text-xs text-muted-foreground" style={{ paddingLeft: 36 + (group.depth ?? 0) * 14 }}>{language === "zh" ? "没有会话" : "No sessions"}</div>
+              <div className="px-3 pb-1 text-xs text-muted-foreground">{language === "zh" ? "没有会话" : "No sessions"}</div>
             )}
             {group.sessions.map((session) => (
               <SessionSidebarRow
@@ -4341,7 +4300,7 @@ export default function Chat() {
                 manualSort={sessionSortMode === "manual"}
                 dragging={draggingSessionID === session.id}
                 dragOver={dragOverSessionID === session.id}
-                indent={group.depth ?? 0}
+                indent={0}
                 onDragStart={handleDragStartSession}
                 onDragOver={handleDragOverSession}
                 onDrop={handleReorderSessions}
@@ -7167,7 +7126,7 @@ function readSessionGroupMode(): SessionGroupMode {
     return "workspace"
   }
   const value = localStorage.getItem(sessionGroupModeStorageKey)
-  if (value === "workspace" || value === "tree" || value === "list") {
+  if (value === "workspace" || value === "list") {
     return value
   }
   // "time" was the old second option; a single ordered list is its closest
@@ -9529,7 +9488,6 @@ const zhSessionSidebarCopy = {
   filters: "会话筛选与排序",
   groupMode: "分组方式",
   groupByWorkspace: "按工作区",
-  groupByWorkspaceTree: "按工作区树",
   groupByList: "单列表",
   sortMode: "排序方式",
   sortManual: "手动排序",
@@ -9546,7 +9504,6 @@ const enSessionSidebarCopy: typeof zhSessionSidebarCopy = {
   filters: "Filter and sort sessions",
   groupMode: "Group by",
   groupByWorkspace: "Workspace",
-  groupByWorkspaceTree: "Workspace tree",
   groupByList: "Single list",
   sortMode: "Sort by",
   sortManual: "Manual order",
