@@ -30,13 +30,12 @@
     "files": [
       "dist/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/**/*"
     ],
+    "afterPack": "scripts/after-pack.mjs",
+    "npmRebuild": false,
     "extraResources": [
-      {
-        "from": "resources/server",
-        "to": "server"
-      },
       {
         "from": "resources/bin",
         "to": "bin",

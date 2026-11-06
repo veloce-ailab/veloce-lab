@@ -42,13 +42,20 @@ function extractArchive(zipPath, destination) {
     return
   }
 
-  const fallback = process.platform === "win32"
-    ? spawnSync("powershell.exe", ["-NoProfile", "-Command", "Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force", zipPath, destination], { stdio: "inherit" })
-    : spawnSync("unzip", ["-q", "-o", zipPath, "-d", destination], { stdio: "inherit" })
-
-  if (fallback.status !== 0) {
-    process.exit(fallback.status ?? 1)
+  // The artifact is a zip, which GNU tar cannot read: try the extractors a host
+  // may actually have before giving up.
+  const fallbacks = process.platform === "win32"
+    ? [["powershell.exe", ["-NoProfile", "-Command", "Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force", zipPath, destination]]]
+    : [
+        ["unzip", ["-q", "-o", zipPath, "-d", destination]],
+        ["bsdtar", ["-xf", zipPath, "-C", destination]],
+      ]
+  for (const [command, args] of fallbacks) {
+    if (spawnSync(command, args, { stdio: "inherit" }).status === 0) {
+      return
+    }
   }
+  process.exit(1)
 }
 
 function platformPath(value) {
