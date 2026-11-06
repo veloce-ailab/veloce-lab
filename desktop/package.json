@@ -18,7 +18,9 @@
     "build:server": "node scripts/build-server.mjs",
     "build": "npm run build:electron && npm run build:shell && npm run build:server",
     "dist": "npm run build && npm run build:runtimes && electron-builder",
-    "start": "npm run build:electron && npm run build:shell && electron ."
+    "start": "npm run build:electron && npm run build:shell && electron .",
+    "start:dev": "npm run build:electron && npm run build:shell && electron . --dev",
+    "start:dev:inspect": "npm run build:electron && npm run build:shell && electron . --dev --inspect=9229"
   },
   "build": {
     "appId": "com.windypear.veloce.lab",

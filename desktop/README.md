@@ -23,7 +23,19 @@ Consequences worth knowing:
 ```bash
 npm run install:mirror      # npm + Electron binaries from the mirrors
 npm run start               # compile the shell, copy the static page, start Electron
+npm run start:dev           # the same, with DevTools, terminal logging and reload keys
+npm run start:dev:inspect   # ...and a Node inspector for the main process on :9229
 ```
+
+Development mode (`--dev`, or `VELOCE_DESKTOP_DEV=1`) changes the shell only —
+the server that runs is the packaged payload, so what you look at is what ships:
+
+- the built-in server's output is echoed into the terminal, along with the exact
+  command, the generated config and the log path
+- DevTools open detached with each window; **F12** / **Ctrl+Shift+I**
+  (**⌘⌥I** on macOS) toggle them, **Ctrl/Cmd+R** reloads and adding Shift
+  reloads without the cache
+- the View menu carries the same commands, so they are discoverable
 
 `npm run start` does not build the server payload; a development run uses the one
 already in `resources/server`. Rebuild it (after changing plugins) with:
@@ -58,7 +70,7 @@ extra resources.
 | Generated server config | `<userData>/desktop-server/yumeri.json` |
 | Server database, data root, log | `<userData>/desktop-server/{veloce.db,data/server.log}` |
 
-`<userData>` is `%LOCALAPPDATA%\veloce-lab` on Windows and `~/.veloce-lab`
+`<userData>` is `%LOCALAPPDATA%\veloce-lab` on Windows and `~/veloce-lab`
 elsewhere.
 
 `yumeri.json` is regenerated from `desktop/yumeri.json` on every start: the

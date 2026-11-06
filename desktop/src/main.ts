@@ -35,6 +35,20 @@ const desktopInternalName = "veloce-lab"
 const desktopDisplayName = "Veloce Lab"
 const preferredServerPort = 12789
 
+/**
+ * Development mode changes the shell only, never the server: the payload stays
+ * the production one (`resources/server`), and what gets easier is looking at it
+ * — server output goes to this process's terminal, DevTools open with the
+ * window, and F12 / Ctrl+Shift+I toggle them.
+ */
+const desktopDevMode =
+  process.argv.includes("--dev") || /^(1|true|yes)$/i.test(process.env.VELOCE_DESKTOP_DEV ?? "")
+
+function devLog(message: string) {
+  if (!desktopDevMode) return
+  process.stdout.write(`[desktop] ${message}\n`)
+}
+
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 app.setName(desktopInternalName)
@@ -332,6 +346,7 @@ async function ensureDesktopServerConfig(port: number) {
 async function appendServerLog(chunk: Buffer) {
   const text = chunk.toString("utf8")
   if (!text) return
+  if (desktopDevMode) process.stdout.write(text)
   await fsp.appendFile(desktopServerLogPath(), text).catch(() => undefined)
 }
 
@@ -357,6 +372,11 @@ async function ensureBuiltinServerRunning() {
     return builtinServerStatus
   }
   try {
+    if (!fs.existsSync(serverEntry)) {
+      throw new Error(
+        `The built-in server payload is missing (${serverEntry}). Run \`npm run build:server\` (after \`yarn build\` in the repository root).`,
+      )
+    }
     updateBuiltinServerStatus({ phase: "checking", message: "Preparing the built-in server", serverURL: "" })
     const port = await resolveServerPort()
     await ensureDesktopServerConfig(port)
@@ -372,6 +392,9 @@ async function ensureBuiltinServerRunning() {
       env.ELECTRON_RUN_AS_NODE = "1"
     }
     updateBuiltinServerStatus({ phase: "starting", message: "Starting the built-in server", version: app.getVersion() })
+    devLog(`server: ${runtime} ${serverEntry} start -c ${desktopServerConfigPath()}`)
+    devLog(`config: ${desktopServerConfigPath()}`)
+    devLog(`log:    ${desktopServerLogPath()}`)
     const child = spawn(runtime, [serverEntry, "start", "-c", desktopServerConfigPath()], {
       cwd: serverRoot,
       env,
@@ -394,6 +417,7 @@ async function ensureBuiltinServerRunning() {
       updateBuiltinServerStatus({ phase: "error", message: `The built-in server stopped. See ${desktopServerLogPath()}`, version: "" })
     })
     const url = `http://127.0.0.1:${port}`
+    devLog(`waiting for ${url}/api/public/settings`)
     await waitForServer(url, 25_000)
     serverReady = true
     builtinServerRestarts = 0
@@ -442,6 +466,7 @@ function trustedOrigin() {
 // --- windows ---------------------------------------------------------------
 
 function loadAppInWindows(url: string) {
+  devLog(`loading ${url} in ${appWindows.size} window(s)`)
   activeServerURL = url
   for (const window of appWindows) {
     if (window.isDestroyed()) continue
@@ -537,9 +562,52 @@ function createWindow() {
       mainWindow = Array.from(appWindows)[0] || null
     }
   })
+  window.webContents.on("before-input-event", (event, input) => {
+    if (!desktopDevMode || input.type !== "keyDown") return
+    const key = input.key.toLowerCase()
+    const chord = (input.control || input.meta) && input.shift
+    if (key === "f12" || (chord && key === "i") || (input.meta && input.alt && key === "i")) {
+      event.preventDefault()
+      window.webContents.toggleDevTools()
+      return
+    }
+    if ((input.control || input.meta) && key === "r") {
+      event.preventDefault()
+      if (input.shift) window.webContents.reloadIgnoringCache()
+      else window.webContents.reload()
+    }
+  })
   void window.loadFile(shellPagePath)
   if (serverReady && activeServerURL) void window.loadURL(activeServerURL)
+  if (desktopDevMode) window.webContents.openDevTools({ mode: "detach" })
   return window
+}
+
+/**
+ * In development the default menu is replaced by one that keeps the view
+ * commands next to the app's own, so reloading and DevTools are discoverable
+ * without remembering shortcuts.
+ */
+function installDevMenu() {
+  if (!desktopDevMode) return
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    { role: "windowMenu" },
+  ]))
 }
 
 function openWindow() {
@@ -1460,6 +1528,8 @@ if (gotSingleInstanceLock) {
     handleDesktopProtocolArguments(process.argv)
     desktopSettings = await readDesktopSettings()
     applyDesktopProxySettings()
+    installDevMenu()
+    devLog(`mode: ${app.isPackaged ? "packaged" : "development"} shell, production server payload`)
     const config = await readBuiltinServerConfig()
     builtinServerEnabled = config.enabled !== false
     updateBuiltinServerStatus({ enabled: builtinServerEnabled })
