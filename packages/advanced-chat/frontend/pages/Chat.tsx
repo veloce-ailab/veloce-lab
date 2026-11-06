@@ -4,6 +4,7 @@ import { workspacePickerCanGoUp, workspacePickerIsDriveRoot, workspacePickerIsWi
 import { conversationRecords, mergeConversationTools, readConversationRecords, type ConversationComposerBlock, type ConversationRecord } from "../../src/conversation-records"
 import { ToolCallPreview } from "../components/chat/ToolCallPreview"
 import { Collapse } from "../components/chat/Collapse"
+import { ConversationHistoryRail } from "../components/chat/ConversationHistoryRail"
 import { toolActivityKind, toolActivitySummary } from "../lib/tool-activity"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
@@ -4181,11 +4182,6 @@ export default function Chat() {
           <VSCodeIcon size={17} />
         </Button>
       )}
-      {activeSession && currentMessages.length > 0 && (
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSessionPendingClear(activeSession)} aria-label={language === "zh" ? "清空消息" : "Clear messages"} title={language === "zh" ? "清空消息" : "Clear messages"}>
-          <Eraser size={16} />
-        </Button>
-      )}
       {isAdvanced && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openAdvancedConfig()} aria-label={copy.config} title={copy.config}><Settings size={16} /></Button>}
       <DashboardSlot name="chat.toolbar.sidebar" scope="/chat" data={chatSlotData} />
     </div>
@@ -4248,9 +4244,10 @@ export default function Chat() {
               </div>
             </div>
             <div className={cn(isAdvanced ? "relative flex min-h-0 flex-1 flex-col gap-3" : "space-y-4 p-6 pt-0")}>
+              <div className="relative flex min-h-0 flex-1 flex-col">
               <ContextMenu open={Boolean(messageSelectionMenu)} onOpenChange={(open) => { if (!open) setMessageSelectionMenu(null) }}>
                 <ContextMenuTrigger asChild>
-                  <div ref={messagesViewportRef} className={cn(isAdvanced ? (isEmptyAdvancedChat ? "hidden" : "min-h-0 flex-1 overflow-y-auto overscroll-contain") : "min-h-[360px] space-y-3 rounded-md border p-3")} onContextMenu={handleMessageSelectionContextMenu}>
+                  <div ref={messagesViewportRef} className={cn(isAdvanced ? (isEmptyAdvancedChat ? "hidden" : "min-h-0 flex-1 overflow-y-auto overscroll-contain lg:[scrollbar-width:none]!") : "min-h-[360px] space-y-3 rounded-md border p-3")} onContextMenu={handleMessageSelectionContextMenu}>
                 <div
                   className={cn(isAdvanced ? "mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4 px-2 py-5 sm:px-4" : "contents")}
                 >
@@ -4326,7 +4323,7 @@ export default function Chat() {
                         )
                       }
                       return (
-                        <div key={message.id} className="group space-y-1.5">
+                        <div key={message.id} data-message-id={message.id} className="group space-y-1.5">
                           <div className={message.role === "user" ? "flex justify-end" : "flex justify-start"}>
                             <div className={cn(
                               "w-fit max-w-full p-3 text-sm",
@@ -4437,6 +4434,10 @@ export default function Chat() {
                   </ContextMenuSub>
                 </ContextMenuContent>
               </ContextMenu>
+              {currentSession && !isEmptyAdvancedChat && (
+                <ConversationHistoryRail messages={currentSession.messages} viewportRef={messagesViewportRef} language={language} />
+              )}
+              </div>
 
               {attachments.length > 0 && !isAdvanced && (
                 <div className={cn(isAdvanced && "mx-auto w-full max-w-3xl px-2 sm:px-4")}>
@@ -5547,7 +5548,7 @@ const AssistantMessageSequence = memo(function AssistantMessageSequence({
     return null
   }
   return (
-    <div className="space-y-1.5">
+    <div data-message-id={message.id} className="space-y-1.5">
       {blocks.map((block) => block.kind === "text" ? (
         <div key={block.id} className="space-y-1.5">
           {block.parts.map((part, index) => (
