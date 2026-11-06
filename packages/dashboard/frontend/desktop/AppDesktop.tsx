@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { HashRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom"
-import { Activity, ExternalLink, FolderOpen, Globe2, Info, RefreshCw, Server, Settings } from "lucide-react"
+import { ExternalLink, FolderOpen, Globe2, Info, RefreshCw, Server, Settings } from "lucide-react"
 
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -13,7 +13,6 @@ import { Switch } from "@/components/ui/switch"
 import logoURL from "@/assets/logo.png"
 import {
   DesktopApprovalDecisionBridge,
-  DesktopConnectorBridge,
   DesktopNavigationBridge,
   DesktopTransparency,
 } from "@/desktop/bridges"
@@ -30,7 +29,6 @@ import { frames as extensionFrames, routes as extensionRoutes, subscribeExtensio
 // adds window chrome and the few host capabilities around the panel instead of
 // owning an account or a server list.
 
-type DesktopProcessItem = DesktopProcessStatus["processes"][number]
 
 type DesktopSystemInfo = { hostname: string; platform: string; instanceID: string; titleBar?: "overlay" | "frame" }
 /** Height the panel starts below when this shell draws its own title bar. */
@@ -39,7 +37,6 @@ const overlayTitleBarClass = "top-9"
 const emptyDesktopSettings: DesktopSettings = {
   httpProxy: "",
   builtinServerPath: "",
-  connectorPath: "",
   developerMode: false,
   serverURL: "",
   preparedUpdate: null,
@@ -96,7 +93,6 @@ const zhCopy = {
   mode: "模式",
   httpProxy: "全局 HTTP 代理",
   httpProxyPlaceholder: "http://127.0.0.1:7890",
-  connectorPath: "内置连接器文件路径",
   browse: "选择",
   developerMode: "开发者模式",
   developerModeDescription: "允许窗口加载外部服务器上的面板。外部服务器上的页面会获得与本机相同的桌面能力：打开文件、启动连接器、发送通知。",
@@ -140,7 +136,6 @@ const enCopy: Record<keyof typeof zhCopy, string> = {
   builtinUnavailable: "Desktop bridge is not available",
   builtinStarting: "Preparing the built-in server…",
   processes: "Managed processes",
-  connector: "Connector",
   noProcess: "No managed process is running",
   running: "Running",
   stopped: "Stopped",
@@ -150,7 +145,6 @@ const enCopy: Record<keyof typeof zhCopy, string> = {
   mode: "Mode",
   httpProxy: "Global HTTP proxy",
   httpProxyPlaceholder: "http://127.0.0.1:7890",
-  connectorPath: "Built-in connector file path",
   browse: "Choose",
   developerMode: "Developer mode",
   developerModeDescription: "Let the windows load a panel from an external server. A page from that server gets the same desktop abilities this machine has: opening files, starting a connector and showing notifications.",
@@ -220,7 +214,6 @@ export function DesktopShell() {
   return (
     <HashRouter>
       <DesktopTransparency />
-      <DesktopConnectorBridge />
       <DesktopApprovalDecisionBridge />
       <DesktopNavigationBridge />
       <DocumentTitle />
@@ -245,7 +238,6 @@ function DesktopTitleBar({ overlay }: { overlay: boolean }) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [settingsDraft, setSettingsDraft] = useState<DesktopSettings>(emptyDesktopSettings)
   const [builtinStatus, setBuiltinStatus] = useState<BuiltinServerStatus | null>(null)
-  const [processStatus, setProcessStatus] = useState<DesktopProcessStatus | null>(null)
   const [systemInfo, setSystemInfo] = useState<DesktopSystemInfo | null>(null)
   const [updateNotice, setUpdateNotice] = useState("")
   const [isSavingSettings, setIsSavingSettings] = useState(false)
@@ -271,10 +263,6 @@ function DesktopTitleBar({ overlay }: { overlay: boolean }) {
 
   useEffect(() => {
     let cancelled = false
-    void bridge?.getDesktopProcessStatus().then((status) => {
-      if (!cancelled) setProcessStatus(status)
-    })
-    const unsubscribe = bridge?.onDesktopProcessStatus((status) => setProcessStatus(status))
     return () => {
       cancelled = true
       unsubscribe?.()
@@ -332,10 +320,7 @@ function DesktopTitleBar({ overlay }: { overlay: boolean }) {
     }
   }
 
-  const chooseDesktopPath = async (field: "connectorPath") => {
-    const filePath = await bridge?.chooseDesktopFile()
-    if (filePath) setSettingsDraft((draft) => ({ ...draft, [field]: filePath }))
-  }
+
 
   const runMenuAction = (action: "new-window" | "quit" | "close-window" | "copy" | "paste" | "cut" | "delete" | "undo" | "redo") => {
     setOpenApplicationMenu(null)
@@ -424,14 +409,11 @@ function DesktopTitleBar({ overlay }: { overlay: boolean }) {
           settings={settingsDraft}
           builtinStatus={builtinStatus}
           isBuiltinBusy={isBuiltinBusy}
-          processStatus={processStatus}
           systemInfo={systemInfo}
           updateNotice={updateNotice}
           isSaving={isSavingSettings}
           onSettingsChange={setSettingsDraft}
           onToggleBuiltin={() => void toggleBuiltinServer()}
-          onChoosePath={(field) => void chooseDesktopPath(field)}
-          onProcessStatusChange={setProcessStatus}
           onCheckUpdate={() => setUpdateNotice(copy.updateUnavailable)}
           onOpenPanelSettings={() => { setIsSettingsOpen(false); navigate("/settings") }}
           onOpenLink={(target) => void bridge?.openDesktopLink(target)}
@@ -488,14 +470,11 @@ function DesktopSettingsDialog({
   settings,
   builtinStatus,
   isBuiltinBusy,
-  processStatus,
   systemInfo,
   updateNotice,
   isSaving,
   onSettingsChange,
   onToggleBuiltin,
-  onChoosePath,
-  onProcessStatusChange,
   onCheckUpdate,
   onOpenPanelSettings,
   onOpenLink,
@@ -506,21 +485,17 @@ function DesktopSettingsDialog({
   settings: DesktopSettings
   builtinStatus: BuiltinServerStatus | null
   isBuiltinBusy: boolean
-  processStatus: DesktopProcessStatus | null
   systemInfo: DesktopSystemInfo | null
   updateNotice: string
   isSaving: boolean
   onSettingsChange: (settings: DesktopSettings) => void
   onToggleBuiltin: () => void
-  onChoosePath: (field: "connectorPath") => void
-  onProcessStatusChange: (status: DesktopProcessStatus) => void
   onCheckUpdate: () => void
   onOpenPanelSettings: () => void
   onOpenLink: (target: "official-site" | "github") => void
   onClose: () => void
   onSave: () => void
 }) {
-  const processes = processStatus?.processes ?? []
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-950/50 p-4 backdrop-blur-sm [-webkit-app-region:no-drag]">
       <div className="max-h-[calc(100vh-2rem)] w-[min(600px,calc(100vw-2rem))] overflow-y-auto rounded-md border bg-popover p-4 text-popover-foreground shadow-xl">
@@ -556,18 +531,6 @@ function DesktopSettingsDialog({
             </div>
           </section>
 
-          <section>
-            <SectionTitle icon={<Activity size={14} />}>{copy.processes}</SectionTitle>
-            <div className="space-y-2">
-              {processes.map((item) => (
-                <ProcessStatusRow key={item.id} item={item} copy={copy} onStatusChange={onProcessStatusChange} />
-              ))}
-              {!processes.length && (
-                <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">{copy.noProcess}</div>
-              )}
-            </div>
-          </section>
-
           <section className="space-y-3">
             <label className="block text-xs">
               <span className="mb-1 block font-medium">{copy.httpProxy}</span>
@@ -578,13 +541,6 @@ function DesktopSettingsDialog({
                 onChange={(event) => onSettingsChange({ ...settings, httpProxy: event.target.value })}
               />
             </label>
-            <PathSettingRow
-              label={copy.connectorPath}
-              value={settings.connectorPath}
-              browseLabel={copy.browse}
-              onChange={(value) => onSettingsChange({ ...settings, connectorPath: value })}
-              onChoose={() => onChoosePath("connectorPath")}
-            />
           </section>
 
           <section>
@@ -690,47 +646,6 @@ function PathSettingRow({
         </Button>
       </div>
     </label>
-  )
-}
-
-function ProcessStatusRow({
-  item,
-  copy,
-  onStatusChange,
-}: {
-  item: DesktopProcessItem
-  copy: DesktopCopy
-  onStatusChange: (status: DesktopProcessStatus) => void
-}) {
-  const title = item.kind === "builtin-server" ? copy.builtin : copy.connector
-  const statusLabel = item.running ? copy.running : copy.stopped
-  const terminate = async () => {
-    const status = await window.veloceDesktop?.terminateDesktopProcess(item.id)
-    if (status) onStatusChange(status)
-  }
-  return (
-    <div className="rounded-md border p-3 text-xs">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate font-medium">{title}</div>
-          <div className="mt-1 truncate text-muted-foreground">{item.message || item.serverURL || statusLabel}</div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className={`rounded-full px-2 py-0.5 text-[11px] ${item.running ? "bg-emerald-500/15 text-emerald-600" : "bg-muted text-muted-foreground"}`}>
-            {statusLabel}
-          </span>
-          <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => void terminate()}>
-            {copy.terminate}
-          </Button>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-muted-foreground">
-        <ProcessMeta label={copy.pid} value={item.pid ? String(item.pid) : "-"} />
-        <ProcessMeta label={copy.version} value={item.version || "-"} />
-        {item.mode && <ProcessMeta label={copy.mode} value={item.mode} />}
-        {item.serverURL && <ProcessMeta label="URL" value={item.serverURL} />}
-      </div>
-    </div>
   )
 }
 

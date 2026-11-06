@@ -9,27 +9,10 @@ interface BuiltinServerStatus {
   version: string
 }
 
-interface DesktopProcessStatus {
-  generatedAt: string
-  processes: Array<{
-    id: string
-    kind: "builtin-server" | "connector"
-    running: boolean
-    phase: "idle" | "checking" | "downloading" | "starting" | "running" | "error"
-    message: string
-    pid: number | null
-    version: string
-    serverURL?: string
-    mode?: string
-    enabled?: boolean
-    startedAt?: string
-  }>
-}
 
 interface DesktopSettings {
   httpProxy: string
   builtinServerPath: string
-  connectorPath: string
   /** Off by default: an external panel would inherit every ability below. */
   developerMode: boolean
   /** The external server developer mode allows; empty means the built-in one. */
@@ -52,11 +35,8 @@ interface Window {
   veloceDesktop?: {
     getBuiltinServerStatus: () => Promise<BuiltinServerStatus>
     setBuiltinServerEnabled: (enabled: boolean) => Promise<BuiltinServerStatus>
-    getDesktopProcessStatus: () => Promise<DesktopProcessStatus>
-    terminateDesktopProcess: (id: string) => Promise<DesktopProcessStatus>
     getDesktopSettings: () => Promise<DesktopSettings>
     saveDesktopSettings: (settings: DesktopSettings) => Promise<DesktopSettings>
-    chooseDesktopFile: () => Promise<string>
     chooseDesktopFolder: (initialPath?: string) => Promise<string>
     getDesktopSystemInfo: () => Promise<{ hostname: string; platform: string; instanceID: string; titleBar?: "overlay" | "frame" }>
     openInVSCode: (workspacePath: string) => Promise<{ ok: boolean; message: string }>
@@ -69,14 +49,11 @@ interface Window {
     setTitleBarTheme: (theme: "light" | "dark") => Promise<{ ok: boolean }>
     checkDesktopUpdate: () => Promise<DesktopUpdateResult>
     installPreparedDesktopUpdate: () => Promise<{ ok: boolean; message: string }>
-    startConnector: (input: {
       serverURL: string
       token: string
       mode: "platform"
     }) => Promise<{ ok: boolean; message: string; version: string }>
-    ensureDesktopConnector: (input: { serverURL: string; token: string; deviceID?: string }) => Promise<{ ok: boolean; message: string; version: string }>
     onBuiltinServerStatus: (callback: (status: BuiltinServerStatus) => void) => () => void
-    onDesktopProcessStatus: (callback: (status: DesktopProcessStatus) => void) => () => void
     onConnectorApprovalDecision: (callback: (input: { taskID: string; approved: boolean }) => void) => () => void
   }
 }

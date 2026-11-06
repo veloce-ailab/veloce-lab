@@ -39,6 +39,12 @@ export const startTransition = React.startTransition
 export const createRoot = ReactDOMClient.createRoot
 export const hydrateRoot = ReactDOMClient.hydrateRoot
 export const createPortal = ReactDOM.createPortal
+// Libraries that schedule work outside React's event handlers (Radix's
+// `dispatchDiscreteCustomEvent` is one) call these directly on `react-dom`; a
+// plugin bundle gets `react-dom` from this module, so they have to be here too.
+export const flushSync = ReactDOM.flushSync
+export const unstable_batchedUpdates = ReactDOM.unstable_batchedUpdates
+export const version = ReactDOM.version
 export const jsx = JSXRuntime.jsx
 export const jsxs = JSXRuntime.jsxs
 export const FragmentJSX = JSXRuntime.Fragment

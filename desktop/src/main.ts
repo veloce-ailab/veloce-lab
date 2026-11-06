@@ -101,8 +101,6 @@ function applyTitleBarOverlayTheme() {
 
 type BuiltinServerPhase = "idle" | "checking" | "downloading" | "starting" | "running" | "error"
 
-type ManagedProcessKind = "builtin-server" | "connector"
-
 interface BuiltinServerStatus {
   enabled: boolean
   running: boolean
@@ -137,9 +135,7 @@ interface PreparedDesktopUpdate {
 interface DesktopSettings {
   httpProxy: string
   builtinServerPath: string
-  connectorPath: string
   preparedUpdate?: PreparedDesktopUpdate | null
-  desktopConnectorTokens: Record<string, string>
   /** Only a developer build may point the windows at another server. */
   developerMode: boolean
   /** The external server that developer mode allows. */
@@ -153,56 +149,10 @@ interface DesktopUpdateResult {
   filePath?: string
 }
 
-interface StartConnectorInput {
-  serverURL: string
-  token: string
-  mode: "platform"
-  deviceID?: string
-  deviceKind?: "cli" | "desktop"
-  desktopInstanceID?: string
-  restart?: boolean
-  watchdogAttempt?: number
-}
 
-interface ConnectorStatus {
-  id: string
-  running: boolean
-  phase: BuiltinServerPhase
-  message: string
-  serverURL: string
-  version: string
-  mode: "platform"
-  startedAt: string
-  deviceID: string
-  deviceKind: "cli" | "desktop"
-}
 
-interface ManagedProcessStatus {
-  id: string
-  kind: ManagedProcessKind
-  running: boolean
-  phase: BuiltinServerPhase
-  message: string
-  pid: number | null
-  version: string
-  serverURL?: string
-  mode?: string
-  enabled?: boolean
-  startedAt?: string
-}
 
-interface DesktopProcessStatus {
-  generatedAt: string
-  processes: ManagedProcessStatus[]
-}
 
-interface ManagedConnectorProcess {
-  process: ChildProcess | null
-  status: ConnectorStatus
-  restartInput: StartConnectorInput
-  restartAttempt: number
-  stopRequested: boolean
-}
 
 let builtinServerStatus: BuiltinServerStatus = {
   enabled: false,
@@ -213,18 +163,13 @@ let builtinServerStatus: BuiltinServerStatus = {
   version: "",
 }
 
-const connectorProcesses = new Map<string, ManagedConnectorProcess>()
 
-const desktopConnectorEnsureRequests = new Map<string, Promise<{ ok: boolean; message: string; version: string }>>()
 
-const connectorRestartTimers = new Map<string, NodeJS.Timeout>()
 
 let desktopSettings: DesktopSettings = {
   httpProxy: "",
   builtinServerPath: "",
-  connectorPath: "",
   preparedUpdate: null,
-  desktopConnectorTokens: {},
   developerMode: false,
   serverURL: "",
 }
@@ -399,6 +344,7 @@ async function ensureBuiltinServerRunning() {
     }
     updateBuiltinServerStatus({ phase: "checking", message: "Preparing the built-in server", serverURL: "" })
     const port = await resolveServerPort()
+    devLog(`port ${port}`)
     await ensureDesktopServerConfig(port)
     await fsp.writeFile(desktopServerLogPath(), "")
     const runtime = fs.existsSync(serverRuntimePath) ? serverRuntimePath : process.execPath
@@ -447,6 +393,9 @@ async function ensureBuiltinServerRunning() {
   } catch (error) {
     serverReady = false
     const message = error instanceof Error ? error.message : "Failed to start the built-in server"
+    // Printed even without --dev: a shell that fails to start is exactly when
+    // someone is looking at a terminal.
+    process.stderr.write(`[desktop] built-in server failed: ${error instanceof Error ? error.stack || error.message : String(error)}\n`)
     updateBuiltinServerStatus({ phase: "error", message })
     void showServerFailure(message)
     return builtinServerStatus
@@ -555,7 +504,7 @@ function createWindow() {
     ...(process.platform === "win32" ? { backgroundMaterial: "acrylic" as const } : {}),
     ...(titleBarOverlaySupported
       ? { titleBarStyle: "hidden" as const, titleBarOverlay: titleBarOverlayOptions() }
-      : { autoHideMenuBar: true }),
+      : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -598,6 +547,13 @@ function createWindow() {
       else window.webContents.reload()
     }
   })
+  if (!titleBarOverlaySupported) {
+    // A framed window keeps its own title bar, so the application menu (Alt to
+    // reveal) should not take a row of the page. Set after construction: the
+    // constructor option needs a display server, which a headless run has not.
+    window.autoHideMenuBar = true
+    window.setMenuBarVisibility(false)
+  }
   void window.loadFile(shellPagePath)
   if (serverReady && activeServerURL) void window.loadURL(activeServerURL)
   if (desktopDevMode) window.webContents.openDevTools({ mode: "detach" })
@@ -718,13 +674,8 @@ function setupIPC() {
     }
     return builtinServerStatus
   })
-  handle("connector:start", async (_event, input: StartConnectorInput) => startConnector(input))
-  handle("connector:ensure-desktop", async (_event, input: { serverURL: string; token: string; deviceID?: string }) => ensureDesktopConnector(input))
-  handle("desktop-processes:get-status", () => getDesktopProcessStatus())
-  handle("desktop-processes:terminate", (_event, id: string) => terminateManagedProcess(id))
   handle("desktop-settings:get", () => desktopSettingsForRenderer())
   handle("desktop-settings:save", (event, input: unknown) => saveDesktopSettings(event, input))
-  handle("desktop-settings:choose-file", async () => chooseDesktopExecutable())
   handle("desktop:choose-folder", async (_event, initialPath: unknown) => chooseDesktopFolder(initialPath))
   handle("desktop:get-system-info", () => ({
     hostname: os.hostname(),
@@ -789,7 +740,9 @@ function setupIPC() {
   handle("desktop:set-titlebar-theme", (_event, theme: unknown) => {
     if (theme !== "light" && theme !== "dark") return { ok: false }
     desktopTitleBarTheme = theme
-    applyTitleBarOverlayTheme()
+    // A framed window draws its own title bar, so there is no overlay to paint;
+    // the page's theme still applies to the page.
+    if (titleBarOverlaySupported) applyTitleBarOverlayTheme()
     return { ok: true }
   })
   handle("desktop-update:check", async () => checkDesktopUpdate())
@@ -857,10 +810,7 @@ async function readDesktopSettings() {
 }
 
 async function writeDesktopSettings(settings: DesktopSettings) {
-  desktopSettings = {
-    ...normalizeDesktopSettings(settings),
-    desktopConnectorTokens: desktopSettings.desktopConnectorTokens,
-  }
+  desktopSettings = normalizeDesktopSettings(settings)
   applyDesktopProxySettings()
   await fsp.mkdir(veloceDataDir(), { recursive: true })
   await fsp.writeFile(desktopSettingsPath(), JSON.stringify(desktopSettings, null, 2))
@@ -872,28 +822,19 @@ function normalizeDesktopSettings(value: unknown): DesktopSettings {
   const prepared = item.preparedUpdate && typeof item.preparedUpdate === "object"
     ? item.preparedUpdate as Record<string, unknown>
     : null
-  const rawConnectorTokens = item.desktopConnectorTokens && typeof item.desktopConnectorTokens === "object"
-    ? item.desktopConnectorTokens as Record<string, unknown>
-    : {}
-  const desktopConnectorTokens = Object.fromEntries(Object.entries(rawConnectorTokens)
-    .filter(([, token]) => typeof token === "string" && token.trim())
-    .map(([serverURL, token]) => [serverURL, (token as string).trim()]))
   return {
     httpProxy: typeof item.httpProxy === "string" ? item.httpProxy.trim() : "",
     builtinServerPath: typeof item.builtinServerPath === "string" ? item.builtinServerPath.trim() : "",
-    connectorPath: typeof item.connectorPath === "string" ? item.connectorPath.trim() : "",
     preparedUpdate: prepared && typeof prepared.tagName === "string" && typeof prepared.assetName === "string" && typeof prepared.filePath === "string"
       ? { tagName: prepared.tagName, assetName: prepared.assetName, filePath: prepared.filePath }
       : null,
-    desktopConnectorTokens,
     developerMode: item.developerMode === true,
     serverURL: typeof item.serverURL === "string" ? item.serverURL.trim().replace(/\/+$/, "") : "",
   }
 }
 
 function desktopSettingsForRenderer() {
-  const { desktopConnectorTokens: _tokens, ...settings } = desktopSettings
-  return settings
+  return desktopSettings
 }
 
 function applyDesktopProxySettings() {
@@ -931,69 +872,11 @@ function updateBuiltinServerStatus(patch: Partial<BuiltinServerStatus>) {
     running: Boolean(builtinServerProcess && !builtinServerProcess.killed),
   }
   mainWindow?.webContents.send("builtin-server:status", builtinServerStatus)
-  emitDesktopProcessStatus()
   return builtinServerStatus
 }
 
-function updateConnectorStatus(id: string, patch: Partial<ConnectorStatus>) {
-  const connector = connectorProcesses.get(id)
-  if (!connector) {
-    return null
-  }
-  connector.status = {
-    ...connector.status,
-    ...patch,
-    running: Boolean(connector.process && !connector.process.killed),
-  }
-  emitDesktopProcessStatus()
-  return connector.status
-}
 
-function getDesktopProcessStatus(): DesktopProcessStatus {
-  const builtinRunning = Boolean(builtinServerProcess && !builtinServerProcess.killed)
-  const processes: ManagedProcessStatus[] = []
-  if (builtinRunning) {
-    processes.push({
-      id: "builtin-server",
-      kind: "builtin-server",
-      running: true,
-      phase: builtinServerStatus.phase,
-      message: builtinServerStatus.message,
-      pid: builtinServerProcess?.pid ?? null,
-      version: builtinServerStatus.version,
-      serverURL: builtinServerStatus.serverURL,
-      enabled: builtinServerStatus.enabled,
-    })
-  }
-  for (const connector of connectorProcesses.values()) {
-    const connectorRunning = Boolean(connector.process && !connector.process.killed)
-    if (!connectorRunning) {
-      continue
-    }
-    processes.push({
-      id: connector.status.id,
-      kind: "connector",
-      running: true,
-      phase: connector.status.phase,
-      message: connector.status.message,
-      pid: connector.process?.pid ?? null,
-      version: connector.status.version,
-      serverURL: connector.status.serverURL,
-      mode: connector.status.mode,
-      startedAt: connector.status.startedAt,
-    })
-  }
-  return {
-    generatedAt: new Date().toISOString(),
-    processes,
-  }
-}
 
-function emitDesktopProcessStatus() {
-  for (const window of BrowserWindow.getAllWindows()) {
-    window.webContents.send("desktop-processes:status", getDesktopProcessStatus())
-  }
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object"
@@ -1111,143 +994,8 @@ function escapeToastXML(value: string) {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&apos;" })[character] || character)
 }
 
-function clearConnectorRestart(connectorID: string) {
-  const timer = connectorRestartTimers.get(connectorID)
-  if (timer) {
-    clearTimeout(timer)
-    connectorRestartTimers.delete(connectorID)
-  }
-}
 
-function scheduleConnectorRestart(connectorID: string) {
-  const connector = connectorProcesses.get(connectorID)
-  if (!connector || connector.stopRequested || isQuitting) {
-    return
-  }
-  clearConnectorRestart(connectorID)
-  const nextAttempt = connector.restartAttempt + 1
-  const delay = Math.min(30_000, 1_000 * 2 ** Math.min(nextAttempt - 1, 5))
-  connector.restartAttempt = nextAttempt
-  connector.status = {
-    ...connector.status,
-    running: false,
-    phase: "checking",
-    message: `Connector exited; restarting in ${Math.ceil(delay / 1000)}s`,
-  }
-  emitDesktopProcessStatus()
-  const timer = setTimeout(() => {
-    connectorRestartTimers.delete(connectorID)
-    const current = connectorProcesses.get(connectorID)
-    if (!current || current.stopRequested || isQuitting) {
-      return
-    }
-    connectorProcesses.delete(connectorID)
-    void startConnector({ ...current.restartInput, restart: true, watchdogAttempt: current.restartAttempt })
-  }, delay)
-  timer.unref()
-  connectorRestartTimers.set(connectorID, timer)
-}
 
-async function startConnector(input: StartConnectorInput) {
-  const serverURL = input.serverURL.trim()
-  const token = input.token.trim()
-  if (!serverURL || !token) {
-    return { ok: false, message: "Missing connector server URL or token", version: "" }
-  }
-  const deviceKind = input.deviceKind === "desktop" ? "desktop" : "cli"
-  const deviceID = input.deviceID?.trim() || ""
-  const existing = Array.from(connectorProcesses.values()).find((connector) =>
-    connector.status.deviceKind === deviceKind &&
-    connector.status.serverURL === serverURL &&
-    (deviceKind !== "desktop" || connector.status.deviceID === deviceID)
-  )
-  if (existing?.process && !existing.process.killed && !input.restart) {
-    return { ok: true, message: "Connector is already running", version: existing.status.version }
-  }
-  if (existing) {
-    existing.stopRequested = true
-    clearConnectorRestart(existing.status.id)
-    existing.process?.kill()
-    connectorProcesses.delete(existing.status.id)
-  }
-  const connectorID = `connector-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  connectorProcesses.set(connectorID, {
-    process: null,
-    restartInput: { ...input, restart: false },
-    restartAttempt: input.watchdogAttempt || 0,
-    stopRequested: false,
-    status: {
-      id: connectorID,
-      running: false,
-      phase: "checking",
-      message: "Preparing bundled connector",
-      serverURL,
-      version: "",
-      mode: "platform",
-      startedAt: "",
-      deviceID,
-      deviceKind,
-    },
-  })
-  emitDesktopProcessStatus()
-  try {
-    const useGoRunConnector = !app.isPackaged && !desktopSettings.connectorPath.trim()
-    updateConnectorStatus(connectorID, { phase: "checking", message: useGoRunConnector ? "Preparing connector from ../app" : "Preparing bundled connector", serverURL, mode: "platform" })
-    const install = useGoRunConnector ? null : await ensureLatestConnectorInstall()
-    const connectorVersion = useGoRunConnector ? "dev" : install!.tagName
-    updateConnectorStatus(connectorID, { phase: "starting", message: useGoRunConnector ? "Starting connector from ../app" : "Starting connector", serverURL, version: connectorVersion, mode: "platform" })
-    const args = ["-server", serverURL, "-token", token, "-device-kind", deviceKind]
-    if (deviceKind === "desktop") {
-      args.push("-desktop-instance-id", input.desktopInstanceID?.trim() || desktopInstanceID())
-    }
-    const childProcess = spawn(
-      useGoRunConnector ? (process.platform === "win32" ? "go.exe" : "go") : install!.executablePath,
-      useGoRunConnector ? ["run", ".", ...args] : args,
-      {
-        cwd: useGoRunConnector ? path.resolve(__dirname, "..", "..", "app") : path.dirname(install!.executablePath),
-        env: desktopProcessEnv(),
-        stdio: "ignore",
-        windowsHide: true,
-      }
-    )
-    const connector = connectorProcesses.get(connectorID)
-    if (connector) {
-      connector.process = childProcess
-    }
-    childProcess.on("exit", () => {
-      const current = connectorProcesses.get(connectorID)
-      if (!current || current !== connector) {
-        return
-      }
-      current.process = null
-      scheduleConnectorRestart(connectorID)
-    })
-    childProcess.on("error", () => {
-      const current = connectorProcesses.get(connectorID)
-      if (!current || current !== connector) {
-        return
-      }
-      current.process = null
-      scheduleConnectorRestart(connectorID)
-    })
-    childProcess.unref()
-    updateConnectorStatus(connectorID, {
-      phase: "running",
-      message: "Connector is running",
-      serverURL,
-      version: connectorVersion,
-      mode: "platform",
-      startedAt: new Date().toISOString(),
-      deviceID,
-      deviceKind,
-    })
-    return { ok: true, message: "Connector started", version: connectorVersion }
-  } catch (error) {
-    connectorProcesses.delete(connectorID)
-    emitDesktopProcessStatus()
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to start connector", version: "" }
-  }
-}
 
 /**
  * Starts the connector for the desktop app's own server.
@@ -1257,82 +1005,11 @@ async function startConnector(input: StartConnectorInput) {
  * supervises the process. Nothing in this path assumes an authentication plugin:
  * a server without one answers the same request.
  */
-async function ensureDesktopConnectorForServer(input: { serverURL: string; token: string; deviceID?: string }) {
-  const serverURL = String(input.serverURL ?? "").trim().replace(/\/+$/, "")
-  const token = String(input.token ?? "").trim()
-  if (!/^https?:\/\//i.test(serverURL) || !token) {
-    return { ok: false, message: "Missing connector server URL or device token", version: "" }
-  }
-  return startConnector({
-    serverURL,
-    token,
-    mode: "platform",
-    deviceID: String(input.deviceID ?? "").trim(),
-    deviceKind: "desktop",
-    desktopInstanceID: desktopInstanceID(),
-    restart: false,
-  })
-}
 
-function ensureDesktopConnector(input: { serverURL: string; token: string; deviceID?: string }) {
-  const key = String(input.serverURL ?? "").trim().replace(/\/+$/, "")
-  const pending = desktopConnectorEnsureRequests.get(key)
-  if (pending) return pending
-  const request = ensureDesktopConnectorForServer(input).finally(() => {
-    desktopConnectorEnsureRequests.delete(key)
-  })
-  desktopConnectorEnsureRequests.set(key, request)
-  return request
-}
 
-function terminateManagedProcess(id: string) {
-  if (id === "builtin-server") {
-    builtinServerEnabled = false
-    void writeBuiltinServerConfig({ enabled: false })
-    stopBuiltinServer()
-    updateBuiltinServerStatus({ phase: "idle", message: "", version: "" })
-    return getDesktopProcessStatus()
-  }
 
-  const connector = connectorProcesses.get(id)
-  if (!connector) {
-    return getDesktopProcessStatus()
-  }
-  connector.stopRequested = true
-  clearConnectorRestart(id)
-  connector.process?.kill()
-  connectorProcesses.delete(id)
-  emitDesktopProcessStatus()
-  return getDesktopProcessStatus()
-}
 
-function stopAllConnectors() {
-  for (const connector of connectorProcesses.values()) {
-    connector.stopRequested = true
-    clearConnectorRestart(connector.status.id)
-    connector.process?.kill()
-  }
-  connectorProcesses.clear()
-  emitDesktopProcessStatus()
-}
 
-async function assertExecutableFile(filePath: string, label: string) {
-  const stat = await fsp.stat(filePath).catch(() => null)
-  if (!stat?.isFile()) {
-    throw new Error(`${label} file does not exist`)
-  }
-}
-
-async function chooseDesktopExecutable() {
-  const options = {
-    title: "Select executable",
-    properties: ["openFile"] as Array<"openFile">,
-  }
-  const result = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, options)
-    : await dialog.showOpenDialog(options)
-  return result.canceled ? "" : result.filePaths[0] || ""
-}
 
 async function chooseDesktopFolder(initialPath: unknown) {
   const defaultPath = typeof initialPath === "string" && initialPath.trim() ? initialPath.trim() : undefined
@@ -1503,33 +1180,7 @@ function downloadFile(url: string, destination: string) {
   })
 }
 
-async function bundledRuntimeInstall(binaryName: string, label: string) {
-  const executableName = process.platform === "win32" ? `${binaryName}.exe` : binaryName
-  const resourceRoot = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..", "resources")
-  const executablePath = path.join(resourceRoot, "bin", executableName)
-  await assertExecutableFile(executablePath, label)
-  if (process.platform !== "win32") {
-    await fsp.chmod(executablePath, 0o755)
-  }
-  return {
-    tagName: app.getVersion(),
-    assetName: executableName,
-    executablePath,
-  }
-}
 
-async function ensureLatestConnectorInstall() {
-  const customPath = desktopSettings.connectorPath.trim()
-  if (customPath) {
-    await assertExecutableFile(customPath, "Connector")
-    return {
-      tagName: "custom",
-      assetName: path.basename(customPath),
-      executablePath: customPath,
-    }
-  }
-  return bundledRuntimeInstall("veloce-connector", "Connector")
-}
 
 function createTray() {
   if (tray) {
@@ -1591,7 +1242,6 @@ if (gotSingleInstanceLock) {
 app.on("before-quit", () => {
   isQuitting = true
   stopBuiltinServer()
-  stopAllConnectors()
 })
 
 app.on("window-all-closed", () => {

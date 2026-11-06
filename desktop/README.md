@@ -61,8 +61,12 @@ npm run dist                # ...then electron-builder
 ```
 
 `electron-builder` packages `dist/` (the compiled main process and the static
-shell page) and copies `resources/server` and `resources/bin` next to the app as
-extra resources.
+shell page) and copies `resources/server` next to the app (`afterPack`, because
+the panel's `node_modules` has to survive packaging).
+
+The app runs no connector of its own: a session's workspace tools come from the
+server's connector (the built-in one, or a device the user installs), not from
+the window.
 
 ## Where things live
 
@@ -101,10 +105,6 @@ allows another server instead:
 The preload bridge (`src/preload.cts`) is the whole surface, and the page's copy
 of the types lives in `packages/dashboard/frontend/vite-env.d.ts`. Notably:
 
-- `ensureDesktopConnector({ serverURL, token, deviceID })` starts the bundled
-  connector (`resources/bin/veloce-connector`) as a `desktop`-kind device. The
-  page is what asks the server for that device token — the shell never holds a
-  login credential, and a server without an authentication plugin works the same;
 - `notifyConnectorApproval` / `onConnectorApprovalDecision` implement the OS
   toast whose buttons come back through the `veloce://connector-approval` URL;
 - `saveDesktopSettings` is what developer mode goes through, so the confirmation

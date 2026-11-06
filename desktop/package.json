@@ -17,7 +17,7 @@
     "build:shell": "node scripts/copy-static.mjs",
     "build:server": "node scripts/build-server.mjs",
     "build": "npm run build:electron && npm run build:shell && npm run build:server",
-    "dist": "npm run build && npm run build:runtimes && electron-builder",
+    "dist": "npm run build && electron-builder",
     "start": "npm run build:electron && npm run build:shell && electron .",
     "start:dev": "npm run build:electron && npm run build:shell && electron . --dev",
     "start:dev:inspect": "npm run build:electron && npm run build:shell && electron . --dev --inspect=9229"
@@ -37,15 +37,6 @@
     ],
     "afterPack": "scripts/after-pack.mjs",
     "npmRebuild": false,
-    "extraResources": [
-      {
-        "from": "resources/bin",
-        "to": "bin",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
     "mac": {
       "target": [
         "dmg"
