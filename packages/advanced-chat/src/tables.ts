@@ -47,10 +47,10 @@ export async function ensureTables(db: Database): Promise<void> {
       connector_device_id: "string",
       connector_workspace_path: "string",
       connector_auto_approve: "boolean",
-      // Sandbox mode is where a session starts: no approval prompt for work
-      // that stays in the workspace, and a kernel refusal for anything that
-      // does not. `manual` is only a retired name here, never a stored default.
-      connector_approval_mode: { type: "string", initial: "sandbox" },
+      // The approval level the user picked, and nothing else: an empty value
+      // means the session never chose, so the connector device applies its own
+      // policy. Chat stores the value; it does not decide what it means.
+      connector_approval_mode: { type: "string", initial: "" },
       connector_command_prefixes: { type: "string", initial: "[]" },
       model_name: "string",
       user_channel_id: "integer",

@@ -1,8 +1,5 @@
 import { Context } from "yumeri";
-import {
-  DEFAULT_CONNECTOR_APPROVAL_MODE,
-  type ConnectorService,
-} from "@velocelab/connector";
+import type { ConnectorService } from "@velocelab/connector";
 import { AdvancedChatService, ChatToolDefinition } from "@velocelab/advanced-chat";
 
 export const depend = ["advanced-chat", "connector"];
@@ -40,9 +37,11 @@ export function connectorInput(
     ...(context.runId ? { run_id: context.runId } : {}),
     ...(context.toolCallId ? { preview_tool_call_id: context.toolCallId } : {}),
     ...(context.connectorDeviceId ? { device_id: context.connectorDeviceId } : {}),
-    // The session's mode, never the model's choice: a tool argument must not be
-    // able to widen the terms the user picked for this conversation.
-    approval_mode: context.connectorApprovalMode ?? DEFAULT_CONNECTOR_APPROVAL_MODE,
+    // The session's own value, forwarded as stored — empty when the session
+    // never picked one, which the device then resolves against its policy. It is
+    // never the model's choice: a tool argument must not widen the terms the
+    // user picked for this conversation.
+    approval_mode: context.connectorApprovalMode ?? "",
     ...(context.connectorAutoApprove ? { auto_approve: true } : {}),
   };
 }
