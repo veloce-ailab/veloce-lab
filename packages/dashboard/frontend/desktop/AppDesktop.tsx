@@ -5,7 +5,6 @@ import { ExternalLink, FolderOpen, Globe2, Info, RefreshCw, Server, Settings } f
 
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { useToast } from "@/components/ui/toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -389,7 +388,6 @@ function DesktopTitleBar({ overlay }: { overlay: boolean }) {
             </div>
           </div>
           <div className="flex items-center gap-1 [-webkit-app-region:no-drag]">
-            <ThemeSwitcher />
             <Button
               variant="ghost"
               size="icon"
