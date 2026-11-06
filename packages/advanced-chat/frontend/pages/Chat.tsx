@@ -696,7 +696,8 @@ const SessionSidebarRow = memo(function SessionSidebarRow({
   onDrop: (draggedID: string, targetID: string) => void
   onDragEnd: () => void
 }) {
-  const archived = session.archived === true
+  // A row cached from an older server still carries SQLite's 1/0.
+  const archived = session.archived === true || Number(session.archived) === 1
   const archiveLabel = archived
     ? (language === "zh" ? "取消归档" : "Unarchive")
     : (language === "zh" ? "归档" : "Archive")
@@ -1141,11 +1142,12 @@ export default function Chat() {
   )
   const filteredSessions = useMemo(
     () => displaySessions.filter((session) => {
+      const archived = session.archived === true || Number(session.archived) === 1
       if (sessionArchiveFilter === "only") {
-        return session.archived === true
+        return archived
       }
       if (sessionArchiveFilter === "hide") {
-        return session.archived !== true
+        return !archived
       }
       return true
     }),

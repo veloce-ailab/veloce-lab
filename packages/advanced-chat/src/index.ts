@@ -808,7 +808,7 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
         user_id: userId,
       });
       const hydrated = await Promise.all(
-        sessions.filter((session: any) => session.visible !== false).map(async (session) => service.getSession(userId, session.id)),
+        sessions.filter((session: any) => session.visible !== false && session.visible !== 0).map(async (session) => service.getSession(userId, session.id)),
       );
       return hydrated.filter(Boolean) as unknown as HarnessSession[];
     },
@@ -875,6 +875,13 @@ export async function apply(ctx: Context, pluginConfig: AdvancedChatConfig) {
       )[0];
       return {
         ...session,
+        // SQLite stores booleans as 0/1 and the panel compares them with
+        // `=== true` / `!== false`; normalise here so a column cannot decide
+        // whether archiving looks like it worked.
+        visible: Boolean(session.visible),
+        archived: Boolean(session.archived),
+        connector_auto_approve: Boolean(session.connector_auto_approve),
+        auto_compress_context: Boolean(session.auto_compress_context),
         skill_ids: decodeList(session.skill_ids),
         mcp_server_ids: decodeList(session.mcp_server_ids),
         knowledge_base_ids: decodeList(session.knowledge_base_ids),
