@@ -25,6 +25,25 @@ export interface PluginMcpServer {
   url: string;
   headers: Record<string, string>;
   description?: string;
+  /**
+   * Present when the server advertises MCP OAuth. The resource is what the
+   * token audience is bound to, and the scopes are what the plugin asks for;
+   * both are read from `.mcp.json`, not guessed.
+   */
+  oauth?: {
+    resource?: string;
+    scopes: string[];
+  };
+}
+
+export interface PluginApp {
+  /** Key in `.app.json`, which is also the MCP server name in practice. */
+  name: string;
+  /** The ChatGPT app registration id (`asdk_app_…` or `connector_…`). */
+  id: string;
+  required: boolean;
+  /** Set when this plugin ships a matching MCP server that can back the app. */
+  serverId?: string;
 }
 
 export interface ParsedPlugin {
@@ -39,14 +58,16 @@ export interface ParsedPlugin {
   category: string;
   skills: PluginSkill[];
   mcpServers: PluginMcpServer[];
+  /** App registrations from `.app.json`, matched to this plugin's MCP servers. */
+  apps: PluginApp[];
   /** Which manifest was read, so the settings page can say where it came from. */
   manifestPath: string;
   /** Top-level manifest keys this build does not act on. */
   ignored: string[];
   /**
    * Surfaces the plugin declares that cannot be honoured here, with the reason.
-   * `apps` needs a ChatGPT app registration and `hooks` would mean running code
-   * from the repository, which this never does.
+   * An app that ships no MCP server has nowhere to run, and `hooks` would mean
+   * running code from the repository, which this never does.
    */
   unsupported: string[];
 }
@@ -172,6 +193,21 @@ function parseSkills(files: Map<string, string>, directory: string): PluginSkill
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
+function parseScopes(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(asString).filter(Boolean);
+  if (typeof value === "string") return value.split(/[\s,]+/).map((entry) => entry.trim()).filter(Boolean);
+  return [];
+}
+
+/** `.mcp.json` marks OAuth servers with `oauth_resource` or an `oauth` object. */
+function serverOAuth(row: Record<string, unknown>): PluginMcpServer["oauth"] {
+  const oauth = record(row.oauth);
+  const resource = asString(row.oauth_resource) || asString(row.oauthResource) || asString(oauth.resource);
+  const scopes = [...new Set([...parseScopes(row.scopes), ...parseScopes(oauth.scopes)])];
+  if (!resource && Object.keys(oauth).length === 0) return undefined;
+  return { resource: resource || undefined, scopes };
+}
+
 function normaliseServer(id: string, value: unknown): PluginMcpServer | undefined {
   const row = record(value);
   const url = asString(row.url) || asString(row.endpoint) || asString(row.serverUrl);
@@ -187,6 +223,7 @@ function normaliseServer(id: string, value: unknown): PluginMcpServer | undefine
     url,
     headers,
     description: asString(row.description) || undefined,
+    oauth: serverOAuth(row),
   };
 }
 
@@ -206,6 +243,65 @@ function parseServers(value: unknown): PluginMcpServer[] {
     }
   }
   return servers;
+}
+
+/**
+ * Reads the app registrations a Codex plugin ships.
+ *
+ * An app is a ChatGPT/Codex connector registration; its `id` is not a URL and
+ * cannot be hosted here on its own. The service behind it is almost always an
+ * MCP server in the same plugin, so each app is matched to one by name — that
+ * is what lets the settings page say whether the service is reachable.
+ */
+function parseApps(
+  files: Map<string, string>,
+  value: unknown,
+  servers: PluginMcpServer[],
+): PluginApp[] {
+  if (value === undefined || value === null || value === "") return [];
+  let input: unknown = value;
+  if (typeof value === "string") {
+    input = readJson(files.get(normalisePath(value)));
+  }
+  if (input === undefined) {
+    input = readJson(files.get(".app.json"));
+  }
+  if (input === undefined) return [];
+
+  const container = record(input);
+  const source = container.apps ?? (Array.isArray(input) ? input : container);
+  const rows: Array<Pick<PluginApp, "name" | "id" | "required">> = [];
+  if (Array.isArray(source)) {
+    for (const entry of source) {
+      const row = record(entry);
+      const id = asString(row.id) || asString(row.app_id) || asString(row.appId);
+      const name = asString(row.name) || asString(row.slug) || id;
+      if (id || name) rows.push({ name, id, required: row.required === true });
+    }
+  } else {
+    for (const [name, entry] of Object.entries(record(source))) {
+      const row = record(entry);
+      const id = asString(row.id) || asString(row.app_id) || asString(row.appId);
+      rows.push({ name: asString(row.name) || name, id, required: row.required === true });
+    }
+  }
+
+  const byId = new Map(servers.map((server) => [server.id.toLowerCase(), server.id]));
+  const byName = new Map(servers.map((server) => [server.name.toLowerCase(), server.id]));
+  const apps: PluginApp[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = `${row.name}\n${row.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const match = [row.id, row.name]
+      .filter(Boolean)
+      .map((candidate) => candidate.toLowerCase())
+      .map((candidate) => byId.get(candidate) || byName.get(candidate))
+      .find(Boolean);
+    apps.push({ ...row, ...(match ? { serverId: match } : {}) });
+  }
+  return apps;
 }
 
 /**
@@ -240,8 +336,19 @@ export function parsePluginFiles(files: Map<string, string>): ParsedPlugin | und
   }
 
   const skillsField = asString(row.skills);
+  const servers = parseServers(serversValue);
+  const apps = parseApps(files, row.apps, servers);
   const unsupported: string[] = [];
-  if (row.apps) unsupported.push("apps: needs a ChatGPT app registration, which this server cannot provide");
+  for (const app of apps) {
+    // A matched app is served by its MCP server; the registration id itself is
+    // only meaningful to ChatGPT, which is why it is not advertised as a
+    // capability here. An unmatched app has no service to call at all.
+    if (!app.serverId) {
+      unsupported.push(
+        `app "${app.name}"${app.id ? ` (${app.id})` : ""}: a ChatGPT app registration without an MCP endpoint, so this server cannot host it`,
+      );
+    }
+  }
   // Directories the manifest does not mention but a plugin still ships. Slash
   // commands and subagents are the client's own machinery, so they cannot be
   // offered from here, and nothing from a repository is ever executed.
@@ -271,7 +378,8 @@ export function parsePluginFiles(files: Map<string, string>): ParsedPlugin | und
     license: asString(row.license),
     category: asString(ui.category),
     skills: parseSkills(files, normalisePath(skillsField || "skills")),
-    mcpServers: parseServers(serversValue),
+    mcpServers: servers,
+    apps,
     manifestPath,
     ignored: Object.keys(row).filter((key) => !knownKeys.has(key)).sort(),
     unsupported,

@@ -71,6 +71,7 @@ export async function ensureTables(db: Database): Promise<void> {
       manifest_path: { type: "string", initial: "" },
       skills: { type: "string", initial: "[]" },
       mcp_servers: { type: "string", initial: "[]" },
+      apps: { type: "string", initial: "[]" },
       ignored: { type: "string", initial: "[]" },
       unsupported: { type: "string", initial: "[]" },
       enabled: { type: "integer", initial: 0 },
@@ -95,5 +96,53 @@ export async function ensureTables(db: Database): Promise<void> {
       updated_at: "timestamp",
     },
     { unique: [["user_id", "server_id"]] },
+  );
+
+  // OAuth tokens obtained for a hosted MCP server. Separate from the manual
+  // credential above: that one is a string the user pasted, this one is a
+  // refreshable token set with the client and endpoint needed to renew it.
+  await db.extend(
+    "external_plugin_oauth",
+    {
+      id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      server_id: { type: "string", nullable: false },
+      plugin_id: { type: "string", initial: "" },
+      access_token: { type: "string", initial: "" },
+      refresh_token: { type: "string", initial: "" },
+      token_type: { type: "string", initial: "Bearer" },
+      scope: { type: "string", initial: "" },
+      expires_at: { type: "string", initial: "" },
+      client_id: { type: "string", initial: "" },
+      client_secret: { type: "string", initial: "" },
+      token_endpoint_auth_method: { type: "string", initial: "none" },
+      token_endpoint: { type: "string", initial: "" },
+      resource: { type: "string", initial: "" },
+      created_at: "timestamp",
+      updated_at: "timestamp",
+    },
+    { unique: [["user_id", "server_id"]] },
+  );
+
+  // A pending authorization, keyed by the `state` parameter. It holds the PKCE
+  // verifier and the client registration until the user returns.
+  await db.extend(
+    "external_plugin_oauth_states",
+    {
+      id: { type: "string", nullable: false },
+      user_id: { type: "integer", nullable: false },
+      plugin_id: { type: "string", initial: "" },
+      server_id: { type: "string", nullable: false },
+      code_verifier: { type: "string", nullable: false },
+      client_id: { type: "string", initial: "" },
+      client_secret: { type: "string", initial: "" },
+      token_endpoint_auth_method: { type: "string", initial: "none" },
+      token_endpoint: { type: "string", initial: "" },
+      resource: { type: "string", initial: "" },
+      redirect_uri: { type: "string", initial: "" },
+      scope: { type: "string", initial: "" },
+      expires_at: { type: "string", initial: "" },
+      created_at: "timestamp",
+    },
   );
 }

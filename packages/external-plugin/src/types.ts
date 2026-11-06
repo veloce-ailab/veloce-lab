@@ -1,4 +1,4 @@
-import type { PluginMcpServer, PluginSkill } from "./manifest.js";
+import type { PluginApp, PluginMcpServer, PluginSkill } from "./manifest.js";
 
 export interface Marketplace {
   id: string;
@@ -23,7 +23,8 @@ export interface ExternalPlugin {
   manifestPath: string;
   skills: PluginSkill[];
   /** `hasToken` says whether this user has stored a credential; it is never returned. */
-  mcpServers: Array<PluginMcpServer & { hasToken: boolean }>;
+  mcpServers: Array<PluginMcpServer & { hasToken: boolean; oauthAuthorized: boolean }>;
+  apps: PluginApp[];
   ignored: string[];
   unsupported: string[];
   category: string;
@@ -45,6 +46,11 @@ export interface ExternalPluginService {
   setToken(userId: number, pluginId: string, serverId: string, token: string): Promise<void>;
   /** Connects with whatever credential is stored, so the answer is the truth. */
   testServer(userId: number, serverId: string): Promise<{ ok: boolean; tools: string[]; error: string }>;
+  /** Starts an OAuth authorization; `baseUrl` is where the callback is served. */
+  startOAuth(userId: number, pluginId: string, serverId: string, baseUrl: string): Promise<{ url: string }>;
+  /** Completes it from the authorization server's redirect. Bound by state. */
+  completeOAuth(state: string, code: string): Promise<{ ok: boolean; pluginId: string; serverId: string; error: string }>;
+  revokeOAuth(userId: number, serverId: string): Promise<boolean>;
 }
 
 declare module "yumeri" {
@@ -81,6 +87,7 @@ declare module "yumeri" {
       manifest_path: string;
       skills: string;
       mcp_servers: string;
+      apps: string;
       ignored: string;
       unsupported: string;
       enabled: number;
@@ -95,6 +102,40 @@ declare module "yumeri" {
       token: string;
       created_at: string;
       updated_at: string;
+    };
+    external_plugin_oauth: {
+      id: string;
+      user_id: number;
+      server_id: string;
+      plugin_id: string;
+      access_token: string;
+      refresh_token: string;
+      token_type: string;
+      scope: string;
+      expires_at: string;
+      client_id: string;
+      client_secret: string;
+      token_endpoint_auth_method: string;
+      token_endpoint: string;
+      resource: string;
+      created_at: string;
+      updated_at: string;
+    };
+    external_plugin_oauth_states: {
+      id: string;
+      user_id: number;
+      plugin_id: string;
+      server_id: string;
+      code_verifier: string;
+      client_id: string;
+      client_secret: string;
+      token_endpoint_auth_method: string;
+      token_endpoint: string;
+      resource: string;
+      redirect_uri: string;
+      scope: string;
+      expires_at: string;
+      created_at: string;
     };
   }
 }

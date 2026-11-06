@@ -10,7 +10,7 @@
 // recording what it declares. That is also why unloading needs no cooperation
 // from anyone: enabled is a column, the provider reads it every run, and the
 // next run simply does not see the plugin.
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { join, relative, sep } from "node:path";
 import { Context, Database, Schema, Session } from "yumeri";
 import "@velocelab/dashboard";
@@ -19,6 +19,17 @@ import { McpClient } from "@velocelab/mcp";
 import { collectPluginFiles, discoverPluginDirs, readMarketplaceIndex, type MarketEntry } from "./files.js";
 import { syncCheckout } from "./git.js";
 import { parsePluginFiles, type ParsedPlugin } from "./manifest.js";
+import {
+  createPkce,
+  discoverOAuth,
+  exchangeOAuthCode,
+  oauthAuthorizationUrl,
+  oauthRedirectUri,
+  refreshOAuthToken,
+  registerOAuthClient,
+  type OAuthClient,
+  type OAuthDiscovery,
+} from "./oauth.js";
 import { ensureTables } from "./tables.js";
 import type { ExternalPlugin, Marketplace } from "./types.js";
 
@@ -28,6 +39,7 @@ export const provide = ["external-plugin"];
 export interface ExternalPluginConfig {
   mcpTimeoutMs: string;
   maxInjectedSkillChars: string;
+  publicBaseUrl: string;
 }
 
 export const config: Schema<ExternalPluginConfig> = Schema.object({
@@ -37,6 +49,9 @@ export const config: Schema<ExternalPluginConfig> = Schema.object({
   maxInjectedSkillChars: Schema.string("Skill text included in the prompt")
     .key("external-plugin.config.maxInjectedSkillChars")
     .default("4000"),
+  publicBaseUrl: Schema.string("Public base URL used for OAuth callbacks")
+    .key("external-plugin.config.publicBaseUrl")
+    .default(""),
 });
 
 /** A readable name so the list does not show nothing until the first sync. */
@@ -56,6 +71,18 @@ function decode<T>(value: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function authMethod(value: unknown): OAuthClient["tokenEndpointAuthMethod"] {
+  return value === "client_secret_basic" || value === "client_secret_post" ? value : "none";
+}
+
+/** App server ids use the same `<slug>:<server>` namespace as the MCP rows. */
+function namespacedApps(apps: ParsedPlugin["apps"], slug: string) {
+  return apps.map((app) => ({
+    ...app,
+    ...(app.serverId ? { serverId: `${slug}:${app.serverId}` } : {}),
+  }));
 }
 
 export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
@@ -78,6 +105,11 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
     zh: "写入提示词的 skill 字数上限",
     en: "Skill text included in the prompt",
     ja: "プロンプトに含めるスキル本文の上限",
+  });
+  ctx.i18n("external-plugin.config.publicBaseUrl", {
+    zh: "OAuth 回调使用的公开地址；留空则按当前请求推断",
+    en: "Public base URL used for OAuth callbacks; blank derives it from the request",
+    ja: "OAuth コールバックに使う公開 URL。空欄ならリクエストから推定します",
   });
   const db = ctx.component.database as Database;
   await ensureTables(db);
@@ -110,7 +142,9 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
     mcpServers: (decode(row.mcp_servers, []) as any[]).map((server) => ({
       ...server,
       hasToken: false,
+      oauthAuthorized: false,
     })),
+    apps: decode(row.apps, []),
     ignored: decode(row.ignored, []),
     unsupported: decode(row.unsupported, []),
     category: String(row.category ?? ""),
@@ -127,8 +161,14 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
     );
   };
 
+  /** Server ids this user has finished an OAuth flow for. */
+  const oauthTokens = async (userId: number): Promise<Map<string, any>> => {
+    const rows = await db.select("external_plugin_oauth", { user_id: userId });
+    return new Map(rows.map((row: any) => [String(row.server_id), row]));
+  };
+
   const pluginsOf = async (userId: number): Promise<ExternalPlugin[]> => {
-    const tokens = await storedTokens(userId);
+    const [tokens, oauth] = await Promise.all([storedTokens(userId), oauthTokens(userId)]);
     return (await db.select("external_plugins", { user_id: userId }))
       .map(pluginRow)
       .map((plugin) => ({
@@ -136,6 +176,7 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
         mcpServers: plugin.mcpServers.map((server) => ({
           ...server,
           hasToken: tokens.has(server.id),
+          oauthAuthorized: oauth.has(server.id),
         })),
       }))
       .sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
@@ -143,6 +184,60 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
 
   const enabledPlugins = async (userId: number) =>
     (await pluginsOf(userId)).filter((plugin) => plugin.installed);
+
+  /**
+   * The bearer header for a server authorized through OAuth, refreshed when it
+   * is about to expire. A manual token is tried first by `serverFor`; this only
+   * runs when the user has not pasted one.
+   */
+  const oauthAuthorization = async (userId: number, serverId: string): Promise<Record<string, string> | undefined> => {
+    const row: any = await db.selectOne("external_plugin_oauth", {
+      user_id: userId,
+      server_id: serverId,
+    });
+    if (!row) return undefined;
+    let accessToken = String(row.access_token ?? "").trim();
+    let tokenType = String(row.token_type ?? "").trim() || "Bearer";
+    const expiresAt = Date.parse(String(row.expires_at ?? ""));
+    const expiring = Number.isFinite(expiresAt) && expiresAt - Date.now() < 60_000;
+    if (!accessToken || expiring) {
+      const refreshToken = String(row.refresh_token ?? "").trim();
+      if (!refreshToken && expiring) {
+        throw Error(`OAuth authorization for "${serverId}" expired. Authorize it again.`);
+      }
+      if (refreshToken) {
+        try {
+          const refreshed = await refreshOAuthToken({
+            tokenEndpoint: String(row.token_endpoint ?? ""),
+            clientId: String(row.client_id ?? ""),
+            clientSecret: String(row.client_secret ?? ""),
+            tokenEndpointAuthMethod: authMethod(row.token_endpoint_auth_method),
+            refreshToken,
+            resource: String(row.resource ?? ""),
+          });
+          accessToken = refreshed.accessToken;
+          tokenType = refreshed.tokenType || tokenType;
+          await db.update(
+            "external_plugin_oauth",
+            { id: String(row.id) },
+            {
+              access_token: refreshed.accessToken,
+              refresh_token: refreshed.refreshToken || refreshToken,
+              token_type: refreshed.tokenType || "Bearer",
+              scope: refreshed.scope || String(row.scope ?? ""),
+              expires_at: refreshed.expiresAt,
+              updated_at: new Date().toISOString(),
+            },
+          );
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          throw Error(`OAuth authorization for "${serverId}" expired and could not be refreshed: ${detail}`);
+        }
+      }
+    }
+    if (!accessToken) return undefined;
+    return { Authorization: `${tokenType} ${accessToken}` };
+  };
 
   const readMarketplace = async (userId: number, id: string) => {
     const row: any = await db.selectOne("external_plugin_marketplaces", {
@@ -196,6 +291,7 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
         mcp_servers: JSON.stringify(
           parsed.mcpServers.map((server) => ({ ...server, id: `${slug}:${server.id}` })),
         ),
+        apps: JSON.stringify(namespacedApps(parsed.apps, slug)),
         ignored: JSON.stringify(parsed.ignored),
         unsupported: JSON.stringify(parsed.unsupported),
         updated_at: now,
@@ -347,6 +443,7 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
         mcp_servers: JSON.stringify(
           parsed.mcpServers.map((server) => ({ ...server, id: `${slug}:${server.id}` })),
         ),
+        apps: JSON.stringify(namespacedApps(parsed.apps, slug)),
         ignored: JSON.stringify(parsed.ignored),
         unsupported: JSON.stringify(parsed.unsupported),
         materialized: 1,
@@ -439,7 +536,16 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
       });
     },
     async testServer(userId: number, serverId: string) {
-      const server = await serverFor(userId, serverId);
+      let server;
+      try {
+        server = await serverFor(userId, serverId);
+      } catch (error) {
+        return {
+          ok: false,
+          tools: [] as string[],
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
       if (!server) return { ok: false, tools: [] as string[], error: "No such server among your installed plugins" };
       const client = new McpClient(server.url, server.headers, requestTimeoutMs);
       try {
@@ -453,6 +559,124 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
           error: error instanceof Error ? error.message : String(error),
         };
       }
+    },
+    async startOAuth(userId: number, pluginId: string, serverId: string, baseUrl: string) {
+      const plugin: any = await db.selectOne("external_plugins", { id: pluginId, user_id: userId });
+      if (!plugin) throw Error("That plugin is not in your list");
+      if (Number(plugin.enabled) !== 1) throw Error("Install the plugin before authorizing one of its servers.");
+      const servers = decode(plugin.mcp_servers, []) as any[];
+      const server = servers.find((entry) => String(entry.id) === serverId);
+      if (!server) throw Error("That MCP server does not belong to this plugin");
+      const redirectUri = oauthRedirectUri(baseUrl);
+      const discovery = await discoverOAuth({
+        url: String(server.url ?? ""),
+        oauth: server.oauth,
+      });
+      const client = await registerOAuthClient(discovery, redirectUri);
+      const state = randomBytes(32).toString("base64url");
+      const pkce = createPkce();
+      const now = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+      // One pending authorization per server is enough; a second click replaces
+      // the first instead of leaving stale states behind.
+      for (const pending of await db.select("external_plugin_oauth_states", { user_id: userId, server_id: serverId })) {
+        await db.remove("external_plugin_oauth_states", { id: String(pending.id) });
+      }
+      await db.create("external_plugin_oauth_states", {
+        id: state,
+        user_id: userId,
+        plugin_id: pluginId,
+        server_id: serverId,
+        code_verifier: pkce.verifier,
+        client_id: client.clientId,
+        client_secret: client.clientSecret,
+        token_endpoint_auth_method: client.tokenEndpointAuthMethod,
+        token_endpoint: discovery.tokenEndpoint,
+        resource: discovery.resource,
+        redirect_uri: redirectUri,
+        scope: discovery.scopes.join(" "),
+        expires_at: expiresAt,
+        created_at: now,
+      });
+      return {
+        url: oauthAuthorizationUrl(discovery, client, {
+          redirectUri,
+          state,
+          challenge: pkce.challenge,
+        }),
+      };
+    },
+    async completeOAuth(state: string, code: string) {
+      const pending: any = await db.selectOne("external_plugin_oauth_states", { id: state });
+      if (!pending) {
+        return { ok: false, pluginId: "", serverId: "", error: "This authorization link is no longer valid. Start the authorization again." };
+      }
+      // A state is single-use, whether or not the exchange below succeeds.
+      await db.remove("external_plugin_oauth_states", { id: state });
+      if (Date.parse(String(pending.expires_at ?? "")) < Date.now()) {
+        return { ok: false, pluginId: String(pending.plugin_id ?? ""), serverId: String(pending.server_id ?? ""), error: "This authorization link has expired. Start the authorization again." };
+      }
+      const userId = Number(pending.user_id);
+      const serverId = String(pending.server_id ?? "");
+      const pluginId = String(pending.plugin_id ?? "");
+      const client: OAuthClient = {
+        clientId: String(pending.client_id ?? ""),
+        clientSecret: String(pending.client_secret ?? ""),
+        tokenEndpointAuthMethod: authMethod(pending.token_endpoint_auth_method),
+      };
+      const discovery: OAuthDiscovery = {
+        resource: String(pending.resource ?? ""),
+        scopes: [],
+        issuer: "",
+        authorizationEndpoint: "",
+        tokenEndpoint: String(pending.token_endpoint ?? ""),
+        registrationEndpoint: "",
+        codeChallengeMethods: [],
+      };
+      try {
+        const tokens = await exchangeOAuthCode(discovery, client, {
+          code,
+          codeVerifier: String(pending.code_verifier ?? ""),
+          redirectUri: String(pending.redirect_uri ?? ""),
+        });
+        const existing: any = await db.selectOne("external_plugin_oauth", { user_id: userId, server_id: serverId });
+        const now = new Date().toISOString();
+        const values = {
+          plugin_id: pluginId,
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+          token_type: tokens.tokenType,
+          scope: tokens.scope || String(pending.scope ?? ""),
+          expires_at: tokens.expiresAt,
+          client_id: client.clientId,
+          client_secret: client.clientSecret,
+          token_endpoint_auth_method: client.tokenEndpointAuthMethod,
+          token_endpoint: discovery.tokenEndpoint,
+          resource: discovery.resource,
+          updated_at: now,
+        };
+        if (existing) {
+          await db.update("external_plugin_oauth", { id: String(existing.id) }, values);
+        } else {
+          await db.create("external_plugin_oauth", {
+            id: randomUUID(),
+            user_id: userId,
+            server_id: serverId,
+            created_at: now,
+            ...values,
+          });
+        }
+        return { ok: true, pluginId, serverId, error: "" };
+      } catch (error) {
+        return { ok: false, pluginId, serverId, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    async revokeOAuth(userId: number, serverId: string) {
+      await db.remove("external_plugin_oauth", { user_id: userId, server_id: serverId });
+      for (const pending of await db.select("external_plugin_oauth_states", { user_id: userId, server_id: serverId })) {
+        await db.remove("external_plugin_oauth_states", { id: String(pending.id) });
+      }
+      return true;
     },
     async setInstalled(userId: number, id: string, installed: boolean) {
       const row: any = await db.selectOne("external_plugins", { id, user_id: userId });
@@ -514,6 +738,7 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
         version: plugin.version,
         description: plugin.description,
         skills: plugin.skills.map((skill) => ({ id: skill.id, name: skill.name, description: skill.description })),
+        apps: plugin.apps.map((app) => ({ name: app.name, id: app.id, mcp_server: app.serverId || "" })),
         mcp_servers: plugin.mcpServers.map((server) => ({ id: server.id, name: server.name })),
       }));
     },
@@ -549,10 +774,17 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
         server_id: id,
       });
       const token = String(credential?.token ?? "").trim();
-      if (!token) return server;
+      if (token) {
+        return {
+          ...server,
+          headers: { ...(server.headers || {}), Authorization: `Bearer ${token}` },
+        };
+      }
+      const authorization = await oauthAuthorization(userId, id);
+      if (!authorization) return server;
       return {
         ...server,
-        headers: { ...(server.headers || {}), Authorization: `Bearer ${token}` },
+        headers: { ...(server.headers || {}), ...authorization },
       };
     }
     return undefined;
@@ -596,6 +828,55 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
       return client.callTool(String(value?.tool ?? ""), (value?.arguments ?? {}) as Record<string, unknown>);
     },
   });
+
+  /** Where the browser should come back to after the authorization server. */
+  const publicBaseUrl = (session: Session): string => {
+    const configured = String(cfg.publicBaseUrl ?? "").trim().replace(/\/+$/, "");
+    if (configured) return configured;
+    const headers = session.request.headers || {};
+    const proto = String(headers["x-forwarded-proto"] || session.protocol || "http").split(",")[0].trim();
+    const host = String(headers["x-forwarded-host"] || headers.host || "").split(",")[0].trim();
+    if (!host) {
+      throw Error("Could not determine this server's public URL for the OAuth callback. Set external-plugin.publicBaseUrl.");
+    }
+    return `${proto}://${host}`;
+  };
+
+  const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[character] || character));
+
+  /**
+   * The page the authorization server redirects to. It is intentionally small:
+   * tell the opener tab what happened, then close the window the user granted
+   * access in. The message is ours, not anything from the server.
+   */
+  const oauthPage = (ok: boolean, message: string, payload: Record<string, unknown>) => {
+    const data = JSON.stringify(payload).replace(/</g, "\\u003c");
+    const heading = ok ? "授权完成 · Authorization complete" : "授权失败 · Authorization failed";
+    const detail = escapeHtml(message || (ok ? "Authorization complete. You can close this window." : "Authorization failed."));
+    return `<!doctype html>
+<html lang="zh">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${heading}</title></head>
+<body style="margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;background:#101418;color:#e9f0f5;font-family:system-ui,-apple-system,'Segoe UI',sans-serif">
+<main style="max-width:22rem;padding:2rem;text-align:center">
+  <h1 style="font-size:1rem;font-weight:600;margin:0 0 .75rem">${heading}</h1>
+  <p style="margin:0;font-size:.875rem;line-height:1.6;color:#a9b7c2">${detail}</p>
+</main>
+<script>
+(() => {
+  const payload = ${data};
+  try { if (window.opener) window.opener.postMessage(payload, "*") } catch (error) {}
+  setTimeout(() => { try { window.close() } catch (error) {} }, 1200);
+})();
+</script>
+</body>
+</html>`;
+  };
 
   /**
    * Answers exactly once, whatever happens below.
@@ -672,6 +953,63 @@ export async function apply(ctx: Context, cfg: ExternalPluginConfig) {
         const id = user(session);
         if (id === undefined) return;
         session.respond({ plugins: await service.plugins(id) }, "json");
+      }),
+    );
+  ctx
+    .route("/api/user/external-plugin/oauth/callback")
+    .methods("GET")
+    .action((session, query) =>
+      handle(session, async () => {
+        const state = String(query.get("state") ?? "");
+        const code = String(query.get("code") ?? "");
+        const failed = String(query.get("error") ?? "");
+        const description = String(query.get("error_description") ?? "");
+        const result = failed
+          ? { ok: false, pluginId: "", serverId: "", error: description || failed }
+          : !state || !code
+            ? { ok: false, pluginId: "", serverId: "", error: "The authorization server returned no code and state." }
+            : await service.completeOAuth(state, code);
+        session.setMime("text/html; charset=utf-8");
+        session.status = result.ok ? 200 : 400;
+        session.respond(
+          oauthPage(result.ok, result.error, {
+            type: "external-plugin-oauth",
+            ok: result.ok,
+            pluginId: result.pluginId,
+            serverId: result.serverId,
+            error: result.error,
+          }),
+          "plain",
+        );
+      }),
+    );
+  ctx
+    .route("/api/user/external-plugin/plugins/:id/oauth/start")
+    .methods("POST")
+    .action((session, _params, pluginId) =>
+      handle(session, async () => {
+        const id = user(session);
+        if (id === undefined) return;
+        const body = (await session.parseRequestBody()) as any;
+        const serverId = String(body?.serverId ?? "").trim();
+        if (!serverId) {
+          session.status = 400;
+          session.respond({ error: "Which server should be authorized?" }, "json");
+          return;
+        }
+        session.respond(await service.startOAuth(id, String(pluginId), serverId, publicBaseUrl(session)), "json");
+      }),
+    );
+  ctx
+    .route("/api/user/external-plugin/plugins/:id/oauth/revoke")
+    .methods("POST")
+    .action((session, _params, _pluginId) =>
+      handle(session, async () => {
+        const id = user(session);
+        if (id === undefined) return;
+        const body = (await session.parseRequestBody()) as any;
+        const serverId = String(body?.serverId ?? "").trim();
+        session.respond({ success: serverId ? await service.revokeOAuth(id, serverId) : false }, "json");
       }),
     );
   ctx

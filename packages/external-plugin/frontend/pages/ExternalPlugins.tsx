@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Boxes, Check, ChevronLeft, ChevronRight, Download, ExternalLink, GitBranch, Info, Package, RefreshCw, Search, Trash2 } from "lucide-react"
+import { Boxes, Check, ChevronLeft, ChevronRight, Download, ExternalLink, GitBranch, Info, KeyRound, Package, RefreshCw, Search, Trash2 } from "lucide-react"
 import { api, useI18n, useToast, Badge, Button, Card, CardContent, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input, Label, Tabs, TabsContent, TabsList, TabsTrigger } from "@velocelab/dashboard/frontend"
 
 type Marketplace = {
@@ -14,7 +14,16 @@ type Marketplace = {
 }
 
 type Skill = { id: string; name: string; description: string; content: string }
-type Server = { id: string; name: string; url: string; description?: string; hasToken: boolean }
+type App = { name: string; id: string; required: boolean; serverId?: string }
+type Server = {
+  id: string
+  name: string
+  url: string
+  description?: string
+  hasToken: boolean
+  oauthAuthorized: boolean
+  oauth?: { resource?: string; scopes: string[] }
+}
 
 type Plugin = {
   id: string
@@ -29,6 +38,7 @@ type Plugin = {
   manifestPath: string
   skills: Skill[]
   mcpServers: Server[]
+  apps: App[]
   ignored: string[]
   unsupported: string[]
   category: string
@@ -69,6 +79,19 @@ const copy = {
     mcpCount: (count: number) => `${count} 个 MCP`,
     noSkills: "没有 skill",
     noMcp: "没有 MCP",
+    apps: "App 服务",
+    appCount: (count: number) => `${count} 个 App`,
+    appHosted: "由 MCP 提供",
+    appNoEndpoint: "没有 MCP 端点",
+    oauthAuthorized: "已授权",
+    oauthNotAuthorized: "未授权",
+    authorize: "OAuth 授权",
+    reauthorize: "重新授权",
+    revoke: "撤销授权",
+    oauthSuccess: "授权成功",
+    oauthFailed: "授权未完成",
+    oauthRevoked: "已撤销授权",
+    oauthHint: "这些服务使用 OAuth。点“OAuth 授权”在弹窗里登录；也可以手动填入访问令牌。",
     unsupported: "这个插件还声明了本服务器提供不了的能力：",
     manifest: "清单",
     author: "作者",
@@ -131,6 +154,19 @@ const copy = {
     mcpCount: (count: number) => `${count} MCP${count === 1 ? "" : "s"}`,
     noSkills: "No skills",
     noMcp: "No MCP servers",
+    apps: "Apps",
+    appCount: (count: number) => `${count} app${count === 1 ? "" : "s"}`,
+    appHosted: "Served by MCP",
+    appNoEndpoint: "No MCP endpoint",
+    oauthAuthorized: "Authorized",
+    oauthNotAuthorized: "Not authorized",
+    authorize: "Authorize",
+    reauthorize: "Re-authorize",
+    revoke: "Revoke",
+    oauthSuccess: "Authorization complete",
+    oauthFailed: "Authorization failed",
+    oauthRevoked: "Authorization revoked",
+    oauthHint: "These services use OAuth. Authorize in the popup, or paste an access token instead.",
     unsupported: "This plugin also declares surfaces this server cannot provide:",
     manifest: "Manifest",
     author: "Author",
@@ -271,6 +307,70 @@ export default function ExternalPlugins() {
       setResults((current) => ({ ...current, [input.serverId]: { ok: false, tools: [], error: apiErrorMessage(cause, t.failed) } })),
   })
 
+  const startOAuth = useMutation({
+    mutationFn: async (input: { pluginId: string; serverId: string }) =>
+      (await api.post(`/user/external-plugin/plugins/${input.pluginId}/oauth/start`, { serverId: input.serverId })).data as { url: string },
+    onError: (cause) => toast.error(apiErrorMessage(cause, t.failed)),
+  })
+
+  const revokeOAuth = useMutation({
+    mutationFn: async (input: { pluginId: string; serverId: string }) =>
+      api.post(`/user/external-plugin/plugins/${input.pluginId}/oauth/revoke`, { serverId: input.serverId }),
+    onSuccess: (_data, input) => {
+      setDetail((current) =>
+        current && current.id === input.pluginId
+          ? { ...current, mcpServers: current.mcpServers.map((server) => (server.id === input.serverId ? { ...server, oauthAuthorized: false } : server)) }
+          : current,
+      )
+      refresh()
+      toast.success(t.oauthRevoked)
+    },
+    onError: (cause) => toast.error(apiErrorMessage(cause, t.failed)),
+  })
+
+  const oauthPopup = useRef<Window | null>(null)
+  const beginOAuth = (pluginId: string, serverId: string) => {
+    // Open the window synchronously with the click, then point it at the
+    // authorization URL once the server has discovered and registered a client.
+    const popup = window.open("about:blank", "external-plugin-oauth", "popup=yes,width=520,height=720")
+    oauthPopup.current = popup
+    startOAuth.mutate(
+      { pluginId, serverId },
+      {
+        onSuccess: (data) => {
+          if (popup && !popup.closed) popup.location.href = data.url
+          else window.location.assign(data.url)
+        },
+        onError: () => {
+          popup?.close()
+          oauthPopup.current = null
+        },
+      },
+    )
+  }
+
+  useEffect(() => {
+    const receive = (event: MessageEvent) => {
+      const data = event.data as { type?: string; ok?: boolean; serverId?: string; error?: string } | null
+      if (!data || data.type !== "external-plugin-oauth") return
+      oauthPopup.current?.close()
+      oauthPopup.current = null
+      void queryClient.invalidateQueries({ queryKey: ["external-plugin-plugins"] })
+      if (data.ok) {
+        toast.success(t.oauthSuccess)
+        setDetail((current) =>
+          current && data.serverId
+            ? { ...current, mcpServers: current.mcpServers.map((server) => (server.id === data.serverId ? { ...server, oauthAuthorized: true } : server)) }
+            : current,
+        )
+      } else {
+        toast.error(data.error || t.oauthFailed)
+      }
+    }
+    window.addEventListener("message", receive)
+    return () => window.removeEventListener("message", receive)
+  }, [queryClient, t])
+
   const all = plugins.data || []
   const installed = all.filter((plugin) => plugin.installed)
   const markets = marketplaces.data || []
@@ -287,6 +387,7 @@ export default function ExternalPlugins() {
       plugin.category,
       ...plugin.skills.map((skill) => skill.name),
       ...plugin.mcpServers.map((server) => server.name),
+      ...plugin.apps.map((app) => app.name),
     ]
       .join("\n")
       .toLowerCase()
@@ -320,6 +421,12 @@ export default function ExternalPlugins() {
           <span>{plugin.skills.length ? t.skillsCount(plugin.skills.length) : t.noSkills}</span>
           <span>·</span>
           <span>{plugin.mcpServers.length ? t.mcpCount(plugin.mcpServers.length) : t.noMcp}</span>
+          {plugin.apps.length > 0 && (
+            <>
+              <span>·</span>
+              <span>{t.appCount(plugin.apps.length)}</span>
+            </>
+          )}
           {plugin.unsupported.length > 0 && (
             <>
               <span>·</span>
@@ -523,13 +630,34 @@ export default function ExternalPlugins() {
                 )}
               </div>
 
+              {detail.apps.length > 0 && (
+                <div>
+                  <div className="mb-1 text-xs font-medium text-muted-foreground">{t.apps}</div>
+                  <ul className="space-y-1">
+                    {detail.apps.map((app) => (
+                      <li key={`${app.name}:${app.id}`} className="rounded-md border px-2 py-1.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs font-medium">{app.name}</span>
+                          {app.serverId ? (
+                            <Badge variant="secondary">{t.appHosted}</Badge>
+                          ) : (
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-700 dark:text-amber-500">{t.appNoEndpoint}</Badge>
+                          )}
+                        </div>
+                        {app.id && <div className="truncate font-mono text-[11px] text-muted-foreground">{app.id}</div>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <div>
                 <div className="mb-1 text-xs font-medium text-muted-foreground">{t.mcp}</div>
                 {detail.mcpServers.length === 0 ? (
                   <div className="text-xs text-muted-foreground">{t.noMcp}</div>
                 ) : (
                   <>
-                    <p className="mb-1.5 text-xs text-muted-foreground">{t.tokenHint}</p>
+                    <p className="mb-1.5 text-xs text-muted-foreground">{detail.mcpServers.some((server) => server.oauth) ? t.oauthHint : t.tokenHint}</p>
                     <ul className="space-y-1.5">
                       {detail.mcpServers.map((server) => {
                         const result = results[server.id]
@@ -541,10 +669,35 @@ export default function ExternalPlugins() {
                                 <div className="text-xs font-medium">{server.name}</div>
                                 <div className="truncate font-mono text-[11px] text-muted-foreground">{server.url}</div>
                               </div>
-                              <Badge variant={server.hasToken ? "secondary" : "outline"} className="shrink-0">
-                                {server.hasToken ? t.configured : t.notConfigured}
-                              </Badge>
+                              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                                {server.oauth && (
+                                  <Badge variant={server.oauthAuthorized ? "secondary" : "outline"}>
+                                    {server.oauthAuthorized ? t.oauthAuthorized : t.oauthNotAuthorized}
+                                  </Badge>
+                                )}
+                                <Badge variant={server.hasToken ? "secondary" : "outline"}>
+                                  {server.hasToken ? t.configured : t.notConfigured}
+                                </Badge>
+                              </div>
                             </div>
+                            {server.oauth && (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={startOAuth.isPending || !detail.installed}
+                                  onClick={() => beginOAuth(detail.id, server.id)}
+                                >
+                                  <KeyRound size={14} />
+                                  {server.oauthAuthorized ? t.reauthorize : t.authorize}
+                                </Button>
+                                {server.oauthAuthorized && (
+                                  <Button size="sm" variant="ghost" disabled={revokeOAuth.isPending} onClick={() => revokeOAuth.mutate({ pluginId: detail.id, serverId: server.id })}>
+                                    {t.revoke}
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                             <div className="flex items-center gap-1.5">
                               <Input
                                 type="password"

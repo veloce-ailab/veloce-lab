@@ -180,10 +180,45 @@ test("follows a manifest that points at an MCP file", () => {
 test("reports surfaces it cannot honour instead of silently dropping them", () => {
   const parsed = parsePluginFiles(new Map(Object.entries({
     ".codex-plugin/plugin.json": JSON.stringify({ name: "Hooked", hooks: {}, apps: "./.app.json" }),
+    ".app.json": JSON.stringify({ apps: { external: { id: "asdk_app_x" } } }),
   })))
   assert.equal(parsed.unsupported.length, 2)
   assert.ok(parsed.unsupported.some((entry) => entry.startsWith("hooks:")))
-  assert.ok(parsed.unsupported.some((entry) => entry.startsWith("apps:")))
+  assert.ok(parsed.unsupported.some((entry) => entry.startsWith("app \"external\"")))
+})
+
+test("matches an app registration to the MCP server that backs it", () => {
+  const parsed = parsePluginFiles(new Map(Object.entries({
+    ".codex-plugin/plugin.json": JSON.stringify({ name: "Linear", apps: "./.app.json" }),
+    ".app.json": JSON.stringify({ apps: { linear: { id: "asdk_app_x" } } }),
+    ".mcp.json": JSON.stringify({
+      mcpServers: {
+        linear: {
+          type: "http",
+          url: "https://mcp.linear.app/mcp",
+          oauth_resource: "https://mcp.linear.app/mcp",
+          scopes: ["read", "write"],
+        },
+      },
+    }),
+  })))
+  assert.equal(parsed.apps.length, 1)
+  assert.equal(parsed.apps[0].name, "linear")
+  assert.equal(parsed.apps[0].serverId, "linear")
+  assert.equal(parsed.mcpServers[0].oauth.resource, "https://mcp.linear.app/mcp")
+  assert.deepEqual(parsed.mcpServers[0].oauth.scopes, ["read", "write"])
+  assert.deepEqual(parsed.unsupported, [])
+})
+
+test("recognises an OAuth server declared with a client registration", () => {
+  const parsed = parsePluginFiles(new Map(Object.entries({
+    ".codex-plugin/plugin.json": JSON.stringify({ name: "Slack" }),
+    ".mcp.json": JSON.stringify({
+      mcpServers: { slack: { type: "http", url: "https://mcp.slack.com/mcp", oauth: { client_id: "1" } } },
+    }),
+  })))
+  assert.ok(parsed.mcpServers[0].oauth)
+  assert.deepEqual(parsed.mcpServers[0].oauth.scopes, [])
 })
 
 test("falls back to the interface description", () => {
