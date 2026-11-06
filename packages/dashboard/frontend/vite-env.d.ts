@@ -58,7 +58,7 @@ interface Window {
     saveDesktopSettings: (settings: DesktopSettings) => Promise<DesktopSettings>
     chooseDesktopFile: () => Promise<string>
     chooseDesktopFolder: (initialPath?: string) => Promise<string>
-    getDesktopSystemInfo: () => Promise<{ hostname: string; platform: string; instanceID: string }>
+    getDesktopSystemInfo: () => Promise<{ hostname: string; platform: string; instanceID: string; titleBar?: "overlay" | "frame" }>
     openInVSCode: (workspacePath: string) => Promise<{ ok: boolean; message: string }>
     notifyTaskComplete: (input: { id: string; title: string; body: string }) => Promise<{ ok: boolean; duplicate?: boolean }>
     notifyConnectorApproval: (input: { id: string; taskID: string; title: string; body: string; approveLabel: string; rejectLabel: string }) => Promise<{ ok: boolean; duplicate?: boolean }>

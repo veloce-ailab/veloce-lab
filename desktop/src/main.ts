@@ -36,6 +36,13 @@ const desktopDisplayName = "Veloce Lab"
 const preferredServerPort = 12789
 
 /**
+ * A framed window is the honest choice on Linux: the title-bar overlay this shell
+ * draws itself is only supported by Electron on macOS and Windows, and pretending
+ * otherwise leaves the page underneath the window controls.
+ */
+const titleBarOverlaySupported = process.platform === "darwin" || process.platform === "win32"
+
+/**
  * Development mode changes the shell only, never the server: the payload stays
  * the production one (`resources/server`), and what gets easier is looking at it
  * — server output goes to this process's terminal, DevTools open with the
@@ -546,8 +553,9 @@ function createWindow() {
     title: desktopDisplayName,
     icon: iconPath,
     ...(process.platform === "win32" ? { backgroundMaterial: "acrylic" as const } : {}),
-    titleBarStyle: "hidden",
-    titleBarOverlay: titleBarOverlayOptions(),
+    ...(titleBarOverlaySupported
+      ? { titleBarStyle: "hidden" as const, titleBarOverlay: titleBarOverlayOptions() }
+      : { autoHideMenuBar: true }),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -718,7 +726,14 @@ function setupIPC() {
   handle("desktop-settings:save", (event, input: unknown) => saveDesktopSettings(event, input))
   handle("desktop-settings:choose-file", async () => chooseDesktopExecutable())
   handle("desktop:choose-folder", async (_event, initialPath: unknown) => chooseDesktopFolder(initialPath))
-  handle("desktop:get-system-info", () => ({ hostname: os.hostname(), platform: process.platform, instanceID: desktopInstanceID() }))
+  handle("desktop:get-system-info", () => ({
+    hostname: os.hostname(),
+    platform: process.platform,
+    instanceID: desktopInstanceID(),
+    // The page draws its own title bar only where the controls are an overlay;
+    // otherwise the window frame already is the title bar.
+    titleBar: titleBarOverlaySupported ? "overlay" : "frame",
+  }))
   handle("desktop:open-in-vscode", async (_event, workspacePath: string) => openWorkspaceInVSCode(workspacePath))
   handle("desktop:notify-task-complete", (event, input: unknown) => showDesktopTaskNotification(event.sender, input))
   handle("desktop:notify-connector-approval", (event, input: unknown) => showDesktopApprovalNotification(event.sender, input))

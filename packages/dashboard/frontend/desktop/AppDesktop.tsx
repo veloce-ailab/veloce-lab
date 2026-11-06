@@ -4,6 +4,7 @@ import { HashRouter, Route, Routes, useLocation, useNavigate } from "react-route
 import { Activity, ExternalLink, FolderOpen, Globe2, Info, RefreshCw, Server, Settings } from "lucide-react"
 
 import { useI18n } from "@/lib/i18n"
+import { cn } from "@/lib/utils"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { useToast } from "@/components/ui/toast"
 import { Button } from "@/components/ui/button"
@@ -31,7 +32,9 @@ import { frames as extensionFrames, routes as extensionRoutes, subscribeExtensio
 
 type DesktopProcessItem = DesktopProcessStatus["processes"][number]
 
-type DesktopSystemInfo = { hostname: string; platform: string; instanceID: string }
+type DesktopSystemInfo = { hostname: string; platform: string; instanceID: string; titleBar?: "overlay" | "frame" }
+/** Height the panel starts below when this shell draws its own title bar. */
+const overlayTitleBarClass = "top-9"
 
 const emptyDesktopSettings: DesktopSettings = {
   httpProxy: "",
@@ -200,6 +203,20 @@ function DesktopPageRoutes() {
 }
 
 export function DesktopShell() {
+  // Where the window keeps its native frame (Linux), the frame *is* the title
+  // bar: drawing a second one would only push the panel under the window
+  // controls. The bridge says which world this is.
+  const [titleBarMode, setTitleBarMode] = useState<"overlay" | "frame" | "unknown">("unknown")
+  useEffect(() => {
+    let cancelled = false
+    void window.veloceDesktop?.getDesktopSystemInfo().then((info) => {
+      if (!cancelled) setTitleBarMode(info.titleBar ?? "overlay")
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  const overlay = titleBarMode !== "frame"
   return (
     <HashRouter>
       <DesktopTransparency />
@@ -207,15 +224,15 @@ export function DesktopShell() {
       <DesktopApprovalDecisionBridge />
       <DesktopNavigationBridge />
       <DocumentTitle />
-      <DesktopTitleBar />
-      <div className="fixed inset-x-0 bottom-0 top-9 overflow-hidden bg-background">
+      <DesktopTitleBar overlay={overlay} />
+      <div className={cn("fixed inset-x-0 bottom-0 overflow-hidden bg-background", overlayTitleBarClass)}>
         <DesktopPageRoutes />
       </div>
     </HashRouter>
   )
 }
 
-function DesktopTitleBar() {
+function DesktopTitleBar({ overlay }: { overlay: boolean }) {
   const copy = useDesktopCopy()
   const { success, error: showError } = useToast()
   const navigate = useNavigate()
@@ -328,8 +345,21 @@ function DesktopTitleBar() {
 
   return (
     <>
-      <div className="desktop-acrylic-surface fixed inset-x-0 top-0 z-50 h-9 select-none border-b [-webkit-app-region:drag]">
-        <div className="flex h-full items-center justify-between pl-3 pr-[138px]">
+      <div
+        className={cn(
+          "desktop-acrylic-surface fixed inset-x-0 top-0 z-50 h-9 select-none border-b",
+          overlay && "[-webkit-app-region:drag]",
+        )}
+      >
+        {/* Room for the window buttons only where they float over the page: macOS
+            draws them on the left, Windows on the right. A framed window owns its
+            own title bar, so the page gets the full width there. */}
+        <div
+          className={cn(
+            "flex h-full items-center justify-between",
+            !overlay ? "pl-3 pr-3" : systemInfo?.platform === "darwin" ? "pl-[80px] pr-3" : "pl-3 pr-[138px]",
+          )}
+        >
           <div className="flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold">
             <img src={logoURL} alt="" className="h-5 w-5 rounded object-cover" />
             <span className="shrink-0 truncate">{copy.title}</span>

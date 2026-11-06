@@ -23,9 +23,12 @@ export async function apply(ctx: Context) {
     session_id: { type: "string", nullable: false }, active_tab: { type: "string", nullable: false },
     updated_at: "timestamp",
   });
-  const userID = (session: Session) => Number((session.properties.user as { id?: number } | undefined)?.id || 0);
+  // A deployment without `@velocelab/auth` runs every request as the built-in
+  // default user, whose id is deliberately 0 — so "is anyone there?" is a
+  // question about the user object, not about a positive id.
+  const userID = (session: Session) => Number((session.properties.user as { id?: number } | undefined)?.id ?? -1);
   const sessionID = (value: unknown) => String(value ?? "").trim();
-  const validRequest = (session: Session, id: unknown) => userID(session) > 0 && Boolean(sessionID(id));
+  const validRequest = (session: Session, id: unknown) => userID(session) >= 0 && Boolean(sessionID(id));
   ctx.route("/api/sidebar/tabs").methods("GET").action(async (session: Session, query: URLSearchParams) => {
     const id = sessionID(query.get("session_id"));
     if (!validRequest(session, id)) { session.status = 400; session.respond({ error: "session_id is required" }, "json"); return; }
