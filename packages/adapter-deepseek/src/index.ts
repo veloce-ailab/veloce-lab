@@ -11,7 +11,7 @@ function build(input: AdapterInput) {
   const anthropic = input.model.toLowerCase().includes("claude");
   const payload: Record<string, unknown> = {
     model: input.model,
-    messages: anthropic ? anthropicChatMessages(input.messages) : openAIChatMessages(input.messages),
+    messages: anthropic ? anthropicChatMessages(input.messages) : openAIChatMessages(input.messages, input.system),
     ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
     ...(input.temperature === undefined
       ? {}

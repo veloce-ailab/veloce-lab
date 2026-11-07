@@ -4,6 +4,7 @@ import type {
   AdapterInput,
   AdapterRegistry,
 } from "@velocelab/adapters";
+import { openAIChatMessages } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
 const adapter: AdapterDefinition = {
@@ -13,7 +14,7 @@ const adapter: AdapterDefinition = {
     const model = modelMatch?.[1] || input.model;
     const body: Record<string, unknown> = {
       model,
-      messages: input.messages,
+      messages: openAIChatMessages(input.messages, input.system),
       ...(input.maxTokens ? { max_completion_tokens: input.maxTokens } : {}),
       ...(input.temperature === undefined
         ? {}

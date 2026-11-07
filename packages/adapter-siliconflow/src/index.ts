@@ -4,6 +4,7 @@ import type {
   AdapterInput,
   AdapterRegistry,
 } from "@velocelab/adapters";
+import { openAIChatMessages } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
 const adapter: AdapterDefinition = {
@@ -11,7 +12,7 @@ const adapter: AdapterDefinition = {
   build: (input: AdapterInput) => {
     const body: Record<string, unknown> = {
       model: input.model,
-      messages: input.messages,
+      messages: openAIChatMessages(input.messages, input.system),
       ...(input.stream ? { stream: true } : {}),
     };
     if (input.media?.size) body.image_size = input.media.size;

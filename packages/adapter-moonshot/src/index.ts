@@ -4,6 +4,7 @@ import type {
   AdapterInput,
   AdapterRegistry,
 } from "@velocelab/adapters";
+import { openAIChatMessages } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
 const adapter: AdapterDefinition = {
@@ -19,7 +20,12 @@ const adapter: AdapterDefinition = {
     },
     body: {
       model: input.model,
-      messages: input.messages,
+      ...(input.model.toLowerCase().includes("claude")
+        ? {
+            ...(input.system ? { system: input.system } : {}),
+            messages: input.messages,
+          }
+        : { messages: openAIChatMessages(input.messages, input.system) }),
       ...(input.model.toLowerCase() === "kimi-k2.6" ? { temperature: 1 } : {}),
       ...(input.stream ? { stream: true } : {}),
     },

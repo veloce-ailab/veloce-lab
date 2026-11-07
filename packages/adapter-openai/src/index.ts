@@ -4,7 +4,7 @@ import type {
   AdapterInput,
   AdapterRegistry,
 } from "@velocelab/adapters";
-import { openAIChatMessages, openAIChatTools } from "@velocelab/adapters";
+import { imageGenerationParams, openAIChatMessages, openAIChatTools } from "@velocelab/adapters";
 export const depend = ["adapters"];
 export const provide: string[] = [];
 async function stream(response: Response, onDelta: (delta: string) => void) {
@@ -55,6 +55,34 @@ export function apply(ctx: Context) {
       "chat_completions",
     ],
     build: (input: AdapterInput) => {
+      // Image requests go to their own endpoint with their own body: the chat
+      // payload below would be rejected outright.
+      if (input.operation === "image_generate" || input.operation === "image_edit") {
+        const params = imageGenerationParams(input.media);
+        return {
+          urlPath: "/v1/images/generations",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            ...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {}),
+          },
+          body: {
+            model: input.model,
+            prompt: params.prompt,
+            ...(params.n ? { n: params.n } : {}),
+            ...(params.size ? { size: params.size } : {}),
+            ...(params.quality ? { quality: params.quality } : {}),
+            ...(params.style ? { style: params.style } : {}),
+            // Asking for the bytes avoids a second download from a URL that may
+            // already have expired by the time the file library stores it.
+            response_format: "b64_json",
+            // A reference image is sent as the `image` field several
+            // OpenAI-compatible services accept; the null ones ignore it and
+            // generate from the prompt alone.
+            ...(params.referenceImage ? { image: params.referenceImage } : {}),
+          },
+        };
+      }
       const tools = openAIChatTools(input.tools);
       return {
         urlPath: "/v1/chat/completions",
@@ -65,7 +93,7 @@ export function apply(ctx: Context) {
         },
         body: {
           model: input.model,
-          messages: openAIChatMessages(input.messages),
+          messages: openAIChatMessages(input.messages, input.system),
           ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
           ...(input.temperature === undefined
             ? {}
