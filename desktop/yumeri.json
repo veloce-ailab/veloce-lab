@@ -67,6 +67,17 @@
       "retryMaxDelayMs": 30000,
       "requestTimeoutMs": 120000
     },
+    "@velocelab/runtype": {
+      "goalContinuations": "3",
+      "continuationDelayMs": "800",
+      "maxPlanChars": "20000"
+    },
+    "@velocelab/image": {
+      "maxConcurrentPerUser": "2",
+      "requestTimeoutMs": "180000",
+      "pollIntervalMs": "2000",
+      "maxImagesPerTask": "4"
+    },
     "@velocelab/agent-runtime": {},
     "@velocelab/workspace": {},
     "@velocelab/file": {

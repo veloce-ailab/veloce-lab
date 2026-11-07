@@ -3303,6 +3303,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@velocelab/desktop@workspace:packages/desktop"
   dependencies:
+    "@velocelab/advanced-chat": "npm:^0.1.2"
     "@velocelab/dashboard": "npm:^0.1.5"
   peerDependencies:
     yumeri: ^3.0.0
@@ -3381,6 +3382,19 @@ __metadata:
     "@vitejs/plugin-react": "npm:^6.0.1"
     react: "npm:^19.2.6"
     vite: "npm:^8.0.12"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/image@workspace:packages/image":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/image@workspace:packages/image"
+  dependencies:
+    "@velocelab/adapters": "npm:^0.1.2"
+    "@velocelab/advanced-chat": "npm:^0.1.2"
+    "@velocelab/dashboard": "npm:^0.1.5"
+    "@velocelab/file": "npm:^0.1.2"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown
@@ -3504,6 +3518,17 @@ __metadata:
 "@velocelab/ratelimit@workspace:packages/ratelimit":
   version: 0.0.0-use.local
   resolution: "@velocelab/ratelimit@workspace:packages/ratelimit"
+  peerDependencies:
+    yumeri: ^3.0.0
+  languageName: unknown
+  linkType: soft
+
+"@velocelab/runtype@workspace:packages/runtype":
+  version: 0.0.0-use.local
+  resolution: "@velocelab/runtype@workspace:packages/runtype"
+  dependencies:
+    "@velocelab/advanced-chat": "npm:^0.1.2"
+    "@velocelab/dashboard": "npm:^0.1.5"
   peerDependencies:
     yumeri: ^3.0.0
   languageName: unknown

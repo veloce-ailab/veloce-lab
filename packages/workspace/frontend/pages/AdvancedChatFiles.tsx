@@ -1,11 +1,14 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Download, FileText, Folder, RefreshCw, Trash2, Upload } from "lucide-react"
+import { ArrowLeft, Download, FileText, Folder, Loader2, Maximize2, Pencil, RefreshCw, Trash2, Upload } from "lucide-react"
 import { api } from "@/lib/api"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { PageInlineSlot, PageTitleSlot } from "@/components/layout/PageTitleSlot"
 import { useToast } from "@/components/ui/toast"
 import { useI18n } from "@/lib/i18n"
@@ -49,6 +52,11 @@ export default function AdvancedChatFiles() {
   const [isUploading, setIsUploading] = useState(false)
   const [deletingID, setDeletingID] = useState("")
   const [downloadingID, setDownloadingID] = useState("")
+  const [editingFile, setEditingFile] = useState<StoredFile | null>(null)
+  const [editingText, setEditingText] = useState("")
+  const [loadingEditID, setLoadingEditID] = useState("")
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [previewFile, setPreviewFile] = useState<StoredFile | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedPoolID = searchParams.get("pool") || ""
   const openPool = (poolID: number) => setSearchParams({ pool: String(poolID) })
@@ -140,16 +148,17 @@ export default function AdvancedChatFiles() {
     }
   }
 
+  const downloadSource = (file: StoredFile) => selectedPoolID
+    ? `/user/enterprise/shared-pools/${encodeURIComponent(selectedPoolID)}/files/${encodeURIComponent(file.id)}/download`
+    : `/user/advanced-chat/files/${encodeURIComponent(file.id)}/download`
+
   const downloadFile = async (file: StoredFile) => {
     if (downloadingID) {
       return
     }
     setDownloadingID(file.id)
     try {
-      const source = selectedPoolID
-        ? `/user/enterprise/shared-pools/${encodeURIComponent(selectedPoolID)}/files/${encodeURIComponent(file.id)}/download`
-        : `/user/advanced-chat/files/${encodeURIComponent(file.id)}/download`
-      const res = await api.get(source, { responseType: "blob" })
+      const res = await api.get(downloadSource(file), { responseType: "blob" })
       const url = URL.createObjectURL(res.data)
       const link = document.createElement("a")
       link.href = url
@@ -162,6 +171,49 @@ export default function AdvancedChatFiles() {
       error(apiErrorMessage(err, copy.downloadFailed))
     } finally {
       setDownloadingID("")
+    }
+  }
+
+  /**
+   * The editor asks for the whole document: saving a truncated read back would
+   * silently cut the file down. Pool files are somebody else's, so they are
+   * read-only here — and a knowledge document is edited in its knowledge base.
+   */
+  const editFile = async (file: StoredFile) => {
+    if (loadingEditID) {
+      return
+    }
+    setLoadingEditID(file.id)
+    try {
+      const res = await api.get(`/user/advanced-chat/files/${encodeURIComponent(file.id)}/content`, { params: { max: 100000 } })
+      const data = isRecord(res.data) ? res.data : {}
+      if (data.editable !== true) {
+        error(copy.editUnavailable)
+        return
+      }
+      setEditingText(typeof data.text === "string" ? data.text : "")
+      setEditingFile(file)
+    } catch (err) {
+      error(apiErrorMessage(err, copy.editFailed))
+    } finally {
+      setLoadingEditID("")
+    }
+  }
+
+  const saveEdit = async () => {
+    if (!editingFile || savingEdit) {
+      return
+    }
+    setSavingEdit(true)
+    try {
+      await api.put(`/user/advanced-chat/files/${encodeURIComponent(editingFile.id)}/content`, { text: editingText })
+      success(copy.saved)
+      setEditingFile(null)
+      await queryClient.invalidateQueries({ queryKey: filesQueryKey })
+    } catch (err) {
+      error(apiErrorMessage(err, copy.saveFailed))
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -211,30 +263,57 @@ export default function AdvancedChatFiles() {
                 </div>
               ) : (
                 <div className="grid gap-3">
-                  {visibleFiles.map((file) => (
-                    <div key={file.id} className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="truncate text-sm font-medium">{file.name}</span>
-                          {file.text_available && <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">{copy.text}</span>}
+                  {visibleFiles.map((file) => {
+                    const picture = isImageFile(file)
+                    return (
+                      <div key={file.id} className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 items-center gap-3">
+                          {picture ? (
+                            <button
+                              type="button"
+                              className="h-11 w-11 shrink-0 overflow-hidden rounded-md border bg-muted"
+                              onClick={() => setPreviewFile(file)}
+                              title={copy.preview}
+                              aria-label={copy.preview}
+                            >
+                              <FilePicture source={downloadSource(file)} name={file.name} className="h-full w-full object-cover" />
+                            </button>
+                          ) : (
+                            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="truncate text-sm font-medium">{file.name}</span>
+                              {file.text_available && <Badge variant="secondary" className="shrink-0">{copy.text}</Badge>}
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                              <span>{file.type || "application/octet-stream"}</span>
+                              <span>{formatBytes(file.size)}</span>
+                              <span>{formatDate(file.created_at)}</span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                          <span>{file.type || "application/octet-stream"}</span>
-                          <span>{formatBytes(file.size)}</span>
-                          <span>{formatDate(file.created_at)}</span>
+                        <div className="flex shrink-0 gap-2">
+                          {picture && (
+                            <Button variant="outline" size="icon" onClick={() => setPreviewFile(file)} title={copy.preview} aria-label={copy.preview}>
+                              <Maximize2 size={15} />
+                            </Button>
+                          )}
+                          {file.text_available && !isSharedPoolView && (
+                            <Button variant="outline" size="icon" disabled={loadingEditID === file.id} onClick={() => void editFile(file)} title={copy.edit} aria-label={copy.edit}>
+                              {loadingEditID === file.id ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
+                            </Button>
+                          )}
+                          <Button variant="outline" size="icon" disabled={downloadingID === file.id} onClick={() => downloadFile(file)} title={copy.download} aria-label={copy.download}>
+                            <Download size={16} />
+                          </Button>
+                          {!isSharedPoolView && <Button variant="outline" size="icon" disabled={deletingID === file.id} onClick={() => deleteFile(file)} title={copy.delete} aria-label={copy.delete}>
+                            <Trash2 size={16} />
+                          </Button>}
                         </div>
                       </div>
-                      <div className="flex shrink-0 gap-2">
-                        <Button variant="outline" size="icon" disabled={downloadingID === file.id} onClick={() => downloadFile(file)} title={copy.download} aria-label={copy.download}>
-                          <Download size={16} />
-                        </Button>
-                        {!isSharedPoolView && <Button variant="outline" size="icon" disabled={deletingID === file.id} onClick={() => deleteFile(file)} title={copy.delete} aria-label={copy.delete}>
-                          <Trash2 size={16} />
-                        </Button>}
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </CardContent>
@@ -242,10 +321,87 @@ export default function AdvancedChatFiles() {
         </>
       )}
 
+      <Dialog open={previewFile !== null} onOpenChange={(open) => { if (!open) setPreviewFile(null) }}>
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="truncate text-sm">{previewFile?.name}</DialogTitle>
+            <DialogDescription>{previewFile ? `${previewFile.type || "image"} · ${formatBytes(previewFile.size)}` : ""}</DialogDescription>
+          </DialogHeader>
+          {previewFile && (
+            <FilePicture
+              source={downloadSource(previewFile)}
+              name={previewFile.name}
+              className="mx-auto max-h-[65vh] w-auto rounded-md border object-contain"
+            />
+          )}
+          <DialogFooter>
+            <Button size="sm" onClick={() => previewFile && void downloadFile(previewFile)} disabled={!previewFile || downloadingID === previewFile.id}>
+              <Download size={15} className="mr-1" />{copy.download}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editingFile !== null} onOpenChange={(open) => { if (!open) setEditingFile(null) }}>
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="truncate text-sm">{copy.editTitle} · {editingFile?.name}</DialogTitle>
+            <DialogDescription>{copy.editHint}</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            className="min-h-[50vh] font-mono text-xs leading-5"
+            value={editingText}
+            spellCheck={false}
+            onChange={(event) => setEditingText(event.target.value)}
+          />
+          <DialogFooter>
+            <span className="mr-auto text-xs text-muted-foreground">{formatBytes(new Blob([editingText]).size)}</span>
+            <Button variant="ghost" size="sm" disabled={savingEdit} onClick={() => setEditingFile(null)}>{copy.cancel}</Button>
+            <Button size="sm" disabled={savingEdit} onClick={() => void saveEdit()}>
+              {savingEdit ? <Loader2 size={15} className="mr-1 animate-spin" /> : null}
+              {savingEdit ? copy.saving : copy.save}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <PageInlineSlot slotKey="primary" />
       <PageInlineSlot slotKey="secondary" />
     </div>
   )
+}
+
+/** Library files are fetched with the API client; an `<img src>` would be anonymous. */
+function FilePicture({ source, name, className }: { source: string; name: string; className?: string }) {
+  const url = useDownloadObjectURL(source)
+  if (!url) return <span className={`flex items-center justify-center bg-muted ${className || ""}`}><Loader2 size={14} className="animate-spin text-muted-foreground" /></span>
+  return <img src={url} alt={name} className={className} loading="lazy" />
+}
+
+function useDownloadObjectURL(source: string) {
+  const [url, setURL] = useState("")
+  useEffect(() => {
+    if (!source) return
+    let active = true
+    let objectURL = ""
+    void api.get(source, { responseType: "blob" })
+      .then((res) => {
+        if (!active) return
+        objectURL = URL.createObjectURL(res.data)
+        setURL(objectURL)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+      if (objectURL) URL.revokeObjectURL(objectURL)
+      setURL("")
+    }
+  }, [source])
+  return url
+}
+
+function isImageFile(file: StoredFile) {
+  return file.type.startsWith("image/")
 }
 
 function normalizeSettings(value: unknown): AdvancedChatSettings {
@@ -356,6 +512,17 @@ const zhCopy = {
   download: "下载",
   downloadFailed: "下载失败",
   delete: "删除",
+  preview: "预览",
+  edit: "编辑",
+  editTitle: "编辑文本",
+  editHint: "保存会覆盖原文件；生成结果和知识库文档不在这里改。",
+  editUnavailable: "这个文件不能在文件库里编辑",
+  editFailed: "读取文件内容失败",
+  save: "保存",
+  saving: "保存中",
+  saved: "文件已保存",
+  saveFailed: "保存文件失败",
+  cancel: "取消",
   deleted: "文件已删除",
   deleteFailed: "删除文件失败",
   disabled: "管理员已关闭文件存储功能。",
@@ -378,6 +545,17 @@ const enCopy: typeof zhCopy = {
   download: "Download",
   downloadFailed: "Download failed",
   delete: "Delete",
+  preview: "Preview",
+  edit: "Edit",
+  editTitle: "Edit text",
+  editHint: "Saving overwrites the file. Generated results and knowledge documents are edited elsewhere.",
+  editUnavailable: "This file cannot be edited from the library",
+  editFailed: "Failed to read the file",
+  save: "Save",
+  saving: "Saving",
+  saved: "File saved",
+  saveFailed: "Failed to save the file",
+  cancel: "Cancel",
   deleted: "File deleted",
   deleteFailed: "Failed to delete file",
   disabled: "File storage is disabled by the administrator.",

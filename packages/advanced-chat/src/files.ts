@@ -51,14 +51,14 @@ export async function attachImageFiles(
   return messages;
 }
 
-export function registerChatFileRoutes(
-  ctx: Context,
-  db: Database,
-  files: FileService,
-) {
-  const user = (session: Session) =>
-    (session.properties.user as { id?: number } | undefined)?.id;
-  const response = (row: any) => ({
+/** Whether a file's content can be read and edited as text. */
+export function isTextFile(name: string, mime: string) {
+  return mime.startsWith("text/") || textExtensions.test(name);
+}
+
+/** The library's own view of a stored file, as every file route returns it. */
+export function fileResponse(row: any) {
+  return {
     id: row.id,
     name: row.name,
     type: row.mime_type,
@@ -68,7 +68,70 @@ export function registerChatFileRoutes(
     download_url: `/api/user/advanced-chat/files/${encodeURIComponent(String(row.id))}/download`,
     created_at: row.created_at,
     updated_at: row.updated_at,
-  });
+  };
+}
+
+export interface StoreChatFileInput {
+  name: string;
+  mimeType: string;
+  data: Buffer;
+  source?: string;
+  sourceKey?: string;
+}
+
+/**
+ * Put bytes in the user's file library: the file itself under the storage root,
+ * and the row the library lists. Uploads and generated images both go through
+ * here, so a generated picture is an ordinary library file afterwards.
+ */
+export async function storeChatFile(
+  db: Database,
+  files: FileService,
+  userId: number,
+  input: StoreChatFileInput,
+) {
+  const fileId = `acf-${randomUUID()}`;
+  const name =
+    String(input.name || "file")
+      .replace(/[\\/\0]/g, "_")
+      .slice(0, 200) || "file";
+  const mime = String(input.mimeType || "application/octet-stream")
+    .split(";", 1)[0]
+    .toLowerCase();
+  const storage = `advanced-chat/files/${userId}/${fileId}/${name}`;
+  await files.write(storage, input.data);
+  // The extracted text is what chat attachments and the knowledge index read;
+  // binaries keep it empty rather than storing megabytes of mojibake.
+  const text = isTextFile(name, mime) && input.data.toString("utf8").length <= 100000
+    ? input.data.toString("utf8")
+    : "";
+  const now = new Date().toISOString();
+  const row = await db.create("advanced_chat_files", {
+    id: fileId,
+    user_id: userId,
+    name,
+    mime_type: mime,
+    size: input.data.length,
+    storage_path: storage,
+    text_extract: text,
+    hash: createHash("sha256").update(input.data).digest("hex"),
+    source: String(input.source ?? "upload"),
+    source_key: String(input.sourceKey ?? `${userId}:${fileId}`),
+    text_available: Boolean(text),
+    created_at: now,
+    updated_at: now,
+  } as any);
+  return row as any;
+}
+
+export function registerChatFileRoutes(
+  ctx: Context,
+  db: Database,
+  files: FileService,
+) {
+  const user = (session: Session) =>
+    (session.properties.user as { id?: number } | undefined)?.id;
+  const response = fileResponse;
   ctx
     .route("/api/user/advanced-chat/files")
     .methods("GET")
@@ -105,39 +168,14 @@ export function registerChatFileRoutes(
         session.respond({ error: "File is empty or too large" }, "json");
         return;
       }
-      const fileId = `acf-${randomUUID()}`;
-      const name =
-        String(input.name ?? "file")
-          .replace(/[\\/\0]/g, "_")
-          .slice(0, 200) || "file";
-      const mime = String(
-        input.mime_type ?? input.type ?? "application/octet-stream",
-      )
-        .split(";", 1)[0]
-        .toLowerCase();
-      const storage = `advanced-chat/files/${id}/${fileId}/${name}`;
-      await files.write(storage, data);
-      const text =
-        (mime.startsWith("text/") || textExtensions.test(name)) &&
-        data.toString("utf8").length <= 100000
-          ? data.toString("utf8")
-          : "";
-      const now = new Date().toISOString();
-      const row = await db.create("advanced_chat_files", {
-        id: fileId,
-        user_id: id,
-        name,
-        mime_type: mime,
-        size: data.length,
-        storage_path: storage,
-        text_extract: text,
-        hash: createHash("sha256").update(data).digest("hex"),
+      const row = await storeChatFile(db, files, id, {
+        name: String(input.name ?? "file"),
+        mimeType: String(input.mime_type ?? input.type ?? "application/octet-stream"),
+        data,
         source: String(input.source ?? "upload"),
-        source_key: String(input.source_key ?? `${id}:${fileId}`),
-        text_available: Boolean(text),
-        created_at: now,
-        updated_at: now,
-      } as any);
+        sourceKey: input.source_key,
+      });
+      const text = String(row.text_extract ?? "");
       session.status = 201;
       session.respond(
         {
@@ -162,16 +200,22 @@ export function registerChatFileRoutes(
   ctx
     .route("/api/user/advanced-chat/files/:id/content")
     .methods("GET")
-    .action(async (session, _params, fileId) => {
+    .action(async (session, params: URLSearchParams, fileId) => {
       const row = await load(session, fileId);
       if (!row) return;
       const text = String(row.text_extract ?? "");
+      // The editor asks for the whole document, and it must know whether what it
+      // got is the whole document: saving a truncated read back would cut the
+      // file down without anyone noticing.
+      const requested = Number(params.get("max") ?? 0);
+      const limit = Math.min(100000, requested > 0 ? requested : 20000);
       session.respond(
         {
           id: row.id,
-          text: text.slice(0, 20000),
+          text: text.slice(0, limit),
           binary: !text,
-          truncated: text.length > 20000,
+          truncated: text.length > limit,
+          editable: Boolean(text) && text.length <= limit && row.source !== "knowledge_document",
         },
         "json",
       );
@@ -184,11 +228,70 @@ export function registerChatFileRoutes(
       if (!row) return;
       try {
         const data = await files.read(String(row.storage_path));
-        session.respond(data, row.mime_type || "application/octet-stream");
+        // The second argument of `respond` is a render type, not a media type:
+        // passing the file's own MIME there sent every download as text/plain,
+        // which a browser cannot use to preview a picture.
+        session.head["Content-Type"] = row.mime_type || "application/octet-stream";
+        session.respond(data, "buffer");
       } catch {
         session.status = 500;
         session.respond({ error: "Failed to read file" }, "json");
       }
+    });
+  ctx
+    .route("/api/user/advanced-chat/files/:id/content")
+    .methods("PUT")
+    .action(async (session, _params, fileId) => {
+      const row = await load(session, fileId);
+      if (!row) return;
+      if (row.source === "knowledge_document") {
+        session.status = 400;
+        session.respond(
+          { error: "Knowledge base documents are edited in their knowledge base" },
+          "json",
+        );
+        return;
+      }
+      if (!isTextFile(String(row.name ?? ""), String(row.mime_type ?? ""))) {
+        session.status = 400;
+        session.respond({ error: "Only text files can be edited" }, "json");
+        return;
+      }
+      const input = (await session.parseRequestBody()) as any;
+      if (typeof input.text !== "string") {
+        session.status = 400;
+        session.respond({ error: "Text is required" }, "json");
+        return;
+      }
+      const data = Buffer.from(input.text, "utf8");
+      if (data.length > maxFileBytes) {
+        session.status = 413;
+        session.respond({ error: "File is too large" }, "json");
+        return;
+      }
+      await files.write(String(row.storage_path), data);
+      const now = new Date().toISOString();
+      // The bytes on disk are the file; the extracted copy is only what the chat
+      // and the index read, so it keeps its own size cap.
+      const text = input.text.slice(0, 100000);
+      await db.update(
+        "advanced_chat_files",
+        { id: row.id, user_id: user(session) },
+        {
+          size: data.length,
+          text_extract: text,
+          text_available: true,
+          hash: createHash("sha256").update(data).digest("hex"),
+          updated_at: now,
+        },
+      );
+      session.respond(
+        {
+          file: fileResponse({ ...row, size: data.length, text_available: true, updated_at: now }),
+          content: { id: row.id, text, binary: false, truncated: input.text.length > text.length },
+        },
+        "json",
+      );
     });
   ctx
     .route("/api/user/advanced-chat/files/:id")

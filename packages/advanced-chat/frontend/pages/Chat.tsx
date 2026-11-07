@@ -4718,6 +4718,10 @@ export default function Chat() {
                     </button>
                   )}
                   {!activeSession && !routeSessionID && composerEnvironmentControls()}
+                  {/* Directly above the composer: what this conversation is aiming at
+                      (a goal, a plan) belongs beside the input, not in the transcript.
+                      `contents` keeps the wrapper out of the `space-y-2` rhythm. */}
+                  <DashboardSlot name="chat.composer.above" scope="/chat" data={chatSlotData} className="contents" />
                   {advancedComposer()}
                   {isEmptyAdvancedChat && (
                     <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 pt-1">
