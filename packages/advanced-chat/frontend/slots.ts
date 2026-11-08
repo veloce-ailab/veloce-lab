@@ -29,4 +29,11 @@ export interface ChatSlotData extends Record<string, unknown> {
   setWorkspacePath: (path: string) => void
   openWorkspacePicker: () => void
   addFileToPrompt?: (path: string) => void
+  /**
+   * Sends a message as if it had been typed: the page runs it, streams it, and
+   * the stop button works. Used by a plugin whose user action means "ask the
+   * model to do the next thing", so that turn looks like every other turn
+   * instead of a run that only appears when it is over.
+   */
+  sendMessage?: (text: string) => void
 }

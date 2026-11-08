@@ -483,6 +483,17 @@ export async function apply(ctx: Context, cfg: RuntypeConfig) {
       }
       const feedback = String(input.feedback ?? "").trim();
       const approved = input.approved === true;
+      // The page can run the next turn itself, which streams it like any other
+      // turn. When it says so, the prompt comes back in the response instead of
+      // being sent here — one turn, run by whoever showed up first.
+      const deferRun = input.defer_run === true;
+
+      /** Answers with the state, plus the turn the page should send, if any. */
+      const answer = async (prompt?: string) => {
+        const next = await stateOf(userId, sessionId);
+        session.respond(prompt ? { ...next, run: { prompt } } : next, "json");
+      };
+
       if (approved) {
         // The plan becomes the thing to carry out, and the conversation leaves
         // plan mode; the follow-up run picks the plan up from the context.
@@ -494,7 +505,11 @@ export async function apply(ctx: Context, cfg: RuntypeConfig) {
           mode: "chat",
           continuations: 0,
         });
-        session.respond(await stateOf(userId, sessionId), "json");
+        if (deferRun) {
+          await answer(PLAN_APPROVED);
+          return;
+        }
+        await answer();
         if (!(await sessionBusy(userId, sessionId))) {
           void startRun(userId, sessionId, PLAN_APPROVED).catch(reportFailure("the approved plan run"));
         }
@@ -507,13 +522,16 @@ export async function apply(ctx: Context, cfg: RuntypeConfig) {
         pending_summary: "",
         mode: "plan",
       });
-      session.respond(await stateOf(userId, sessionId), "json");
-      if (feedback && !(await sessionBusy(userId, sessionId))) {
-        void startRun(
-          userId,
-          sessionId,
-          `计划未获批准。请按以下意见修改计划，然后再次调用 runtype_exit_plan 提交：\n${feedback}`,
-        ).catch(reportFailure("the plan revision run"));
+      const revision = feedback
+        ? `计划未获批准。请按以下意见修改计划，然后再次调用 runtype_exit_plan 提交：\n${feedback}`
+        : "";
+      if (revision && deferRun) {
+        await answer(revision);
+        return;
+      }
+      await answer();
+      if (revision && !(await sessionBusy(userId, sessionId))) {
+        void startRun(userId, sessionId, revision).catch(reportFailure("the plan revision run"));
       }
     });
 }

@@ -3487,13 +3487,20 @@ export default function Chat() {
             updateSession(session.id, (current) => ({
               ...current,
               messages: current.messages.map((message) =>
-                message.id === assistantMessageID && !message.content ? { ...message, content: copy.stopped } : message
+                message.id === assistantMessageID && !message.content.trim()
+                  ? { ...message, content: copy.stopped }
+                  : message
               ),
             }))
           } else {
+            // While a run starts, its bubble carries the "thinking" status line as
+            // its content. That is not an answer, so a turn that failed before
+            // saying anything must not be kept as if it had.
+            const said = (message: ChatMessage) =>
+              Boolean(message.content.trim()) && message.content.trim() !== copy.streamThinking
             updateSession(session.id, (current) => ({
               ...current,
-              messages: current.messages.filter((message) => message.id !== assistantMessageID || message.content || (message.tool_calls || []).length > 0),
+              messages: current.messages.filter((message) => message.id !== assistantMessageID || said(message) || (message.tool_calls || []).length > 0),
             }))
             error(apiErrorMessage(err, err instanceof Error ? err.message : copy.sendFailed))
           }
@@ -4345,6 +4352,7 @@ export default function Chat() {
     setWorkspacePath: setSessionWorkspacePath,
     openWorkspacePicker: () => openWorkspacePicker("session"),
     addFileToPrompt: (path) => setPrompt((current) => `${current}${current ? "\n" : ""}[文件: ${path}] `),
+    sendMessage: (text: string) => void sendMessageWithContent(text),
   }
   const isEmptyAdvancedChat = isAdvanced && (!currentSession || currentSession.messages.length === 0)
   const chatHeaderToolbar = (
@@ -8414,7 +8422,15 @@ function messageDisplayContent(message: ChatMessage, run: ChatRun | undefined, c
     return ""
   }
   if (message.role === "assistant") {
-    return copy.streamThinking
+    // "Thinking" belongs to a turn that is still in flight. Once its run is
+    // over, an assistant message with nothing in it has to say what it is: an
+    // empty reply, or a turn that was stopped. Answering "正在思考…" here is how
+    // a finished turn — a run the page never streamed, a cancelled run, a model
+    // that answered with nothing — sat there pretending to think forever.
+    if (!run || run.assistant_message_id !== message.id) {
+      return ""
+    }
+    return run.status === "cancelled" ? copy.stopped : copy.emptyResponse
   }
   return message.content
 }

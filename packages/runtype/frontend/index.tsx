@@ -171,10 +171,22 @@ function RuntypeBar(props: Record<string, unknown>) {
     if (!sessionId) return
     setBusy(true)
     try {
-      const response = await api.put("/runtype/plan", { session_id: sessionId, approved, feedback: reason })
+      // The page runs the turn after a decision when it can, so the answer
+      // streams into the transcript instead of appearing only once it is over.
+      // Without that handle the server runs it, which also covers a page that is
+      // not open at all.
+      const deferRun = Boolean(data.sendMessage)
+      const response = await api.put("/runtype/plan", {
+        session_id: sessionId,
+        approved,
+        feedback: reason,
+        defer_run: deferRun,
+      })
       apply(response.data)
       setViewing(null)
       setFeedback("")
+      const prompt = (response.data as { run?: { prompt?: string } } | undefined)?.run?.prompt
+      if (deferRun && prompt) data.sendMessage?.(prompt)
     } catch {
       error(copy.decideFailed)
     } finally {
