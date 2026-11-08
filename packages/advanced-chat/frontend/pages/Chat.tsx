@@ -12,7 +12,7 @@ import type { ChangeEvent, KeyboardEvent, ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createPortal } from "react-dom"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Activity, Archive, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpDown, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Clock, Cloud, Coins, Copy, Eraser, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, HardDrive, List, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, Shield, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Upload, User, Wrench, X } from "lucide-react"
+import { Activity, Archive, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpDown, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Clock, Cloud, Coins, Copy, Eraser, Ellipsis, FileDiff, FileText, Folder, FolderOpen, GitBranch, Globe, HardDrive, List, ListFilter, ListTodo, Loader2, MessageCircleQuestion, MessageSquarePlus, Monitor, Paperclip, Pencil, Plus, Quote, RefreshCw, RotateCcw, Search, Send, Server, Settings, Shield, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, TriangleAlert, Upload, User, Wrench, X } from "lucide-react"
 import { api, apiURL, getAuthToken, isDesktopTarget } from "@/lib/api"
 import { composerCommands, subscribeComposerCommands, type DashboardComposerCommand } from "@velocelab/dashboard/frontend"
 import { ChatSetupGuide } from "@/components/onboarding/SetupGuides"
@@ -1464,9 +1464,14 @@ export default function Chat() {
       const action = task.action || (language === "zh" ? "操作" : "action")
       const deviceName = task.device_name || (language === "zh" ? "连接器" : "Connector")
       const workspace = `\n${connectorApprovalTaskSubtitle(task)}`
-      void sendWebNotification({ title: language === "zh" ? "需要审批" : "Approval required", body: language === "zh" ? `${deviceName} 请求执行 ${action}${workspace}` : `${deviceName} requests ${action}${workspace}`, tag: `connector-approval:${task.id}`, url: "/chat" })
+      // A notification is easy to approve without reading, so an escalation says
+      // so in the body instead of looking like an ordinary command.
+      const escalation = connectorApprovalEscalation(task)
+        ? `\n⚠ ${copy.escalationApprovalHint}`
+        : ""
+      void sendWebNotification({ title: language === "zh" ? "需要审批" : "Approval required", body: language === "zh" ? `${deviceName} 请求执行 ${action}${workspace}${escalation}` : `${deviceName} requests ${action}${workspace}${escalation}`, tag: `connector-approval:${task.id}`, url: "/chat" })
     }
-  }, [isDesktop, language, pendingConnectorApprovals])
+  }, [copy, isDesktop, language, pendingConnectorApprovals])
   const activeModelName = isAdvanced ? currentSession?.model_name || selectedAgent?.default_model || modelName : modelName
   const selectedUserChannel = useMemo(
     () => catalog.find((channel) => channel.id === selectedUserChannelID) || catalog[0],
@@ -6200,25 +6205,41 @@ function ConnectorApprovalControls({
   if (!task || !onDecide) {
     return null
   }
+  // A command asking to leave the sandbox is a wider decision than the usual
+  // "may this run?", so the prompt says so before either button is pressed.
+  const escalation = connectorApprovalEscalation(task)
   return (
-    <div className={cn("flex shrink-0 flex-wrap justify-end gap-2", className)}>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={Boolean(decidingTaskID)}
-        onClick={() => onDecide(task.id, false)}
-      >
-        <X size={14} />
-        {copy.rejectConnectorTask}
-      </Button>
-      <Button
-        size="sm"
-        disabled={Boolean(decidingTaskID)}
-        onClick={() => onDecide(task.id, true)}
-      >
-        <Check size={14} />
-        {copy.approveConnectorTask}
-      </Button>
+    <div className={cn("flex shrink-0 flex-col items-end gap-1.5", className)}>
+      {escalation && (
+        <div className="flex max-w-full items-start gap-1.5 rounded border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] text-destructive">
+          <TriangleAlert size={13} className="mt-0.5 shrink-0" />
+          <span className="min-w-0 whitespace-pre-wrap break-words">
+            {copy.escalationApprovalHint}
+            {/* The reason is model text, so it is labelled rather than left to
+                read as part of the prompt's own wording. */}
+            {escalation.reason ? `\n${copy.escalationReasonLabel}: ${escalation.reason}` : ""}
+          </span>
+        </div>
+      )}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={Boolean(decidingTaskID)}
+          onClick={() => onDecide(task.id, false)}
+        >
+          <X size={14} />
+          {copy.rejectConnectorTask}
+        </Button>
+        <Button
+          size="sm"
+          disabled={Boolean(decidingTaskID)}
+          onClick={() => onDecide(task.id, true)}
+        >
+          <Check size={14} />
+          {copy.approveConnectorTask}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -8990,6 +9011,18 @@ function connectorApprovalTaskSubtitle(task: ConnectorApprovalTask) {
   return parts.length > 0 ? parts.join("\n") : task.id
 }
 
+/**
+ * The escalation an approval task asks for, when it asks for one.
+ *
+ * The record is written by the connector, never read from the tool arguments, so
+ * this is the same value the executor will honour once the user approves.
+ */
+function connectorApprovalEscalation(task: ConnectorApprovalTask): { reason: string } | undefined {
+  const value = task.payload["sandbox_escalation"]
+  if (!isRecord(value)) return undefined
+  return { reason: stringFromUnknown(value.reason) }
+}
+
 function connectorActionForToolCall(toolCall: ChatToolCall) {
   if (toolCall.tool) {
     return toolCall.tool
@@ -9208,6 +9241,8 @@ const chatCopyKeys = {
   connectorApprovalTitle: "chat.connectorApprovalTitle",
   connectorApprovalDescription: "chat.connectorApprovalDescription",
   connectorApprovalFailed: "chat.connectorApprovalFailed",
+  escalationApprovalHint: "chat.escalationApprovalHint",
+  escalationReasonLabel: "chat.escalationReasonLabel",
   approveConnectorTask: "chat.approveConnectorTask",
   rejectConnectorTask: "chat.rejectConnectorTask",
   connectorAutoApprove: "chat.connectorAutoApprove",

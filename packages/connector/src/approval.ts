@@ -16,6 +16,11 @@
 // resolve to `sandbox`: a stored session that still carries one must not fall
 // back to asking the user for every command, and it must not silently widen to
 // full access either.
+//
+// A sandbox-mode caller can *ask* for one command to leave the boundary (see
+// `sandboxEscalationRequest` below). Asking is not a mode: it does not change
+// what the session means, it turns one task into a question the user answers,
+// and only that answer lets the task run unconfined.
 
 /** The modes a new session may carry; `manual`/`safe` are accepted but never offered. */
 export const CONNECTOR_APPROVAL_MODES = [
@@ -58,4 +63,108 @@ export function connectorTaskIsSandboxed(
   autoApprove = false,
 ): boolean {
   return connectorApprovalMode(input, autoApprove) === "sandbox";
+}
+
+/**
+ * The tool argument with which a sandbox-mode session asks for one command to
+ * run outside its workspace.
+ *
+ * Sandbox mode answers "may this write there?" with the kernel instead of a
+ * prompt, so a command that genuinely cannot stay inside — a package manager
+ * writing to a shared cache, a tool that needs a system path — used to be a dead
+ * end. This argument is the ask, and nothing else: it does not carry a decision
+ * with it. The task it creates always waits for the user, and the executor reads
+ * the decision from the task row, not from the arguments that were asked with.
+ */
+export const SANDBOX_ESCALATION_ARGUMENT = "request_full_access";
+
+/** The one-line reason the approval prompt shows next to the command. */
+export const SANDBOX_ESCALATION_REASON_ARGUMENT = "full_access_reason";
+
+/**
+ * The payload key that records the ask and the user's answer.
+ *
+ * It lives inside the task row because only the server writes that row. The
+ * arguments are model output, so a `sandbox_escalation: { approved: true }` the
+ * model invented must be replaced rather than believed — `withSandboxEscalation`
+ * is what makes sure of that.
+ */
+export const SANDBOX_ESCALATION_KEY = "sandbox_escalation";
+
+/** One request to run a task outside the sandbox, and its decision. */
+export interface SandboxEscalation {
+  /** Why the command cannot stay inside the workspace; may be empty. */
+  reason: string;
+  /** Set by the decision route alone, when the user approved this task. */
+  approved: boolean;
+  /** When the user approved it. */
+  approved_at?: string;
+}
+
+const ESCALATION_REASON_CHARS = 300;
+
+const escalationText = (value: unknown) =>
+  String(value ?? "").replace(/\s+/g, " ").trim().slice(0, ESCALATION_REASON_CHARS);
+
+/**
+ * The escalation a tool call asks for, or nothing.
+ *
+ * Only sandbox work has a boundary to leave: `full_access` already runs
+ * unconfined and `assistant` already asks, so in neither one does the request
+ * turn into a prompt about a sandbox the session is not in.
+ */
+export function sandboxEscalationRequest(
+  input: Record<string, unknown> | undefined,
+): SandboxEscalation | undefined {
+  if (!input || input[SANDBOX_ESCALATION_ARGUMENT] !== true) return undefined;
+  if (connectorApprovalMode(input) !== "sandbox") return undefined;
+  return {
+    reason: escalationText(input[SANDBOX_ESCALATION_REASON_ARGUMENT]),
+    approved: false,
+  };
+}
+
+/** The escalation a task row carries, whatever its decision. */
+export function sandboxEscalation(
+  payload: Record<string, unknown> | undefined,
+): SandboxEscalation | undefined {
+  const value = payload?.[SANDBOX_ESCALATION_KEY];
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const approvedAt = typeof record.approved_at === "string" ? record.approved_at : "";
+  return {
+    reason: escalationText(record.reason),
+    approved: record.approved === true,
+    ...(approvedAt ? { approved_at: approvedAt } : {}),
+  };
+}
+
+/** Whether the user approved this task leaving the sandbox. */
+export function sandboxEscalationGranted(
+  payload: Record<string, unknown> | undefined,
+): boolean {
+  return sandboxEscalation(payload)?.approved === true;
+}
+
+/**
+ * The payload as it is stored, with the escalation record written by the server.
+ *
+ * Any escalation the caller supplied is dropped first: the record is a decision
+ * log, and a decision only exists if the connector wrote it.
+ */
+export function withSandboxEscalation(
+  payload: Record<string, unknown> | undefined,
+  escalation: SandboxEscalation | undefined,
+): Record<string, unknown> {
+  const next = { ...(payload ?? {}) };
+  delete next[SANDBOX_ESCALATION_KEY];
+  if (!escalation) return next;
+  next[SANDBOX_ESCALATION_KEY] = {
+    // Normalised here so the one place that writes the record is also the one
+    // place that decides how long a reason may be.
+    reason: escalationText(escalation.reason),
+    approved: escalation.approved === true,
+    ...(escalation.approved_at ? { approved_at: escalation.approved_at } : {}),
+  };
+  return next;
 }

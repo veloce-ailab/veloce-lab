@@ -16,6 +16,8 @@ import path from "node:path";
 import {
   connectorTaskIsSandboxed,
   connectorTaskNeedsApproval,
+  sandboxEscalation,
+  sandboxEscalationRequest,
 } from "@velocelab/connector";
 import type { SandboxService } from "@velocelab/sandbox";
 import type {
@@ -97,7 +99,8 @@ declare module "yumeri" {
  * what confinement exists for, so it is never answered inline — the session's
  * approval mode decides the terms: `sandbox` runs it under a kernel sandbox,
  * `assistant` asks the approval assistant first, `full_access` runs it as the
- * host user.
+ * host user. A sandbox-mode command may also ask the user for one command out
+ * of the sandbox (`request_full_access`), which is a decision and not a mode.
  */
 const CAPABILITIES = [
   "list_directories",
@@ -135,6 +138,26 @@ const COMMAND_WAIT_MS = 60_000;
 
 /** How long a confined command may run before the sandbox gives up on it. */
 const commandTimeoutMs = 120_000;
+
+/**
+ * A queued task's payload as an object.
+ *
+ * The row stores JSON; an unreadable payload means "nothing was recorded", which
+ * is the safe reading for every decision this file makes from it.
+ */
+function taskPayloadOf(row: { payload?: unknown }): Record<string, unknown> {
+  const value = row?.payload;
+  if (value && typeof value === "object" && !Array.isArray(value))
+    return value as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(String(value ?? "{}"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
 
 export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
   ctx.i18n({
@@ -214,15 +237,7 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
   const runTask = async (
     task: ConnectorTaskRecord,
   ): Promise<{ success: boolean; result?: string; error_message?: string }> => {
-    let payload: Record<string, unknown> = {};
-    try {
-      payload = JSON.parse(String(task.payload ?? "{}")) as Record<
-        string,
-        unknown
-      >;
-    } catch {
-      payload = {};
-    }
+    const payload = taskPayloadOf(task);
     const workspacePath = String(
       payload.connector_workspace_path ??
         payload.workspace_path ??
@@ -244,11 +259,34 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
       }
       if (String(task.action) === "run_command") {
         if (!cfg.allowCommandExecution) return { success: false, error_message: "Local command execution is disabled" };
+        // An escalation counts only once the user approved it. A request that
+        // was rejected never reaches this point, and a task carrying a request
+        // nobody answered is refused rather than run: widening a command the
+        // user did not agree to is the one thing this must never do.
+        const escalation = sandboxEscalation(payload);
+        if (escalation && escalation.approved !== true)
+          return {
+            success: false,
+            error_message:
+              "This command asked to run outside the sandbox and the request was not approved, so it did not run",
+          };
         // The task's own workspace path wins over anything in the payload, so a
         // command cannot be talked into running outside the folder the session
         // works in. A sandbox-mode session gets the same boundary from the
-        // kernel instead of from the task.
-        const outcome = connectorTaskIsSandboxed(payload)
+        // kernel instead of from the task; an approved escalation is the only
+        // way past it, for the one command it was granted for.
+        //
+        // An escalation lifts the write boundary, not the idea of a working
+        // folder: a session without one keeps the sandbox's own refusal instead
+        // of quietly falling back to the directory the server was started in.
+        if (escalation && !workspacePath)
+          return {
+            success: false,
+            error_message:
+              "A command that runs outside the sandbox still needs a workspace folder; none is set for this session",
+          };
+        const confined = !escalation && connectorTaskIsSandboxed(payload);
+        const outcome = confined
           ? await sandbox.run({
               workspace: workspacePath,
               cwd: workspacePath,
@@ -262,9 +300,18 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
             `$ ${outcome.command}`,
             `cwd: ${outcome.cwd}`,
             // Naming the backend tells the model which boundary it just hit, so
-            // a refusal reads as the policy and not as a broken command.
+            // a refusal reads as the policy and not as a broken command. An
+            // approved escalation says the opposite in the same place: the
+            // command ran with the host user's own rights.
             ...("backend" in outcome && outcome.backend
               ? [`sandbox: ${outcome.backend}`]
+              : []),
+            ...(escalation
+              ? [
+                  `sandbox: none (the user approved running outside the workspace${
+                    escalation.reason ? `: ${escalation.reason}` : ""
+                  })`,
+                ]
               : []),
             `exit code: ${outcome.exit_code}`,
             outcome.output,
@@ -329,7 +376,9 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
           status,
           message:
             status === "pending_approval"
-              ? "The command is waiting for your approval; approve it on the device page and run the tool again to see the output."
+              ? `${sandboxEscalation(taskPayloadOf(row))
+                  ? "The command is waiting for your approval to run outside the sandbox"
+                  : "The command is waiting for your approval"}; approve it on the device page and run the tool again to see the output.`
               : "The command is still running; run the tool again to see the output.",
         };
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -408,7 +457,11 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
       // under the kernel sandbox; in `assistant` mode it waits for a decision,
       // and this wait covers the decision plus the run.
       run_command: async (userId, input, device) => {
-        const requiresApproval = needsApproval(input);
+        // A sandbox-mode call may ask for this one command to run outside the
+        // workspace. Asking only turns the task into a prompt: the user decides,
+        // and `runTask` reads that decision from the task row.
+        const escalation = sandboxEscalationRequest(input);
+        const requiresApproval = needsApproval(input) || Boolean(escalation);
         const task = await connector.createTask(userId, {
           device_id: String(device.id),
           action: "run_command",
@@ -416,6 +469,7 @@ export async function apply(ctx: Context, cfg: LocalDeviceConfig) {
           run_id: String(input.run_id ?? ""),
           payload: input,
           requiresApproval,
+          ...(escalation ? { escalation } : {}),
         });
         return await waitForTask(userId, String(task.id));
       },

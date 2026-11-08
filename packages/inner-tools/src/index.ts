@@ -28,8 +28,15 @@ export function connectorInput(
   context: ConnectorContext,
 ): Record<string, unknown> {
   const workspacePath = context.connectorWorkspacePath ?? "";
+  // The two keys that decide the terms of a task are stripped before the
+  // session's own values are written back. They are also model output: a model
+  // passing `approval_mode: "full_access"` (which used to survive the spread) or
+  // `auto_approve: true` was widening the conversation on its own. Widening is
+  // its own request — `request_full_access`, answered by the user — and never
+  // an argument that quietly takes effect.
+  const { approval_mode: _mode, auto_approve: _auto, ...args } = input;
   return {
-    ...input,
+    ...args,
     workspace_path: workspacePath,
     connector_workspace_path: workspacePath,
     // A queued task records which run asked for it, which is how a pending
@@ -120,8 +127,24 @@ export function apply(ctx: Context) {
     ["list_files", "List files in a workspace directory.", "list_files", { path: { type: "string" } }],
     ["list_windows_drives", "List available Windows drives.", "list_windows_drives", {}],
     // The model reads this verbatim: it explains what the sandbox does on the
-    // model's behalf, so a refusal it hits reads as the boundary and not a bug.
-    ["run_command", "Run a shell command in the workspace. In sandbox mode the command may write inside the workspace and the kernel refuses writes anywhere else.", "run_command", { command: { type: "string" } }],
+    // model's behalf, so a refusal it hits reads as the boundary and not a bug —
+    // and it names the one way out of that boundary, which is to ask the user.
+    [
+      "run_command",
+      "Run a shell command in the workspace. In sandbox mode the command may write inside the workspace and the kernel refuses writes anywhere else. If a command genuinely cannot stay inside the workspace (a package manager writing a shared cache, a tool that needs a system path), pass request_full_access: true with a one-line full_access_reason: the user is asked to approve running this one command outside the sandbox, and it does not run unless they approve.",
+      "run_command",
+      {
+        command: { type: "string", description: "The command line to run, in a shell." },
+        request_full_access: {
+          type: "boolean",
+          description: "Ask the user to approve running this command outside the sandbox. The command waits for their answer, and a rejection means it does not run.",
+        },
+        full_access_reason: {
+          type: "string",
+          description: "One short sentence telling the user why this command cannot stay inside the workspace; shown in the approval prompt.",
+        },
+      },
+    ],
     ["replace_text", "Replace text in a workspace file.", "replace_text", { path: { type: "string" }, old_text: { type: "string" }, new_text: { type: "string" } }],
     ["web_search", "Search the web through the connector.", "web_search", { query: { type: "string" } }],
     ["web_fetch", "Fetch a web page through the connector.", "web_fetch", { url: { type: "string" } }],

@@ -3,7 +3,12 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import "@velocelab/dashboard";
 import "@velocelab/advanced-chat";
 import { ensureTables } from "./tables.js";
-import { connectorTaskNeedsApproval } from "./approval.js";
+import {
+  connectorTaskNeedsApproval,
+  sandboxEscalation,
+  sandboxEscalationRequest,
+  withSandboxEscalation,
+} from "./approval.js";
 export * from "./approval.js";
 export const depend = ["dashboard", "database"];
 export const provide = ["connector"];
@@ -126,6 +131,28 @@ export interface ConnectorTypeInfo {
 export function connectorTypeIsRemovable(type: ConnectorType): boolean {
   return type.removable ?? type.autoConnect !== true;
 }
+
+/**
+ * A task's payload as an object.
+ *
+ * The row stores JSON, but events and older callers hand the same value over
+ * already parsed, and an unreadable payload must degrade to "no record" rather
+ * than throwing inside an approval decision.
+ */
+function taskPayload(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value))
+    return value as Record<string, unknown>;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 export interface ConnectorTaskInput {
   device_id: string;
   action: string;
@@ -133,6 +160,12 @@ export interface ConnectorTaskInput {
   payload?: Record<string, unknown>;
   /** A task needing approval waits for the decision route before it runs. */
   requiresApproval?: boolean;
+  /**
+   * A request to run this one task outside the sandbox. It always puts the task
+   * in front of the user: the escalation is the only thing that may lift the
+   * boundary, and only an approval makes it effective.
+   */
+  escalation?: { reason?: string };
   run_id?: string;
 }
 export interface ConnectorService {
@@ -308,6 +341,11 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
       throw Error(
         `Connector device "${device.name || device.id}" is offline; it cannot run "${action}" right now`,
       );
+    // A gated action may also be asked to leave the sandbox. That is a second
+    // reason to wait for the user, on top of the approval level.
+    const escalation = APPROVAL_GATED_ACTIONS.has(action)
+      ? sandboxEscalationRequest(input)
+      : undefined;
     const task = await service.createTask(userId, {
       device_id: String(device.id),
       action,
@@ -317,7 +355,10 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
       run_id: String(input.run_id ?? ""),
       payload: input,
       requiresApproval:
-        APPROVAL_GATED_ACTIONS.has(action) && connectorTaskNeedsApproval(input),
+        (APPROVAL_GATED_ACTIONS.has(action) &&
+          connectorTaskNeedsApproval(input)) ||
+        Boolean(escalation),
+      ...(escalation ? { escalation } : {}),
     });
     return await awaitTask(userId, String(task.id), action);
   };
@@ -1068,6 +1109,21 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
       }
       const input = (await s.parseRequestBody()) as any;
       const approved = input.approved === true || input.decision === "approve";
+      const decidedAt = new Date().toISOString();
+      // Approving an escalation is what grants it, so the grant is written into
+      // the payload here — the one place where a decision exists. A task that
+      // asked for full access and was not approved therefore has nothing for the
+      // executor to read, and it runs confined (or not at all).
+      const payload = taskPayload(task.payload);
+      const escalation = sandboxEscalation(payload);
+      const granted =
+        approved && escalation && !escalation.approved
+          ? withSandboxEscalation(payload, {
+              ...escalation,
+              approved: true,
+              approved_at: decidedAt,
+            })
+          : undefined;
       await db.update(
         "advanced_chat_connector_tasks",
         { id: taskId, user_id: id, status: "pending_approval" },
@@ -1075,14 +1131,24 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
           status: approved ? "approved" : "rejected",
           error_message: approved
             ? ""
-            : String(input.reason ?? "Rejected by user"),
-          updated_at: new Date().toISOString(),
+            : String(
+                input.reason ??
+                  (escalation
+                    ? "The user rejected running this command outside the sandbox"
+                    : "Rejected by user"),
+              ),
+          ...(granted ? { payload: JSON.stringify(granted) } : {}),
+          updated_at: decidedAt,
         },
       );
       // A local connector runs inside this process. Dispatch the approved task
       // immediately so the request that is waiting for approval receives its
       // result instead of timing out and asking the user again.
-      await ctx.emit("connector.task-decided", { ...task, status: approved ? "approved" : "rejected" }).catch(() => undefined);
+      await ctx.emit("connector.task-decided", {
+        ...task,
+        ...(granted ? { payload: granted } : {}),
+        status: approved ? "approved" : "rejected",
+      }).catch(() => undefined);
       if (approved) await service.executeTask(id, taskId).catch(() => false);
       s.respond(
         await db.selectOne("advanced_chat_connector_tasks", {
@@ -1277,6 +1343,17 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
       const device: any = await deviceOf(userId, input.device_id);
       if (!device) throw Error("Connector device not found");
       const now = new Date().toISOString();
+      // The escalation record is written here, never taken from the payload:
+      // the payload carries model arguments, and this key is a decision log.
+      // A request always waits for the user, whatever the caller passed.
+      const escalation = input.escalation
+        ? {
+            reason: String(input.escalation.reason ?? ""),
+            approved: false,
+          }
+        : undefined;
+      const requiresApproval =
+        input.requiresApproval === true || escalation !== undefined;
       const task: any = await db.create("advanced_chat_connector_tasks", {
         id: `act-${randomUUID()}`,
         user_id: userId,
@@ -1284,8 +1361,10 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
         run_id: String(input.run_id ?? ""),
         action: input.action.trim(),
         workspace_path: String(input.workspace_path ?? ""),
-        payload: JSON.stringify(input.payload ?? {}),
-        status: input.requiresApproval ? "pending_approval" : "queued",
+        payload: JSON.stringify(
+          withSandboxEscalation(input.payload, escalation),
+        ),
+        status: requiresApproval ? "pending_approval" : "queued",
         result: "",
         error_message: "",
         started_at: null,
@@ -1293,10 +1372,10 @@ export async function apply(ctx: Context, cfg: ConnectorConfig) {
         created_at: now,
         updated_at: now,
       } as any);
-      if (input.requiresApproval)
+      if (requiresApproval)
         await ctx.emit("connector.approval-required", task).catch(() => undefined);
       const { token_hash: _hash, ...record } = device;
-      if (!input.requiresApproval)
+      if (!requiresApproval)
         await dispatchTask(task, record as ConnectorDeviceRecord);
       return (await db.selectOne("advanced_chat_connector_tasks", {
         id: task.id,
